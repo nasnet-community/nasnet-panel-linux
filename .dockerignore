@@ -1,0 +1,17 @@
+.git
+.idea
+.vscode
+bin
+test
+# Exclude web-panel build artifacts only — sources are needed by Dockerfile.
+web-panel/node_modules
+web-panel/dist
+node_modules
+data/
+docker-compose.yml
+*.md
+*.log
+.env
+.DS_Store
+._*
+**/._*

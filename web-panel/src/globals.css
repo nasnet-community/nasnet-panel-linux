@@ -1,0 +1,89 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@xterm/xterm/css/xterm.css";
+@import "react-grid-layout/css/styles.css";
+
+/* Design tokens — primitives + semantic + Tailwind v4 bridge.
+   Shared by admin panel and sub-panel. See styles/tokens.css for definitions. */
+@import "./styles/tokens.css";
+
+/* Font CSS variable bridge — @fontsource-variable uses different names */
+:root {
+  --font-geist-sans: "Geist Variable", system-ui, sans-serif;
+  --font-geist-mono: "Geist Mono Variable", ui-monospace, monospace;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.4 0.01 286 / 40%) transparent;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Suppress focus ring on pointer/touch; keep it for keyboard (focus-visible). */
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Webkit scrollbar styling (Chrome, Safari, Edge) */
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0.5 0.01 286 / 30%);
+    border-radius: 3px;
+    transition: background var(--dur-base) var(--ease-out);
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.5 0.01 286 / 55%);
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    background: oklch(0.8 0.01 286 / 20%);
+  }
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.8 0.01 286 / 40%);
+  }
+  .dark * {
+    scrollbar-color: oklch(0.8 0.01 286 / 20%) transparent;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@keyframes auto-refresh-progress {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+@keyframes nuke-border-pulse {
+  0%, 100% { border-color: var(--warning-base); opacity: 1; }
+  50%      { border-color: var(--warning-strong); opacity: 0.55; }
+}
+
+@layer utilities {
+  .nuke-phase-running {
+    animation: nuke-border-pulse 1.4s var(--ease-in-out) infinite;
+  }
+}

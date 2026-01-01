@@ -1,0 +1,119 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    container_name: nasnet_panel_backend
+    init: true
+    ports:
+      - "${APP_PORT:-9761}:${APP_PORT:-9761}"
+      # Publish the proxy inbound ports xray serves, e.g.:
+      # - "443:443"
+    env_file: .env
+    environment:
+      - DB_HOST=postgres
+      - NASNET_RUN_AS_ROOT=1
+    cap_add:
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+    volumes:
+      - backups_data:/app/data/backups
+      - acme_data:/app/data/acme
+      - xray_config:/usr/local/etc/xray
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-qO/dev/null", "http://localhost:${APP_PORT:-9761}/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: nasnet_panel_prometheus
+    init: true
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
+      - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sed \
+          -e 's|__METRICS_TARGET__|${PROMETHEUS_TARGET:-app:${APP_PORT:-9761}}|g' \
+          -e 's|__METRICS_PATH__|${METRICS_PATH:-/metrics}|g' \
+          -e 's|__SCRAPE_INTERVAL__|${PROMETHEUS_SCRAPE_INTERVAL:-5s}|g' \
+          /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml && \
+        if [ -n "${METRICS_USERNAME}" ] && [ -n "${METRICS_PASSWORD}" ]; then
+          printf '\n    basic_auth:\n      username: "%s"\n      password: "%s"\n' \
+            "${METRICS_USERNAME}" "${METRICS_PASSWORD}" >> /tmp/prometheus.yml
+        fi && \
+        exec /bin/prometheus \
+          --config.file=/tmp/prometheus.yml \
+          --storage.tsdb.path=/prometheus \
+          --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d} \
+          --web.console.libraries=/usr/share/prometheus/console_libraries \
+          --web.console.templates=/usr/share/prometheus/consoles
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app_network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: nasnet_panel_db
+    init: true
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-nasnet_panel}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  acme_data:
+  prometheus_data:
+  xray_config:
+  backups_data:

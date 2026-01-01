@@ -1,0 +1,16 @@
+// Re-export from domain modules for backward compatibility.
+// New code should import from "@/lib/api/<domain>" directly.
+export * from "./api/dashboard"
+export * from "./api/users"
+export * from "./api/nodes"
+export * from "./api/inbounds"
+export * from "./api/outbounds"
+export * from "./api/routing"
+export * from "./api/hosts"
+export * from "./api/subscriptions"
+export * from "./api/certificates"
+export * from "./api/domains"
+export * from "./api/access-logs"
+export * from "./api/access-history"
+export * from "./api/accounts"
+export * from "./api/backup"

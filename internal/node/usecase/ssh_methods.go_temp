@@ -1,0 +1,64 @@
+
+// === SSH Management ===
+
+func (u *nodeUsecase) GetNodeSSHStatus(ctx context.Context, nodeID uint) (*domain.SSHStatus, error) {
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		return nil, ErrNodeNotFound
+	}
+
+	if !node.UseAgent {
+		return nil, errors.New("node does not use agent")
+	}
+
+	client, err := u.getAgentClient(node)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	// Assuming client has GetSSHStatus method - need to check if agent client wrapper has it
+	// Since I haven't updated the pkg/agent/client.go wrapper yet, I probably need to do that too.
+	
+	// Wait, I haven't updated pkg/agent/client/client.go!
+	// I need to check pkg/agent/client/client.go first.
+	return client.GetSSHStatus(ctx)
+}
+
+func (u *nodeUsecase) UpdateNodeSSHConfig(ctx context.Context, nodeID uint, enabled bool, port int) error {
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		return ErrNodeNotFound
+	}
+
+	if !node.UseAgent {
+		return errors.New("node does not use agent")
+	}
+
+	client, err := u.getAgentClient(node)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	return client.UpdateSSHConfig(ctx, enabled, port)
+}
+
+func (u *nodeUsecase) ClearNodeSSHLogs(ctx context.Context, nodeID uint) error {
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		return ErrNodeNotFound
+	}
+
+	if !node.UseAgent {
+		return errors.New("node does not use agent")
+	}
+
+	client, err := u.getAgentClient(node)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	return client.ClearSSHLogs(ctx)
+}

@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # Embed targets require these files to exist before `go build` reads
+      # the //go:embed directives. In CI we short-circuit the download and
+      # use empty stubs — nothing under test resolves routing via geoip,
+      # and the embedded bytes are only consumed at runtime by agent nodes.
+      - name: Stub geofiles
+        run: |
+          mkdir -p pkg/geofiles/embedded
+          : > pkg/geofiles/embedded/geoip.dat
+          : > pkg/geofiles/embedded/geosite.dat
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (race)
+        # Root package embeds the frontend dist; skip it here (the web
+        # job covers the SPA build). All real coverage lives in sub-
+        # packages.
+        run: go test -race -count=1 ./internal/... ./pkg/... ./transport/... ./cmd/... ./config/...
+
+      - name: go build (sub-packages)
+        run: go build ./internal/... ./pkg/... ./transport/... ./cmd/...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-panel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web-panel/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

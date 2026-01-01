@@ -1,0 +1,375 @@
+/* =============================================================================
+ * NasNet Panel — Design Tokens
+ * -----------------------------------------------------------------------------
+ * Three layers:
+ *   1. PRIMITIVES — raw OKLCH ramps. Never reference these from components.
+ *   2. SEMANTIC   — intent vars (status, surface, motion, text). Use these.
+ *   3. BRIDGE     — @theme inline mapping so Tailwind v4 utilities pick them up.
+ *
+ * Imported by globals.css. Shared by admin (web-panel) and sub-panel surfaces.
+ * For SVG/canvas (Recharts, ctx.fillStyle) use lib/design/palette.ts — CSS vars
+ * don't traverse those boundaries cleanly.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * 1. PRIMITIVES — raw color ramps (OKLCH for perceptual uniformity)
+ * -------------------------------------------------------------------------- */
+:root {
+  /* Neutral ramp — admin chrome, text, borders */
+  --gray-50:  oklch(0.984 0.003 247.858);
+  --gray-100: oklch(0.968 0.007 247.896);
+  --gray-200: oklch(0.929 0.013 255.508);
+  --gray-300: oklch(0.869 0.022 252.894);
+  --gray-400: oklch(0.704 0.040 256.788);
+  --gray-500: oklch(0.554 0.046 257.417);
+  --gray-600: oklch(0.446 0.043 257.281);
+  --gray-700: oklch(0.372 0.044 257.287);
+  --gray-800: oklch(0.279 0.041 260.031);
+  --gray-900: oklch(0.208 0.042 265.755);
+  --gray-950: oklch(0.129 0.042 264.695);
+
+  /* Status ramps — single hue per intent, three stops (soft / base / strong) */
+  --success-soft:   oklch(0.94  0.06  150);
+  --success-base:   oklch(0.723 0.192 150);
+  --success-strong: oklch(0.55  0.16  150);
+
+  --warning-soft:   oklch(0.95  0.08  92);
+  --warning-base:   oklch(0.83  0.155 92);
+  --warning-strong: oklch(0.68  0.17  85);
+
+  --danger-soft:    oklch(0.94  0.06  25);
+  --danger-base:    oklch(0.637 0.237 25);
+  --danger-strong:  oklch(0.50  0.22  25);
+
+  --info-soft:      oklch(0.95  0.05  260);
+  --info-base:      oklch(0.623 0.214 260);
+  --info-strong:    oklch(0.52  0.20  260);
+
+  /* Chart palette — discrete categorical series. Stable across themes. */
+  --chart-emerald: oklch(0.72  0.17  155);  /* net-rx, download, success-line */
+  --chart-red:     oklch(0.65  0.24  27);   /* errors, rejected, drop-rate    */
+  --chart-blue:    oklch(0.65  0.18  250);  /* net-tx, upload, info-line      */
+  --chart-amber:   oklch(0.78  0.16  78);   /* latency, warning-line          */
+  --chart-teal:    oklch(0.70  0.13  195);  /* throughput, secondary          */
+  --chart-violet:  oklch(0.65  0.22  295);  /* tertiary series                */
+
+  /* Motion — duration ladder (4 steps cover 95% of UI) */
+  --dur-fast:    150ms;  /* tabs, hover, focus, micro-fade           */
+  --dur-base:    200ms;  /* dialog/menu enter, scale, default        */
+  --dur-slow:    300ms;  /* drawer, sidebar collapse, composite      */
+  --dur-ambient: 500ms;  /* hero, splash, page-level                 */
+
+  /* Motion — easing curves */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);     /* enter, expand        */
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);     /* exit, collapse       */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);    /* bidirectional        */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* playful, attention   */
+
+  /* Radius — base + scale (Tailwind v4 derives sm/md/lg/xl/2xl from this) */
+  --radius:      0.625rem;
+  --radius-pill: 9999px;
+
+  /* Elevation — admin surfaces are mostly flat; reserve shadow for overlays */
+  --shadow-sm:   0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --shadow-md:   0 4px 12px -2px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.05);
+  --shadow-lg:   0 12px 32px -8px oklch(0 0 0 / 0.18), 0 4px 8px -4px oklch(0 0 0 / 0.08);
+  --shadow-glow: 0 0 0 1px var(--ring), 0 0 16px -2px oklch(from var(--ring) l c h / 0.45);
+
+  /* Z-index — single source for stacking */
+  --z-base:     0;
+  --z-sticky:   10;
+  --z-dropdown: 20;
+  --z-overlay:  30;
+  --z-modal:    50;
+  --z-popover:  60;
+  --z-toast:    80;
+  --z-tooltip:  90;
+}
+
+/* -----------------------------------------------------------------------------
+ * 2. SEMANTIC — light mode (default)
+ * -------------------------------------------------------------------------- */
+:root {
+  /* Surface — page background and elevated layers */
+  --background:        var(--gray-100);
+  --surface-1:         var(--gray-100);
+  --surface-2:         oklch(1 0 0);          /* card, panel  */
+  --surface-3:         var(--gray-200);       /* hover, muted */
+  --foreground:        var(--gray-950);
+  --card:              oklch(1 0 0);
+  --card-foreground:   var(--gray-950);
+  --popover:           oklch(1 0 0);
+  --popover-foreground: var(--gray-950);
+
+  /* Text hierarchy */
+  --text-primary:   var(--gray-950);
+  --text-secondary: var(--gray-600);
+  --text-tertiary:  var(--gray-500);
+  --text-disabled:  var(--gray-400);
+
+  /* Primary — brand action */
+  --primary:            var(--gray-900);
+  --primary-foreground: var(--gray-50);
+  --primary-glow:       oklch(from var(--primary) l c h / 0.4);
+
+  --secondary:            var(--gray-100);
+  --secondary-foreground: var(--gray-900);
+  --muted:                var(--gray-100);
+  --muted-foreground:     var(--gray-500);
+  --accent:               var(--gray-100);
+  --accent-foreground:    var(--gray-900);
+
+  /* Status — semantic intent (use these, not raw red/green/amber) */
+  --status-success:            var(--success-base);
+  --status-success-soft:       var(--success-soft);
+  --status-success-foreground: oklch(1 0 0);
+
+  --status-warning:            var(--warning-base);
+  --status-warning-soft:       var(--warning-soft);
+  --status-warning-foreground: var(--gray-950);
+
+  --status-danger:             var(--danger-base);
+  --status-danger-soft:        var(--danger-soft);
+  --status-danger-foreground:  oklch(1 0 0);
+
+  --status-info:               var(--info-base);
+  --status-info-soft:          var(--info-soft);
+  --status-info-foreground:    oklch(1 0 0);
+
+  --status-neutral:            var(--gray-500);
+  --status-neutral-soft:       var(--gray-100);
+  --status-neutral-foreground: var(--gray-50);
+
+  /* Subscription lifecycle — domain-specific aliases */
+  --sub-active:    var(--status-success);
+  --sub-expiring:  var(--status-warning);
+  --sub-exhausted: var(--status-danger);
+  --sub-expired:   var(--danger-strong);
+  --sub-paused:    var(--gray-600);
+  --sub-cancelled: var(--gray-700);
+
+  --destructive: var(--status-danger);
+
+  /* Borders + focus ring */
+  --border:        var(--gray-200);
+  --border-subtle: oklch(from var(--gray-200) l c h / 0.6);
+  --border-strong: var(--gray-300);
+  --input:         var(--gray-200);
+  --ring:          var(--gray-400);
+
+  /* Chart series — point Tailwind --color-chart-N at our palette */
+  --chart-1: var(--chart-emerald);
+  --chart-2: var(--chart-blue);
+  --chart-3: var(--chart-amber);
+  --chart-4: var(--chart-red);
+  --chart-5: var(--chart-teal);
+  --chart-6: var(--chart-violet);
+
+  /* Sidebar */
+  --sidebar:                       oklch(1 0 0);
+  --sidebar-foreground:            var(--gray-950);
+  --sidebar-primary:               var(--gray-900);
+  --sidebar-primary-foreground:    var(--gray-50);
+  --sidebar-accent:                var(--gray-100);
+  --sidebar-accent-foreground:     var(--gray-900);
+  --sidebar-border:                var(--gray-200);
+  --sidebar-ring:                  var(--gray-400);
+}
+
+/* -----------------------------------------------------------------------------
+ * 2b. SEMANTIC — dark mode
+ * -------------------------------------------------------------------------- */
+.dark {
+  /* Pure-neutral gray ramp (zero chroma) */
+  --gray-50:  oklch(0.984 0 0);
+  --gray-100: oklch(0.968 0 0);
+  --gray-200: oklch(0.929 0 0);
+  --gray-300: oklch(0.869 0 0);
+  --gray-400: oklch(0.704 0 0);
+  --gray-500: oklch(0.554 0 0);
+  --gray-600: oklch(0.446 0 0);
+  --gray-700: oklch(0.372 0 0);
+  --gray-800: oklch(0.279 0 0);
+  --gray-900: oklch(0.208 0 0);
+  --gray-950: oklch(0.129 0 0);
+
+  --background:         var(--gray-950);
+  --surface-1:          var(--gray-950);
+  --surface-2:          var(--gray-900);
+  --surface-3:          var(--gray-800);
+  --foreground:         var(--gray-50);
+  --card:               var(--gray-900);
+  --card-foreground:    var(--gray-50);
+  --popover:            var(--gray-900);
+  --popover-foreground: var(--gray-50);
+
+  --text-primary:   var(--gray-50);
+  --text-secondary: var(--gray-300);
+  --text-tertiary:  var(--gray-400);
+  --text-disabled:  var(--gray-600);
+
+  --primary:            var(--gray-50);
+  --primary-foreground: var(--gray-900);
+
+  --secondary:            var(--gray-800);
+  --secondary-foreground: var(--gray-50);
+  --muted:                var(--gray-800);
+  --muted-foreground:     var(--gray-400);
+  --accent:               var(--gray-800);
+  --accent-foreground:    var(--gray-50);
+
+  /* Status — dark mode tuned (slightly lighter base, softer soft) */
+  --status-success:            oklch(0.76 0.17 150);
+  --status-success-soft:       oklch(0.35 0.10 150 / 0.4);
+  --status-warning:            oklch(0.84 0.16 92);
+  --status-warning-soft:       oklch(0.40 0.10 92 / 0.4);
+  --status-danger:             oklch(0.70 0.20 25);
+  --status-danger-soft:        oklch(0.35 0.12 25 / 0.4);
+  --status-info:               oklch(0.68 0.19 260);
+  --status-info-soft:          oklch(0.32 0.10 260 / 0.4);
+  --status-neutral:            var(--gray-400);
+  --status-neutral-soft:       var(--gray-800);
+
+  --sub-active:    var(--status-success);
+  --sub-expiring:  var(--status-warning);
+  --sub-exhausted: var(--status-danger);
+  --sub-expired:   oklch(0.50 0.18 22);
+  --sub-paused:    var(--gray-500);
+  --sub-cancelled: var(--gray-600);
+
+  --destructive: var(--status-danger);
+
+  --border:        oklch(1 0 0 / 10%);
+  --border-subtle: oklch(1 0 0 / 6%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --input:         oklch(1 0 0 / 15%);
+  --ring:          var(--gray-500);
+
+  /* Chart series — dark-tuned (slightly brighter for contrast) */
+  --chart-1: oklch(0.75 0.16 155);
+  --chart-2: oklch(0.72 0.16 250);
+  --chart-3: oklch(0.80 0.17 78);
+  --chart-4: oklch(0.70 0.19 22);
+  --chart-5: oklch(0.74 0.13 195);
+  --chart-6: oklch(0.70 0.20 295);
+
+  --sidebar:                       var(--gray-900);
+  --sidebar-foreground:            var(--gray-50);
+  --sidebar-primary:               oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground:    var(--gray-50);
+  --sidebar-accent:                var(--gray-800);
+  --sidebar-accent-foreground:     var(--gray-50);
+  --sidebar-border:                oklch(1 0 0 / 10%);
+  --sidebar-ring:                  var(--gray-500);
+}
+
+/* -----------------------------------------------------------------------------
+ * 3. BRIDGE — Tailwind v4 @theme inline
+ * Exposes semantic vars as Tailwind utilities (bg-status-success, text-text-primary, ...)
+ * -------------------------------------------------------------------------- */
+@theme inline {
+  /* Font + radius */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --radius-sm:  calc(var(--radius) - 4px);
+  --radius-md:  calc(var(--radius) - 2px);
+  --radius-lg:  var(--radius);
+  --radius-xl:  calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-pill: var(--radius-pill);
+
+  /* Surface + text */
+  --color-background:         var(--background);
+  --color-foreground:         var(--foreground);
+  --color-surface-1:          var(--surface-1);
+  --color-surface-2:          var(--surface-2);
+  --color-surface-3:          var(--surface-3);
+  --color-card:               var(--card);
+  --color-card-foreground:    var(--card-foreground);
+  --color-popover:            var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-text-primary:   var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary:  var(--text-tertiary);
+  --color-text-disabled:  var(--text-disabled);
+
+  /* Brand */
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+
+  /* Status */
+  --color-status-success:            var(--status-success);
+  --color-status-success-soft:       var(--status-success-soft);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-warning:            var(--status-warning);
+  --color-status-warning-soft:       var(--status-warning-soft);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-danger:             var(--status-danger);
+  --color-status-danger-soft:        var(--status-danger-soft);
+  --color-status-danger-foreground:  var(--status-danger-foreground);
+  --color-status-info:               var(--status-info);
+  --color-status-info-soft:          var(--status-info-soft);
+  --color-status-info-foreground:    var(--status-info-foreground);
+  --color-status-neutral:            var(--status-neutral);
+  --color-status-neutral-soft:       var(--status-neutral-soft);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+
+  /* Subscription lifecycle */
+  --color-sub-active:    var(--sub-active);
+  --color-sub-expiring:  var(--sub-expiring);
+  --color-sub-exhausted: var(--sub-exhausted);
+  --color-sub-expired:   var(--sub-expired);
+  --color-sub-paused:    var(--sub-paused);
+  --color-sub-cancelled: var(--sub-cancelled);
+
+  /* Destructive (shadcn-compat) */
+  --color-destructive: var(--destructive);
+
+  /* Borders */
+  --color-border:        var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-input:         var(--input);
+  --color-ring:          var(--ring);
+
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  /* Sidebar */
+  --color-sidebar:                    var(--sidebar);
+  --color-sidebar-foreground:         var(--sidebar-foreground);
+  --color-sidebar-primary:            var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent:             var(--sidebar-accent);
+  --color-sidebar-accent-foreground:  var(--sidebar-accent-foreground);
+  --color-sidebar-border:             var(--sidebar-border);
+  --color-sidebar-ring:               var(--sidebar-ring);
+
+  /* Motion durations + easings (consumed as `duration-fast`, `ease-spring`) */
+  --animate-duration-fast:    var(--dur-fast);
+  --animate-duration-base:    var(--dur-base);
+  --animate-duration-slow:    var(--dur-slow);
+  --animate-duration-ambient: var(--dur-ambient);
+
+  --ease-out-quart:  var(--ease-out);
+  --ease-in-quart:   var(--ease-in);
+  --ease-spring:     var(--ease-spring);
+
+  /* Shadow */
+  --shadow-glow: var(--shadow-glow);
+}

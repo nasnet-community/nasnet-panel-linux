@@ -1,0 +1,772 @@
+syntax = "proto3";
+
+package nodeagent;
+
+option go_package = "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb";
+
+// NodeAgent service provides remote management capabilities for xray-core nodes
+service NodeAgent {
+  // ===== Lifecycle Management =====
+  
+  // GetStatus returns the current status of the node agent and xray process
+  rpc GetStatus(Empty) returns (NodeStatus);
+  
+  // StartXray starts the xray-core process
+  rpc StartXray(Empty) returns (CommandResponse);
+  
+  // StopXray gracefully stops the xray-core process
+  rpc StopXray(StopRequest) returns (CommandResponse);
+  
+  // RestartXray restarts the xray-core process (stop + start)
+  rpc RestartXray(RestartRequest) returns (CommandResponse);
+  
+  // ===== Configuration Management =====
+  
+  // PushConfig receives a full xray config.json and writes it to disk
+  rpc PushConfig(ConfigPayload) returns (CommandResponse);
+
+  // UpdateXrayAPIConfig updates the Xray API address in the agent config
+  rpc UpdateXrayAPIConfig(XrayAPIConfigPayload) returns (CommandResponse);
+  
+  // GetCurrentConfig returns the current config.json contents
+  rpc GetCurrentConfig(Empty) returns (ConfigPayload);
+  
+  // ValidateConfig validates a config without applying it
+  rpc ValidateConfig(ConfigPayload) returns (ValidationResult);
+  
+  // ===== User Management (proxied to local Xray gRPC API) =====
+  
+  // AddUser adds a user to an inbound handler
+  rpc AddUser(UserPayload) returns (CommandResponse);
+  
+  // RemoveUser removes a user from an inbound handler
+  rpc RemoveUser(UserPayload) returns (CommandResponse);
+  
+  // ListUsers returns all users on a specific inbound
+  rpc ListUsers(InboundSelector) returns (UserList);
+  
+  // ===== Statistics & Monitoring =====
+  
+  // GetSystemStats returns CPU, memory, disk, and network statistics
+  rpc GetSystemStats(Empty) returns (SystemStats);
+
+  // GetHostInfo returns static host information (OS, CPU, etc.)
+  rpc GetHostInfo(Empty) returns (HostInfo);
+  
+  // GetXrayStats returns xray traffic statistics
+  rpc GetXrayStats(StatsRequest) returns (XrayStats);
+  
+  // StreamLogs streams xray access/error logs in real-time
+  rpc StreamLogs(LogRequest) returns (stream LogEntry);
+  
+  // ===== Health & Versioning =====
+  
+  // HealthCheck performs a health check on the agent and xray
+  rpc HealthCheck(Empty) returns (HealthResponse);
+  
+  // GetVersion returns agent and xray version information
+  rpc GetVersion(Empty) returns (VersionInfo);
+  
+  // ===== Connection Management =====
+  
+  // Heartbeat maintains a bidirectional heartbeat stream for connection monitoring
+  rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);
+  
+  // ===== Self-Update =====
+  
+  // SelfUpdate receives a new agent binary and updates in-place
+  rpc SelfUpdate(UpdateRequest) returns (UpdateResponse);
+
+  // GetSelfChecksum returns the SHA256 checksum of the running binary
+  rpc GetSelfChecksum(Empty) returns (ChecksumResponse);
+
+  // ===== Xray Version Management =====
+
+  // UpdateXrayBinary downloads and installs a specific xray-core version
+  rpc UpdateXrayBinary(UpdateXrayRequest) returns (CommandResponse);
+
+  // ===== Cleanup =====
+
+  // Uninstall removes the agent and xray from the system (Destructive)
+  rpc Uninstall(Empty) returns (CommandResponse);
+
+  // Wipe removes our footprint from the node and (optionally when mode=NUKE)
+  // performs scorched-earth destruction. Unary — returns once everything is
+  // done, just before the agent self-destructs.
+  rpc Wipe(NukeRequest) returns (NukeReport);
+
+  // Nuke is the streaming variant: one NukePhaseResult per phase as they run,
+  // then a terminal NukeReport, then the stream closes as the agent exits.
+  // Reverse-mode agents return Unimplemented — callers should fall back to Wipe.
+  rpc Nuke(NukeRequest) returns (stream NukeProgress);
+
+  // ===== SSH Management =====
+
+  // GetSSHStatus returns the current status of the SSH service
+  rpc GetSSHStatus(Empty) returns (SSHStatus);
+
+  // UpdateSSHConfig updates the SSH configuration (port, enabled)
+  rpc UpdateSSHConfig(SSHConfigPayload) returns (CommandResponse);
+
+  // ClearSSHLogs clears/truncates the SSH auth logs
+  rpc ClearSSHLogs(Empty) returns (CommandResponse);
+
+  // RestartSSH restarts the SSH service
+  rpc RestartSSH(Empty) returns (CommandResponse);
+
+  // ===== Terminal Access =====
+
+  // OpenTerminal starts an interactive PTY shell session (bidirectional stream)
+  rpc OpenTerminal(stream TerminalInput) returns (stream TerminalOutput);
+
+  // ===== Certificate Management =====
+
+  // UpdateCertDenylist pushes a list of revoked certificate serial numbers
+  rpc UpdateCertDenylist(CertDenylist) returns (CommandResponse);
+
+  // ===== File Management =====
+
+  // WriteFile writes content to a file on the node
+  rpc WriteFile(FilePayload) returns (CommandResponse);
+
+  // ===== Outbound Testing =====
+
+  // TestOutbound tests outbound connectivity via xray-knife
+  rpc TestOutbound(OutboundTestRequest) returns (OutboundTestResponse);
+
+  // ===== Online User Detection (statsUserOnline) =====
+
+  // GetUserOnlineIPs returns the IPs currently connected for a specific user
+  rpc GetUserOnlineIPs(UserEmailRequest) returns (OnlineIPsResponse);
+
+  // GetAllUsersOnlineIPs returns, in one call, the IP→timestamp map for
+  // every currently-online user. Used by the scheduler's stats sweep to
+  // collapse the N+1 GetUserOnlineIPs round-trips into a single RPC —
+  // the agent still hits Xray's stats API once per user locally, but
+  // the expensive hub↔agent latency is paid once.
+  rpc GetAllUsersOnlineIPs(Empty) returns (AllOnlineIPsResponse);
+
+  // ===== Tools =====
+
+  // GenerateVLESSKeys runs xray vlessenc to generate VLESS encryption keys (X25519 + ML-KEM-768)
+  rpc GenerateVLESSKeys(Empty) returns (VLESSKeysResponse);
+
+  // ===== Bandwidth Shaping =====
+
+  // SetupBandwidth initializes TC bandwidth shaping on the node
+  rpc SetupBandwidth(BandwidthRequest) returns (CommandResponse);
+
+  // TeardownBandwidth removes TC bandwidth shaping from the node
+  rpc TeardownBandwidth(Empty) returns (CommandResponse);
+
+  // ===== Buffered Traffic =====
+
+  // GetBufferedTraffic returns time-bucketed traffic records from the agent's local buffer
+  rpc GetBufferedTraffic(Empty) returns (BufferedTrafficStats);
+
+  // AckBufferedTraffic acknowledges receipt of traffic records up to a given timestamp
+  rpc AckBufferedTraffic(AckTrafficRequest) returns (CommandResponse);
+
+  // ===== Access Logs =====
+
+  // GetAccessLogs returns recent parsed access log entries, optionally filtered by email
+  rpc GetAccessLogs(AccessLogRequest) returns (AccessLogResponse);
+
+  // GetBufferedAccessLogSummary returns hourly aggregated access log summaries
+  rpc GetBufferedAccessLogSummary(Empty) returns (BufferedAccessLogSummary);
+
+  // AckBufferedAccessLogSummary acknowledges processing of summaries up to a timestamp
+  rpc AckBufferedAccessLogSummary(AckAccessLogSummaryRequest) returns (CommandResponse);
+
+  // ===== Starlink Monitoring =====
+
+  // GetStarlinkStatus queries the local Starlink dish for real-time status
+  rpc GetStarlinkStatus(StarlinkRequest) returns (StarlinkStatusResponse);
+
+  // GetStarlinkObstructionMap queries the local Starlink dish for its obstruction map
+  rpc GetStarlinkObstructionMap(StarlinkRequest) returns (StarlinkObstructionMapResponse);
+
+  // ===== Command Execution =====
+
+  // ExecuteCommand runs a shell command on the node and returns the result
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+}
+
+// ===== Terminal Messages =====
+
+message TerminalInput {
+  oneof payload {
+    bytes data = 1;            // Raw terminal input bytes (keystrokes)
+    TerminalResize resize = 2; // Terminal resize event
+    bool close = 3;            // Close session signal
+  }
+}
+
+message TerminalResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalOutput {
+  oneof payload {
+    bytes data = 1;       // Raw terminal output bytes
+    int32 exit_code = 2;  // Shell exited with this code
+    string error = 3;     // Internal error message
+  }
+}
+
+// ===== Common Messages =====
+
+
+message Empty {}
+
+message CommandResponse {
+  bool success = 1;
+  string message = 2;
+  string error_code = 3;  // Machine-readable error code
+}
+
+// ===== SSH Messages =====
+
+message SSHStatus {
+  bool enabled = 1;        // Is systemd service enabled/active
+  int32 port = 2;          // Current port in sshd_config
+  bool is_active = 3;      // Is the service actually running
+}
+
+message SSHConfigPayload {
+  bool enabled = 1;
+  int32 port = 2;
+}
+
+// ===== Lifecycle Messages =====
+
+message NodeStatus {
+  bool xray_running = 1;
+  string xray_version = 2;
+  int64 xray_pid = 3;
+  int64 uptime_seconds = 4;
+  string config_hash = 5;  // MD5 hash of current config for drift detection
+  int64 last_restart_time = 6;  // Unix timestamp
+}
+
+message StopRequest {
+  int32 graceful_timeout_seconds = 1;  // 0 = default (10s), -1 = force kill
+}
+
+message RestartRequest {
+  bool validate_config = 1;  // Validate config before restart
+  int32 graceful_timeout_seconds = 2;
+}
+
+// ===== Configuration Messages =====
+
+message ConfigPayload {
+  string json_content = 1;  // Full config.json content
+  string checksum = 2;      // Optional MD5 checksum for verification
+}
+
+message FilePayload {
+  string path = 1;          // Absolute path to write to
+  bytes content = 2;        // File content
+  int32 perm = 3;           // Unix permissions (e.g. 0644)
+}
+
+message XrayAPIConfigPayload {
+  string api_addr = 1;      // New API address (e.g. 127.0.0.1:10086)
+}
+
+message ValidationResult {
+  bool valid = 1;
+  repeated string errors = 2;
+  repeated string warnings = 3;
+}
+
+// ===== User Management Messages =====
+
+message UserPayload {
+  string inbound_tag = 1;
+  string email = 2;
+  string uuid = 3;
+  string protocol = 4;     // vmess, vless, trojan
+  string flow = 5;         // xtls-rprx-vision (for vless)
+  int32 level = 6;         // User level (default 0)
+  int32 alter_id = 7;      // For vmess only
+  string encryption = 8;
+}
+
+message InboundSelector {
+  string inbound_tag = 1;
+  string email_filter = 2;  // Optional email pattern filter
+}
+
+message UserList {
+  repeated UserInfo users = 1;
+}
+
+message UserInfo {
+  string email = 1;
+  string uuid = 2;
+  string protocol = 3;
+  string flow = 4;
+  int32 level = 5;
+  string encryption = 6;
+}
+
+// ===== Statistics Messages =====
+
+message SystemStats {
+  // CPU
+  double cpu_usage_percent = 1;       // Overall CPU usage (0-100)
+  repeated double cpu_per_core = 2;   // Per-core usage
+  
+  // Memory
+  uint64 memory_total_bytes = 3;
+  uint64 memory_used_bytes = 4;
+  uint64 memory_available_bytes = 5;
+  double memory_usage_percent = 6;
+  
+  // Swap
+  uint64 swap_total_bytes = 7;
+  uint64 swap_used_bytes = 8;
+  
+  // Disk
+  uint64 disk_total_bytes = 9;
+  uint64 disk_used_bytes = 10;
+  uint64 disk_free_bytes = 11;
+  double disk_usage_percent = 12;
+  
+  // Network I/O (since last query)
+  uint64 network_recv_bytes = 13;
+  uint64 network_sent_bytes = 14;
+  
+  // Rate (bytes per second)
+  uint64 network_recv_rate = 19;
+  uint64 network_sent_rate = 20;
+  
+  // Load averages (1, 5, 15 minutes)
+  double load_avg_1 = 15;
+  double load_avg_5 = 16;
+  double load_avg_15 = 17;
+  
+  // System uptime
+  int64 system_uptime_seconds = 18;
+
+  // Network details
+  uint64 tcp_conns = 21;
+  uint64 udp_conns = 22;
+  uint64 fd_count = 23;
+}
+
+message StatsRequest {
+  bool reset = 1;           // Reset stats after reading
+  string pattern = 2;       // Optional pattern filter for stats query
+}
+
+message HostInfo {
+  string hostname = 1;
+  string os = 2;
+  string platform = 3;        // e.g. "ubuntu", "centos"
+  string platform_family = 4; // e.g. "debian", "rhel"
+  string platform_version = 5;
+  string kernel_version = 6;
+  string arch = 7;
+  
+  string virtualization_system = 8; // e.g. "kvm", "docker", "none"
+  string virtualization_role = 9;   // "guest" or "host"
+  
+  string cpu_model_name = 10;
+  int32 cpu_cores = 11;             // Logical cores
+  
+  uint64 total_memory = 12;
+  uint64 total_swap = 13;
+  
+  int64 boot_time = 14;             // Unix timestamp
+}
+
+message XrayStats {
+  map<string, int64> user_uplink = 1;    // email -> bytes uploaded
+  map<string, int64> user_downlink = 2;  // email -> bytes downloaded
+  map<string, int64> inbound_uplink = 3;
+  map<string, int64> inbound_downlink = 4;
+  int64 total_uplink = 5;
+  int64 total_downlink = 6;
+  map<string, int64> outbound_uplink = 7;    // outbound tag -> bytes uploaded
+  map<string, int64> outbound_downlink = 8;  // outbound tag -> bytes downloaded
+}
+
+// ===== Logging Messages =====
+
+message LogRequest {
+  LogType log_type = 1;
+  int32 tail_lines = 2;     // Number of historical lines to send first
+  bool follow = 3;          // Continue streaming new logs
+}
+
+enum LogType {
+  LOG_TYPE_ALL = 0;
+  LOG_TYPE_ACCESS = 1;
+  LOG_TYPE_ERROR = 2;
+}
+
+message LogEntry {
+  int64 timestamp = 1;      // Unix timestamp in milliseconds
+  LogType log_type = 2;
+  string level = 3;         // debug, info, warning, error
+  string message = 4;
+  string source = 5;        // Component that generated the log
+}
+
+// ===== Health Messages =====
+
+message HealthResponse {
+  HealthStatus status = 1;
+  string message = 2;
+  map<string, ComponentHealth> components = 3;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNKNOWN = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_DEGRADED = 2;
+  HEALTH_STATUS_UNHEALTHY = 3;
+}
+
+message ComponentHealth {
+  HealthStatus status = 1;
+  string message = 2;
+  int64 last_check_time = 3;
+}
+
+message VersionInfo {
+  string agent_version = 1;
+  string agent_commit = 2;
+  string agent_build_time = 3;
+  string xray_version = 4;
+  string go_version = 5;
+  string os = 6;
+  string arch = 7;
+}
+
+// ===== Heartbeat Messages =====
+
+message HeartbeatPing {
+  int64 timestamp = 1;
+  int64 sequence = 2;
+}
+
+message HeartbeatPong {
+  int64 timestamp = 1;
+  int64 sequence = 2;
+  int64 rtt_ms = 3;         // Round-trip time calculated by agent
+  NodeStatus status = 4;    // Include status in heartbeat for efficiency
+  string node_uuid = 5;     // Agent's configured UUID for identity validation
+}
+
+// ===== Self-Update Messages =====
+
+message UpdateRequest {
+  bytes binary_content = 1;   // New agent binary content (gzipped)
+  string checksum = 2;        // SHA256 checksum of uncompressed binary
+  string version = 3;         // New version string
+  bool restart_after = 4;     // Restart agent after update (default: true)
+  bytes signature = 5;        // Ed25519 signature of the uncompressed binary
+  bool force = 6;             // Skip downgrade protection
+}
+
+message CertDenylist {
+  repeated string revoked_serial_numbers = 1;  // Hex-encoded certificate serial numbers
+  string denylist_hash = 2;                    // SHA256 hash of sorted serial list for sync verification
+}
+
+message UpdateResponse {
+  bool success = 1;
+  string message = 2;
+  string old_version = 3;
+  string new_version = 4;
+}
+
+message ChecksumResponse {
+  string checksum = 1;  // SHA256 hex string
+  string path = 2;      // Path to the verified binary
+}
+
+message UpdateXrayRequest {
+  string version = 1;       // e.g. "26.2.6" (no v prefix)
+  bool restart_after = 2;   // Restart xray after update
+  string download_url = 3;    // Hub URL to download xray binary from
+  string download_token = 4;  // Short-lived deployment token for auth
+  string checksum = 5;        // Expected SHA256 hex checksum
+}
+
+// ===== Outbound Testing Messages =====
+
+message OutboundTestRequest {
+  string config_link = 1;     // Protocol link (vless://..., vmess://..., etc.)
+  string test_url = 2;        // URL to fetch through proxy (default: https://www.google.com/generate_204)
+  int32 timeout_seconds = 3;  // Per-test timeout (default: 10s)
+}
+
+message OutboundTestResponse {
+  bool success = 1;
+  int64 latency_ms = 2;       // Round-trip latency in milliseconds
+  int32 status_code = 3;      // HTTP status code (204 for generate_204)
+  string ip = 4;              // Exit IP (if available)
+  string country = 5;         // Exit country code (optional)
+  string error = 6;           // Error message if failed
+  string message = 7;         // Human-readable summary
+}
+
+// ===== Online User Detection Messages =====
+
+message UserEmailRequest {
+  string email = 1;
+}
+
+message OnlineIPsResponse {
+  map<string, int64> ips = 1;  // IP -> connection timestamp
+}
+
+// AllOnlineIPsResponse carries per-user IP maps for every currently
+// online user. The outer map is keyed by email; each value is the
+// same IP→timestamp map shape as OnlineIPsResponse.
+message AllOnlineIPsResponse {
+  map<string, OnlineIPMap> users = 1;
+}
+
+message OnlineIPMap {
+  map<string, int64> ips = 1;  // IP -> connection timestamp
+}
+
+// ===== Buffered Traffic Messages =====
+
+message TrafficRecord {
+  int64 timestamp = 1;                    // Unix seconds (start of hour bucket)
+  map<string, int64> user_uplink = 2;
+  map<string, int64> user_downlink = 3;
+  map<string, int64> outbound_uplink = 4;
+  map<string, int64> outbound_downlink = 5;
+  int64 total_uplink = 6;
+  int64 total_downlink = 7;
+  map<string, int64> inbound_uplink = 8;
+  map<string, int64> inbound_downlink = 9;
+}
+
+message BufferedTrafficStats {
+  repeated TrafficRecord records = 1;
+  int64 buffer_start_time = 2;
+  int64 buffer_end_time = 3;
+}
+
+message AckTrafficRequest {
+  int64 acked_through_timestamp = 1;
+}
+
+// ===== VLESS Key Generation Messages =====
+
+message VLESSKeyPair {
+  string label = 1;       // e.g. "X25519, not Post-Quantum" or "ML-KEM-768, Post-Quantum"
+  string decryption = 2;  // Server-side key (Private Key/ID)
+  string encryption = 3;  // Client-side key (Public Key/ID)
+}
+
+message VLESSKeysResponse {
+  repeated VLESSKeyPair keys = 1;
+}
+
+// ===== Bandwidth Shaping Messages =====
+
+message BandwidthRequest {
+  string interface_name = 1;  // Network interface (e.g. "eth0")
+  int32 total_bw_mbps = 2;   // Total link bandwidth in Mbps
+}
+
+// ===== Access Log Messages =====
+
+message AccessLogEntry {
+  int64  timestamp    = 1;  // Unix seconds
+  string source_ip    = 2;  // Client IP
+  string status       = 3;  // "accepted" or "rejected"
+  string network      = 4;  // "tcp" or "udp"
+  string domain       = 5;  // Destination domain or IP
+  int32  port         = 6;  // Destination port
+  string inbound_tag  = 7;
+  string outbound_tag = 8;
+  string email        = 9;  // Subscription ConfigEmail
+}
+
+message AccessLogRequest {
+  string email = 1;   // Filter by email (empty = all users)
+  int32  limit = 2;   // Max entries to return (default 100, max 1000)
+}
+
+message AccessLogResponse {
+  repeated AccessLogEntry entries = 1;
+}
+
+// ===== Access Log Summary Messages =====
+
+message AccessLogHourlySummary {
+  string email            = 1;
+  int64  hour_timestamp   = 2;   // Unix seconds, start of hour
+  int64  accepted_count   = 3;
+  int64  rejected_count   = 4;
+  int64  tcp_count        = 5;
+  int64  udp_count        = 6;
+  map<string, int64> domains           = 7;   // domain → count (top 100, accepted)
+  map<string, int64> source_ips        = 8;   // IP → count (top 100, all traffic)
+  map<string, int64> rejected_domains  = 9;   // domain → count (top 20, rejected)
+}
+
+message BufferedAccessLogSummary {
+  repeated AccessLogHourlySummary entries = 1;
+}
+
+message AckAccessLogSummaryRequest {
+  int64 up_to_timestamp = 1;
+  // GracePeriodSeconds is the hub-configured grace window the agent
+  // should apply to future GetBuffered calls. 0 = use agent default.
+  int32 grace_period_seconds = 2;
+  // MaxDomainsPerHour caps the per-row top-N for accepted domains.
+  // 0 = use agent default.
+  int32 max_domains_per_hour = 3;
+  // MaxRejectedDomainsPerHour caps the per-row top-N for rejected domains.
+  // 0 = use agent default.
+  int32 max_rejected_domains_per_hour = 4;
+  // MaxSourceIpsPerHour caps the per-row top-N for source IPs.
+  // 0 = use agent default.
+  int32 max_source_ips_per_hour = 5;
+}
+
+// ===== Starlink Monitoring Messages =====
+
+message StarlinkRequest {
+  string dish_address = 1;  // e.g. "192.168.100.1:9200"
+}
+
+message StarlinkStatusResponse {
+  bool available = 1;
+  // Performance
+  float downlink_throughput_bps = 2;
+  float uplink_throughput_bps = 3;
+  float pop_ping_latency_ms = 4;
+  float pop_ping_drop_rate = 5;
+  int32 eth_speed_mbps = 6;
+  // Obstruction
+  float obstruction_fraction = 7;
+  bool currently_obstructed = 8;
+  float avg_prolonged_obstruction_duration_s = 9;
+  float avg_prolonged_obstruction_interval_s = 10;
+  // Alerts
+  bool alert_thermal_throttle = 11;
+  bool alert_thermal_shutdown = 12;
+  bool alert_is_heating = 13;
+  bool alert_slow_ethernet = 14;
+  bool alert_power_save_idle = 15;
+  bool alert_motors_stuck = 16;
+  bool alert_no_ethernet_link = 17;
+  bool alert_unexpected_location = 18;
+  bool alert_roaming = 19;
+  bool alert_mast_not_near_vertical = 20;
+  bool alert_install_pending = 21;
+  // Device
+  string hardware_version = 22;
+  string software_version = 23;
+  string country_code = 24;
+  uint64 uptime_s = 25;
+  int32 boot_count = 26;
+  // GPS
+  bool gps_valid = 27;
+  uint32 gps_sats = 28;
+  // Alignment
+  float tilt_angle_deg = 29;
+  float boresight_azimuth_deg = 30;
+  float boresight_elevation_deg = 31;
+  // Software update
+  string software_update_state = 32;
+  float software_update_progress = 33;
+  // Outage
+  string outage_cause = 34;
+  uint64 outage_duration_ns = 35;
+  // Service
+  string disablement_code = 36;
+  string mobility_class = 37;
+  string class_of_service = 38;
+  // Satellite context
+  uint32 cell_id = 39;
+  uint32 satellite_id = 40;
+  uint32 gateway_id = 41;
+  bool on_backup_beam = 42;
+  // Location
+  double latitude = 43;
+  double longitude = 44;
+  double altitude = 45;
+  // Signal
+  bool is_snr_above_noise_floor = 46;
+  bool is_snr_persistently_low = 47;
+}
+
+message StarlinkObstructionMapResponse {
+  uint32 num_rows = 1;
+  uint32 num_cols = 2;
+  repeated float snr = 3;
+  float max_theta_deg = 4;
+  string reference_frame = 5;
+}
+
+// ===== Command Execution Messages =====
+
+message ExecuteCommandRequest {
+    string command = 1;         // Shell command to run (via sh -c)
+    int32 timeout_seconds = 2;  // Max execution time in seconds (0 = default 60s)
+}
+
+message ExecuteCommandResponse {
+    bool success = 1;       // true if exit code == 0
+    int32 exit_code = 2;    // Process exit code
+    string stdout = 3;      // Captured stdout (truncated to 4KB)
+    string stderr = 4;      // Captured stderr (truncated to 4KB)
+}
+
+// ===== Node Nuke Messages =====
+
+enum NukeMode {
+  NUKE_MODE_WIPE = 0;
+  NUKE_MODE_NUKE = 1;
+}
+
+message NukeRequest {
+  NukeMode mode       = 1;
+  bool     shred_root = 2; // NUKE mode only; default false
+  bool     dry_run    = 3;
+}
+
+message NukePhaseResult {
+  string phase         = 1;
+  bool   ok            = 2;
+  bool   skipped       = 3;
+  string error         = 4;
+  int64  duration_ms   = 5;
+  int64  bytes_removed = 6;
+  int32  files_removed = 7;
+}
+
+message NukeReport {
+  enum Result {
+    NUKE_RESULT_SUCCESS = 0;
+    NUKE_RESULT_PARTIAL = 1;
+    NUKE_RESULT_FAILED  = 2;
+  }
+  string                   mode              = 1;
+  bool                     dry_run           = 2;
+  repeated NukePhaseResult phases            = 3;
+  Result                   result            = 4;
+  int64                    total_duration_ms = 5;
+}
+
+message NukeProgress {
+  oneof event {
+    NukePhaseResult phase = 1;
+    NukeReport      done  = 2;
+  }
+}

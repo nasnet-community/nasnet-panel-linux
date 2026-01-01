@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Extract version info
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$GITHUB_OUTPUT"
+
+      - name: Build frontend (must run before Go build for go:embed)
+        run: |
+          cd web-panel
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Download geofiles (must run before Go build for go:embed)
+        run: make geofiles
+
+      - name: Build nasnet-panel binaries (with embedded frontend)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          LDFLAGS="-w -s \
+            -X github.com/nasnet-community/nasnet-panel-linux/cmd.Version=${{ steps.meta.outputs.version }} \
+            -X github.com/nasnet-community/nasnet-panel-linux/cmd.Commit=${{ steps.meta.outputs.commit }} \
+            -X github.com/nasnet-community/nasnet-panel-linux/cmd.BuildTime=${{ steps.meta.outputs.build_time }}"
+
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o nasnet-panel-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o nasnet-panel-linux-arm64 .
+
+      - name: Build nasnet-tool binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          LDFLAGS="-w -s"
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o nasnet-tool-linux-amd64 ./cmd/nasnet-tool
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o nasnet-tool-linux-arm64 ./cmd/nasnet-tool
+
+      - name: Download PostgreSQL standalone
+        id: pgsql_dl
+        run: |
+          PG_VERSION="17.9.0"
+          echo "pg_version=${PG_VERSION}" >> "$GITHUB_OUTPUT"
+          PG_BASE="https://github.com/theseus-rs/postgresql-binaries/releases/download/${PG_VERSION}"
+          curl -fSL -o pgsql-linux-x64.tar.gz \
+            "${PG_BASE}/postgresql-${PG_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fSL -o pgsql-linux-arm64.tar.gz \
+            "${PG_BASE}/postgresql-${PG_VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+
+      - name: Download Xray binaries
+        id: xray_dl
+        run: |
+          XRAY_VERSION="26.2.6"
+          echo "xray_version=${XRAY_VERSION}" >> "$GITHUB_OUTPUT"
+          XRAY_BASE="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}"
+          curl -fSL -o xray-64.zip "${XRAY_BASE}/Xray-linux-64.zip"
+          curl -fSL -o xray-arm64.zip "${XRAY_BASE}/Xray-linux-arm64-v8a.zip"
+          mkdir -p xray-64 xray-arm64
+          unzip -o xray-64.zip xray -d xray-64
+          unzip -o xray-arm64.zip xray -d xray-arm64
+          mv xray-64/xray xray-linux-amd64
+          mv xray-arm64/xray xray-linux-arm64
+          chmod +x xray-linux-amd64 xray-linux-arm64
+
+      - name: Package offline bundles
+        run: |
+          PG_VERSION="${{ steps.pgsql_dl.outputs.pg_version }}"
+          XRAY_VERSION="${{ steps.xray_dl.outputs.xray_version }}"
+
+          for arch in amd64 arm64; do
+            pg_arch="x64"; [[ "$arch" == "arm64" ]] && pg_arch="arm64"
+
+            dir="nasnet-panel-offline-linux-${arch}"
+            mkdir -p "$dir"/{bin/xray,runtime}
+
+            # Go binary (frontend is embedded via go:embed)
+            cp "nasnet-panel-linux-${arch}" "$dir/bin/nasnet-panel"
+            cp "nasnet-tool-linux-${arch}" "$dir/bin/nasnet-tool"
+            chmod +x "$dir/bin/nasnet-panel" "$dir/bin/nasnet-tool"
+            cp xray-linux-amd64 "$dir/bin/xray/"
+            cp xray-linux-arm64 "$dir/bin/xray/"
+            chmod +x "$dir"/bin/xray/*
+            cp nasnet-tool.sh "$dir/"
+            cp scripts/offline-install.sh "$dir/install.sh"
+            chmod +x "$dir/install.sh"
+
+            # Runtimes (PostgreSQL only — Node.js no longer needed)
+            cp "pgsql-linux-${pg_arch}.tar.gz" "$dir/runtime/"
+
+            # Metadata
+            printf '{\n  "version": "%s",\n  "arch": "%s",\n  "build_time": "%s",\n  "commit": "%s",\n  "pgsql_version": "%s",\n  "xray_version": "%s"\n}\n' \
+              "${{ steps.meta.outputs.version }}" \
+              "${arch}" \
+              "${{ steps.meta.outputs.build_time }}" \
+              "${{ steps.meta.outputs.commit }}" \
+              "${PG_VERSION}" \
+              "${XRAY_VERSION}" \
+              > "$dir/.bundle-manifest"
+
+            # Checksums (inside bundle)
+            cd "$dir"
+            sha256sum install.sh nasnet-tool.sh bin/nasnet-panel bin/nasnet-tool bin/xray/* runtime/* .bundle-manifest > checksums.txt
+            cd ..
+
+            # Create tarball
+            tar -czf "${dir}.tar.gz" "$dir"
+          done
+
+      - name: Generate checksums
+        run: |
+          sha256sum \
+            nasnet-panel-linux-amd64 \
+            nasnet-panel-linux-arm64 \
+            nasnet-tool-linux-amd64 \
+            nasnet-tool-linux-arm64 \
+            > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.meta.outputs.version }}
+          generate_release_notes: true
+          files: |
+            nasnet-panel-linux-amd64
+            nasnet-panel-linux-arm64
+            nasnet-tool-linux-amd64
+            nasnet-tool-linux-arm64
+            checksums.txt
+            nasnet-tool.sh
+            nasnet-panel-offline-linux-amd64.tar.gz
+            nasnet-panel-offline-linux-arm64.tar.gz

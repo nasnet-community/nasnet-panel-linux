@@ -1,0 +1,10 @@
+global:
+  scrape_interval: __SCRAPE_INTERVAL__
+  evaluation_interval: __SCRAPE_INTERVAL__
+
+scrape_configs:
+  - job_name: "nasnet"
+    metrics_path: __METRICS_PATH__
+    scrape_interval: __SCRAPE_INTERVAL__
+    static_configs:
+      - targets: ["__METRICS_TARGET__"]

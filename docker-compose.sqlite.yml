@@ -1,0 +1,22 @@
+# SQLite override — use with: docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up
+# Requires .env to contain: DB_DRIVER=sqlite  DB_PATH=/app/data/nasnet_panel.db
+services:
+  app:
+    environment:
+      - DB_DRIVER=sqlite
+      - DB_PATH=/app/data/nasnet_panel.db
+    volumes:
+      - sqlite_data:/app/data
+      - backups_data:/app/data/backups
+      - acme_data:/app/data/acme
+    depends_on: !override
+      # No postgres dependency in SQLite mode
+      {}
+
+  # Disable the postgres service
+  postgres:
+    profiles:
+      - disabled
+
+volumes:
+  sqlite_data:
