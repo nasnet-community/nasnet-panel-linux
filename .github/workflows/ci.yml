@@ -30,11 +30,13 @@ jobs:
       # the //go:embed directives. In CI we short-circuit the download and
       # use empty stubs — nothing under test resolves routing via geoip,
       # and the embedded bytes are only consumed at runtime by agent nodes.
-      - name: Stub geofiles
+      - name: Stub embedded assets
         run: |
           mkdir -p pkg/geofiles/embedded
           : > pkg/geofiles/embedded/geoip.dat
           : > pkg/geofiles/embedded/geosite.dat
+          mkdir -p web-panel/dist
+          : > web-panel/dist/.gitkeep
 
       - name: go vet
         run: go vet ./...
