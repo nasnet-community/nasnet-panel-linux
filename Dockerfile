@@ -1,11 +1,8 @@
 # Stage: Build frontend
 FROM --platform=$BUILDPLATFORM node:22-alpine AS web-builder
-# Pin pnpm to the major version that produced web-panel/pnpm-lock.yaml
-# (lockfileVersion 9.0). pnpm@latest may introduce stricter build-script
-# handling that rejects unaltered lockfiles.
-RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 WORKDIR /web
-COPY web-panel/package.json web-panel/pnpm-lock.yaml ./
+COPY web-panel/package.json web-panel/pnpm-lock.yaml web-panel/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web-panel/ ./
 RUN pnpm build
