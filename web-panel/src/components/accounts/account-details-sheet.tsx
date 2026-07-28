@@ -277,7 +277,7 @@ export function AccountDetailsSheet() {
                                 </div>
                                 {account.inbound?.node ? (
                                     <Link
-                                        href={`/nodes/${account.inbound.node.id}`}
+                                        to={`/nodes/${account.inbound.node.id}`}
                                         className="text-sm font-medium hover:underline text-primary"
                                     >
                                         {account.inbound.node.name}
@@ -323,7 +323,7 @@ export function AccountDetailsSheet() {
                                 </div>
                                 {account.subscription?.user ? (
                                     <Link
-                                        href={`/users/${account.subscription.user.id}`}
+                                        to={`/users/${account.subscription.user.id}`}
                                         className="text-sm font-medium hover:underline text-primary"
                                     >
                                         {account.subscription.user.username}

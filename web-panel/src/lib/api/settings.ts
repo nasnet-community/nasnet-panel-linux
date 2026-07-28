@@ -65,7 +65,7 @@ export const settingsApi = {
         if (!resp.success || !resp.data) {
             return { success: false, error: resp.error || "Failed to test TLS certificate" };
         }
-        return { success: true, ...resp.data };
+        return { ...resp.data, success: true };
     },
 
     getRetentionStats: async (): Promise<RetentionStat[]> => {

@@ -68,7 +68,7 @@ export function ConnectionChart({ data }: ConnectionChartProps) {
                             const s = String(label)
                             return s === "now" ? "Now" : `${s.replace("-", "")} ago`
                         }}
-                        formatter={(value: any, name: string | undefined) => [formatCount(Number(value)), name || ""]}
+                        formatter={(value, name) => [formatCount(Number(value)), String(name ?? "")]}
                         cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
                     />
                     <Area

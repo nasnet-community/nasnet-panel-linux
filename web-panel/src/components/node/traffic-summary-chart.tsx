@@ -132,7 +132,7 @@ export function TrafficSummaryChart({ nodeId, enabled = true }: TrafficSummaryCh
                                 contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }}
                                 itemStyle={{ fontSize: "12px", fontWeight: 600, padding: "2px 0" }}
                                 labelStyle={{ color: c.tooltipLabel, fontSize: "10px", marginBottom: "8px" }}
-                                formatter={(value: any, name: string | undefined) => [formatBytes(Number(value)), name || ""]}
+                                formatter={(value, name) => [formatBytes(Number(value)), String(name ?? "")]}
                                 cursor={{ fill: "rgba(255,255,255,0.03)" }}
                             />
                             <Bar

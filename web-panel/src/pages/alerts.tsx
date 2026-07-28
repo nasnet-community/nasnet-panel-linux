@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { PageHeader } from "@/components/shared/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -173,7 +173,7 @@ function ThresholdDialog({ rule, onClose }: { rule: AlertRule | null; onClose: (
     const [cooldown, setCooldown] = useState<number>(0)
 
     // Reset draft state each time a new rule opens.
-    useMemo(() => {
+    useEffect(() => {
         if (rule) {
             setDraft({ ...rule.threshold })
             setCooldown(rule.cooldown_sec)

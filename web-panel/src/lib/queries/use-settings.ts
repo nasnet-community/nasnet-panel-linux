@@ -116,11 +116,15 @@ export function useChangePassword() {
 // Per-table row counts + oldest-row dates, shown under each retention field.
 // Low churn (row counts only drift at the stats-sync cadence), so 1-minute
 // staleTime is plenty; the cleanup mutation invalidates this key on success.
-export function useRetentionStats() {
+// `enabled` lets callers keep the hook call unconditional (React requires a
+// stable hook order) while still skipping the request. Categories other than
+// Data Retention pass false so they don't pay the query cost on mount.
+export function useRetentionStats(enabled = true) {
     return useQuery({
         queryKey: queryKeys.retentionStats(),
         queryFn: async () => await settingsApi.getRetentionStats(),
         staleTime: 60 * 1000,
+        enabled,
     })
 }
 

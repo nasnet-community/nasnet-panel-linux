@@ -13,7 +13,7 @@ export interface ChatMessage {
     created_at: string
 }
 
-export interface ChatSearchHit extends ChatMessage {}
+export type ChatSearchHit = ChatMessage
 
 export interface ChatReaction {
     id: number

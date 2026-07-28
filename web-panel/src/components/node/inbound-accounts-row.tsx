@@ -543,7 +543,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                                                 <div className="flex items-center gap-1.5">
                                                     {userName ? (
                                                         <Link
-                                                            href={`/users/${user?.id}`}
+                                                            to={`/users/${user?.id}`}
                                                             onClick={(e) => e.stopPropagation()}
                                                             className="font-medium text-sm hover:text-primary hover:underline transition-colors"
                                                         >

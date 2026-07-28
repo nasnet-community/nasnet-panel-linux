@@ -4,7 +4,8 @@ on:
   pull_request:
   push:
     branches:
-      - master
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -70,6 +71,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.app.json
 
       - name: Unit tests
         run: pnpm test

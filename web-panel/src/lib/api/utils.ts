@@ -1,7 +1,7 @@
 type ParamValue = string | number | boolean | number[] | string[] | undefined | null
 
-export function buildQueryString(
-  params: Record<string, ParamValue>,
+export function buildQueryString<T extends { [K in keyof T]: ParamValue }>(
+  params: T,
   pagination?: { page?: number; perPage?: number }
 ): string {
   const sp = new URLSearchParams()

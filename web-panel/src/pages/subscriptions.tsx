@@ -427,7 +427,7 @@ export default function SubscriptionsPage() {
                             isRefreshing={isRefetching}
                             dataUpdatedAt={dataUpdatedAt}
                         />
-                        <Button onClick={openCreateManualDialog} size="sm" className="h-9">
+                        <Button onClick={() => openCreateManualDialog()} size="sm" className="h-9">
                             <Plus className="w-4 h-4 mr-1.5" />
                             New Subscription
                         </Button>
@@ -1208,7 +1208,7 @@ export default function SubscriptionsPage() {
                     {selectedSubscriptions.size === 0 && (
                         <motion.button
                             className="fixed bottom-[100px] right-6 z-40 md:hidden w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95"
-                            onClick={openCreateManualDialog}
+                            onClick={() => openCreateManualDialog()}
                             initial={{ scale: 0, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0, opacity: 0 }}

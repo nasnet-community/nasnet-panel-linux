@@ -3,6 +3,12 @@ interface AppConfig {
   appName: string
 }
 
+declare global {
+  interface Window {
+    __CONFIG__?: AppConfig
+  }
+}
+
 export function getConfig(): AppConfig {
   return window.__CONFIG__ || { basePath: "", appName: "NasNet Panel" }
 }

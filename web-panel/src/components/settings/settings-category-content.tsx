@@ -50,27 +50,12 @@ export function SettingsCategoryContent({
     const meta = categoryMeta[category]
     const Icon = meta?.icon || HiOutlineCog
 
-    if (category === "maintenance") {
-        return (
-            <div className="space-y-6">
-                <div className="flex items-center gap-3">
-                    <Icon className="h-6 w-6 text-muted-foreground" />
-                    <div>
-                        <h2 className="text-xl font-semibold">Maintenance</h2>
-                        {meta?.description && (
-                            <p className="text-sm text-muted-foreground">{meta.description}</p>
-                        )}
-                    </div>
-                </div>
-                <MaintenancePanel settings={settings} />
-            </div>
-        )
-    }
-
     // Retention stats only fetched for the Data Retention category so other
-    // categories don't pay the query cost on mount.
+    // categories don't pay the query cost on mount. The hook is still called
+    // unconditionally — React requires a stable hook order across renders —
+    // and `enabled` suppresses the request itself.
     const isDataCategory = category === "data"
-    const { data: retentionStats } = useRetentionStats()
+    const { data: retentionStats } = useRetentionStats(isDataCategory)
     const runRetentionCleanup = useRunRetentionCleanup()
 
     // Indexed lookup so the per-field render is O(1) instead of O(N) per card.
@@ -145,6 +130,26 @@ export function SettingsCategoryContent({
 
         return grouped
     }, [category, settings, serverSettings])
+
+    // Maintenance renders its own panel instead of the grouped-settings layout.
+    // This branch sits below the hooks above so hook order stays identical for
+    // every category.
+    if (category === "maintenance") {
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center gap-3">
+                    <Icon className="h-6 w-6 text-muted-foreground" />
+                    <div>
+                        <h2 className="text-xl font-semibold">Maintenance</h2>
+                        {meta?.description && (
+                            <p className="text-sm text-muted-foreground">{meta.description}</p>
+                        )}
+                    </div>
+                </div>
+                <MaintenancePanel settings={settings} />
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-4">

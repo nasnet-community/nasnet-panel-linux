@@ -84,8 +84,8 @@ function DiffBlock({ oldValues, newValues }: { oldValues?: string; newValues?: s
 
     let oldObj: Record<string, any> = {}
     let newObj: Record<string, any> = {}
-    try { if (oldValues) oldObj = JSON.parse(oldValues) } catch { }
-    try { if (newValues) newObj = JSON.parse(newValues) } catch { }
+    try { if (oldValues) oldObj = JSON.parse(oldValues) } catch { /* malformed audit payload — keep {} */ }
+    try { if (newValues) newObj = JSON.parse(newValues) } catch { /* malformed audit payload — keep {} */ }
 
     const allKeys = [...new Set([...Object.keys(oldObj), ...Object.keys(newObj)])]
     if (allKeys.length === 0) return null

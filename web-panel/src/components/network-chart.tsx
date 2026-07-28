@@ -62,7 +62,7 @@ export function NetworkChart({ data }: NetworkChartProps) {
                             const s = String(label);
                             return s === 'now' ? 'Now' : `${s.replace('-', '')} ago`;
                         }}
-                        formatter={(value: any, name: string | undefined) => [formatSpeed(Number(value)), name || ""]}
+                        formatter={(value, name) => [formatSpeed(Number(value)), String(name ?? "")]}
                         cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
                     />
                     <Area

@@ -63,7 +63,7 @@ export function NetworkTab({ form }: NetworkTabProps) {
                                     field.onChange(val)
                                     if (val === "reality") {
                                         const currentNetwork = form.getValues("network")
-                                        if (!REALITY_NETWORKS.includes(currentNetwork)) {
+                                        if (!currentNetwork || !REALITY_NETWORKS.includes(currentNetwork)) {
                                             form.setValue("network", "tcp")
                                         }
                                     }

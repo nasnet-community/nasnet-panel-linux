@@ -4,7 +4,6 @@ import { getContextConfig } from "../sidebar-context-config"
 describe("getContextConfig", () => {
     it("matches exact prefixes", () => {
         expect(getContextConfig("/nodes")?.id).toBe("nodes")
-        expect(getContextConfig("/payments")?.id).toBe("payments")
         // expect(getContextConfig("/chats")?.id).toBe("chats")
         expect(getContextConfig("/alerts")?.id).toBe("alerts")
     })

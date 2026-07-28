@@ -26,9 +26,9 @@ export function Sparkline({
         [data]
     )
 
-    if (data.length < 2) return null
-
     const gradientId = useMemo(() => `spark-${Math.random().toString(36).slice(2, 8)}`, [])
+
+    if (data.length < 2) return null
 
     return (
         <div className={cn("w-full", className)} style={{ height }}>

@@ -1,6 +1,6 @@
 import { useExhaustionPrediction } from "@/lib/queries/use-analytics"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, Infinity } from "lucide-react"
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, Infinity as InfinityIcon } from "lucide-react"
 
 function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B"
@@ -27,7 +27,7 @@ export function ExhaustionPredictionCard({ subscriptionId, compact = false }: Ex
         if (compact) {
             return (
                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <Infinity className="w-3 h-3" />
+                    <InfinityIcon className="w-3 h-3" />
                     Unlimited
                 </span>
             )
@@ -35,7 +35,7 @@ export function ExhaustionPredictionCard({ subscriptionId, compact = false }: Ex
         return (
             <div className="rounded-lg border border-border/50 bg-muted/20 p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Infinity className="w-4 h-4" />
+                    <InfinityIcon className="w-4 h-4" />
                     <span>Unlimited data plan</span>
                 </div>
             </div>
