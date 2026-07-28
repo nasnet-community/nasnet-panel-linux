@@ -1,5 +1,5 @@
 # Stage: Build frontend
-FROM node:22-alpine AS web-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web-builder
 # Pin pnpm to the major version that produced web-panel/pnpm-lock.yaml
 # (lockfileVersion 9.0). pnpm@latest may introduce stricter build-script
 # handling that rejects unaltered lockfiles.
@@ -11,7 +11,7 @@ COPY web-panel/ ./
 RUN pnpm build
 
 # Build stage
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -40,9 +40,17 @@ COPY --from=web-builder /web/dist ./web-panel/dist
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
+ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main .
+    set -eux; \
+    export CGO_ENABLED=0 GOOS=linux; \
+    if [ -n "${TARGETARCH:-}" ]; then export GOARCH="${TARGETARCH}"; fi; \
+    go build -ldflags="-w -s \
+      -X github.com/nasnet-community/nasnet-panel-linux/cmd.Version=${VERSION} \
+      -X github.com/nasnet-community/nasnet-panel-linux/cmd.Commit=${COMMIT} \
+      -X github.com/nasnet-community/nasnet-panel-linux/cmd.BuildTime=${BUILD_TIME}" \
+      -o main .
 
 # Final stage
 FROM alpine:3.21
