@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,10 +34,34 @@ func TestLinkToken_WrongSecretFails(t *testing.T) {
 func TestLinkToken_TamperedFails(t *testing.T) {
 	const secret = "test-secret"
 	tok := SignLinkToken(7, secret, 15*time.Minute)
-	// flip the last character
-	bad := tok[:len(tok)-1] + map[bool]string{true: "A", false: "B"}[tok[len(tok)-1] != 'A']
+	payload := tok[len(linkTokenPrefix):]
+	flipped := "A"
+	if payload[0] == 'A' {
+		flipped = "B"
+	}
+	bad := linkTokenPrefix + flipped + payload[1:]
 	if _, err := ParseLinkToken(bad, secret); err == nil {
 		t.Fatal("expected error for tampered token")
+	}
+}
+
+func TestLinkToken_NonCanonicalEncodingFails(t *testing.T) {
+	const secret = "test-secret"
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+	tok := SignLinkToken(13, secret, 15*time.Minute)
+	last := tok[len(tok)-1]
+	idx := strings.IndexByte(alphabet, last)
+	if idx < 0 {
+		t.Fatalf("final char %q outside base64url alphabet", last)
+	}
+	if idx%4 != 0 {
+		t.Fatalf("encoder produced non-canonical final char %q (index %d)", last, idx)
+	}
+
+	malleated := tok[:len(tok)-1] + string(alphabet[idx+1])
+	if _, err := ParseLinkToken(malleated, secret); err == nil {
+		t.Fatal("expected error for non-canonical token encoding")
 	}
 }
 

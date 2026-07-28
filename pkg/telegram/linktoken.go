@@ -40,7 +40,7 @@ func ParseLinkToken(token, secret string) (uint64, error) {
 	if !strings.HasPrefix(token, linkTokenPrefix) {
 		return 0, ErrBadLinkToken
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(token, linkTokenPrefix))
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(token, linkTokenPrefix))
 	if err != nil || len(raw) != 32 {
 		return 0, ErrBadLinkToken
 	}
