@@ -146,7 +146,7 @@ jobs:
             > checksums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: ${{ steps.meta.outputs.version }}
           prerelease: ${{ contains(github.ref_name, '-') }}
