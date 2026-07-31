@@ -2,10 +2,7 @@
 
 The admin panel is a React single-page app **embedded in the `nasnet-panel` binary** and served at your `APP_BASE_URL`. There is nothing extra to deploy — when `nasnet-panel` is running, the panel is available.
 
-> [!NOTE]
-> **Screenshot placeholder.** Add images under [`./assets/`](./assets/) (e.g. `panel-dashboard.png`, `panel-server.png`) and reference them here.
->
-> <!-- ![Dashboard](./assets/panel-dashboard.png) -->
+![Dashboard](./assets/panel-dashboard.png)
 
 ## Signing in
 
@@ -26,6 +23,34 @@ To keep the panel off the web root, set `APP_PANEL_BASE_PATH` (e.g. `/x7k2m9`) s
 | **Support chat** | Talk to users in-app. |
 | **Settings** | Panel-editable configuration (ACME, proxy, metrics auth, base path, log level, …). |
 | **Backups** | Create and restore database backups. |
+
+## Screens
+
+**Server** — Xray process control, live host stats, and the inbound list.
+
+![Server overview](./assets/panel-server.png)
+
+![Inbounds](./assets/panel-inbounds.png)
+
+**Subscriptions & accounts** — quota, expiry, and the Xray accounts each subscription owns.
+
+![Subscriptions](./assets/panel-subscriptions.png)
+
+![Accounts](./assets/panel-accounts.png)
+
+**Users**
+
+![Users](./assets/panel-users.png)
+
+**Alerts & audit log**
+
+![Alerts](./assets/panel-alerts.png)
+
+![Audit log](./assets/panel-audit-log.png)
+
+**Access history** — searchable per-subscription domain history.
+
+![Access history](./assets/panel-access-history.png)
 
 ## Notable conveniences
 

@@ -42,4 +42,4 @@ If you are new here, read the pages in this order:
 | Panel | `nasnet-panel` | The whole app: HTTP API, embedded web + subscriber panel, Telegram bot, scheduler, database, and supervision of the local Xray-core process |
 | Tool | `nasnet-tool.sh` | Interactive installer & operations TUI |
 
-> **Assets.** Screenshots referenced in these docs live under [`./assets/`](./assets/). They are placeholders — add your own images with the same filenames and they will render automatically.
+> **Assets.** Screenshots referenced in these docs live under [`./assets/`](./assets/). Replacing one is a drop-in — keep the filename and the docs pick it up.

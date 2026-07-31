@@ -20,10 +20,18 @@ One binary. It runs the admin web panel, manages a local Xray-core process, serv
 
 ---
 
-> [!NOTE]
-> **Screenshot placeholder.** Drop a panel screenshot at `docs/assets/panel-dashboard.png` and it will render here.
->
-> <!-- ![NasNet Panel dashboard](docs/assets/panel-dashboard.png) -->
+![NasNet Panel dashboard](docs/assets/panel-dashboard.png)
+
+<details>
+<summary><b>More screenshots</b> — subscriptions, inbounds, server, alerts, subscriber panel</summary>
+
+| | |
+|---|---|
+| **Subscriptions** — status, quota, expiry at a glance<br>![Subscriptions](docs/assets/panel-subscriptions.png) | **Inbounds** — protocols, transports, per-inbound traffic<br>![Inbounds](docs/assets/panel-inbounds.png) |
+| **Server** — live CPU/RAM/disk, traffic, Xray process<br>![Server](docs/assets/panel-server.png) | **Alerts** — rules and fired/resolved events<br>![Alerts](docs/assets/panel-alerts.png) |
+| **Access history** — searchable per-subscription domain log<br>![Access history](docs/assets/panel-access-history.png) | **Subscriber panel** — the self-serve page at `/sub/{key}`<br>![Subscriber panel](docs/assets/panel-subscriber.png) |
+
+</details>
 
 ## What is it?
 

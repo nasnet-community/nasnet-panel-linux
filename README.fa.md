@@ -20,10 +20,18 @@
 
 ---
 
-> [!NOTE]
-> **جای اسکرین‌شات.** یک اسکرین‌شات از پنل را در مسیر `docs/assets/panel-dashboard.png` قرار دهید تا اینجا نمایش داده شود.
->
-> <!-- ![داشبورد پنل NasNet](docs/assets/panel-dashboard.png) -->
+![داشبورد پنل NasNet](docs/assets/panel-dashboard.png)
+
+<details>
+<summary><b>اسکرین‌شات‌های بیشتر</b> — اشتراک‌ها، اینباندها، سرور، هشدارها، پنل کاربر</summary>
+
+| | |
+|---|---|
+| **اشتراک‌ها** — وضعیت، سهمیه و انقضا در یک نگاه<br>![اشتراک‌ها](docs/assets/panel-subscriptions.png) | **اینباندها** — پروتکل‌ها، ترنسپورت‌ها و ترافیک هر اینباند<br>![اینباندها](docs/assets/panel-inbounds.png) |
+| **سرور** — مصرف زندهٔ CPU/RAM/دیسک، ترافیک و پروسهٔ Xray<br>![سرور](docs/assets/panel-server.png) | **هشدارها** — قواعد و رویدادهای فایرشده/حل‌شده<br>![هشدارها](docs/assets/panel-alerts.png) |
+| **تاریخچهٔ دسترسی** — جست‌وجوی دامنه‌ها به تفکیک اشتراک<br>![تاریخچهٔ دسترسی](docs/assets/panel-access-history.png) | **پنل کاربر** — صفحهٔ سلف‌سرویس در `/sub/{key}`<br>![پنل کاربر](docs/assets/panel-subscriber.png) |
+
+</details>
 
 <div dir="rtl" align="right">
 
