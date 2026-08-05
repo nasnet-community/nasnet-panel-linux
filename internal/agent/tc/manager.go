@@ -1,6 +1,7 @@
 package tc
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -8,33 +9,50 @@ import (
 	"sync"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	"github.com/sirupsen/logrus"
 )
 
-// Manager handles Linux TC (Traffic Control) HTB setup for bandwidth rate limiting.
-// It creates per-tier TC classes keyed by the firewall mark that Xray sets via sockopt.mark.
+// Manager handles Linux TC (Traffic Control) HTB setup for bandwidth rate
+// limiting. It creates per-tier TC classes keyed by the firewall mark Xray
+// sets via sockopt.mark.
+//
+// Marks are shared with dual-WAN routing (see pkg/netmark), so every handle
+// here is masked to the tier field and the conntrack save/restore pair lives
+// in the owned nftables table rather than in iptables.
 type Manager struct {
-	iface   string // egress interface (e.g. "eth0")
+	iface   string // ingress uplink
 	totalBW int    // total link bandwidth in Mbps
+	nft     *nft.Manager
 	mu      sync.Mutex
 	log     *logrus.Entry
 }
 
 // NewManager creates a TC manager for the given interface and link speed.
-func NewManager(iface string, totalBW int) *Manager {
+func NewManager(iface string, totalBW int, nftMgr *nft.Manager) (*Manager, error) {
+	if nftMgr == nil {
+		return nil, fmt.Errorf("tc: nft manager is required")
+	}
 	if totalBW <= 0 {
 		totalBW = 1000 // default 1 Gbps
 	}
 	return &Manager{
 		iface:   iface,
 		totalBW: totalBW,
+		nft:     nftMgr,
 		log:     logrus.WithField("component", "tc"),
-	}
+	}, nil
+}
+
+// FilterHandle returns the masked `tc ... fw` handle for a tier mark.
+func (m *Manager) FilterHandle(tierMark uint32) string {
+	return fmt.Sprintf("0x%x/%s", tierMark, netmark.Hex(netmark.MaskTier))
 }
 
 // Setup configures the full TC HTB qdisc + per-tier classes + nftables mark-to-class filters.
 // Safe to call multiple times — it tears down existing config first.
-func (m *Manager) Setup() error {
+func (m *Manager) Setup(ctx context.Context) error {
 	if runtime.GOOS != "linux" {
 		m.log.Warn("TC bandwidth shaping is only supported on Linux, skipping")
 		return nil
@@ -95,20 +113,18 @@ func (m *Manager) Setup() error {
 		}).Debug("Added TC class for bandwidth tier")
 	}
 
-	// 5. Filters: match fwmark to TC class
+	// 5. Filters: match the tier field of the fwmark to a TC class.
 	for _, tier := range bandwidth.RateLimitedTiers() {
-		mark := fmt.Sprintf("0x%x", tier.Mark)
+		handle := m.FilterHandle(tier.Mark)
 		classID := tier.TCClassID()
 		if err := m.run("tc", "filter", "add", "dev", m.iface, "parent", "1:", "protocol", "ip",
-			"prio", "1", "handle", mark, "fw", "classid", classID); err != nil {
-			return fmt.Errorf("failed to add filter for mark %s: %w", mark, err)
+			"prio", "1", "handle", handle, "fw", "classid", classID); err != nil {
+			return fmt.Errorf("failed to add filter for handle %s: %w", handle, err)
 		}
 	}
 
-	// 6. Connmark: save outgoing packet marks to conntrack, restore on incoming packets.
-	// This is required so that return traffic (download) inherits the mark from the
-	// outgoing socket (SO_MARK set by Xray's sockopt.mark).
-	if err := m.setupConnmark(); err != nil {
+	// 6. Connmark: save outgoing packet marks to conntrack, restore on inbound.
+	if err := m.setupConnmark(ctx); err != nil {
 		m.log.WithError(err).Warn("Connmark setup failed (non-fatal, download shaping may not work)")
 	}
 
@@ -121,35 +137,20 @@ func (m *Manager) Setup() error {
 	return nil
 }
 
-// setupConnmark adds iptables mangle rules to save/restore packet marks via conntrack.
-// When Xray sets SO_MARK on an outbound socket, outgoing packets carry that mark.
-// Connmark saves it to the conntrack entry, so return packets get the same mark.
-func (m *Manager) setupConnmark() error {
-	// Clean up any existing rules first (ignore errors)
-	m.teardownConnmark()
-
-	// Save non-zero marks from outgoing packets to conntrack
-	if err := m.run("iptables", "-t", "mangle", "-A", "POSTROUTING",
-		"-m", "mark", "!", "--mark", "0", "-j", "CONNMARK", "--save-mark"); err != nil {
-		return fmt.Errorf("failed to add CONNMARK save rule: %w", err)
+// setupConnmark enables the masked conntrack save/restore pair in the owned
+// nftables table. Xray sets SO_MARK on outbound sockets; the save rule copies
+// that mark into conntrack and the restore rule puts it back on inbound
+// packets, which is what makes download shaping work.
+//
+// Masked to netmark.MaskAll, and in nftables rather than iptables, because the
+// same conntrack mark word also carries the dual-WAN group selector and the
+// inbound ingress pin. The old unmasked iptables restore overwrote both.
+func (m *Manager) setupConnmark(ctx context.Context) error {
+	if err := m.nft.Update(ctx, func(rs *nft.Ruleset) { rs.Connmark = true }); err != nil {
+		return fmt.Errorf("failed to enable connmark chains: %w", err)
 	}
-
-	// Restore marks from conntrack to incoming packets
-	if err := m.run("iptables", "-t", "mangle", "-A", "PREROUTING",
-		"-j", "CONNMARK", "--restore-mark"); err != nil {
-		return fmt.Errorf("failed to add CONNMARK restore rule: %w", err)
-	}
-
-	m.log.Info("Connmark iptables rules configured")
+	m.log.Info("Connmark nftables chains configured")
 	return nil
-}
-
-// teardownConnmark removes the connmark iptables rules.
-func (m *Manager) teardownConnmark() {
-	_ = m.run("iptables", "-t", "mangle", "-D", "POSTROUTING",
-		"-m", "mark", "!", "--mark", "0", "-j", "CONNMARK", "--save-mark")
-	_ = m.run("iptables", "-t", "mangle", "-D", "PREROUTING",
-		"-j", "CONNMARK", "--restore-mark")
 }
 
 // setupIngress configures IFB device for download traffic shaping
@@ -172,9 +173,14 @@ func (m *Manager) setupIngress() error {
 
 	// Redirect ingress to IFB.
 	// Use "action connmark" to restore the conntrack mark to the packet's skb->mark
-	// BEFORE the redirect. TC ingress runs before iptables PREROUTING, so the
-	// CONNMARK --restore-mark rule hasn't fired yet at this point. Without the TC
-	// connmark action, packets arrive at IFB with fwmark=0 and no HTB class matches.
+	// BEFORE the redirect. The tc ingress qdisc runs ahead of every netfilter
+	// prerouting hook, so the owned table's mangle_pre restore rule has not fired
+	// yet at this point. Without the tc connmark action, packets arrive at IFB with
+	// fwmark=0 and no HTB class matches.
+	//
+	// This action takes no mask — it copies the ct mark word whole. That is why
+	// netmark keeps the reserved nibble permanently zero: nothing this action can
+	// import is junk. See pkg/netmark for the layout.
 	_ = m.run("modprobe", "act_connmark")
 	if err := m.run("tc", "filter", "add", "dev", m.iface, "parent", "ffff:", "protocol", "ip",
 		"u32", "match", "u32", "0", "0",
@@ -216,13 +222,13 @@ func (m *Manager) setupIngress() error {
 		}
 	}
 
-	// Filters on IFB matching fwmark
+	// Filters on IFB matching the tier field of the fwmark
 	for _, tier := range bandwidth.RateLimitedTiers() {
-		mark := fmt.Sprintf("0x%x", tier.Mark)
+		handle := m.FilterHandle(tier.Mark)
 		classID := tier.TCClassID()
 		if err := m.run("tc", "filter", "add", "dev", ifb, "parent", "1:", "protocol", "ip",
-			"prio", "1", "handle", mark, "fw", "classid", classID); err != nil {
-			return fmt.Errorf("failed to add IFB filter for mark %s: %w", mark, err)
+			"prio", "1", "handle", handle, "fw", "classid", classID); err != nil {
+			return fmt.Errorf("failed to add IFB filter for handle %s: %w", handle, err)
 		}
 	}
 
@@ -231,7 +237,7 @@ func (m *Manager) setupIngress() error {
 }
 
 // Teardown removes all TC configuration from the interface
-func (m *Manager) Teardown() error {
+func (m *Manager) Teardown(ctx context.Context) error {
 	if runtime.GOOS != "linux" {
 		return nil
 	}
@@ -241,8 +247,11 @@ func (m *Manager) Teardown() error {
 
 	m.log.WithField("interface", m.iface).Info("Tearing down TC bandwidth shaping")
 
-	// Remove connmark iptables rules
-	m.teardownConnmark()
+	// Drop the connmark chains from the owned table. This is a table replace,
+	// not a rule-by-rule delete, so it cannot leave duplicates behind.
+	if err := m.nft.Update(ctx, func(rs *nft.Ruleset) { rs.Connmark = false }); err != nil {
+		m.log.WithError(err).Warn("Failed to remove connmark chains")
+	}
 
 	var errs []string
 	if err := m.run("tc", "qdisc", "del", "dev", m.iface, "root"); err != nil {
