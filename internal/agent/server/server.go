@@ -30,6 +30,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/traffic"
 	agentxray "github.com/nasnet-community/nasnet-panel-linux/internal/agent/xray"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -70,6 +71,9 @@ type Server struct {
 
 	// Bandwidth shaping (TC)
 	tcManager *agenttc.Manager
+
+	// The single writer of `table inet nasnet`
+	nftManager *nft.Manager
 
 	// Access log capture (per-subscription DNS logs)
 	accessLogCollector *accesslog.Collector
@@ -120,11 +124,16 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		statsCollect:  statsCollect,
 		xrayClient:    xrayClient,
 		deniedSerials: make(map[string]bool),
+		nftManager:    nft.NewManager(nft.NewCmdApplier("")),
 	}
 
 	// Initialize bandwidth shaping (TC)
 	if cfg.Bandwidth.Enabled && cfg.Bandwidth.Interface != "" {
-		s.tcManager = agenttc.NewManager(cfg.Bandwidth.Interface, cfg.Bandwidth.TotalBW)
+		tcMgr, err := agenttc.NewManager(cfg.Bandwidth.Interface, cfg.Bandwidth.TotalBW, s.nftManager)
+		if err != nil {
+			return nil, fmt.Errorf("bandwidth manager: %w", err)
+		}
+		s.tcManager = tcMgr
 	}
 
 	// Initialize access log collector (per-subscription DNS logs)
@@ -159,7 +168,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 // StartBackgroundServices starts the background services (xray auto-start, TC setup,
 // traffic collector, access log collector). It is called by Start() and can also be
 // called independently in reverse mode before the gRPC server is set up.
-func (s *Server) StartBackgroundServices() {
+func (s *Server) StartBackgroundServices(ctx context.Context) {
 	// Auto-start xray if a config file exists (handles agent restart, self-update, reboot)
 	if _, err := os.Stat(s.xrayMgr.ConfigPath()); err == nil {
 		logrus.Info("Auto-starting xray process")
@@ -170,7 +179,7 @@ func (s *Server) StartBackgroundServices() {
 
 	// Setup TC bandwidth shaping
 	if s.tcManager != nil {
-		if err := s.tcManager.Setup(); err != nil {
+		if err := s.tcManager.Setup(ctx); err != nil {
 			logrus.WithError(err).Warn("Failed to setup TC bandwidth shaping (non-fatal)")
 		}
 	}
@@ -221,7 +230,7 @@ func (s *Server) Start() error {
 
 	logrus.WithField("addr", s.cfg.ListenAddr).Info("Starting gRPC server")
 
-	s.StartBackgroundServices()
+	s.StartBackgroundServices(context.Background())
 
 	// Start serving (blocks)
 	return s.grpcServer.Serve(listener)
@@ -229,7 +238,7 @@ func (s *Server) Start() error {
 
 func (s *Server) StartLocal(ctx context.Context) error {
 	logrus.Info("Starting node agent in process (single bin mode, no grpc listener)")
-	s.StartBackgroundServices()
+	s.StartBackgroundServices(ctx)
 	return nil
 }
 
@@ -252,7 +261,7 @@ func (s *Server) Stop(ctx context.Context) {
 
 	// Teardown TC bandwidth shaping
 	if s.tcManager != nil {
-		if err := s.tcManager.Teardown(); err != nil {
+		if err := s.tcManager.Teardown(ctx); err != nil {
 			logrus.WithError(err).Warn("Failed to teardown TC bandwidth shaping")
 		}
 	}
@@ -946,8 +955,16 @@ func (s *Server) SetupBandwidth(ctx context.Context, req *pb.BandwidthRequest) (
 		totalBW = s.cfg.Bandwidth.TotalBW
 	}
 
-	s.tcManager = agenttc.NewManager(iface, totalBW)
-	if err := s.tcManager.Setup(); err != nil {
+	tcMgr, err := agenttc.NewManager(iface, totalBW, s.nftManager)
+	if err != nil {
+		return &pb.CommandResponse{
+			Success:   false,
+			Message:   "Failed to create bandwidth manager",
+			ErrorCode: err.Error(),
+		}, nil
+	}
+	s.tcManager = tcMgr
+	if err := s.tcManager.Setup(ctx); err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
 			Message:   "Failed to setup bandwidth shaping",
@@ -967,7 +984,7 @@ func (s *Server) TeardownBandwidth(ctx context.Context, _ *pb.Empty) (*pb.Comman
 		return &pb.CommandResponse{Success: true, Message: "No bandwidth shaping configured"}, nil
 	}
 
-	if err := s.tcManager.Teardown(); err != nil {
+	if err := s.tcManager.Teardown(ctx); err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
 			Message:   "Failed to teardown bandwidth shaping",
