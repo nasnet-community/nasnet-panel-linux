@@ -102,6 +102,7 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(newNetCmd())
 }
 
 // WebFS holds the embedded SPA filesystem. Set by main before Execute().
