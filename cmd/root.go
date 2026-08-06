@@ -30,6 +30,7 @@ import (
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
+	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
@@ -192,8 +193,23 @@ func runServe(cmd *cobra.Command, args []string) {
 		&jwt.RevokedToken{},
 		&adminDomain.OnlineUsersSnapshot{},
 		&wireguardDomain.WGPeer{},
+		&networkDomain.NetworkInterface{},
+		&networkDomain.WANGroup{},
+		&networkDomain.WANGroupMember{},
+		&networkDomain.LANConfig{},
+		&networkDomain.WifiConfig{},
+		&networkDomain.PortForward{},
+		&networkDomain.ApplyRecord{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
+	}
+
+	// Singleton roles need a DB constraint
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_netif_singleton_role
+		  ON network_interfaces (node_id, role)
+		  WHERE role IN ('lan','mgmt') AND deleted_at IS NULL`).Error; err != nil {
+		log.WithError(err).Warn("Failed to create ux_netif_singleton_role")
 	}
 
 	// Create GIN indexes for PostgreSQL (unsupported in SQLite)
