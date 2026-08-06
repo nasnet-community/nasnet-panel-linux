@@ -23,6 +23,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/accesslog"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/middleware"
+	agentnetif "github.com/nasnet-community/nasnet-panel-linux/internal/agent/netif"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/process"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/ssh"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/stats"
@@ -797,6 +798,31 @@ func (s *Server) GetHostInfo(ctx context.Context, _ *pb.Empty) (*pb.HostInfo, er
 		TotalSwap:            info.TotalSwap,
 		BootTime:             int64(info.BootTime),
 	}, nil
+}
+
+// ListNetInterfaces enumerates the box's NICs plus their live addresses.
+func (s *Server) ListNetInterfaces(_ context.Context) ([]agentnetif.Interface, map[string][]string, error) {
+	ifs, err := agentnetif.List(agentnetif.Opts{PermMAC: permanentMAC})
+	if err != nil {
+		return nil, nil, fmt.Errorf("enumerate interfaces: %w", err)
+	}
+
+	addrs := make(map[string][]string, len(ifs))
+	links, err := net.Interfaces()
+	if err == nil {
+		for _, l := range links {
+			as, aerr := l.Addrs()
+			if aerr != nil {
+				continue
+			}
+			list := make([]string, 0, len(as))
+			for _, a := range as {
+				list = append(list, a.String())
+			}
+			addrs[l.Name] = list
+		}
+	}
+	return ifs, addrs, nil
 }
 
 // GetXrayStats returns xray traffic statistics from the buffered store.
@@ -1582,17 +1608,6 @@ func (s *Server) updateXrayFromGitHub(ctx context.Context, req *pb.UpdateXrayReq
 	}
 
 	logrus.WithField("output", string(output)).Info("[UpdateXrayBinary] Install script completed")
-
-	// Re-patch systemd service to User=root + daemon-reload.
-	patchCmd := exec.Command("bash", "-c", `
-		if [ -f "/etc/systemd/system/xray.service" ]; then
-			sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
-			systemctl daemon-reload
-		fi
-	`)
-	if patchOutput, patchErr := patchCmd.CombinedOutput(); patchErr != nil {
-		logrus.WithError(patchErr).WithField("output", string(patchOutput)).Warn("[UpdateXrayBinary] Failed to patch systemd service")
-	}
 
 	// Clear cached xray version so verification reads fresh.
 	s.mu.Lock()

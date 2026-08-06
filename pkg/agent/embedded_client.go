@@ -280,6 +280,36 @@ func (c *EmbeddedClient) GetHostInfo(ctx context.Context) (*HostInfo, error) {
 	}, nil
 }
 
+func (c *EmbeddedClient) ListInterfaces(ctx context.Context) ([]NetInterface, error) {
+	ifs, addrs, err := c.srv.ListNetInterfaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]NetInterface, 0, len(ifs))
+	for _, in := range ifs {
+		out = append(out, NetInterface{
+			IfName:       in.IfName,
+			PermMAC:      in.PermMAC,
+			MAC:          in.MAC,
+			IDPath:       in.IDPath,
+			KeyKind:      string(in.KeyKind),
+			Key:          in.Key,
+			Source:       string(in.Source),
+			Confidence:   in.Confidence,
+			Driver:       in.Driver,
+			Carrier:      in.Carrier,
+			OperState:    in.OperState,
+			SpeedMbit:    in.SpeedMbit,
+			MTU:          in.MTU,
+			Phy:          in.Phy,
+			USBSpeedMbit: in.USBSpeedMbit,
+			Assignable:   in.Assignable,
+			Addrs:        addrs[in.IfName],
+		})
+	}
+	return out, nil
+}
+
 // ===== Health =====
 
 func (c *EmbeddedClient) HealthCheck(ctx context.Context) (*HealthResult, error) {

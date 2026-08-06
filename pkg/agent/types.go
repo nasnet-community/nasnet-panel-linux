@@ -195,3 +195,24 @@ type StarlinkObstructionMap struct {
 	MaxThetaDeg    float32   `json:"max_theta_deg"`
 	ReferenceFrame string    `json:"reference_frame"`
 }
+
+// NetInterface is one enumerated NIC as the panel sees it.
+type NetInterface struct {
+	IfName       string
+	PermMAC      string
+	MAC          string
+	IDPath       string
+	KeyKind      string // "permaddr" | "idpath" | "ifname"
+	Key          string
+	Source       string
+	Confidence   int
+	Driver       string
+	Carrier      bool
+	OperState    string
+	SpeedMbit    int
+	MTU          int
+	Phy          string
+	USBSpeedMbit int
+	Assignable   bool
+	Addrs        []string // CIDR form
+}

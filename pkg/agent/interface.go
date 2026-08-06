@@ -46,6 +46,9 @@ type NodeClient interface {
 	// Host info
 	GetHostInfo(ctx context.Context) (*HostInfo, error)
 
+	// ListInterfaces enumerates the box's NICs (Required by Router mode)
+	ListInterfaces(ctx context.Context) ([]NetInterface, error)
+
 	// Health
 	HealthCheck(ctx context.Context) (*HealthResult, error)
 

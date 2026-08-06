@@ -22,6 +22,7 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	github.com/vishvananda/netlink v1.3.1
 	github.com/xtls/xray-core v1.260327.1-0.20260711155151-50231eaff98c
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
@@ -162,7 +163,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/vishvananda/netlink v1.3.1 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
