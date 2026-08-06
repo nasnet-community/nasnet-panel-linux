@@ -64,7 +64,7 @@ services:
         if [ -n "${METRICS_USERNAME}" ] && [ -n "${METRICS_PASSWORD}" ]; then
           printf '\n    basic_auth:\n      username: "%s"\n      password: "%s"\n' \
             "${METRICS_USERNAME}" "${METRICS_PASSWORD}" >> /tmp/prometheus.yml
-        fi && \
+        fi && \go.
         exec /bin/prometheus \
           --config.file=/tmp/prometheus.yml \
           --storage.tsdb.path=/prometheus \
