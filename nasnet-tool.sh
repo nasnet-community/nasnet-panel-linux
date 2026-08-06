@@ -875,6 +875,7 @@ wizard_prereqs_systemd() {
 
     # ── System packages ───────────────────────────────────────────────────
     local SYSTEM_PKGS=(git openssl apache2-utils ca-certificates wget curl build-essential)
+    SYSTEM_PKGS+=(nftables dnsmasq hostapd iw ethtool conntrack)
     local to_install=()
 
     for pkg in "${SYSTEM_PKGS[@]}"; do
@@ -893,6 +894,10 @@ wizard_prereqs_systemd() {
             return 1
         fi
     fi
+
+    # nasnet owns dnsmasq's and hostapd's lifecycle
+    sudo systemctl disable --now dnsmasq hostapd 2>/dev/null || true
+    step_ok "dnsmasq and hostapd left to nasnet"
 
     echo ""
 
@@ -1414,6 +1419,42 @@ wizard_build_start_docker() {
 }
 
 
+# === Network apply dead-man === #
+install_netrollback_units() {
+    step_info "Installing network apply dead-man..."
+
+    sudo tee /etc/systemd/system/nasnet-netrollback.service > /dev/null << 'ROLLSVC'
+[Unit]
+Description=nasnet network apply dead-man
+Documentation=https://github.com/nasnet-community/nasnet-panel-linux
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=INSTALL_DIR_PLACEHOLDER/bin/nasnet-panel net rollback --if-expired
+ROLLSVC
+    sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|${INSTALL_DIR}|" \
+        /etc/systemd/system/nasnet-netrollback.service
+
+    sudo tee /etc/systemd/system/nasnet-netrollback.timer > /dev/null << 'ROLLTMR'
+[Unit]
+Description=nasnet network apply dead-man
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+ROLLTMR
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now nasnet-netrollback.timer
+    step_ok "nasnet-netrollback.timer enabled (10s tick, no-ops without a marker)"
+}
+
+
 wizard_build_start_systemd() {
     local app_port="${1:-9761}"
 
@@ -1517,6 +1558,12 @@ Restart=always
 RestartSec=5
 LimitNOFILE=65536
 
+# Router mode needs netlink, nft and SO_MARK. xray inherits thes
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+Environment=NASNET_ROUTER_MODE=1
+
 # Logging
 StandardOutput=journal
 StandardError=journal
@@ -1526,6 +1573,8 @@ SyslogIdentifier=${BACKEND_SERVICE}
 WantedBy=multi-user.target
 SVCEOF
     step_ok "${BACKEND_SERVICE}.service created"
+
+    install_netrollback_units
 
     # Reload systemd
     sudo systemctl daemon-reload
