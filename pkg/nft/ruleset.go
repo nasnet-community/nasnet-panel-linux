@@ -43,7 +43,7 @@ func (r Ruleset) Render() string {
 	if body := r.renderManglePre(); body != "" {
 		b.WriteString(body)
 	}
-	if r.Connmark {
+	if r.connmark() {
 		if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
 			b.WriteString("\n")
 		}
@@ -54,11 +54,12 @@ func (r Ruleset) Render() string {
 	return b.String()
 }
 
-// renderManglePre emits the prerouting mangle chain at priority -150: after
-// conntrack (-200), so ct state and ct mark are available, and before dstnat
-// (-100), so iifname is still the real ingress device.
+// Pins stamp the ct mark, so they imply the save/restore pair
+func (r Ruleset) connmark() bool { return r.Connmark || len(r.IngressPins) > 0 }
+
+// priority -150: after conntrack, before dstnat, so iifname is still the real one
 func (r Ruleset) renderManglePre() string {
-	if !r.Connmark && len(r.IngressPins) == 0 {
+	if !r.connmark() {
 		return ""
 	}
 	all := netmark.Hex(netmark.MaskAll)
@@ -72,7 +73,7 @@ func (r Ruleset) renderManglePre() string {
 		fmt.Fprintf(&b, "\t\tiifname %q ct state new ct mark set ct mark and %s or %s\n",
 			p.IfName, keep, netmark.Hex(netmark.PinMark(p.Index)))
 	}
-	if r.Connmark {
+	if r.connmark() {
 		fmt.Fprintf(&b, "\t\tct mark != 0x0 meta mark set ct mark and %s\n", all)
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
 
 // Routing policy preferences
@@ -14,8 +15,7 @@ const (
 	// A socket bound to an interface gets that interface's table
 	RulePrefOifBase = 20
 
-	// Every specific route still resolves from main; a default is refused.
-	// Load-bearing: without it marked LAN traffic dies in the blackhole below.
+	// Specific routes still resolve from main, a default is refused.
 	RulePrefMainSuppress = 30
 
 	// Unmarked traffic
@@ -54,8 +54,7 @@ func BaseRules(uplinks []Uplink) []system.Rule {
 		})
 	}
 
-	// pref 30 — consult main for every prefix above /0, refuse a default, so it
-	// can't leak even if a default ever appears in main.
+	// pref 30 — main for anything above /0, never a default.
 	rules = append(rules, system.Rule{
 		Pref:              RulePrefMainSuppress,
 		Table:             tableMain,
@@ -63,12 +62,8 @@ func BaseRules(uplinks []Uplink) []system.Rule {
 		SuppressPrefixLen: 0,
 	})
 
-	// pref 32000+ — ordered fallback, not a chosen group: failover already adds
-	// and removes these defaults, so the kernel walks the list itself.
-	//
-	// The only exception to fail-closed, safe only because pkg/httpclient makes
-	// the egress group a required parameter, so "unmarked" can't come to mean
-	// "we forgot to classify this".
+	// pref 32000+ — ordered fallback; failover moves these defaults, so the
+	// kernel walks the list itself. Only exception to fail-closed.
 	for i, u := range fallbackOrder(ordered) {
 		rules = append(rules, system.Rule{
 			Pref:  RulePrefFallbackBase + i,
@@ -100,8 +95,7 @@ func fallbackOrder(uplinks []Uplink) []Uplink {
 		}
 		return out[i].UplinkIndex < out[j].UplinkIndex
 	})
-	// The terminator sits at RulePrefFallbackBlackhole, so only this many
-	// uplinks fit ahead of it.
+	// Only this many fit ahead of the terminator.
 	if limit := RulePrefFallbackBlackhole - RulePrefFallbackBase; len(out) > limit {
 		out = out[:limit]
 	}
@@ -111,8 +105,7 @@ func fallbackOrder(uplinks []Uplink) []Uplink {
 // isStockRule reports whether the kernel owns a preference
 func isStockRule(pref int) bool { return pref == 0 || pref >= 32766 }
 
-// ReconcileRules makes the kernel's rule set equal want, leaving stock rules
-// alone. Adds before deletes, so there's no window with no policy.
+// ReconcileRules makes the kernel match want. Adds before deletes.
 func ReconcileRules(ctx context.Context, be system.Backend, want []system.Rule) error {
 	for _, r := range want {
 		if err := be.RuleAdd(ctx, r); err != nil {
@@ -142,4 +135,78 @@ func ReconcileRules(ctx context.Context, be system.Backend, want []system.Rule) 
 		}
 	}
 	return nil
+}
+
+// RulePrefPinBase starts the pin block, two per uplink. Above the group rules:
+// a flow carrying both fields is pinned, not policy-routed.
+const RulePrefPinBase = 50
+
+// PinRules gives each uplink a lookup and its own terminator. SNAT runs after
+// the route lookup, so only conntrack knows which uplink a reply came in on.
+func PinRules(uplinks []Uplink) []system.Rule {
+	ordered := append([]Uplink(nil), uplinks...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].UplinkIndex < ordered[j].UplinkIndex })
+
+	var rules []system.Rule
+	for i, u := range ordered {
+		mark := netmark.PinMark(u.UplinkIndex)
+		base := RulePrefPinBase + i*2
+		rules = append(rules,
+			system.Rule{Pref: base, FwMark: mark, FwMask: netmark.MaskPin, Table: u.Table},
+			system.Rule{Pref: base + 1, FwMark: mark, FwMask: netmark.MaskPin, Blackhole: true},
+		)
+	}
+	return rules
+}
+
+// GroupRules builds one rule per member, terminated by the group's blackhole.
+func GroupRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
+	byGroup := map[uint32][]Uplink{}
+	for _, u := range uplinks {
+		byGroup[u.GroupIndex] = append(byGroup[u.GroupIndex], u)
+	}
+
+	ordered := append([]domain.WANGroup(nil), groups...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].RuleBase < ordered[j].RuleBase })
+
+	var rules []system.Rule
+	for _, g := range ordered {
+		members := byGroup[g.GroupIndex]
+		sort.Slice(members, func(i, j int) bool { return members[i].UplinkIndex < members[j].UplinkIndex })
+
+		mark := netmark.GroupMark(g.GroupIndex)
+		for i, m := range members {
+			pref := g.RuleBase + i
+			if pref >= g.RuleBlackhole {
+				break // terminator stays last
+			}
+			rules = append(rules, system.Rule{
+				Pref: pref, FwMark: mark, FwMask: netmark.MaskGroup, Table: m.Table,
+			})
+		}
+		rules = append(rules, system.Rule{
+			Pref: g.RuleBlackhole, FwMark: mark, FwMask: netmark.MaskGroup, Blackhole: true,
+		})
+	}
+	return rules
+}
+
+// AllRules: oif, suppressor, pins, groups, unmarked fallback.
+func AllRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
+	base := BaseRules(uplinks)
+
+	// Pins and groups go between the suppressor and the fallback.
+	var head, tail []system.Rule
+	for _, r := range base {
+		if r.Pref >= RulePrefFallbackBase {
+			tail = append(tail, r)
+		} else {
+			head = append(head, r)
+		}
+	}
+
+	out := append([]system.Rule(nil), head...)
+	out = append(out, PinRules(uplinks)...)
+	out = append(out, GroupRules(groups, uplinks)...)
+	return append(out, tail...)
 }

@@ -90,3 +90,15 @@ func TestRender_NeverEmitsReservedBits(t *testing.T) {
 		t.Error("rendered ruleset references the reserved nibble")
 	}
 }
+
+// tc.Teardown clears Connmark, so pins must imply it or pinning breaks.
+func TestRender_IngressPinsImplyConnmark(t *testing.T) {
+	got := Ruleset{IngressPins: []Pin{{IfName: "enp1s0", Index: 1}}}.Render()
+
+	if !strings.Contains(got, "meta mark set ct mark and") {
+		t.Errorf("pins rendered without the restore rule:\n%s", got)
+	}
+	if !strings.Contains(got, "chain mangle_post") {
+		t.Errorf("pins rendered without the save chain:\n%s", got)
+	}
+}
