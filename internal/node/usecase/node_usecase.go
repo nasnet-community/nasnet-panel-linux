@@ -229,6 +229,7 @@ type NodeUsecase interface {
 	SetEmbeddedServer(srv *agentserver.Server)
 	SetAuditUsecase(a auditDomain.AuditLogUsecase)
 	SetWGPeerSource(s WGPeerSource)
+	SetRouterMode(enabled bool)
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)
@@ -372,6 +373,9 @@ type nodeUsecase struct {
 
 	// Managed WireGuard peer source (optional, set via SetWGPeerSource).
 	wgPeerSource WGPeerSource
+
+	// Emits the per group direct outbounds
+	routerMode bool
 
 	// nukeAgentClientFactory: test override; nil → getAgentClient.
 	nukeAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)

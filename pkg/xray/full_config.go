@@ -9,6 +9,13 @@ import (
 
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
+)
+
+// Router-mode outbound tags
+const (
+	TagDirectForeign  = "direct-foreign"
+	TagDirectDomestic = "direct-domestic"
 )
 
 // OrderedConfig represents the Xray config with fields in the desired JSON output order.
@@ -41,6 +48,7 @@ type FullConfigBuilder struct {
 	apiPort        int
 	reverseProxies []*nodeDomain.ReverseProxy
 	balancing      []*nodeDomain.BalancingRule
+	routerMode     bool
 }
 
 // NewFullConfigBuilder creates a new config builder
@@ -68,6 +76,12 @@ func NewFullConfigBuilder(node *nodeDomain.Node) *FullConfigBuilder {
 		apiEnabled: true,
 		apiPort:    10085,
 	}
+}
+
+// WithRouterMode emits the per group direct outbounds
+func (b *FullConfigBuilder) WithRouterMode(enabled bool) *FullConfigBuilder {
+	b.routerMode = enabled
+	return b
 }
 
 // WithUsers sets the users for the inbounds
@@ -1022,6 +1036,25 @@ func (b *FullConfigBuilder) buildRealityOutboundSettings(reality *nodeDomain.Rea
 func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 	outbounds := []map[string]interface{}{}
 	existingTags := make(map[string]bool)
+
+	// First outbound is the default fallback, so foreign leads.
+	if b.routerMode {
+		plainDirect := map[string]interface{}{
+			"tag":      "direct",
+			"protocol": "freedom",
+			"settings": map[string]interface{}{},
+		}
+		for _, g := range []struct {
+			tag  string
+			mark uint32
+		}{
+			{TagDirectForeign, netmark.GroupMark(netmark.GroupForeign)},
+			{TagDirectDomestic, netmark.GroupMark(netmark.GroupDomestic)},
+		} {
+			outbounds = append(outbounds, b.cloneOutboundWithMark(plainDirect, g.tag, g.mark))
+			existingTags[g.tag] = true
+		}
+	}
 
 	// 1. Add User Outbounds FIRST (First one becomes default fallback)
 	for _, out := range b.outbounds {

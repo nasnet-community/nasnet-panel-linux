@@ -288,6 +288,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
 	uc.Node.SetWGPeerSource(wireguardNodebridge.New(repos.WGPeer))
+	uc.Node.SetRouterMode(cfg.Router.Enabled)
 	xrayProv.SetWGProvisioner(uc.WGDevice)
 
 	// (Single binary mode) run the node agent in-process. Panel drives this server through an embedded client
