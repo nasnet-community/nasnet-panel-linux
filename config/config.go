@@ -20,6 +20,13 @@ type Config struct {
 	ACME     ACMEConfig
 	JWT      JWTConfig
 	Metrics  MetricsConfig
+	Router   RouterConfig
+}
+
+// RouterConfig gates every dual-WAN feature. Set by nasnet-tool at install
+// time only, never auto-detected. Off = no netmgr, /api/v1/network/* is 404.
+type RouterConfig struct {
+	Enabled bool // NASNET_ROUTER_MODE
 }
 
 type MetricsConfig struct {
@@ -184,6 +191,9 @@ func Load() *Config {
 			Path:     getEnv("METRICS_PATH", "/metrics"),
 			Username: getEnv("METRICS_USERNAME", ""),
 			Password: getEnv("METRICS_PASSWORD", ""),
+		},
+		Router: RouterConfig{
+			Enabled: getEnvAsBool("NASNET_ROUTER_MODE", false),
 		},
 	}
 }
