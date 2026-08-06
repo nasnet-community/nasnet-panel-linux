@@ -54,7 +54,7 @@ type UplinkSlot string
 const (
 	SlotNone      UplinkSlot = ""
 	SlotDomestic  UplinkSlot = "domestic"
-	SlotSecondary UplinkSlot = "secondary"
+	SlotSecondary UplinkSlot = "secondary" // Starlink
 )
 
 // AddressMethod is how an uplink gets its address.
