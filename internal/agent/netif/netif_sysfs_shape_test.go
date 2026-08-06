@@ -6,15 +6,9 @@ import (
 	"testing"
 )
 
-// These tests model the shapes real sysfs actually uses, which the plain-file
-// fake tree in netif_test.go does not: `device`, `subsystem` and `driver` are
-// symlinks, there is no `subsystem_name` or `driver_name` file anywhere, and a
-// physical NIC's `uevent` carries no DEVTYPE line.
-//
-// Verified against Ubuntu 24.04 / kernel 6.8: `/sys/class/net/eth0/device`
-// lists only {device, driver, features, modalias, net, power, status,
-// subsystem, uevent, vendor} — no *_name files — and `device/subsystem`
-// resolves to `../../../../../bus/virtio` on a virtio NIC.
+// Real sysfs shapes, unlike the plain file tree in netif_test.go: device,
+// subsystem and driver are symlinks, no *_name files exist, and a physical
+// NIC's uevent has no DEVTYPE (24.04 / 6.8)
 
 type sysTree struct {
 	t    *testing.T
@@ -44,7 +38,7 @@ func (s *sysTree) file(rel, content string) {
 	}
 }
 
-// link creates <rel> pointing at <target>, both relative to the tree root.
+// link points <rel> at <target>, both relative to the tree root.
 func (s *sysTree) link(rel, target string) {
 	s.t.Helper()
 	p := filepath.Join(s.root, rel)
@@ -54,7 +48,7 @@ func (s *sysTree) link(rel, target string) {
 	}
 }
 
-// nicFiles writes the per-interface attribute files every NIC has.
+// nicFiles writes the attribute files every NIC has.
 func (s *sysTree) nicFiles(netDir, mac, ifindex string) {
 	s.file(netDir+"/type", "1\n")
 	s.file(netDir+"/address", mac+"\n")
@@ -73,9 +67,9 @@ func (s *sysTree) list() []Interface {
 	return ifs
 }
 
-// A virtio NIC's own subsystem is `virtio`, which matches no classifier case.
-// Its bus has to be found by climbing to the parent PCI device, or every NIC
-// on every VM and cloud instance is SourceUnknown and never assignable.
+// virtio NIC's own subsystem is "virtio" — no classifier case matches, so the
+// bus comes from the parent PCI device. Without the climb, every VM NIC is
+// SourceUnknown and never assignable.
 func TestList_VirtioNICResolvesToPCIViaParent(t *testing.T) {
 	s := newSysTree(t)
 	dev := "devices/pci0000:00/0000:00:03.0"
@@ -129,8 +123,7 @@ func TestList_PCINICReadsSubsystemAndDriverSymlinks(t *testing.T) {
 	}
 }
 
-// USB bus speed lives on the enclosing USB device, not on the interface node,
-// so the reader must climb to find it.
+// USB speed lives on the enclosing USB device, not the interface node.
 func TestList_USBSpeedComesFromTheEnclosingUSBDevice(t *testing.T) {
 	s := newSysTree(t)
 	usbDev := "devices/pci0000:00/0000:00:14.0/usb1/1-1"
@@ -158,8 +151,8 @@ func TestList_USBSpeedComesFromTheEnclosingUSBDevice(t *testing.T) {
 	}
 }
 
-// Bridges and VLANs announce themselves through uevent DEVTYPE; a physical NIC
-// has no DEVTYPE line and must not be mistaken for a virtual device.
+// Bridges and VLANs show up via uevent DEVTYPE. A physical NIC has no DEVTYPE
+// line and must not be taken for a virtual one.
 func TestList_UeventDevTypeClassifiesVirtualLinks(t *testing.T) {
 	s := newSysTree(t)
 
@@ -169,7 +162,7 @@ func TestList_UeventDevTypeClassifiesVirtualLinks(t *testing.T) {
 	s.nicFiles("class/net/eth0.7", "aa:bb:cc:dd:ee:07", "6")
 	s.file("class/net/eth0.7/uevent", "DEVTYPE=vlan\nINTERFACE=eth0.7\nIFINDEX=6\n")
 
-	// A veth: no DEVTYPE and no device node at all.
+	// veth: no DEVTYPE, no device node.
 	s.nicFiles("class/net/veth9", "5e:11:22:33:44:99", "7")
 	s.file("class/net/veth9/uevent", "INTERFACE=veth9\nIFINDEX=7\n")
 
@@ -197,9 +190,8 @@ func TestList_UeventDevTypeClassifiesVirtualLinks(t *testing.T) {
 	}
 }
 
-// The regression this whole file exists for: with only the plan's plain-file
-// reader, a NIC whose facts are all behind symlinks yields Subsystem="" and
-// Driver="", classifies as SourceUnknown, and is silently unassignable.
+// The regression this file exists for: a plain-file-only reader leaves
+// Subsystem and Driver empty here, so the NIC is unknown and unassignable.
 func TestList_SymlinkOnlyNICIsNotUnknown(t *testing.T) {
 	s := newSysTree(t)
 	dev := "devices/platform/ff0e0000.ethernet"

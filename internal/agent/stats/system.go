@@ -16,6 +16,38 @@ import (
 	"github.com/shirou/gopsutil/v3/net"
 )
 
+// NICCounters holds one interface's cumulative byte counters.
+type NICCounters struct {
+	BytesRecv uint64 `json:"bytes_recv"`
+	BytesSent uint64 `json:"bytes_sent"`
+}
+
+// sumNICs totals every interface except loopback. gopsutil's pernic=false
+// aggregate includes lo, which double-counts every locally-terminated byte.
+func sumNICs(per map[string]NICCounters) (recv, sent uint64) {
+	for name, c := range per {
+		if name == "lo" {
+			continue
+		}
+		recv += c.BytesRecv
+		sent += c.BytesSent
+	}
+	return recv, sent
+}
+
+// collectPerNIC reads per-interface counters.
+func collectPerNIC(ctx context.Context) (map[string]NICCounters, error) {
+	netIO, err := net.IOCountersWithContext(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]NICCounters, len(netIO))
+	for _, c := range netIO {
+		out[c.Name] = NICCounters{BytesRecv: c.BytesRecv, BytesSent: c.BytesSent}
+	}
+	return out, nil
+}
+
 // SystemStats holds system resource statistics
 type SystemStats struct {
 	// CPU
@@ -45,6 +77,9 @@ type SystemStats struct {
 	// Rate (bytes per second)
 	NetworkRecvRate uint64 `json:"network_recv_rate"`
 	NetworkSentRate uint64 `json:"network_sent_rate"`
+
+	// Per interface cumulative counters
+	PerNIC map[string]NICCounters `json:"per_nic"`
 
 	// Load averages
 	LoadAvg1  float64 `json:"load_avg_1"`
@@ -123,15 +158,13 @@ func (c *Collector) Collect(ctx context.Context) (*SystemStats, error) {
 		stats.DiskUsagePercent = diskUsage.UsedPercent
 	}
 
-	// Network I/O
-	netIO, err := net.IOCountersWithContext(ctx, false)
-	if err == nil && len(netIO) > 0 {
-		stats.NetworkRecvBytes = netIO[0].BytesRecv
-		stats.NetworkSentBytes = netIO[0].BytesSent
+	// per NIC so router mode can attribute traffic to an uplink (Loopback is excluded)
+	if per, err := collectPerNIC(ctx); err == nil {
+		stats.PerNIC = per
+		stats.NetworkRecvBytes, stats.NetworkSentBytes = sumNICs(per)
 
-		// Calculate rates using the shared collector state
-		recvDelta, sentDelta, duration, err := c.GetNetworkDelta(ctx)
-		if err == nil && duration > 0 {
+		recvDelta, sentDelta, duration, derr := c.GetNetworkDelta(ctx)
+		if derr == nil && duration > 0 {
 			stats.NetworkRecvRate = uint64(float64(recvDelta) / duration.Seconds())
 			stats.NetworkSentRate = uint64(float64(sentDelta) / duration.Seconds())
 		}
@@ -208,11 +241,9 @@ func (c *Collector) CollectQuick(ctx context.Context) (*SystemStats, error) {
 		stats.DiskUsagePercent = diskUsage.UsedPercent
 	}
 
-	// Network I/O
-	netIO, err := net.IOCountersWithContext(ctx, false)
-	if err == nil && len(netIO) > 0 {
-		stats.NetworkRecvBytes = netIO[0].BytesRecv
-		stats.NetworkSentBytes = netIO[0].BytesSent
+	if per, err := collectPerNIC(ctx); err == nil {
+		stats.PerNIC = per
+		stats.NetworkRecvBytes, stats.NetworkSentBytes = sumNICs(per)
 	}
 
 	// Load averages
@@ -234,8 +265,8 @@ func (c *Collector) CollectQuick(ctx context.Context) (*SystemStats, error) {
 
 // GetNetworkDelta returns network bytes transferred since last call
 func (c *Collector) GetNetworkDelta(ctx context.Context) (recv, sent uint64, duration time.Duration, err error) {
-	netIO, err := net.IOCountersWithContext(ctx, false)
-	if err != nil || len(netIO) == 0 {
+	per, err := collectPerNIC(ctx)
+	if err != nil || len(per) == 0 {
 		return 0, 0, 0, err
 	}
 
@@ -243,8 +274,7 @@ func (c *Collector) GetNetworkDelta(ctx context.Context) (recv, sent uint64, dur
 	defer c.mu.Unlock()
 
 	now := time.Now()
-	currentRecv := netIO[0].BytesRecv
-	currentSent := netIO[0].BytesSent
+	currentRecv, currentSent := sumNICs(per)
 
 	if c.lastNetTime.IsZero() {
 		// First call, just store values
