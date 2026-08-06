@@ -28,6 +28,7 @@ type Paths struct {
 	SysctlDir          string
 	RTTablesDir        string
 	CloudInitDir       string
+	RunNetworkdDir     string // holds netplan's generated units.
 	StateDir           string
 }
 
@@ -39,6 +40,7 @@ func DefaultPaths() Paths {
 		SysctlDir:          "/etc/sysctl.d",
 		RTTablesDir:        "/etc/iproute2/rt_tables.d",
 		CloudInitDir:       "/etc/cloud/cloud.cfg.d",
+		RunNetworkdDir:     "/run/systemd/network",
 		StateDir:           "/var/lib/nasnet",
 	}
 }

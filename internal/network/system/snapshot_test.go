@@ -20,10 +20,11 @@ func tmpPaths(t *testing.T) Paths {
 		SysctlDir:          filepath.Join(root, "etc/sysctl.d"),
 		RTTablesDir:        filepath.Join(root, "etc/iproute2/rt_tables.d"),
 		CloudInitDir:       filepath.Join(root, "etc/cloud/cloud.cfg.d"),
+		RunNetworkdDir:     filepath.Join(root, "run/systemd/network"),
 		StateDir:           filepath.Join(root, "var/lib/nasnet"),
 	}
 	for _, d := range []string{p.NetworkdDir, p.NetplanDir, p.SysctlDir, p.RTTablesDir,
-		p.CloudInitDir, p.StateDir} {
+		p.CloudInitDir, p.RunNetworkdDir, p.StateDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
