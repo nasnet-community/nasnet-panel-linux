@@ -86,6 +86,7 @@ func (u *nodeUsecase) GenerateXrayConfig(ctx context.Context, nodeID uint) (stri
 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
+		WithRouterMode(u.routerMode).
 		WithInbounds(inboundPtrs).
 		WithOutbounds(outboundPtrs).
 		WithRoutingRules(rulePtrs).

@@ -45,6 +45,9 @@ type WGPeerSource interface {
 // SetWGPeerSource injects the managed WireGuard peer source.
 func (u *nodeUsecase) SetWGPeerSource(s WGPeerSource) { u.wgPeerSource = s }
 
+// SetRouterMode mirrors cfg.Router.Enabled into generated xray configs
+func (u *nodeUsecase) SetRouterMode(enabled bool) { u.routerMode = enabled }
+
 // mergeWGRenderPeers unions admin static peers with managed device peers, deduped by pubkey.
 func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) []domain.WireGuardPeer {
 	seen := make(map[string]bool, len(static)+len(managed))
@@ -600,6 +603,7 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
+		WithRouterMode(u.routerMode).
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).
