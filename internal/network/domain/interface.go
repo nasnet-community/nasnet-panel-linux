@@ -43,6 +43,9 @@ func (r InterfaceRole) IsSingleton() bool {
 	return r == RoleLAN || r == RoleMgmt
 }
 
+// Phy returns the radio name, "" for wired.
+func (n NetworkInterface) Phy() string { return n.PhyName }
+
 // UplinkSlot is the operator-facing name for an uplink. Stage 1 has two groups
 // of one member, so exposing groups buys nothing. WANGroupMember rows sit
 // behind these unchanged, so multi-member groups later need no migration.
@@ -87,6 +90,10 @@ type NetworkInterface struct {
 	Source           string `gorm:"not null;default:'unknown'" json:"source"`
 	SourceOverride   string `json:"source_override"`
 	SourceConfidence int    `gorm:"not null;default:0" json:"source_confidence"`
+
+	// PhyName is the nl80211 radio, "" for wired. (V13 validation) one-radio-one-role without probing sysfs.
+	PhyName      string `json:"phy_name"`
+	USBSpeedMbit int    `gorm:"not null;default:0" json:"usb_speed_mbit"`
 
 	Role InterfaceRole `gorm:"index;not null;default:'unassigned'" json:"role"`
 	Slot UplinkSlot    `gorm:"index;not null;default:''" json:"slot"`
