@@ -53,7 +53,7 @@ export default function NetworkPage() {
     )
 
     const altOrigin = useMemo(() => {
-        const lan = state.data?.uplinks.find((u) => u.slot === "domestic")
+        const lan = state.data?.uplinks?.find((u) => u.slot === "domestic")
         const addr = lan?.addrs?.[0]?.split("/")[0]
         return addr ? `${window.location.protocol}//${addr}:${window.location.port}` : ""
     }, [state.data])
@@ -101,7 +101,7 @@ export default function NetworkPage() {
                 </Alert>
             )}
 
-            {state.data?.warnings.map((w) => (
+            {state.data?.warnings?.map((w) => (
                 <Alert key={w}>
                     <AlertDescription>{w}</AlertDescription>
                 </Alert>

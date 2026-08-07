@@ -65,8 +65,8 @@ export function ApplyDialog({
     const [typed, setTyped] = useState("")
     const [left, setLeft] = useState(0)
 
-    const rejected = plan ? isRejected(plan.verdicts) : false
-    const needsConfirm = plan?.verdicts.some((v) => v.level === "confirm") ?? false
+    const rejected = plan ? isRejected(plan.verdicts ?? []) : false
+    const needsConfirm = plan?.verdicts?.some((v) => v.level === "confirm") ?? false
 
     useEffect(() => {
         if (!open) {
@@ -117,15 +117,15 @@ export function ApplyDialog({
 
                         {planning && <p className="text-muted-foreground text-sm">Planning…</p>}
 
-                        {plan && plan.ops.length > 0 && (
+                        {plan && (plan.ops?.length ?? 0) > 0 && (
                             <ol className="list-inside list-decimal space-y-1 text-sm">
-                                {plan.ops.map((op) => (
+                                {plan.ops?.map((op) => (
                                     <li key={op}>{op}</li>
                                 ))}
                             </ol>
                         )}
 
-                        {plan && plan.verdicts.length > 0 && <VerdictList verdicts={plan.verdicts} />}
+                        {plan && (plan.verdicts?.length ?? 0) > 0 && <VerdictList verdicts={plan.verdicts} />}
 
                         {needsConfirm && !rejected && (
                             <div className="space-y-2">

@@ -246,7 +246,12 @@ func (u *networkUsecase) Enumerate(ctx context.Context) ([]InterfaceView, error)
 }
 
 func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
-	st := &StateView{RouterMode: u.RouterMode, TakeoverDone: system.TakeoverDone(u.Paths)}
+	st := &StateView{
+		RouterMode:   u.RouterMode,
+		TakeoverDone: system.TakeoverDone(u.Paths),
+		Warnings:     []string{},
+		Uplinks:      []UplinkView{},
+	}
 	if !st.TakeoverDone {
 		st.Warnings = append(st.Warnings,
 			"network not managed by nasnet yet — assign roles to finish setup")
@@ -308,8 +313,11 @@ func (u *networkUsecase) Plan(ctx context.Context, req domain.ChangeRequest) (*P
 		return nil, err
 	}
 	verdicts := domain.Validate(in)
+	if verdicts == nil {
+		verdicts = []domain.Verdict{}
+	}
 
-	var ops []string
+	ops := []string{}
 	if !domain.Rejected(verdicts) {
 		plan, err := u.buildPlan(ctx, req)
 		if err != nil {
@@ -430,7 +438,11 @@ func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	view := &ApplyView{PlanID: rec.ID, Ops: rec.Ops}
+	ops := rec.Ops
+	if ops == nil {
+		ops = []string{}
+	}
+	view := &ApplyView{PlanID: rec.ID, Ops: ops}
 	if rec.Deadline != nil {
 		view.ConfirmDeadlineUnix = rec.Deadline.Unix()
 	}
