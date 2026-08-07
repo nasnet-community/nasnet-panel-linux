@@ -2,7 +2,7 @@ package system
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -173,9 +173,9 @@ func WriteFiles(dir string, files []UplinkFile) error {
 
 // connectedSubnet turns "192.168.1.34/24" into "192.168.1.0/24".
 func connectedSubnet(cidr string) string {
-	_, n, err := net.ParseCIDR(cidr)
+	p, err := netip.ParsePrefix(cidr)
 	if err != nil {
 		return ""
 	}
-	return n.String()
+	return p.Masked().String()
 }

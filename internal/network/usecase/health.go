@@ -3,7 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -175,19 +175,18 @@ func LeaseVerdicts(addrs []system.Addr, uplinks []Uplink, dishReachable bool, di
 
 	type entry struct {
 		ifName string
-		ip     net.IP
-		subnet *net.IPNet
+		prefix netip.Prefix
 	}
 	var entries []entry
 	for _, a := range addrs {
 		if !isUplink[a.IfName] {
 			continue
 		}
-		ip, subnet, err := net.ParseCIDR(a.CIDR)
+		p, err := netip.ParsePrefix(a.CIDR)
 		if err != nil {
 			continue
 		}
-		entries = append(entries, entry{ifName: a.IfName, ip: ip, subnet: subnet})
+		entries = append(entries, entry{ifName: a.IfName, prefix: p})
 	}
 
 	for i := 0; i < len(entries); i++ {
@@ -196,23 +195,24 @@ func LeaseVerdicts(addrs []system.Addr, uplinks []Uplink, dishReachable bool, di
 			if a.ifName == b.ifName {
 				continue
 			}
+			aIP, bIP := a.prefix.Addr(), b.prefix.Addr()
 			switch {
-			case a.ip.Equal(b.ip):
+			case aIP == bIP:
 				vs = append(vs, domain.Verdict{
 					Rule:  "V29",
 					Level: domain.LevelReject,
 					Message: fmt.Sprintf(
 						"%s and %s both hold %s; source selection and conntrack both break and no sysctl helps",
-						a.ifName, b.ifName, a.ip),
+						a.ifName, b.ifName, aIP),
 				})
-			case a.subnet.Contains(b.ip) || b.subnet.Contains(a.ip):
+			case a.prefix.Contains(bIP) || b.prefix.Contains(aIP):
 				vs = append(vs, domain.Verdict{
 					Rule:  "V30",
 					Level: domain.LevelWarn,
 					Message: fmt.Sprintf(
 						"%s (%s) and %s (%s) are on overlapping subnets; ARP hardening is applied, "+
 							"but check that this is intended",
-						a.ifName, a.ip, b.ifName, b.ip),
+						a.ifName, aIP, b.ifName, bIP),
 				})
 			}
 		}
@@ -220,9 +220,9 @@ func LeaseVerdicts(addrs []system.Addr, uplinks []Uplink, dishReachable bool, di
 
 	// V31 — dish answers, lease outside bypass space. Cause of most V29/V30.
 	if dishReachable && dishLeaseCIDR != "" {
-		_, bypass, err := net.ParseCIDR(starlinkBypassCIDR)
-		ip, _, perr := net.ParseCIDR(dishLeaseCIDR)
-		if err == nil && perr == nil && !bypass.Contains(ip) {
+		bypass, err := netip.ParsePrefix(starlinkBypassCIDR)
+		lease, perr := netip.ParsePrefix(dishLeaseCIDR)
+		if err == nil && perr == nil && !bypass.Contains(lease.Addr()) {
 			vs = append(vs, domain.Verdict{
 				Rule:  "V31",
 				Level: domain.LevelWarn,

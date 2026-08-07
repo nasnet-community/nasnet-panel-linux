@@ -2,7 +2,7 @@ package xray
 
 import (
 	"fmt"
-	netlib "net"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -842,7 +842,6 @@ func buildRoutingPortList(ports []string) (*net.PortList, error) {
 	return portList, nil
 }
 
-// parseIPToCIDR parses an IP or CIDR string and returns the IP bytes
 // buildDomainRule converts a configured domain matcher into xray-core's
 // geodata.DomainRule form.
 //
@@ -910,56 +909,44 @@ func buildIPRule(value string) *geodata.IPRule {
 			},
 		}}
 	}
+	ip, prefix := parseIPPrefix(value)
 	return &geodata.IPRule{Value: &geodata.IPRule_Custom{
 		Custom: &geodata.CIDRRule{
-			Cidr: &geodata.CIDR{
-				Ip:     parseIPToCIDR(value),
-				Prefix: parseCIDRPrefix(value),
-			},
+			Cidr: &geodata.CIDR{Ip: ip, Prefix: prefix},
 		},
 	}}
 }
 
-func parseIPToCIDR(cidr string) []byte {
-	// Handle both IP and CIDR formats
-	ipStr := cidr
-	if strings.Contains(cidr, "/") {
-		ipStr = strings.Split(cidr, "/")[0]
-	}
-
-	// Parse IP address
-	ip := netlib.ParseIP(ipStr)
-	if ip == nil {
-		return []byte(ipStr) // Return raw if can't parse
-	}
-
-	// Return as IPv4 if possible
-	if ip4 := ip.To4(); ip4 != nil {
-		return ip4
-	}
-	return ip
-}
-
-// parseCIDRPrefix extracts the prefix length from a CIDR string
-func parseCIDRPrefix(cidr string) uint32 {
-	if !strings.Contains(cidr, "/") {
-		// No prefix, assume /32 for IPv4 or /128 for IPv6
-		if strings.Contains(cidr, ":") {
-			return 128
-		}
-		return 32
-	}
-
-	parts := strings.Split(cidr, "/")
-	if len(parts) != 2 {
-		return 32
-	}
-
-	prefix, err := strconv.ParseUint(parts[1], 10, 32)
+// parseIPPrefix splits an IP or CIDR string into xray's wire form: raw address
+// bytes (4 for IPv4, 16 for IPv6) plus a prefix length, defaulting to the
+// address width when the value carries no mask. Unparseable input is passed
+// through as its own bytes, which is what xray-core does with a rule it can't
+// read.
+func parseIPPrefix(value string) ([]byte, uint32) {
+	host, bits, hasBits := strings.Cut(value, "/")
+	addr, err := netip.ParseAddr(host)
 	if err != nil {
-		return 32
+		return []byte(host), 32
 	}
-	return uint32(prefix)
+	// A ::ffff:1.2.3.4 form has to collapse to 4 bytes so the width below
+	// matches the bytes we emit.
+	addr = addr.Unmap()
+
+	var raw []byte
+	if addr.Is4() {
+		b := addr.As4()
+		raw = b[:]
+	} else {
+		b := addr.As16()
+		raw = b[:]
+	}
+
+	if hasBits {
+		if n, err := strconv.ParseUint(bits, 10, 32); err == nil {
+			return raw, uint32(n)
+		}
+	}
+	return raw, uint32(addr.BitLen())
 }
 
 // ValidateOutboundConfig validates the outbound configuration

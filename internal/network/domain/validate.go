@@ -2,7 +2,7 @@ package domain
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 )
 
@@ -357,11 +357,18 @@ func SourceAllows(source string, role InterfaceRole) bool {
 
 // overlaps reports whether two CIDRs (either may be host/prefix form) intersect.
 func overlaps(a, b string) bool {
-	ipA, netA, errA := net.ParseCIDR(a)
-	ipB, netB, errB := net.ParseCIDR(b)
+	pa, errA := netip.ParsePrefix(a)
+	pb, errB := netip.ParsePrefix(b)
 	if errA != nil || errB != nil {
 		return false
 	}
-	return netA.Contains(ipB) || netB.Contains(ipA) ||
-		netA.Contains(netB.IP) || netB.Contains(netA.IP)
+	return unmap4in6(pa).Overlaps(unmap4in6(pb))
+}
+
+// unmap4in6 rewrites a ::ffff:a.b.c.d prefix into its plain IPv4 form
+func unmap4in6(p netip.Prefix) netip.Prefix {
+	if !p.Addr().Is4In6() || p.Bits() < 96 {
+		return p
+	}
+	return netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
 }
