@@ -69,6 +69,7 @@ type NetworkUsecase interface {
 	Confirm(ctx context.Context, planID uint) error
 	Rollback(ctx context.Context) error
 	Reconcile(ctx context.Context) error
+	StartHealthLoop(ctx context.Context, interval time.Duration)
 	SetLabel(ctx context.Context, key, label string) error
 	IngressUplinkIfName() string
 }

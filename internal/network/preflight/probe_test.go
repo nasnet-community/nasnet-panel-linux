@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/netif"
@@ -40,5 +41,24 @@ func TestUplinkCandidate_ExcludesVirtualAndLoopback(t *testing.T) {
 		if uplinkCandidate(s) {
 			t.Errorf("%q must not count as an uplink", s)
 		}
+	}
+}
+
+// On a non-target platform the operator must be told the platform is wrong, not
+// shown a missing sysfs path.
+func TestProbe_WrongPlatformSkipsEnumeration(t *testing.T) {
+	e, err := Probe(false)
+	if err != nil && (e.OSID != "ubuntu" || e.OSVersionID != "24.04") {
+		t.Fatalf("Probe errored on a non-target platform instead of letting Check speak: %v", err)
+	}
+	if e.OSID == "ubuntu" && e.OSVersionID == "24.04" {
+		t.Skip("running on the target platform")
+	}
+	r := Check(e)
+	if r.OK() {
+		t.Fatal("a non-target platform passed preflight")
+	}
+	if !strings.Contains(strings.Join(r.Fatal, " | "), "Ubuntu 24.04") {
+		t.Errorf("first fatal does not name the platform: %v", r.Fatal)
 	}
 }

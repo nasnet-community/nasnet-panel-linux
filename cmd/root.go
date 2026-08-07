@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,9 +32,15 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/preflight"
+	networkRepo "github.com/nasnet-community/nasnet-panel-linux/internal/network/repository"
+	networkSystem "github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
+	networkUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	notifPkg "github.com/nasnet-community/nasnet-panel-linux/pkg/notification"
 
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
@@ -53,8 +60,10 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	httpTransport "github.com/nasnet-community/nasnet-panel-linux/transport/http"
 	telegramTransport "github.com/nasnet-community/nasnet-panel-linux/transport/telegram"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/telebot.v3"
+	"gorm.io/gorm"
 	// Import domain packages for auto-migration
 	adminDomain "github.com/nasnet-community/nasnet-panel-linux/internal/admin/domain"
 	alertDomain "github.com/nasnet-community/nasnet-panel-linux/internal/alerting/domain"
@@ -213,6 +222,13 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Warn("Failed to create ux_netif_singleton_role")
 	}
 
+	if cfg.Router.Enabled {
+		// net rollback boot check
+		if err := runNetRollback(true); err != nil {
+			log.WithError(err).Warn("Boot rollback check failed")
+		}
+	}
+
 	// Create GIN indexes for PostgreSQL (unsupported in SQLite)
 	if database.IsPostgres() {
 		ginIndexes := []string{
@@ -289,7 +305,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
 	uc.Node.SetWGPeerSource(wireguardNodebridge.New(repos.WGPeer))
 	uc.Node.SetRouterMode(cfg.Router.Enabled)
-	uc.Node.SetIngressUplinkSource(func() string { return "" }) // Bandwidth shaping
+
 	httpFactory.SetRouterMode(cfg.Router.Enabled, httpclient.EgressDomestic)
 	xrayProv.SetWGProvisioner(uc.WGDevice)
 
@@ -301,10 +317,28 @@ func runServe(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create in-process node agent server")
 	}
+
+	// Reconcile the network BEFORE the agent starts! (xray needs routing path)
+	var networkUC networkUsecase.NetworkUsecase
+	if cfg.Router.Enabled {
+		var rmErr error
+		networkUC, rmErr = startRouterMode(bgCtx, routerModeDeps{
+			DB: db, NftMgr: embeddedSrv.NftManager(),
+			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus, Log: log,
+		})
+		if rmErr != nil {
+			log.WithError(rmErr).Fatal("Router mode failed to start")
+		}
+	}
+
 	if err := embeddedSrv.StartLocal(bgCtx); err != nil {
 		log.WithError(err).Fatal("Failed to start in-process node agent server")
 	}
 	uc.Node.SetEmbeddedServer(embeddedSrv)
+	if networkUC != nil {
+		// Shaping follows the uplink clients arrive on.
+		uc.Node.SetIngressUplinkSource(networkUC.IngressUplinkIfName)
+	}
 	log.Info("In-process node agent started (single-binary mode)")
 
 	// Create the single local node
@@ -726,4 +760,57 @@ func runServe(cmd *cobra.Command, args []string) {
 	log.WithField("elapsed", time.Since(shutdownStart)).Info("Shutdown phase 4: connections closed")
 
 	log.WithField("total_elapsed", time.Since(shutdownStart)).Info("Server stopped")
+}
+
+type routerModeDeps struct {
+	DB     *gorm.DB
+	NftMgr *nft.Manager
+	Agent  agent.NodeClient
+	Bus    *events.EventBus
+	Log    *logrus.Logger
+}
+
+// startRouterMode runs preflight, builds the network usecase and reconciles
+func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.NetworkUsecase, error) {
+	paths := networkSystem.DefaultPaths()
+
+	applyRepo := networkRepo.NewApplyRepository(deps.DB)
+	_, confirmErr := applyRepo.LatestConfirmed(ctx)
+	takeoverDone := confirmErr == nil && networkSystem.TakeoverDone(paths)
+
+	env, err := preflight.Probe(takeoverDone)
+	if err != nil {
+		return nil, fmt.Errorf("preflight probe: %w", err)
+	}
+	result := preflight.Check(env)
+	for _, w := range result.Warn {
+		deps.Log.WithField("component", "router").Warn(w)
+	}
+	if !result.OK() {
+		return nil, fmt.Errorf("router mode preflight failed: %s", strings.Join(result.Fatal, "; "))
+	}
+
+	backend, err := networkSystem.NewNetlinkBackend()
+	if err != nil {
+		return nil, fmt.Errorf("netlink backend: %w", err)
+	}
+
+	uc := networkUsecase.NewNetworkUsecase(networkUsecase.Deps{
+		IfRepo:     networkRepo.NewInterfaceRepository(deps.DB),
+		GroupRepo:  networkRepo.NewGroupRepository(deps.DB),
+		ApplyRepo:  applyRepo,
+		Backend:    backend,
+		Nft:        deps.NftMgr,
+		Agent:      deps.Agent,
+		Paths:      paths,
+		RouterMode: true,
+		EventBus:   deps.Bus,
+	})
+
+	if err := uc.Reconcile(ctx); err != nil {
+		return nil, fmt.Errorf("network reconcile: %w", err)
+	}
+	uc.StartHealthLoop(ctx, 5*time.Second)
+	deps.Log.Info("Router mode active")
+	return uc, nil
 }

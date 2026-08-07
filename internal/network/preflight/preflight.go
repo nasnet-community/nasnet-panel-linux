@@ -82,6 +82,11 @@ func Probe(takeoverDone bool) (Env, error) {
 	e.NetworkdActive = unitActive("systemd-networkd")
 	e.NMMasked = unitMasked("NetworkManager")
 
+	// Platform check
+	if e.OSID != "ubuntu" || e.OSVersionID != "24.04" {
+		return e, nil
+	}
+
 	ifs, err := netif.List(netif.Opts{})
 	if err != nil {
 		return e, fmt.Errorf("enumerate interfaces: %w", err)

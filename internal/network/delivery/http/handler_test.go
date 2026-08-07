@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -46,9 +47,10 @@ func (s *stubUsecase) Apply(_ context.Context, _ domain.ChangeRequest) (*usecase
 	return &usecase.ApplyView{PlanID: 7, ConfirmDeadlineUnix: 1_800_000_090}, nil
 }
 
-func (s *stubUsecase) Confirm(_ context.Context, id uint) error { s.confirmedID = id; return nil }
-func (s *stubUsecase) Rollback(context.Context) error           { return nil }
-func (s *stubUsecase) Reconcile(context.Context) error          { return nil }
+func (s *stubUsecase) Confirm(_ context.Context, id uint) error       { s.confirmedID = id; return nil }
+func (s *stubUsecase) Rollback(context.Context) error                 { return nil }
+func (s *stubUsecase) Reconcile(context.Context) error                { return nil }
+func (s *stubUsecase) StartHealthLoop(context.Context, time.Duration) {}
 func (s *stubUsecase) Groups(context.Context) ([]domain.WANGroup, error) {
 	return []domain.WANGroup{{Name: "domestic"}}, nil
 }
