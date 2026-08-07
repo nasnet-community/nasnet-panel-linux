@@ -385,6 +385,12 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 		switch in.Role {
 		case domain.RoleWAN:
 			table := tableFor(in.Slot)
+			if table == 0 {
+				return fmt.Errorf("uplink %s has no slot, so it has no routing table", in.IfName)
+			}
+			if _, taken := tables[table]; taken {
+				return fmt.Errorf("two uplinks claim the %s slot", in.Slot)
+			}
 			files = append(files, system.RenderUplink(in, table))
 			tables[table] = "nasnet-" + string(in.Slot)
 			uplinkNames = append(uplinkNames, in.IfName)

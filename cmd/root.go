@@ -222,6 +222,14 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Warn("Failed to create ux_netif_singleton_role")
 	}
 
+	// One uplink per slot, or two rows render the same unit file
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_netif_uplink_slot
+		  ON network_interfaces (node_id, slot)
+		  WHERE role = 'wan' AND slot != '' AND deleted_at IS NULL`).Error; err != nil {
+		log.WithError(err).Warn("Failed to create ux_netif_uplink_slot")
+	}
+
 	if cfg.Router.Enabled {
 		// net rollback boot check
 		if err := runNetRollback(true); err != nil {
@@ -632,6 +640,8 @@ func runServe(cmd *cobra.Command, args []string) {
 			BackupService:      backupSvc,
 			AlertUsecase:       uc.Alert,
 			MaintenanceUsecase: uc.Maintenance,
+			NetworkUsecase:     networkUC,
+			RouterMode:         cfg.Router.Enabled,
 		},
 		Infra: httpTransport.InfraDeps{
 			DB:                db,

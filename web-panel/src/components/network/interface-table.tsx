@@ -33,6 +33,16 @@ function choiceValue(iface: NetworkInterfaceView): string {
     return iface.role
 }
 
+/** One interface per slot. Showing who holds it beats a server-side reject. */
+export function slotHolder(
+    interfaces: NetworkInterfaceView[],
+    slot: UplinkSlot,
+    exceptKey: string,
+): string | null {
+    const held = interfaces.find((i) => i.role === "wan" && i.slot === slot && i.key !== exceptKey)
+    return held ? held.label || held.if_name : null
+}
+
 interface Props {
     interfaces: NetworkInterfaceView[]
     onAssign: (iface: NetworkInterfaceView, choice: RoleChoice) => void
@@ -133,11 +143,20 @@ export function InterfaceTable({ interfaces, onAssign, disabled }: Props) {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {ROLE_CHOICES.map((c) => (
-                                        <SelectItem key={c.value} value={c.value}>
-                                            {c.label}
-                                        </SelectItem>
-                                    ))}
+                                    {ROLE_CHOICES.map((c) => {
+                                        const holder = c.slot
+                                            ? slotHolder(interfaces, c.slot, iface.key)
+                                            : null
+                                        return (
+                                            <SelectItem
+                                                key={c.value}
+                                                value={c.value}
+                                                disabled={!!holder}
+                                            >
+                                                {holder ? `${c.label} — held by ${holder}` : c.label}
+                                            </SelectItem>
+                                        )
+                                    })}
                                 </SelectContent>
                             </Select>
                         </TableCell>
