@@ -23,31 +23,6 @@ import { loginSchema, type LoginFormData } from "@/lib/validations/login-schema"
 import { useAuthStore } from "@/store/auth-store"
 import { ApiError } from "@/lib/api"
 
-// F: Animated number that counts up from 0 on mount
-function AnimatedNumber({ target, decimals = 0, duration = 1500, suffix = "" }: {
-    target: number; decimals?: number; duration?: number; suffix?: string
-}) {
-    const [value, setValue] = useState(0)
-    const startTime = useRef(0)
-    const animRef = useRef(0)
-
-    useEffect(() => {
-        startTime.current = performance.now()
-        function tick(now: number) {
-            const elapsed = now - startTime.current
-            const progress = Math.min(elapsed / duration, 1)
-            // Ease-out cubic
-            const eased = 1 - Math.pow(1 - progress, 3)
-            setValue(eased * target)
-            if (progress < 1) animRef.current = requestAnimationFrame(tick)
-        }
-        animRef.current = requestAnimationFrame(tick)
-        return () => cancelAnimationFrame(animRef.current)
-    }, [target, duration])
-
-    return <>{value.toFixed(decimals)}{suffix}</>
-}
-
 export default function LoginForm() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
@@ -158,23 +133,6 @@ export default function LoginForm() {
                         </p>
                     </div>
 
-                    {/* Stat pills row */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.6, delay: 0.8 }}
-                        className="flex items-center gap-3"
-                    >
-                        <span className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/60 tabular-nums">
-                            <AnimatedNumber target={18} duration={1200} /> Regions
-                        </span>
-                        <span className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/60 tabular-nums">
-                            <AnimatedNumber target={99.9} decimals={1} duration={1800} suffix="%" /> Uptime
-                        </span>
-                        <span className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-xs text-white/60">
-                            Low Latency
-                        </span>
-                    </motion.div>
                 </motion.div>
             </div>
 
