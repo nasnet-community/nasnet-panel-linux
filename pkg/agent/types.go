@@ -198,21 +198,21 @@ type StarlinkObstructionMap struct {
 
 // NetInterface is one enumerated NIC as the panel sees it.
 type NetInterface struct {
-	IfName       string
-	PermMAC      string
-	MAC          string
-	IDPath       string
-	KeyKind      string // "permaddr" | "idpath" | "ifname"
-	Key          string
-	Source       string
-	Confidence   int
-	Driver       string
-	Carrier      bool
-	OperState    string
-	SpeedMbit    int
-	MTU          int
-	Phy          string
-	USBSpeedMbit int
-	Assignable   bool
-	Addrs        []string // CIDR form
+	IfName       string   `json:"if_name"`
+	PermMAC      string   `json:"perm_mac"`
+	MAC          string   `json:"mac"`
+	IDPath       string   `json:"id_path"`
+	KeyKind      string   `json:"key_kind"` // "permaddr" | "idpath" | "ifname"
+	Key          string   `json:"key"`
+	Source       string   `json:"source"`
+	Confidence   int      `json:"confidence"`
+	Driver       string   `json:"driver"`
+	Carrier      bool     `json:"carrier"`
+	OperState    string   `json:"oper_state"`
+	SpeedMbit    int      `json:"speed_mbit"`
+	MTU          int      `json:"mtu"`
+	Phy          string   `json:"phy"`
+	USBSpeedMbit int      `json:"usb_speed_mbit"`
+	Assignable   bool     `json:"assignable"`
+	Addrs        []string `json:"addrs"` // CIDR form
 }

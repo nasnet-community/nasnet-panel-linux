@@ -9,6 +9,7 @@ export interface Verdict {
 }
 
 export interface NetworkInterfaceView {
+    id: number
     if_name: string
     perm_mac: string
     id_path: string

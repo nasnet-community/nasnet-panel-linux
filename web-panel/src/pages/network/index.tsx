@@ -73,10 +73,8 @@ export default function NetworkPage() {
     }
 
     function onAssign(iface: NetworkInterfaceView, choice: RoleChoice) {
-        const row = interfaces.data?.find((i) => i.key === iface.key)
-        if (!row) return
         const req: AssignRoleRequest = {
-            interface_id: Number((row as unknown as { id?: number }).id ?? 0),
+            interface_id: iface.id,
             role: choice.role,
             slot: choice.slot,
         }
