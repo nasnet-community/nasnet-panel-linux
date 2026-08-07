@@ -8,6 +8,7 @@ import { RouteErrorBoundary } from "@/components/ui/route-error-boundary"
 
 const Login = lazy(() => import("@/pages/login"))
 const Dashboard = lazy(() => import("@/pages/dashboard"))
+const Network = lazy(() => import("@/pages/network"))
 const Users = lazy(() => import("@/pages/users"))
 const UserDetail = lazy(() => import("@/pages/users/[id]"))
 const Subscriptions = lazy(() => import("@/pages/subscriptions"))
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
         { path: "/users/:id", element: r(<UserDetail />) },
         { path: "/server", element: r(<Server />) },
         { path: "/nodes", element: <Navigate to="/server" replace /> },
+        { path: "/network", element: r(<Network />) },
         { path: "/nodes/:id", element: <Navigate to="/server" replace /> },
         { path: "/xray-binaries", element: r(<XrayBinaries />) },
         { path: "/subscriptions", element: r(<Subscriptions />) },
