@@ -166,6 +166,10 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	return s, nil
 }
 
+// NftManager exposes the single writer of `table inet nasnet`, so router mode
+// mutates the same ruleset instead of clobbering it.
+func (s *Server) NftManager() *nft.Manager { return s.nftManager }
+
 // StartBackgroundServices starts the background services (xray auto-start, TC setup,
 // traffic collector, access log collector). It is called by Start() and can also be
 // called independently in reverse mode before the gRPC server is set up.
