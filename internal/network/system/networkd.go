@@ -1,12 +1,16 @@
 package system
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 )
@@ -99,6 +103,58 @@ func RenderMgmt(in domain.NetworkInterface, cidr string) UplinkFile {
 	b.WriteString("EmitDNS=no\n")
 	b.WriteString("EmitRouter=no\n")
 	return UplinkFile{Name: "40-nasnet-mgmt.network", Content: b.String()}
+}
+
+// RenderNetworkdConf keeps networkd's hands off our routing policy
+func RenderNetworkdConf() UplinkFile {
+	return UplinkFile{
+		Name: "10-nasnet.conf",
+		Content: "# Managed by nasnet. Do not edit (regenerated on every apply).\n" +
+			"[Network]\n" +
+			"ManageForeignRoutingPolicyRules=no\n" +
+			"ManageForeignRoutes=no\n",
+	}
+}
+
+// EnsureNetworkdConf writes the drop-in and restarts networkd when it changed
+func EnsureNetworkdConf(ctx context.Context, p Paths) error {
+	f := RenderNetworkdConf()
+	path := filepath.Join(p.NetworkdConfDir, f.Name)
+	if old, err := os.ReadFile(path); err == nil && string(old) == f.Content {
+		return nil
+	}
+	if err := WriteFiles(p.NetworkdConfDir, []UplinkFile{f}); err != nil {
+		return err
+	}
+	err := exec.CommandContext(ctx, "systemctl", "restart", "systemd-networkd").Run()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil // no systemd here (tests, containers)
+	}
+	if err != nil {
+		return err
+	}
+	return waitNetworkdReady(ctx)
+}
+
+// waitNetworkdReady polls until networkd answers again. systemctl returns once
+// the unit is active, but its dbus alias is registered a moment later, and the
+// apply's own reload lands in that gap: "Unit dbus-org.freedesktop.network1
+// .service not found", which fails the whole apply.
+func waitNetworkdReady(ctx context.Context) error {
+	var last error
+	for range 20 {
+		if err := exec.CommandContext(ctx, "networkctl", "reload").Run(); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("systemd-networkd did not come back after the restart: %w", last)
 }
 
 // RenderRTTables is cosmetic. the kernel only cares about the numbers.

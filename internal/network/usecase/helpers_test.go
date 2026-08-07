@@ -14,6 +14,7 @@ func testPaths(t *testing.T) system.Paths {
 	root := t.TempDir()
 	p := system.Paths{
 		NetworkdDir:        filepath.Join(root, "etc/systemd/network"),
+		NetworkdConfDir:    filepath.Join(root, "etc/systemd/networkd.conf.d"),
 		NetplanDir:         filepath.Join(root, "etc/netplan"),
 		NetplanDisabledDir: filepath.Join(root, "etc/netplan.disabled"),
 		SysctlDir:          filepath.Join(root, "etc/sysctl.d"),
@@ -22,8 +23,8 @@ func testPaths(t *testing.T) system.Paths {
 		CloudInitDir: filepath.Join(root, "etc/cloud/cloud.cfg.d"),
 		StateDir:     filepath.Join(root, "var/lib/nasnet"),
 	}
-	for _, d := range []string{p.NetworkdDir, p.NetplanDir, p.SysctlDir, p.RTTablesDir,
-		p.CloudInitDir, p.StateDir} {
+	for _, d := range []string{p.NetworkdDir, p.NetworkdConfDir, p.NetplanDir, p.SysctlDir,
+		p.RTTablesDir, p.CloudInitDir, p.StateDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}

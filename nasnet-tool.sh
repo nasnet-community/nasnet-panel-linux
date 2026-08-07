@@ -1423,6 +1423,11 @@ wizard_build_start_docker() {
 install_netrollback_units() {
     step_info "Installing network apply dead-man..."
 
+    local roll_env_db=""
+    if ! is_sqlite; then
+        roll_env_db="Environment=DB_HOST=localhost"
+    fi
+
     sudo tee /etc/systemd/system/nasnet-netrollback.service > /dev/null << 'ROLLSVC'
 [Unit]
 Description=nasnet network apply dead-man
@@ -1431,9 +1436,14 @@ Documentation=https://github.com/nasnet-community/nasnet-panel-linux
 [Service]
 Type=oneshot
 User=root
+WorkingDirectory=INSTALL_DIR_PLACEHOLDER
+EnvironmentFile=INSTALL_DIR_PLACEHOLDER/.env
+ROLL_ENV_DB_PLACEHOLDER
 ExecStart=INSTALL_DIR_PLACEHOLDER/bin/nasnet-panel net rollback --if-expired
 ROLLSVC
-    sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|${INSTALL_DIR}|" \
+    sudo sed -i "s|INSTALL_DIR_PLACEHOLDER|${INSTALL_DIR}|g" \
+        /etc/systemd/system/nasnet-netrollback.service
+    sudo sed -i "s|^ROLL_ENV_DB_PLACEHOLDER\$|${roll_env_db}|" \
         /etc/systemd/system/nasnet-netrollback.service
 
     sudo tee /etc/systemd/system/nasnet-netrollback.timer > /dev/null << 'ROLLTMR'

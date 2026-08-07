@@ -413,6 +413,10 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 	if err := system.WriteFiles(u.Paths.NetworkdDir, files); err != nil {
 		return err
 	}
+	// Must take effect before the reload or networkd removes the rules we install next
+	if err := system.EnsureNetworkdConf(ctx, u.Paths); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(u.Paths.RTTablesDir, 0o755); err != nil {
 		return err
 	}
@@ -496,14 +500,17 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 		return
 	}
 	gwByIf, forceByIf, idByIf := map[string]string{}, map[string]string{}, map[string]uint{}
+	learnedByIf := map[string]string{}
 	for _, r := range rows {
 		gwByIf[r.IfName], forceByIf[r.IfName], idByIf[r.IfName] = r.StaticGateway, r.ForceState, r.ID
+		learnedByIf[r.IfName] = r.LearnedGateway
 	}
 
 	for _, up := range uplinks {
 		gw := gwByIf[up.IfName]
 		if gw == "" {
-			// DHCP uplink: the gateway is whatever its own table holds.
+			// DHCP uplink: the gateway is whatever its own table holds. Remember
+			// it, because failover deletes the route we read it from.
 			if routes, err := u.Backend.RouteList(ctx, up.Table); err == nil {
 				for _, r := range routes {
 					if r.Dest == "default" && r.Gateway != "" {
@@ -511,14 +518,24 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 					}
 				}
 			}
+			if gw != "" && gw != learnedByIf[up.IfName] {
+				_ = u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw)
+			}
+			if gw == "" {
+				gw = learnedByIf[up.IfName]
+			}
 		}
 
 		healthy, changed, err := u.health.Observe(ctx, up, gw, forceByIf[up.IfName])
 		if err != nil {
 			continue
 		}
-		if err := u.health.ApplyRoute(ctx, up, gw, healthy); err != nil {
-			continue
+		// Never withdraw a route we could not put back: with no gateway, or
+		// before the uplink has ever been seen healthy, leave networkd's alone.
+		if gw != "" && (healthy || u.health.EverUp(up.IfName)) {
+			if err := u.health.ApplyRoute(ctx, up, gw, healthy); err != nil {
+				continue
+			}
 		}
 		if changed {
 			_ = u.IfRepo.SetHealth(ctx, idByIf[up.IfName], healthy)

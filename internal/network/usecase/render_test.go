@@ -28,6 +28,7 @@ func (s *stubIfRepo) GetBySlot(context.Context, domain.UplinkSlot) (*domain.Netw
 func (s *stubIfRepo) Upsert(context.Context, *domain.NetworkInterface) error { return nil }
 func (s *stubIfRepo) MarkAbsent(context.Context, []string) error             { return nil }
 func (s *stubIfRepo) SetHealth(context.Context, uint, bool) error            { return nil }
+func (s *stubIfRepo) SetLearnedGateway(context.Context, uint, string) error  { return nil }
 func (s *stubIfRepo) DB() *gorm.DB                                           { return nil }
 func (s *stubIfRepo) SetRoleTx(context.Context, *gorm.DB, uint, domain.InterfaceRole, domain.UplinkSlot) error {
 	return nil
@@ -60,6 +61,28 @@ func TestRenderAll_RejectsTwoUplinksInOneSlot(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "domestic") {
 		t.Fatalf("a duplicate slot silently dropped an uplink: %v", err)
+	}
+}
+
+// networkd deletes rules it does not own when it reconfigures a link, and the
+// apply reloads it straight after installing them.
+func TestRenderAll_WritesTheNetworkdDropIn(t *testing.T) {
+	u, err := renderWith(t, []domain.NetworkInterface{
+		{ID: 1, IfName: "eth0", PermMAC: "aa:bb:cc:dd:ee:01",
+			Role: domain.RoleWAN, Slot: domain.SlotDomestic, Method: domain.MethodDHCP4},
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(u.Paths.NetworkdConfDir, "10-nasnet.conf"))
+	if err != nil {
+		t.Fatalf("networkd drop-in missing: %v", err)
+	}
+	for _, want := range []string{"ManageForeignRoutingPolicyRules=no", "ManageForeignRoutes=no"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("drop-in missing %q:\n%s", want, b)
+		}
 	}
 }
 
