@@ -25,6 +25,7 @@ check "router mode env var"                     'NASNET_ROUTER_MODE=1'
 check "netrollback service"                     'nasnet-netrollback.service'
 check "netrollback timer"                       'nasnet-netrollback.timer'
 check "rollback command"                        'net rollback --if-expired'
+check "rollback env file"                       'EnvironmentFile=INSTALL_DIR_PLACEHOLDER/.env'
 check "timer enabled"                           'systemctl enable --now nasnet-netrollback.timer'
 
 # The installer must NOT touch the network: the takeover is the first apply.

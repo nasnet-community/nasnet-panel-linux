@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ const cloudInitDropIn = "99-nasnet.cfg"
 // Paths locates everything the network feature owns
 type Paths struct {
 	NetworkdDir        string
+	NetworkdConfDir    string // networkd.conf.d, where we tell it to leave our rules alone
 	NetplanDir         string
 	NetplanDisabledDir string
 	SysctlDir          string
@@ -35,6 +37,7 @@ type Paths struct {
 func DefaultPaths() Paths {
 	return Paths{
 		NetworkdDir:        "/etc/systemd/network",
+		NetworkdConfDir:    "/etc/systemd/networkd.conf.d",
 		NetplanDir:         "/etc/netplan",
 		NetplanDisabledDir: "/etc/netplan.disabled",
 		SysctlDir:          "/etc/sysctl.d",
@@ -50,10 +53,19 @@ type Snapshot struct {
 	Version int       `json:"version"`
 	TakenAt time.Time `json:"taken_at"`
 
-	NetworkdFiles map[string][]byte `json:"networkd_files"`
-	NetplanFiles  map[string][]byte `json:"netplan_files"`
-	SysctlFiles   map[string][]byte `json:"sysctl_files"`
-	RTTablesFiles map[string][]byte `json:"rt_tables_files"`
+	NetworkdFiles     map[string][]byte `json:"networkd_files"`
+	NetworkdConfFiles map[string][]byte `json:"networkd_conf_files"`
+	NetplanFiles      map[string][]byte `json:"netplan_files"`
+	SysctlFiles       map[string][]byte `json:"sysctl_files"`
+	RTTablesFiles     map[string][]byte `json:"rt_tables_files"`
+
+	// Modes, kept separate so a snapshot written by an older build still loads.
+	// netplan refuses to be world-readable, so 0644 everywhere is not safe.
+	NetworkdModes     map[string]uint32 `json:"networkd_modes,omitempty"`
+	NetworkdConfModes map[string]uint32 `json:"networkd_conf_modes,omitempty"`
+	NetplanModes      map[string]uint32 `json:"netplan_modes,omitempty"`
+	SysctlModes       map[string]uint32 `json:"sysctl_modes,omitempty"`
+	RTTablesModes     map[string]uint32 `json:"rt_tables_modes,omitempty"`
 
 	Rules  []Rule          `json:"rules"`
 	Routes map[int][]Route `json:"routes"`
@@ -80,16 +92,19 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 	}
 
 	var err error
-	if snap.NetworkdFiles, err = readDirFiles(s.Paths.NetworkdDir); err != nil {
+	if snap.NetworkdFiles, snap.NetworkdModes, err = readDirFiles(s.Paths.NetworkdDir); err != nil {
 		return nil, fmt.Errorf("snapshot networkd: %w", err)
 	}
-	if snap.NetplanFiles, err = readDirFiles(s.Paths.NetplanDir); err != nil {
+	if snap.NetworkdConfFiles, snap.NetworkdConfModes, err = readDirFiles(s.Paths.NetworkdConfDir); err != nil {
+		return nil, fmt.Errorf("snapshot networkd.conf.d: %w", err)
+	}
+	if snap.NetplanFiles, snap.NetplanModes, err = readDirFiles(s.Paths.NetplanDir); err != nil {
 		return nil, fmt.Errorf("snapshot netplan: %w", err)
 	}
-	if snap.SysctlFiles, err = readDirFiles(s.Paths.SysctlDir); err != nil {
+	if snap.SysctlFiles, snap.SysctlModes, err = readDirFiles(s.Paths.SysctlDir); err != nil {
 		return nil, fmt.Errorf("snapshot sysctl.d: %w", err)
 	}
-	if snap.RTTablesFiles, err = readDirFiles(s.Paths.RTTablesDir); err != nil {
+	if snap.RTTablesFiles, snap.RTTablesModes, err = readDirFiles(s.Paths.RTTablesDir); err != nil {
 		return nil, fmt.Errorf("snapshot rt_tables.d: %w", err)
 	}
 
@@ -158,15 +173,24 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 // Restore is the exact inverse of an apply
 func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	var errs []string
-	restoreDir := func(dir string, want map[string][]byte) {
-		if err := writeDirExactly(dir, want); err != nil {
+	restoreDir := func(dir string, want map[string][]byte, modes map[string]uint32) {
+		if err := writeDirExactly(dir, want, modes); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", dir, err))
 		}
 	}
-	restoreDir(s.Paths.NetworkdDir, snap.NetworkdFiles)
-	restoreDir(s.Paths.NetplanDir, snap.NetplanFiles)
-	restoreDir(s.Paths.SysctlDir, snap.SysctlFiles)
-	restoreDir(s.Paths.RTTablesDir, snap.RTTablesFiles)
+	restoreDir(s.Paths.NetworkdDir, snap.NetworkdFiles, snap.NetworkdModes)
+	restoreDir(s.Paths.NetworkdConfDir, snap.NetworkdConfFiles, snap.NetworkdConfModes)
+	restoreDir(s.Paths.NetplanDir, snap.NetplanFiles, snap.NetplanModes)
+	restoreDir(s.Paths.SysctlDir, snap.SysctlFiles, snap.SysctlModes)
+	restoreDir(s.Paths.RTTablesDir, snap.RTTablesFiles, snap.RTTablesModes)
+
+	// The takeover deleted netplan's generated units; putting the YAML back does
+	// not recreate them, and networkd would come up owning nothing at all.
+	if len(snap.NetplanFiles) > 0 {
+		if err := netplanGenerate(ctx); err != nil {
+			errs = append(errs, fmt.Sprintf("netplan generate: %v", err))
+		}
+	}
 
 	// The owned table goes away entirely — one command, idempotent, which is
 	// exactly why everything lives in one table.
@@ -221,6 +245,10 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	for _, unit := range snap.MaskedUnits {
 		_ = exec.CommandContext(ctx, "systemctl", "mask", unit).Run()
 	}
+	nowMasked := maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
+	for _, unit := range unitsToUnmask(nowMasked, snap.MaskedUnits) {
+		_ = exec.CommandContext(ctx, "systemctl", "unmask", unit).Run()
+	}
 	if !snap.CloudInitDisabled {
 		_ = os.Remove(s.cloudInitPath())
 	}
@@ -231,15 +259,19 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	return nil
 }
 
-// readDirFiles returns basename -> content for every regular file in dir
-func readDirFiles(dir string) (map[string][]byte, error) {
-	out := map[string][]byte{}
+// readDirFiles returns basename -> content for every regular file in dir.
+// An unset path means the caller does not manage that directory.
+func readDirFiles(dir string) (map[string][]byte, map[string]uint32, error) {
+	out, modes := map[string][]byte{}, map[string]uint32{}
+	if dir == "" {
+		return out, modes, nil
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return out, nil
+			return out, modes, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -247,15 +279,21 @@ func readDirFiles(dir string) (map[string][]byte, error) {
 		}
 		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out[e.Name()] = b
+		if info, err := e.Info(); err == nil {
+			modes[e.Name()] = uint32(info.Mode().Perm())
+		}
 	}
-	return out, nil
+	return out, modes, nil
 }
 
 // writeDirExactly makes dir's contents equal want.
-func writeDirExactly(dir string, want map[string][]byte) error {
+func writeDirExactly(dir string, want map[string][]byte, modes map[string]uint32) error {
+	if dir == "" {
+		return nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -274,11 +312,46 @@ func writeDirExactly(dir string, want map[string][]byte) error {
 		}
 	}
 	for name, content := range want {
-		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
+		mode := os.FileMode(0o644)
+		if m, ok := modes[name]; ok {
+			mode = os.FileMode(m)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, content, mode); err != nil {
+			return err
+		}
+		// WriteFile only applies the mode when it creates the file.
+		if err := os.Chmod(path, mode); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// unitsToUnmask lists what the takeover masked and the snapshot did not, so a
+// revert leaves NetworkManager exactly as it found it. Without this it stays
+// masked and nothing owns the links.
+func unitsToUnmask(nowMasked, before []string) []string {
+	was := map[string]bool{}
+	for _, u := range before {
+		was[u] = true
+	}
+	var out []string
+	for _, u := range nowMasked {
+		if !was[u] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// netplanGenerate rebuilds /run/systemd/network from the restored YAML.
+func netplanGenerate(ctx context.Context) error {
+	err := exec.CommandContext(ctx, "netplan", "generate").Run()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil // not a netplan box
+	}
+	return err
 }
 
 func containsRule(rs []Rule, r Rule) bool {

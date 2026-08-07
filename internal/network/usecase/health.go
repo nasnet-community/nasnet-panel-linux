@@ -37,6 +37,7 @@ type uplinkState struct {
 	successes    int
 	lastDownAt   time.Time
 	everObserved bool
+	everUp       bool
 }
 
 // HealthMonitor damps probe results into one route operation. Revisit at a
@@ -139,6 +140,9 @@ func (h *HealthMonitor) setLocked(st *uplinkState, u Uplink, up bool) (bool, boo
 	changed := st.up != up || !st.everObserved
 	st.up = up
 	st.everObserved = true
+	if up {
+		st.everUp = true
+	}
 	st.fails, st.successes = 0, 0
 	if !up {
 		st.lastDownAt = h.now()
@@ -147,6 +151,14 @@ func (h *HealthMonitor) setLocked(st *uplinkState, u Uplink, up bool) (bool, boo
 		h.OnChange(u.IfName, up)
 	}
 	return up, changed, nil
+}
+
+// EverUp reports whether this uplink has been healthy at least once
+func (h *HealthMonitor) EverUp(ifName string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	st := h.states[ifName]
+	return st != nil && st.everUp
 }
 
 // ApplyRoute is the whole failover mechanism

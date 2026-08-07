@@ -112,6 +112,11 @@ type NetworkInterface struct {
 	// and do not satisfy the two-uplink minimum.
 	Ephemeral bool `gorm:"not null;default:false" json:"ephemeral"`
 
+	// LearnedGateway is the DHCP gateway, remembered the first time it is seen.
+	// Failover deletes the default route, and that route was the only place the
+	// gateway lived — without this the uplink can never be brought back.
+	LearnedGateway string `gorm:"not null;default:''" json:"learned_gateway"`
+
 	// Health, maintained by the probe loop. Never written to xray's config.
 	Healthy    bool   `gorm:"not null;default:false" json:"healthy"`
 	ForceState string `gorm:"not null;default:''" json:"force_state"` // "", "up", "down"
