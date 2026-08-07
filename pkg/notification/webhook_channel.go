@@ -33,7 +33,7 @@ func (c *WebhookChannel) httpClient() *http.Client {
 	if c.httpFactory == nil {
 		return &http.Client{Timeout: 10 * time.Second}
 	}
-	return c.httpFactory.ClientFor(httpclient.FeatureWebhooks, 10*time.Second)
+	return c.httpFactory.ClientFor(httpclient.FeatureWebhooks, httpclient.EgressForeign, 10*time.Second)
 }
 
 func (c *WebhookChannel) Name() string { return "webhook" }

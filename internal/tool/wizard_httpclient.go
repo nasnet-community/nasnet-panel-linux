@@ -24,5 +24,5 @@ func wizardHTTPClient(_ *Config) *http.Client {
 		ProxyURL: proxyURL,
 		Enabled:  map[httpclient.Feature]bool{httpclient.FeatureWizard: true},
 	})
-	return f.ClientFor(httpclient.FeatureWizard, 15*time.Second)
+	return f.ClientFor(httpclient.FeatureWizard, httpclient.EgressForeign, 15*time.Second)
 }

@@ -53,7 +53,7 @@ func (u *nodeUsecase) UpdateGeoFiles(ctx context.Context, nodeID uint, region st
 		var err error
 		var client = (*http.Client)(nil)
 		if u.httpFactory != nil {
-			client = u.httpFactory.ClientFor(httpclient.FeatureGeofiles, 2*time.Minute)
+			client = u.httpFactory.ClientFor(httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute)
 		}
 		geoipData, geositeData, err = geofiles.DownloadGeoFiles(ctx, client, src)
 		if err != nil {

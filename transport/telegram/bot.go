@@ -96,7 +96,7 @@ func NewBot(
 	// 3. nil (telebot uses its default direct client).
 	var httpClient *http.Client
 	if httpFactory != nil && httpFactory.IsProxyConfigured() {
-		httpClient = httpFactory.LiveClient(httpclient.FeatureTelegram, 30*time.Second)
+		httpClient = httpFactory.LiveClient(httpclient.FeatureTelegram, httpclient.EgressForeign, 30*time.Second)
 		log.Info("Using outbound-proxy factory for Telegram API")
 	}
 	if httpClient == nil && cfg.Proxy.Enabled {

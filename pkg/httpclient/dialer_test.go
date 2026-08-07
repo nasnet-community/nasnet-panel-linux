@@ -42,7 +42,7 @@ func TestFactory_ProxyClientReachesUpstream(t *testing.T) {
 		ProxyURL: "socks5h://" + proxyAddr,
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 
 	resp, err := c.Get(upstream.URL)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestFactory_DirectClient_NoProxyHop(t *testing.T) {
 	t.Cleanup(upstream.Close)
 
 	f := NewFactory() // empty config = no proxy
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	resp, err := c.Get(upstream.URL)
 	if err != nil {
 		t.Fatalf("direct GET: %v", err)
@@ -78,7 +78,7 @@ func TestFactory_ContextCancellationDuringDial(t *testing.T) {
 		ProxyURL: "socks5h://10.255.255.1:1080",
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 30*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 30*time.Second)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.invalid/", nil)

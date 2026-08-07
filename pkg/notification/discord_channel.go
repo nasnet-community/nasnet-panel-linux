@@ -33,7 +33,7 @@ func (c *DiscordChannel) httpClient() *http.Client {
 	if c.httpFactory == nil {
 		return &http.Client{Timeout: 10 * time.Second}
 	}
-	return c.httpFactory.ClientFor(httpclient.FeatureWebhooks, 10*time.Second)
+	return c.httpFactory.ClientFor(httpclient.FeatureWebhooks, httpclient.EgressForeign, 10*time.Second)
 }
 
 func (c *DiscordChannel) Name() string { return "discord" }

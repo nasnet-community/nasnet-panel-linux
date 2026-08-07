@@ -246,7 +246,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// post-usecase-init. Snapshot consumers use LiveClient for live reloads.
 	httpFactory := httpclient.NewFactory()
 	geoip.SetClientFactory(func() *http.Client {
-		return httpFactory.ClientFor(httpclient.FeatureGeoIP, 3*time.Second)
+		return httpFactory.ClientFor(httpclient.FeatureGeoIP, httpclient.EgressForeign, 3*time.Second)
 	})
 
 	// ACME settings from database first, then environment config
@@ -268,7 +268,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		if acmeEmail != "" {
 			// LiveClient routes LE API calls through the factory transport;
 			// proxy_use_acme toggle is live. DNS-01 still uses system resolver.
-			acmeClient := httpFactory.LiveClient(httpclient.FeatureACME, 30*time.Second)
+			acmeClient := httpFactory.LiveClient(httpclient.FeatureACME, httpclient.EgressAdvertised, 30*time.Second)
 			certManager, err = acme.NewCertManager(acmeEmail, cfg.ACME.CacheDir, acmeStaging, acmeClient)
 			if err != nil {
 				log.WithError(err).Warn("Failed to initialize ACME CertManager - certificate issuance disabled")
@@ -289,6 +289,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
 	uc.Node.SetWGPeerSource(wireguardNodebridge.New(repos.WGPeer))
 	uc.Node.SetRouterMode(cfg.Router.Enabled)
+	httpFactory.SetRouterMode(cfg.Router.Enabled, httpclient.EgressDomestic)
 	xrayProv.SetWGProvisioner(uc.WGDevice)
 
 	// (Single binary mode) run the node agent in-process. Panel drives this server through an embedded client
