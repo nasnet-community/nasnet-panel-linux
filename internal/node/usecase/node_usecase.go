@@ -230,6 +230,7 @@ type NodeUsecase interface {
 	SetAuditUsecase(a auditDomain.AuditLogUsecase)
 	SetWGPeerSource(s WGPeerSource)
 	SetRouterMode(enabled bool)
+	SetIngressUplinkSource(fn func() string)
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)
@@ -376,6 +377,9 @@ type nodeUsecase struct {
 
 	// Emits the per group direct outbounds
 	routerMode bool
+
+	// Resolves the shaped interface
+	ingressUplinkFn func() string
 
 	// nukeAgentClientFactory: test override; nil → getAgentClient.
 	nukeAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)

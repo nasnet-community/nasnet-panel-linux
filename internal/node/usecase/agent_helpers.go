@@ -48,6 +48,17 @@ func (u *nodeUsecase) SetWGPeerSource(s WGPeerSource) { u.wgPeerSource = s }
 // SetRouterMode mirrors cfg.Router.Enabled into generated xray configs
 func (u *nodeUsecase) SetRouterMode(enabled bool) { u.routerMode = enabled }
 
+// ingressUplinkIfName is the uplink terminating client connections
+func (u *nodeUsecase) ingressUplinkIfName() string {
+	if u.ingressUplinkFn == nil {
+		return ""
+	}
+	return u.ingressUplinkFn()
+}
+
+// SetIngressUplinkSource wires the router-mode uplink lookup.
+func (u *nodeUsecase) SetIngressUplinkSource(fn func() string) { u.ingressUplinkFn = fn }
+
 // mergeWGRenderPeers unions admin static peers with managed device peers, deduped by pubkey.
 func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) []domain.WireGuardPeer {
 	seen := make(map[string]bool, len(static)+len(managed))
@@ -692,7 +703,10 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 	// Setup or teardown TC bandwidth shaping based on node settings
 	bwSettings := node.GetBandwidthSettingsOrDefault()
 	if bwSettings.Enabled {
-		iface := bwSettings.Interface
+		iface, warning := node.ResolveShapingInterface(u.ingressUplinkIfName())
+		if warning != "" {
+			log.WithField("node", node.ID).Warn(warning)
+		}
 		if iface == "" {
 			iface = "eth0"
 		}

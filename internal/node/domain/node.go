@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"time"
 
@@ -121,9 +122,34 @@ func (n *Node) BeforeCreate(tx *gorm.DB) error {
 // BandwidthSettings holds per-node TC bandwidth shaping configuration.
 // When Enabled, the hub calls SetupBandwidth on the agent after each config push.
 type BandwidthSettings struct {
-	Enabled   bool   `json:"enabled"`             // Enable TC bandwidth shaping on this node
-	Interface string `json:"interface,omitempty"` // Egress network interface (e.g. "eth0")
-	TotalBW   int    `json:"total_bw,omitempty"`  // Total link bandwidth in Mbps (default 1000)
+	Enabled           bool   `json:"enabled"`                      // Enable TC bandwidth shaping on this node
+	Interface         string `json:"interface,omitempty"`          // Legacy manual device, pre router mode
+	TotalBW           int    `json:"total_bw,omitempty"`           // Total link bandwidth in Mbps (default 1000)
+	InterfaceOverride string `json:"interface_override,omitempty"` // forces a device when the derived one is wrong
+}
+
+// ResolveShapingInterface returns the device carrying the HTB and IFB qdiscs,
+// plus a warning when that isn't the derived one.
+func (n *Node) ResolveShapingInterface(ingressIfName string) (string, string) {
+	bs := n.GetBandwidthSettingsOrDefault()
+
+	if bs.InterfaceOverride != "" {
+		if ingressIfName != "" && bs.InterfaceOverride != ingressIfName {
+			return bs.InterfaceOverride, fmt.Sprintf(
+				"shaping is pinned to %s, but client connections terminate on %s; "+
+					"per-user caps will not apply to the leg facing the user",
+				bs.InterfaceOverride, ingressIfName)
+		}
+		return bs.InterfaceOverride, ""
+	}
+
+	if ingressIfName != "" {
+		return ingressIfName, ""
+	}
+
+	return bs.Interface, fmt.Sprintf(
+		"no uplink assigned yet, so shaping falls back to the stored interface %q; "+
+			"assign the domestic uplink to derive it", bs.Interface)
 }
 
 // GetBandwidthSettingsOrDefault returns the node's bandwidth settings, or defaults when nil.
