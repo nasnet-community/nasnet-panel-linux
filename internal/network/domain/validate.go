@@ -258,6 +258,32 @@ func Validate(in ValidationInput) []Verdict {
 		return vs
 	}
 
+	// V20 the slot picks the routing table and the unit filename
+	if in.Req.Role == RoleWAN {
+		if in.Req.Slot != SlotDomestic && in.Req.Slot != SlotSecondary {
+			reject("V20", "%s must be assigned to the domestic or the secondary slot", target.IfName)
+			return vs
+		}
+	} else if in.Req.Slot != SlotNone {
+		reject("V20", "only an uplink carries a slot, %s does not", in.Req.Role)
+		return vs
+	}
+
+	// V25 one interface per slot
+	if in.Req.Role == RoleWAN {
+		for i := range in.Rows {
+			holder := &in.Rows[i]
+			if holder.ID == target.ID || holder.Role != RoleWAN || holder.Slot != in.Req.Slot {
+				continue
+			}
+			if in.Req.EvictID == nil || *in.Req.EvictID != holder.ID {
+				reject("V25", "%s already holds the %s slot; name it explicitly to take it over",
+					holder.IfName, in.Req.Slot)
+				return vs
+			}
+		}
+	}
+
 	// Counts for the box-shape rules below
 	assignable, wans, hasMgmt, hasLAN := 0, 0, false, false
 	for i := range in.Rows {

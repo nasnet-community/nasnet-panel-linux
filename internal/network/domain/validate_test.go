@@ -108,6 +108,58 @@ func TestValidate_V8_SingletonReassignmentNeedsAnExplicitEvictee(t *testing.T) {
 	}
 }
 
+// An uplink with no slot renders RouteTable=0, which networkd drops on the
+// floor, so the default route stays in main and failover has nothing to move.
+func TestValidate_V20_UplinkMustNameASlot(t *testing.T) {
+	vs := Validate(in(ChangeRequest{InterfaceID: 1, Role: RoleWAN}))
+	if r := firstReject(vs); r == nil || r.Rule != "V20" {
+		t.Fatalf("slotless uplink was accepted: %+v", vs)
+	}
+
+	for _, slot := range []UplinkSlot{SlotDomestic, SlotSecondary} {
+		if Rejected(Validate(in(ChangeRequest{InterfaceID: 1, Role: RoleWAN, Slot: slot}))) {
+			t.Errorf("%s slot rejected", slot)
+		}
+	}
+}
+
+// A slot on anything but an uplink is meaningless and would sit in the DB
+// waiting to confuse the renderer.
+func TestValidate_V20_OnlyAnUplinkCarriesASlot(t *testing.T) {
+	vs := Validate(in(ChangeRequest{InterfaceID: 1, Role: RoleLAN, Slot: SlotDomestic}))
+	if r := firstReject(vs); r == nil || r.Rule != "V20" {
+		t.Fatalf("lan with a slot was accepted: %+v", vs)
+	}
+}
+
+// Two uplinks in one slot render the same filename, so the second silently
+// overwrites the first and one NIC ends up with no unit at all.
+func TestValidate_V25_OneInterfacePerSlot(t *testing.T) {
+	i := in(ChangeRequest{InterfaceID: 2, Role: RoleWAN, Slot: SlotDomestic})
+	i.Rows[0].Role, i.Rows[0].Slot = RoleWAN, SlotDomestic // enp1s0 holds it
+
+	vs := Validate(i)
+	r := firstReject(vs)
+	if r == nil || r.Rule != "V25" {
+		t.Fatalf("duplicate slot was accepted: %+v", vs)
+	}
+	if !strings.Contains(r.Message, "enp1s0") {
+		t.Errorf("message must name the holder: %q", r.Message)
+	}
+
+	evict := uint(1)
+	i.Req.EvictID = &evict
+	if Rejected(Validate(i)) {
+		t.Errorf("naming the evictee should be accepted: %+v", Validate(i))
+	}
+
+	// The other slot is free, so it needs no eviction.
+	i.Req.EvictID, i.Req.Slot = nil, SlotSecondary
+	if Rejected(Validate(i)) {
+		t.Errorf("the free slot was rejected: %+v", Validate(i))
+	}
+}
+
 // One role per interface, and a bridge cannot hold a role while its members do.
 func TestValidate_V9_ParentAndMemberCannotBothHoldRoles(t *testing.T) {
 	i := in(ChangeRequest{InterfaceID: 3, Role: RoleWAN})

@@ -34,6 +34,17 @@ func TestBootWiring_GatesEverythingOnTheConfigFlag(t *testing.T) {
 	}
 }
 
+// The usecase has to reach AdminDeps or the routes never register and every
+// /network call quietly falls through to the SPA.
+func TestBootWiring_NetworkUsecaseReachesTheHTTPLayer(t *testing.T) {
+	src := readSource(t, "root.go")
+	for _, field := range []string{"NetworkUsecase:", "RouterMode:"} {
+		if !strings.Contains(src, field) {
+			t.Errorf("AdminDeps is missing %s, so the network API is unreachable", field)
+		}
+	}
+}
+
 // One writer for `table inet nasnet`: two managers would clobber each other.
 func TestBootWiring_SharesOneNftManager(t *testing.T) {
 	src := readSource(t, "root.go")
