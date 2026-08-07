@@ -12,7 +12,7 @@ func TestFactory_ClientFor_DisabledFeature_ReturnsDirectClient(t *testing.T) {
 		ProxyURL: "socks5h://localhost:1080",
 		Enabled:  map[Feature]bool{FeatureGeofiles: false},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	if c == nil {
 		t.Fatal("ClientFor returned nil")
 	}
@@ -30,7 +30,7 @@ func TestFactory_ClientFor_EnabledButEmptyURL_FallsBackDirect(t *testing.T) {
 		ProxyURL: "",
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	if c.Transport != http.DefaultTransport {
 		t.Fatal("empty URL with toggle on must fall back to direct")
 	}
@@ -42,7 +42,7 @@ func TestFactory_ClientFor_EnabledWithURL_UsesProxyTransport(t *testing.T) {
 		ProxyURL: "socks5h://127.0.0.1:1080",
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	if c.Transport == http.DefaultTransport {
 		t.Fatal("expected proxy transport when URL set and feature enabled")
 	}
@@ -54,7 +54,7 @@ func TestFactory_ClientFor_InvalidURL_FallsBackDirect(t *testing.T) {
 		ProxyURL: "not a url",
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	if c.Transport != http.DefaultTransport {
 		t.Fatal("invalid URL must fall back to direct")
 	}
@@ -66,7 +66,7 @@ func TestFactory_ClientFor_UnsupportedScheme_FallsBackDirect(t *testing.T) {
 		ProxyURL: "ftp://example:21",
 		Enabled:  map[Feature]bool{FeatureGeofiles: true},
 	})
-	c := f.ClientFor(FeatureGeofiles, 5*time.Second)
+	c := f.ClientFor(FeatureGeofiles, EgressForeign, 5*time.Second)
 	if c.Transport != http.DefaultTransport {
 		t.Fatal("unsupported scheme must fall back to direct")
 	}
@@ -75,11 +75,11 @@ func TestFactory_ClientFor_UnsupportedScheme_FallsBackDirect(t *testing.T) {
 func TestFactory_Update_AtomicSwap_NewRequestsUseNewState(t *testing.T) {
 	f := NewFactory()
 	f.Update(Config{ProxyURL: "socks5h://a:1080", Enabled: map[Feature]bool{FeatureGeofiles: true}})
-	first := f.ClientFor(FeatureGeofiles, time.Second)
+	first := f.ClientFor(FeatureGeofiles, EgressForeign, time.Second)
 	firstT := first.Transport
 
 	f.Update(Config{ProxyURL: "socks5h://b:1080", Enabled: map[Feature]bool{FeatureGeofiles: true}})
-	second := f.ClientFor(FeatureGeofiles, time.Second)
+	second := f.ClientFor(FeatureGeofiles, EgressForeign, time.Second)
 	if second.Transport == firstT {
 		t.Fatal("Update should produce a new transport for the new URL")
 	}
@@ -155,7 +155,7 @@ func contains(s, sub string) bool {
 
 func TestLiveClient_FollowsUpdates(t *testing.T) {
 	f := NewFactory()
-	live := f.LiveClient(FeatureGeofiles, time.Second)
+	live := f.LiveClient(FeatureGeofiles, EgressForeign, time.Second)
 
 	// Initial state: no proxy. Transport delegates to DefaultTransport via factory.
 	if live.Transport == nil {
@@ -170,7 +170,7 @@ func TestLiveClient_FollowsUpdates(t *testing.T) {
 	})
 	// Verify by reading the wrapped RT — the inner client now has a proxy
 	// transport.
-	inner := f.ClientFor(FeatureGeofiles, time.Second)
+	inner := f.ClientFor(FeatureGeofiles, EgressForeign, time.Second)
 	if inner.Transport == http.DefaultTransport {
 		t.Fatal("post-update transport should be proxy, not default")
 	}

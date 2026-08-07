@@ -41,7 +41,7 @@ func (h *Handler) telegramClient(timeout time.Duration) *http.Client {
 	if h.httpFactory == nil {
 		return &http.Client{Timeout: timeout}
 	}
-	return h.httpFactory.ClientFor(httpclient.FeatureTelegram, timeout)
+	return h.httpFactory.ClientFor(httpclient.FeatureTelegram, httpclient.EgressForeign, timeout)
 }
 
 func NewHandler(adminUsecase usecase.AdminUsecase, baseURL string, auditUC auditDomain.AuditLogUsecase, botToken string, settingUC settingDomain.SettingUsecase) *Handler {

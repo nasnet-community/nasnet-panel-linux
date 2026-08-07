@@ -2017,7 +2017,7 @@ func (h *Handler) GetXrayReleases(c *gin.Context) {
 	// Fetch from GitHub
 	var client *http.Client
 	if h.httpFactory != nil {
-		client = h.httpFactory.ClientFor(httpclient.FeatureGitHubAPI, 15*time.Second)
+		client = h.httpFactory.ClientFor(httpclient.FeatureGitHubAPI, httpclient.EgressForeign, 15*time.Second)
 	} else {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}

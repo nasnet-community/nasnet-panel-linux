@@ -23,9 +23,11 @@ type Config struct {
 // fetch the pointer once via Load and use whatever they got — no locks on
 // the hot path.
 type state struct {
-	proxyURL  *url.URL // nil if empty/invalid
-	transport http.RoundTripper
-	enabled   map[Feature]bool
+	proxyURL   *url.URL // nil if empty/invalid
+	transport  http.RoundTripper
+	enabled    map[Feature]bool
+	routerMode bool
+	advertised EgressGroup
 }
 
 // Factory hands out *http.Client values configured by the current settings.
@@ -46,6 +48,9 @@ func NewFactory() *Factory {
 // (with a warning at request time).
 func (f *Factory) Update(cfg Config) {
 	st := &state{enabled: cfg.Enabled}
+	if old := f.s.Load(); old != nil {
+		st.routerMode, st.advertised = old.routerMode, old.advertised
+	}
 	if cfg.ProxyURL != "" {
 		u, err := parseProxyURL(cfg.ProxyURL)
 		if err != nil {
@@ -54,7 +59,7 @@ func (f *Factory) Update(cfg Config) {
 				Warn("[httpclient] outbound_proxy_url is invalid; features routed via proxy will fall back to direct")
 		} else {
 			st.proxyURL = u
-			st.transport = buildSOCKS5Transport(u)
+			st.transport = buildSOCKS5Transport(u, proxy.Direct)
 		}
 	}
 	f.s.Store(st)
@@ -63,7 +68,7 @@ func (f *Factory) Update(cfg Config) {
 // ClientFor returns an *http.Client for the given feature.
 // If the feature toggle is off, or the proxy URL is unset/invalid, a direct
 // client is returned. timeout is applied to the returned client.
-func (f *Factory) ClientFor(feat Feature, timeout time.Duration) *http.Client {
+func (f *Factory) ClientFor(feat Feature, group EgressGroup, timeout time.Duration) *http.Client {
 	st := f.s.Load()
 	useProxy := st.enabled[feat] && st.transport != nil
 
@@ -73,7 +78,18 @@ func (f *Factory) ClientFor(feat Feature, timeout time.Duration) *http.Client {
 	}
 
 	if useProxy {
-		return &http.Client{Transport: st.transport, Timeout: timeout}
+		// Reaching the proxy is itself an egress, so mark that dial too.
+		return &http.Client{Transport: f.proxyTransport(st, group), Timeout: timeout}
+	}
+
+	if dial := f.markingDialer(group); dial != nil {
+		return &http.Client{Timeout: timeout, Transport: &http.Transport{
+			DialContext:           dial,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}}
 	}
 	return &http.Client{Transport: http.DefaultTransport, Timeout: timeout}
 }
@@ -86,9 +102,9 @@ func (f *Factory) IsProxyConfigured() bool {
 // LiveClient: transport defers to the factory per-request so setting
 // reloads take effect. Use for consumers that snapshot at construction
 // (telebot, acme.Client); ClientFor returns a snapshot.
-func (f *Factory) LiveClient(feat Feature, timeout time.Duration) *http.Client {
+func (f *Factory) LiveClient(feat Feature, group EgressGroup, timeout time.Duration) *http.Client {
 	return &http.Client{
-		Transport: &liveTransport{f: f, feat: feat, timeout: timeout},
+		Transport: &liveTransport{f: f, feat: feat, group: group, timeout: timeout},
 		Timeout:   timeout,
 	}
 }
@@ -96,11 +112,12 @@ func (f *Factory) LiveClient(feat Feature, timeout time.Duration) *http.Client {
 type liveTransport struct {
 	f       *Factory
 	feat    Feature
+	group   EgressGroup
 	timeout time.Duration
 }
 
 func (lt *liveTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	c := lt.f.ClientFor(lt.feat, lt.timeout)
+	c := lt.f.ClientFor(lt.feat, lt.group, lt.timeout)
 	return c.Transport.RoundTrip(req)
 }
 
@@ -132,13 +149,13 @@ func parseProxyURL(s string) (*url.URL, error) {
 // buildSOCKS5Transport returns an *http.Transport whose DialContext goes
 // through the given SOCKS5 proxy. The dialer is wrapped to honor caller
 // cancellation via context.
-func buildSOCKS5Transport(u *url.URL) http.RoundTripper {
+func buildSOCKS5Transport(u *url.URL, base proxy.Dialer) http.RoundTripper {
 	var auth *proxy.Auth
 	if u.User != nil {
 		pass, _ := u.User.Password()
 		auth = &proxy.Auth{User: u.User.Username(), Password: pass}
 	}
-	dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+	dialer, err := proxy.SOCKS5("tcp", u.Host, auth, base)
 	if err != nil {
 		logger.GetLogger().WithError(err).Warn("[httpclient] SOCKS5 dialer construction failed; using direct")
 		return http.DefaultTransport

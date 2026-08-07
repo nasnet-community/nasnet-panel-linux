@@ -226,7 +226,7 @@ func (h *SettingHandler) TestProxy(c *gin.Context) {
 		return
 	}
 
-	client := f.ClientFor(httpclient.FeatureGeofiles, 10*time.Second)
+	client := f.ClientFor(httpclient.FeatureGeofiles, httpclient.EgressForeign, 10*time.Second)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
 	defer cancel()
 	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodHead, req.TestTarget, nil)

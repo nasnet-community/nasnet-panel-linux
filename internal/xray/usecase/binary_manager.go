@@ -346,7 +346,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 func (bm *BinaryManager) downloadAndStore(version, arch, url string) error {
 	var client *http.Client
 	if bm.httpFactory != nil {
-		client = bm.httpFactory.ClientFor(httpclient.FeatureXrayBinary, 5*time.Minute)
+		client = bm.httpFactory.ClientFor(httpclient.FeatureXrayBinary, httpclient.EgressForeign, 5*time.Minute)
 	} else {
 		client = &http.Client{Timeout: 5 * time.Minute}
 	}
