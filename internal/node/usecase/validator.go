@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"regexp"
 	"strings"
 
@@ -18,6 +18,13 @@ var (
 // ErrInvalidDNSConfig wraps user-facing validation errors from DNS / FakeDNS
 // settings so the HTTP layer can surface them as 400 instead of 500.
 var ErrInvalidDNSConfig = errors.New("invalid dns config")
+
+// isIP reports whether s is a bare IP literal. Zoned forms like "fe80::1%eth0"
+// are rejected — xray-core can't use them and net.ParseIP never took them.
+func isIP(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Zone() == ""
+}
 
 func ValidateOutbound(out *domain.Outbound) error {
 	protocol := strings.ToLower(out.Protocol)
@@ -70,7 +77,7 @@ func ValidateOutbound(out *domain.Outbound) error {
 		return errors.New("address is required")
 	}
 	// Check if valid IP or Domain
-	if net.ParseIP(out.Address) == nil {
+	if !isIP(out.Address) {
 		// Not an IP, assume domain. Check length/format loosely
 		if len(out.Address) < 3 || (!strings.Contains(out.Address, ".") && out.Address != "localhost") {
 			return errors.New("invalid address (must be IP or domain)")
@@ -181,7 +188,7 @@ func validateSendThrough(st string) error {
 	if host == "origin" || host == "srcip" {
 		return nil
 	}
-	if net.ParseIP(host) == nil {
+	if !isIP(host) {
 		return fmt.Errorf(`sendThrough %q must be an IP, an IP CIDR, "origin", or "srcip"`, st)
 	}
 	return nil
@@ -240,7 +247,7 @@ func ValidateDNSSettings(settings *domain.DNSSettings) error {
 	}
 
 	// ClientIP
-	if settings.ClientIP != "" && net.ParseIP(settings.ClientIP) == nil {
+	if settings.ClientIP != "" && !isIP(settings.ClientIP) {
 		return dnsErr("invalid client_ip %q: must be a valid IP address", settings.ClientIP)
 	}
 
@@ -266,7 +273,7 @@ func ValidateDNSSettings(settings *domain.DNSSettings) error {
 		if s.QueryStrategy != "" && !validQueryStrategies[s.QueryStrategy] {
 			return dnsErr("server[%d]: invalid query_strategy %q", i, s.QueryStrategy)
 		}
-		if s.ClientIP != "" && net.ParseIP(s.ClientIP) == nil {
+		if s.ClientIP != "" && !isIP(s.ClientIP) {
 			return dnsErr("server[%d]: invalid client_ip %q", i, s.ClientIP)
 		}
 		if s.Tag != "" {
@@ -349,13 +356,10 @@ func isValidCIDROrGeoIP(s string) bool {
 	if strings.HasPrefix(s, "ext-ip:") {
 		return strings.Count(s[len("ext-ip:"):], ":") >= 1 && len(s) > len("ext-ip:")
 	}
-	if _, _, err := net.ParseCIDR(s); err == nil {
+	if _, err := netip.ParsePrefix(s); err == nil {
 		return true
 	}
-	if net.ParseIP(s) != nil {
-		return true
-	}
-	return false
+	return isIP(s)
 }
 
 // isValidHostsValue reports whether a hosts entry value is parseable by
@@ -380,7 +384,7 @@ func isValidHostsValue(v string) bool {
 		}
 		return true
 	}
-	if net.ParseIP(v) != nil {
+	if isIP(v) {
 		return true
 	}
 	// Anything else is treated as a domain. Strip prefix forms, then sanity
@@ -408,12 +412,11 @@ func ValidateFakeDNSPools(pools []domain.FakeDNSPool) error {
 		if ipPool == "" {
 			return dnsErr("pool[%d]: ip_pool is required", i)
 		}
-		_, ipnet, err := net.ParseCIDR(ipPool)
+		pool, err := netip.ParsePrefix(ipPool)
 		if err != nil {
 			return dnsErr("pool[%d]: invalid ip_pool %q: %v", i, ipPool, err)
 		}
-		ones, bits := ipnet.Mask.Size()
-		rooms := bits - ones
+		rooms := pool.Addr().BitLen() - pool.Bits()
 		if rooms <= 0 {
 			return dnsErr("pool[%d]: ip_pool %q has no host bits", i, ipPool)
 		}

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +22,13 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/sirupsen/logrus"
 )
+
+// isNodeIP reports whether s is a bare IP literal we can dial a node on. Zoned
+// forms like "fe80::1%eth0" are rejected: they're not routable off-link.
+func isNodeIP(s string) bool {
+	a, err := netip.ParseAddr(s)
+	return err == nil && a.Zone() == ""
+}
 
 // statusForRoutingError maps usecase routing errors to HTTP status. Validation
 // errors carry usecase.ErrInvalidRoutingRule and surface as 400 instead of 500.
@@ -298,7 +305,7 @@ func (h *Handler) CreateNode(c *gin.Context) {
 	}
 
 	// Validate IP
-	if net.ParseIP(req.IP) == nil {
+	if !isNodeIP(req.IP) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid IP address"})
 		return
 	}
@@ -373,7 +380,7 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 		node.Name = *req.Name
 	}
 	if req.IP != nil {
-		if net.ParseIP(*req.IP) == nil {
+		if !isNodeIP(*req.IP) {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid IP address"})
 			return
 		}

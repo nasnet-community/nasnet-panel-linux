@@ -3,7 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
-	"net"
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
@@ -638,8 +638,8 @@ func (w *WireGuardSettings) WGServerIP() string {
 	if len(w.Endpoint) == 0 {
 		return ""
 	}
-	if host, _, err := net.ParseCIDR(w.Endpoint[0]); err == nil {
-		return host.String()
+	if p, err := netip.ParsePrefix(w.Endpoint[0]); err == nil {
+		return p.Addr().Unmap().String()
 	}
 	return w.Endpoint[0]
 }
