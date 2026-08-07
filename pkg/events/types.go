@@ -54,6 +54,16 @@ const (
 	EventChatMessageDeleted    EventType = "chat.message_deleted"
 	EventChatReactionAdded     EventType = "chat.reaction_added"
 	EventChatReactionRemoved   EventType = "chat.reaction_removed"
+
+	// Network / router mode
+	EventInterfaceAdded       EventType = "interface.added"
+	EventInterfaceRemoved     EventType = "interface.removed"
+	EventInterfaceLinkChanged EventType = "interface.link_changed"
+	EventWANUp                EventType = "wan.up"
+	EventWANDown              EventType = "wan.down"
+	EventWANFailover          EventType = "wan.failover"
+	EventWANApplyRolledBack   EventType = "wan.apply_rolled_back"
+	EventWANLeaseWarning      EventType = "wan.lease_warning"
 )
 
 // Event represents a real-time event that can be published and subscribed to

@@ -29,6 +29,8 @@ import (
 	eventsHttp "github.com/nasnet-community/nasnet-panel-linux/internal/events/delivery/http"
 	mntHTTP "github.com/nasnet-community/nasnet-panel-linux/internal/maintenance/delivery/http"
 	mntUC "github.com/nasnet-community/nasnet-panel-linux/internal/maintenance/usecase"
+	networkHttp "github.com/nasnet-community/nasnet-panel-linux/internal/network/delivery/http"
+	networkUC "github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
 	nodeHttp "github.com/nasnet-community/nasnet-panel-linux/internal/node/delivery/http"
 	nodeHandler "github.com/nasnet-community/nasnet-panel-linux/internal/node/handler"
 	nodeRepo "github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
@@ -85,6 +87,8 @@ type AdminDeps struct {
 	BackupService      *adminUC.BackupService
 	AlertUsecase       alertUC.AlertUsecase
 	MaintenanceUsecase mntUC.Usecase
+	NetworkUsecase     networkUC.NetworkUsecase
+	RouterMode         bool
 }
 
 // InfraDeps holds infrastructure-level dependencies
@@ -364,6 +368,12 @@ func NewServer(deps ServerDeps) *Server {
 		if deps.Admin.SNIUsecase != nil {
 			sniHandler := sniHttp.NewHandler(deps.Admin.SNIUsecase)
 			sniHandler.RegisterRoutes(adminAPI)
+		}
+
+		// Router mode
+		if deps.Admin.NetworkUsecase != nil {
+			networkHttp.NewHandler(deps.Admin.NetworkUsecase, deps.Admin.RouterMode).
+				RegisterRoutes(adminAPI)
 		}
 
 		// System Settings

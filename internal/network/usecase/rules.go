@@ -210,3 +210,34 @@ func AllRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
 	out = append(out, GroupRules(groups, uplinks)...)
 	return append(out, tail...)
 }
+
+// Fixed table numbers, so a snapshot from one build restores under another
+func tableFor(slot domain.UplinkSlot) int {
+	switch slot {
+	case domain.SlotDomestic:
+		return 201
+	case domain.SlotSecondary:
+		return 202
+	}
+	return 0
+}
+
+func uplinkIndexFor(slot domain.UplinkSlot) uint32 {
+	switch slot {
+	case domain.SlotDomestic:
+		return 1
+	case domain.SlotSecondary:
+		return 2
+	}
+	return 0
+}
+
+func groupIndexFor(slot domain.UplinkSlot) uint32 {
+	switch slot {
+	case domain.SlotDomestic:
+		return netmark.GroupDomestic
+	case domain.SlotSecondary:
+		return netmark.GroupForeign
+	}
+	return 0
+}
