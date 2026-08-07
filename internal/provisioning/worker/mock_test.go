@@ -418,6 +418,7 @@ func (m *mockNodeUsecase) SetXrayDeps(interface {
 func (m *mockNodeUsecase) SetHTTPClientFactory(*httpclient.Factory) {}
 func (m *mockNodeUsecase) SetWGPeerSource(nodeUC.WGPeerSource)      {}
 func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
+func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)     {}
 func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)    {}
 
 // Geofile Management

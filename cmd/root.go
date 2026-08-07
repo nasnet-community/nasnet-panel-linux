@@ -289,6 +289,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
 	uc.Node.SetWGPeerSource(wireguardNodebridge.New(repos.WGPeer))
 	uc.Node.SetRouterMode(cfg.Router.Enabled)
+	uc.Node.SetIngressUplinkSource(func() string { return "" }) // Bandwidth shaping
 	httpFactory.SetRouterMode(cfg.Router.Enabled, httpclient.EgressDomestic)
 	xrayProv.SetWGProvisioner(uc.WGDevice)
 
