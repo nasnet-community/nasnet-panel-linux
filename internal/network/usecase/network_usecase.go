@@ -21,6 +21,7 @@ const defaultMgmtCIDR = "192.168.99.1/24"
 // InterfaceView is one NIC as the UI sees
 type InterfaceView struct {
 	agent.NetInterface
+	ID       uint             `json:"id"`
 	Role     string           `json:"role"`
 	Slot     string           `json:"slot"`
 	Label    string           `json:"label"`
@@ -228,7 +229,7 @@ func (u *networkUsecase) Enumerate(ctx context.Context) ([]InterfaceView, error)
 	out := make([]InterfaceView, 0, len(rows))
 	for _, r := range rows {
 		v := InterfaceView{
-			Role: string(r.Role), Slot: string(r.Slot), Label: r.Label,
+			ID: r.ID, Role: string(r.Role), Slot: string(r.Slot), Label: r.Label,
 			Present: r.Present, Healthy: r.Healthy,
 		}
 		if in, ok := live[r.Key]; ok {
