@@ -131,4 +131,9 @@ export const queryKeys = {
 
     // Sub panel chat
     subChat: (uuid: string) => ['sub-chat', uuid] as const,
+
+    // Network / router mode
+    network: ['network'] as const,
+    networkInterfaces: () => [...queryKeys.network, 'interfaces'] as const,
+    networkState: () => [...queryKeys.network, 'state'] as const,
 }

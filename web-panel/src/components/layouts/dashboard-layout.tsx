@@ -58,6 +58,7 @@ const NAV_SECTIONS: NavSection[] = [
                     { label: "Access Logs", href: "/access-logs", icon: HiOutlineGlobeAlt },
                     { label: "Access History", href: "/access-history", icon: HiOutlineSearch },
                     { label: "Xray Core", href: "/xray-binaries", icon: HiOutlineCube },
+                    { label: "Network", href: "/network", icon: HiOutlineLink },
                 ],
             },
             {

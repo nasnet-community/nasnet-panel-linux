@@ -209,3 +209,13 @@ export {
     useSetAlertRuleThreshold,
     useTestAlertRule,
 } from "./use-alerts"
+
+// Network / router mode
+export {
+    useNetworkInterfaces,
+    useNetworkState,
+    usePlanNetworkChange,
+    useApplyNetworkChange,
+    useConfirmNetworkApply,
+    useRollbackNetworkApply,
+} from "./use-network"
