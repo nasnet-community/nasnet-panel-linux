@@ -136,4 +136,6 @@ export const queryKeys = {
     network: ['network'] as const,
     networkInterfaces: () => [...queryKeys.network, 'interfaces'] as const,
     networkState: () => [...queryKeys.network, 'state'] as const,
+    networkLAN: () => [...queryKeys.network, 'lan'] as const,
+    networkPortForwards: () => [...queryKeys.network, 'port-forwards'] as const,
 }

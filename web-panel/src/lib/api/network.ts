@@ -1,10 +1,13 @@
-import { api, type ApiResponse } from "@/lib/api"
+import { ApiError, api, type ApiResponse } from "@/lib/api"
 import type {
     AssignRoleRequest,
+    LANConfig,
+    LANView,
     NetworkApply,
     NetworkInterfaceView,
     NetworkPlan,
     NetworkState,
+    PortForward,
     Verdict,
     VerdictLevel,
 } from "@/lib/types/network"
@@ -35,6 +38,71 @@ export async function rollbackNetworkApply(): Promise<ApiResponse<null>> {
 
 export async function identifyInterface(key: string): Promise<ApiResponse<null>> {
     return api.post<null>(`/api/v1/network/interfaces/${encodeURIComponent(key)}/identify`)
+}
+
+export async function getLAN(): Promise<ApiResponse<LANView>> {
+    return api.get<LANView>("/api/v1/network/lan")
+}
+
+export async function updateLAN(cfg: Partial<LANConfig>): Promise<ApiResponse<NetworkApply>> {
+    return api.put<NetworkApply>("/api/v1/network/lan", cfg)
+}
+
+export async function getPortForwards(): Promise<ApiResponse<PortForward[]>> {
+    return api.get<PortForward[]>("/api/v1/network/port-forwards")
+}
+
+export type PortForwardInput = Omit<PortForward, "id"> & { id?: number; confirmed?: boolean }
+
+export async function createPortForward(pf: PortForwardInput): Promise<ApiResponse<null>> {
+    return api.post<null>("/api/v1/network/port-forwards", pf)
+}
+
+export async function updatePortForward(
+    id: number,
+    pf: PortForwardInput,
+): Promise<ApiResponse<null>> {
+    return api.put<null>(`/api/v1/network/port-forwards/${id}`, pf)
+}
+
+export async function deletePortForward(id: number): Promise<ApiResponse<null>> {
+    return api.delete<null>(`/api/v1/network/port-forwards/${id}`)
+}
+
+/** Verdicts a rejected request came back with, so the UI names the rule. */
+export function verdictsFromError(err: unknown): Verdict[] {
+    if (!(err instanceof ApiError)) return []
+    const body = err.body as { verdicts?: Verdict[] } | undefined
+    return body?.verdicts ?? []
+}
+
+/** 409 means the change is permitted but needs a typed CONFIRM first. */
+export function needsConfirm(err: unknown): boolean {
+    return err instanceof ApiError && err.status === 409
+}
+
+/** Human summary of one forward. An empty uplink_key means every uplink. */
+export function portForwardSummary(pf: PortForward, labels: Record<string, string>): string {
+    const where = pf.uplink_key ? (labels[pf.uplink_key] ?? pf.uplink_key) : "any uplink"
+    return `${pf.proto.toUpperCase()}/${pf.dport} on ${where} → ${pf.to_addr}:${pf.to_port}`
+}
+
+/** Pre-check only; V27 on the server is the enforcement point. An empty
+ *  uplink_key on either side means "any uplink", so it collides with everything. */
+export function collidesLocally(
+    existing: PortForward[],
+    candidate: { proto: string; dport: number; uplink_key: string; id?: number },
+): boolean {
+    return existing.some(
+        (e) =>
+            e.id !== candidate.id &&
+            e.enabled &&
+            e.proto === candidate.proto &&
+            e.dport === candidate.dport &&
+            (e.uplink_key === "" ||
+                candidate.uplink_key === "" ||
+                e.uplink_key === candidate.uplink_key),
+    )
 }
 
 const SEVERITY: Record<VerdictLevel, number> = { warn: 1, confirm: 2, reject: 3 }

@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { LanTab } from "@/pages/network/lan-tab"
+import { PortForwardsTab } from "@/pages/network/port-forwards-tab"
 import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
@@ -208,29 +211,49 @@ export default function NetworkPage() {
                 </Alert>
             ))}
 
-            <section className="space-y-3">
-                <div className="flex items-baseline justify-between gap-4">
-                    <h2 className="text-sm font-medium">Roles</h2>
-                    <p className="text-text-tertiary text-xs">Dashed bays are unassigned</p>
-                </div>
-                <RoleBays interfaces={rows} state={state.data} />
-            </section>
+            <Tabs defaultValue="ports" className="space-y-4">
+                <TabsList>
+                    <TabsTrigger value="ports">Ports</TabsTrigger>
+                    <TabsTrigger value="lan">Local network</TabsTrigger>
+                    <TabsTrigger value="forwards">Port forwards</TabsTrigger>
+                </TabsList>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Ports</CardTitle>
-                    <CardDescription>
-                        Picking a role opens a review step — nothing changes until you apply it.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <InterfaceTable
-                        interfaces={rows}
-                        onAssign={onAssign}
-                        disabled={apply.isPending || armed}
-                    />
-                </CardContent>
-            </Card>
+                <TabsContent value="ports" className="mt-0 space-y-6">
+                    <section className="space-y-3">
+                        <div className="flex items-baseline justify-between gap-4">
+                            <h2 className="text-sm font-medium">Roles</h2>
+                            <p className="text-text-tertiary text-xs">
+                                Dashed bays are unassigned
+                            </p>
+                        </div>
+                        <RoleBays interfaces={rows} state={state.data} />
+                    </section>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Ports</CardTitle>
+                            <CardDescription>
+                                Picking a role opens a review step (nothing changes until you apply)
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <InterfaceTable
+                                interfaces={rows}
+                                onAssign={onAssign}
+                                disabled={apply.isPending || armed}
+                            />
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                <TabsContent value="lan" className="mt-0">
+                    <LanTab state={state.data} armed={armed} onApplied={refresh} />
+                </TabsContent>
+
+                <TabsContent value="forwards" className="mt-0">
+                    <PortForwardsTab state={state.data} interfaces={rows} />
+                </TabsContent>
+            </Tabs>
 
             <ApplyDialog
                 open={dialogOpen}
