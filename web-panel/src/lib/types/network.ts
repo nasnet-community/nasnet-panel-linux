@@ -63,6 +63,36 @@ export interface NetworkApply {
     ops: string[]
 }
 
+export interface PortForward {
+    id: number
+    uplink_key: string
+    proto: "tcp" | "udp"
+    dport: number
+    to_addr: string
+    to_port: number
+    comment: string
+    enabled: boolean
+}
+
+export interface LANConfig {
+    bridge_name: string
+    cidr: string
+    dhcp_range_low: string
+    dhcp_range_high: string
+    lease_hours: number
+    enabled: boolean
+    input_firewall: boolean
+}
+
+/** The stored LAN plus which classification layers this build can actually run. */
+export interface LANView extends LANConfig {
+    geoip_prefixes: number
+    domain_layer: boolean
+    resolver_ready: boolean
+    resolver_running: boolean
+    ranges_fetched_at?: string
+}
+
 export interface AssignRoleRequest {
     interface_id: number
     role: InterfaceRole

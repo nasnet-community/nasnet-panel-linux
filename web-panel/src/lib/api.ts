@@ -30,11 +30,15 @@ export interface LoginResponse {
 export class ApiError extends Error {
     code?: string
     status?: number
+    /** Parsed error body. Endpoints that answer 400/409 with structured detail
+     *  (validation verdicts, for one) would otherwise lose it here. */
+    body?: unknown
 
-    constructor(message: string, code?: string, status?: number) {
+    constructor(message: string, code?: string, status?: number, body?: unknown) {
         super(message)
         this.code = code
         this.status = status
+        this.body = body
         this.name = "ApiError"
     }
 }
@@ -112,7 +116,7 @@ class ApiClient {
                         throw new ApiError(msg, "MAINTENANCE", 503)
                     }
                 }
-                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status)
+                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status, data)
             }
 
             return data
@@ -184,7 +188,7 @@ class ApiClient {
                     }
                 }
                 const data = await this.parseJson<ApiResponse>(response)
-                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status)
+                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status, data)
             }
 
             return this.parseJson<T>(response)
@@ -226,7 +230,7 @@ class ApiClient {
                         }
                     }
                 }
-                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status)
+                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status, data)
             }
 
             return data
@@ -263,7 +267,7 @@ class ApiClient {
 
             if (!response.ok) {
                 const data = await this.parseJson<ApiResponse>(response)
-                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status)
+                throw new ApiError(data.error || `HTTP error ${response.status}`, data.code, response.status, data)
             }
 
             return this.parseJson<T>(response)

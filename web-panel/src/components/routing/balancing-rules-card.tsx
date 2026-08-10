@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -170,12 +170,14 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, onRulesChanged }:
     return (
         <>
             <Card className="mt-6">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                <CardHeader className="items-center pb-4">
                     <CardTitle className="text-lg font-semibold">Balancing Rules</CardTitle>
-                    <Button size="sm" onClick={openCreate}>
-                        <HiOutlinePlus className="w-4 h-4 mr-2" />
-                        Add Balancer
-                    </Button>
+                    <CardAction className="self-center">
+                        <Button size="sm" onClick={openCreate}>
+                            <HiOutlinePlus className="w-4 h-4 mr-2" />
+                            Add Balancer
+                        </Button>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
                     {rules.length === 0 ? (
