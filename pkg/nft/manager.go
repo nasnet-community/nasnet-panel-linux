@@ -46,6 +46,20 @@ func (m *Manager) Snapshot() Ruleset {
 	return out
 }
 
+// Replace sets the desired state wholesale and reapplies
+func (m *Manager) Replace(ctx context.Context, rs Ruleset) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	prev := m.rs
+	if err := m.applier.Apply(ctx, rs.Render()); err != nil {
+		m.rs = prev
+		return err
+	}
+	m.rs = rs
+	return nil
+}
+
 // Teardown removes the table and clears the desired state.
 func (m *Manager) Teardown(ctx context.Context) error {
 	m.mu.Lock()
