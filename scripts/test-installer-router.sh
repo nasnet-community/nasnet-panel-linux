@@ -27,6 +27,9 @@ check "netrollback timer"                       'nasnet-netrollback.timer'
 check "rollback command"                        'net rollback --if-expired'
 check "rollback env file"                       'EnvironmentFile=INSTALL_DIR_PLACEHOLDER/.env'
 check "timer enabled"                           'systemctl enable --now nasnet-netrollback.timer'
+# One process serves DNS and DHCP, so a crash must not be permanent.
+check "dnsmasq restarts on failure"             'Restart=always'
+check "dnsmasq never gives up retrying"         'StartLimitIntervalSec=0'
 
 # The installer must NOT touch the network: the takeover is the first apply.
 for forbidden in 'mv /etc/netplan' 'systemctl mask NetworkManager' 'DNSStubListener=no'; do

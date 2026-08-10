@@ -899,6 +899,24 @@ wizard_prereqs_systemd() {
     sudo systemctl disable --now dnsmasq hostapd 2>/dev/null || true
     step_ok "dnsmasq and hostapd left to nasnet"
 
+    # One dnsmasq process serves both DNS and DHCP, and Ubuntu ships Restart=no,
+    # so a crash takes the LAN down for good. StartLimitIntervalSec=0 because the
+    # usual crash is "the bridge has no address yet" — it must keep retrying
+    # until the address appears, not give up after five tries.
+    sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+    # StartLimitIntervalSec belongs to [Unit]; systemd ignores it under [Service].
+    sudo tee /etc/systemd/system/dnsmasq.service.d/10-nasnet.conf >/dev/null <<'DNSMASQ_RESTART'
+# Managed by nasnet.
+[Unit]
+StartLimitIntervalSec=0
+
+[Service]
+Restart=always
+RestartSec=2
+DNSMASQ_RESTART
+    sudo systemctl daemon-reload 2>/dev/null || true
+    step_ok "dnsmasq set to restart on failure"
+
     echo ""
 
     # ── Go ────────────────────────────────────────────────────────────────
