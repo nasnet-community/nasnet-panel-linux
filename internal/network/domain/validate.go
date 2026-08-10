@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"strings"
 )
@@ -129,6 +130,13 @@ func Validate(in ValidationInput) []Verdict {
 		reject("V3", "%s (%s) can never hold a role", target.IfName, source)
 		return vs
 	}
+	// V3 — and the bridge nasnet creates is not a port. Giving it a role would
+	// enslave it to itself and strip the address dnsmasq binds.
+	if target.IfName == ManagedBridgeName && in.Req.Role != RoleUnassigned {
+		reject("V3", "%s is the bridge nasnet creates for the LAN, not a port; "+
+			"assign the port you want on the LAN instead", target.IfName)
+		return vs
+	}
 
 	if in.Req.Role != RoleUnassigned {
 		// V6  cellular is uplink-only, no override.
@@ -233,21 +241,9 @@ func Validate(in ValidationInput) []Verdict {
 	}
 
 	// V14 — LAN CIDR overlaps.
-	if in.LAN != nil && in.LAN.CIDR != "" {
-		forbidden := append([]string{}, reservedLANOverlaps...)
-		if in.MgmtCIDR != "" {
-			forbidden = append(forbidden, in.MgmtCIDR)
-		}
-		for i := range in.Rows {
-			if in.Rows[i].Role == RoleWAN && in.Rows[i].StaticAddress != "" {
-				forbidden = append(forbidden, in.Rows[i].StaticAddress)
-			}
-		}
-		for _, f := range forbidden {
-			if overlaps(in.LAN.CIDR, f) {
-				reject("V14", "LAN %s overlaps %s", in.LAN.CIDR, f)
-				return vs
-			}
+	if in.LAN != nil {
+		if lanVs := ValidateLANConfig(*in.LAN, in.Rows, in.MgmtCIDR); Rejected(lanVs) {
+			return append(vs, lanVs...)
 		}
 	}
 
@@ -356,6 +352,168 @@ func Validate(in ValidationInput) []Verdict {
 	// V23 USB 2.0 uplink.
 	if in.Req.Role == RoleWAN && target.USBSpeedMbit == 480 {
 		warn("V23", "%s is on a USB 2.0 port; expect a ceiling near 280 Mbit/s", target.IfName)
+	}
+
+	return vs
+}
+
+// ValidateLANConfig runs V14 on a LAN definition. Pure, and shared: a role
+// change and an edit of the LAN itself must reject the same overlaps.
+func ValidateLANConfig(lan LANConfig, rows []NetworkInterface, mgmtCIDR string) []Verdict {
+	var vs []Verdict
+	reject := func(rule, format string, args ...any) {
+		vs = append(vs, Verdict{Rule: rule, Level: LevelReject, Message: fmt.Sprintf(format, args...)})
+	}
+
+	if lan.CIDR == "" {
+		return vs
+	}
+	if _, err := netip.ParsePrefix(lan.CIDR); err != nil {
+		reject("V14", "%q is not a valid address and prefix, e.g. 10.77.0.1/24", lan.CIDR)
+		return vs
+	}
+
+	forbidden := append([]string{}, reservedLANOverlaps...)
+	if mgmtCIDR != "" {
+		forbidden = append(forbidden, mgmtCIDR)
+	}
+	for i := range rows {
+		if rows[i].Role == RoleWAN && rows[i].StaticAddress != "" {
+			forbidden = append(forbidden, rows[i].StaticAddress)
+		}
+	}
+	for _, f := range forbidden {
+		if overlaps(lan.CIDR, f) {
+			reject("V14", "LAN %s overlaps %s", lan.CIDR, f)
+			return vs
+		}
+	}
+
+	// The DHCP pool has to be inside the subnet it hands addresses out of.
+	prefix, _ := netip.ParsePrefix(lan.CIDR)
+	for label, addr := range map[string]string{
+		"the DHCP range start": lan.DHCPRangeLow,
+		"the DHCP range end":   lan.DHCPRangeHigh,
+	} {
+		if addr == "" {
+			continue
+		}
+		ip, err := netip.ParseAddr(addr)
+		if err != nil {
+			reject("V14", "%s (%q) is not an IP address", label, addr)
+			return vs
+		}
+		if !prefix.Contains(ip) {
+			reject("V14", "%s (%s) is outside the LAN %s", label, addr, lan.CIDR)
+			return vs
+		}
+	}
+	return vs
+}
+
+// PortForwardInput is everything a port-forward validation needs.
+type PortForwardInput struct {
+	Existing  []PortForward
+	New       PortForward
+	LANCIDR   string
+	PanelPort int
+	SSHPort   int
+	// InboundPorts is proto -> ports, derived from the enabled xray inbound
+	// rows. Passed in rather than looked up so this stays pure.
+	InboundPorts map[string][]int
+	UplinkKeys   []string
+	Confirmed    bool
+}
+
+// ValidatePortForward runs V26-V28 plus the field checks. Pure.
+func ValidatePortForward(in PortForwardInput) []Verdict {
+	var vs []Verdict
+	reject := func(rule, format string, args ...any) {
+		vs = append(vs, Verdict{Rule: rule, Level: LevelReject, Message: fmt.Sprintf(format, args...)})
+	}
+	confirm := func(rule, format string, args ...any) {
+		vs = append(vs, Verdict{Rule: rule, Level: LevelConfirm, Message: fmt.Sprintf(format, args...)})
+	}
+	pf := in.New
+
+	// Field checks first — a malformed row cannot be collision-checked.
+	switch pf.Proto {
+	case "tcp", "udp":
+	default:
+		reject("V26", "protocol %q must be tcp or udp", pf.Proto)
+		return vs
+	}
+	if pf.DPort < 1 || pf.DPort > 65535 {
+		reject("V26", "external port %d is out of range", pf.DPort)
+		return vs
+	}
+	if pf.ToPort < 1 || pf.ToPort > 65535 {
+		reject("V26", "target port %d is out of range", pf.ToPort)
+		return vs
+	}
+	target := net.ParseIP(pf.ToAddr)
+	if target == nil {
+		reject("V26", "target %q is not an IP address", pf.ToAddr)
+		return vs
+	}
+	if pf.UplinkKey != "" {
+		known := false
+		for _, k := range in.UplinkKeys {
+			if k == pf.UplinkKey {
+				known = true
+			}
+		}
+		if !known {
+			reject("V26", "uplink %q is not an assigned uplink", pf.UplinkKey)
+			return vs
+		}
+	}
+
+	// V26 — the target must be inside the LAN, or a local address when the
+	// forward terminates on the box itself.
+	if in.LANCIDR != "" {
+		_, lan, err := net.ParseCIDR(in.LANCIDR)
+		if err == nil && !lan.Contains(target) && !target.IsLoopback() {
+			reject("V26", "target %s is outside the LAN %s", pf.ToAddr, in.LANCIDR)
+			return vs
+		}
+	}
+
+	// V27 — collisions. An empty UplinkKey means "any uplink", so it collides
+	// with every per-uplink row on the same (proto, dport).
+	sameUplink := func(a, b string) bool { return a == "" || b == "" || a == b }
+
+	for _, port := range in.InboundPorts[pf.Proto] {
+		if port == pf.DPort {
+			reject("V27", "%s/%d is already used by an enabled xray inbound", pf.Proto, pf.DPort)
+			return vs
+		}
+	}
+	for _, ex := range in.Existing {
+		if ex.ID == pf.ID || !ex.Enabled {
+			continue
+		}
+		if ex.Proto == pf.Proto && ex.DPort == pf.DPort && sameUplink(ex.UplinkKey, pf.UplinkKey) {
+			reject("V27", "%s/%d already forwards to %s:%d on this uplink",
+				pf.Proto, pf.DPort, ex.ToAddr, ex.ToPort)
+			return vs
+		}
+	}
+
+	// V28 — legitimate and dangerous, so CONFIRM not reject. Two hazards: taking
+	// the port from the box, and handing it to the internet.
+	if pf.Proto == "tcp" && in.PanelPort > 0 && pf.DPort == in.PanelPort {
+		confirm("V28", "this forward takes over port %d on that uplink, so the panel "+
+			"stops answering there. Type CONFIRM to continue.", pf.DPort)
+	}
+	if pf.Proto == "tcp" && (pf.ToPort == in.PanelPort || pf.ToPort == in.SSHPort) {
+		what := "the panel"
+		if pf.ToPort == in.SSHPort {
+			what = "SSH"
+		}
+		confirm("V28", "this forward exposes %s (port %d) to the internet. Anyone who "+
+			"reaches your uplink can attempt to log in. Type CONFIRM to continue.",
+			what, pf.ToPort)
 	}
 
 	return vs

@@ -6,6 +6,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// ManagedBridgeName is the one interface nasnet creates and names itself. It is
+// never a port, so it can never hold a role.
+const ManagedBridgeName = "lan0"
+
 // LANConfig is the client facing segment
 type LANConfig struct {
 	ID     uint `gorm:"primarykey" json:"id"`
@@ -17,6 +21,10 @@ type LANConfig struct {
 	DHCPRangeHigh string `gorm:"not null;default:'10.77.0.200'" json:"dhcp_range_high"`
 	LeaseHours    int    `gorm:"not null;default:12" json:"lease_hours"`
 	Enabled       bool   `gorm:"not null;default:false" json:"enabled"`
+
+	// InputFirewall arms filter_in. Off by default: the one change here that can
+	// lock an operator out, so it goes through the dead-man like a role change.
+	InputFirewall bool `gorm:"not null;default:false" json:"input_firewall"`
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

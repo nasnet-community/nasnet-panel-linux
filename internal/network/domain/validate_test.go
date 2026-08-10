@@ -337,3 +337,36 @@ func TestSourceAllows(t *testing.T) {
 		}
 	}
 }
+
+// lan0 is the bridge nasnet creates, not a port. Giving it a role renders a
+// member file that enslaves it to itself, which shadows its address file and
+// leaves dnsmasq with nothing to bind.
+func TestValidate_V3RejectsTheManagedBridge(t *testing.T) {
+	in := ValidationInput{
+		Rows: []NetworkInterface{
+			{ID: 3, IfName: "lan0", Source: "virt_bridge", Present: true},
+		},
+		Req: ChangeRequest{InterfaceID: 3, Role: RoleLAN},
+	}
+	vs := Validate(in)
+	r := firstReject(vs)
+	if r == nil {
+		t.Fatalf("the managed bridge was accepted as a LAN port: %+v", vs)
+	}
+	if r.Rule != "V3" {
+		t.Errorf("first reject = %s (%s), want V3", r.Rule, r.Message)
+	}
+}
+
+// A bridge somebody else made is still a legitimate LAN.
+func TestValidate_V3AllowsAForeignBridge(t *testing.T) {
+	in := ValidationInput{
+		Rows: []NetworkInterface{
+			{ID: 3, IfName: "br-lab", Source: "virt_bridge", Present: true},
+		},
+		Req: ChangeRequest{InterfaceID: 3, Role: RoleLAN},
+	}
+	if r := firstReject(Validate(in)); r != nil && r.Rule == "V3" {
+		t.Errorf("an unmanaged bridge was rejected: %+v", r)
+	}
+}
