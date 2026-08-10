@@ -136,3 +136,68 @@ func TestRenderRTTables(t *testing.T) {
 		}
 	}
 }
+
+// UseDNS=no with no DNS= leaves the box routing fine and resolving nothing.
+// Each uplink carries the resolver its own slot should use.
+func TestRenderUplink_CarriesPerLinkDNS(t *testing.T) {
+	domestic := RenderUplink(domain.NetworkInterface{
+		IfName: "enp1s0", PermMAC: "aa:bb:cc:dd:ee:01",
+		Role: domain.RoleWAN, Slot: domain.SlotDomestic, Method: domain.MethodDHCP4,
+	}, 201).Content
+	for _, want := range []string{"DNS=" + DefaultDomesticDNS, "Domains=~ir"} {
+		if !strings.Contains(domestic, want) {
+			t.Errorf("missing %q in the domestic uplink:\n%s", want, domestic)
+		}
+	}
+
+	secondary := RenderUplink(domain.NetworkInterface{
+		IfName: "enp2s0", PermMAC: "aa:bb:cc:dd:ee:02",
+		Role: domain.RoleWAN, Slot: domain.SlotSecondary, Method: domain.MethodDHCP4,
+	}, 202).Content
+	// "~." is the catch-all routing domain: everything not claimed by another
+	// link resolves here.
+	for _, want := range []string{"DNS=" + DefaultForeignDNS, "Domains=~."} {
+		if !strings.Contains(secondary, want) {
+			t.Errorf("missing %q in the secondary uplink:\n%s", want, secondary)
+		}
+	}
+}
+
+// An operator-set resolver wins over the slot default.
+func TestRenderUplink_OperatorDNSOverridesTheDefault(t *testing.T) {
+	got := RenderUplink(domain.NetworkInterface{
+		IfName: "enp1s0", PermMAC: "aa:bb:cc:dd:ee:01",
+		Role: domain.RoleWAN, Slot: domain.SlotDomestic, Method: domain.MethodDHCP4,
+		DNSServer: "10.0.0.53", DNSDomains: "~corp",
+	}, 201).Content
+	if !strings.Contains(got, "DNS=10.0.0.53") || !strings.Contains(got, "Domains=~corp") {
+		t.Errorf("operator DNS was ignored:\n%s", got)
+	}
+	if strings.Contains(got, DefaultDomesticDNS) {
+		t.Errorf("the slot default leaked in alongside the operator's:\n%s", got)
+	}
+}
+
+// Router mode is IPv4-only. A live IPv6 stack would route around the policy —
+// an AAAA answer leaves by whatever the kernel picked, with no group mark.
+func TestRenderSysctl_DisablesIPv6(t *testing.T) {
+	got := RenderSysctl([]string{"enp1s0", "enp2s0"}, false)
+	for _, want := range []string{
+		"net.ipv6.conf.all.disable_ipv6 = 1",
+		"net.ipv6.conf.default.disable_ipv6 = 1",
+		"net.ipv6.conf.enp1s0.disable_ipv6 = 1",
+		"net.ipv6.conf.enp2s0.disable_ipv6 = 1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+// The bridge is created after the drop-in is written, so it needs its own line.
+func TestRenderSysctlWithLAN_DisablesIPv6OnTheBridge(t *testing.T) {
+	got := RenderSysctlWithLAN([]string{"enp1s0"}, "lan0")
+	if !strings.Contains(got, "net.ipv6.conf.lan0.disable_ipv6 = 1") {
+		t.Errorf("the bridge keeps IPv6:\n%s", got)
+	}
+}

@@ -24,6 +24,30 @@ type UplinkFile struct {
 // Starlink dish API, outside 100.64.0.0/10, so it needs its own route
 const dishSubnet = "192.168.100.0/24"
 
+// Default per-link resolvers. A domestic name resolved abroad returns the wrong
+// CDN edge; a foreign one resolved domestically invites a poisoned answer.
+const (
+	DefaultDomesticDNS     = "217.218.127.127"
+	DefaultForeignDNS      = "1.1.1.1"
+	DefaultDomesticDomains = "~ir" // "~ir" claims the domestic suffix
+	DefaultForeignDomains  = "~."
+)
+
+// linkDNS picks an uplink's resolver, operator intent first. UseDNS=no with no
+// DNS= leaves the box routing perfectly and resolving nothing.
+func linkDNS(in domain.NetworkInterface) (server, domains string) {
+	if in.DNSServer != "" {
+		return in.DNSServer, in.DNSDomains
+	}
+	switch in.Slot {
+	case domain.SlotDomestic:
+		return DefaultDomesticDNS, DefaultDomesticDomains
+	case domain.SlotSecondary:
+		return DefaultForeignDNS, DefaultForeignDomains
+	}
+	return "", in.DNSDomains
+}
+
 // RenderUplink renders an uplink's .network file
 func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 	var b strings.Builder
@@ -41,12 +65,13 @@ func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 	// No IPv6 means no IPv6 bypassing the routing policy.
 	b.WriteString("IPv6AcceptRA=no\n")
 	b.WriteString("LinkLocalAddressing=ipv4\n")
-	if in.DNSServer != "" {
-		fmt.Fprintf(&b, "DNS=%s\n", in.DNSServer)
+	dnsServer, dnsDomains := linkDNS(in)
+	if dnsServer != "" {
+		fmt.Fprintf(&b, "DNS=%s\n", dnsServer)
 	}
-	if in.DNSDomains != "" {
+	if dnsDomains != "" {
 		// Routing domain per link, resolved by systemd-resolved.
-		fmt.Fprintf(&b, "Domains=%s\n", in.DNSDomains)
+		fmt.Fprintf(&b, "Domains=%s\n", dnsDomains)
 	}
 
 	if in.Method == domain.MethodDHCP4 {
@@ -136,10 +161,21 @@ func EnsureNetworkdConf(ctx context.Context, p Paths) error {
 	return waitNetworkdReady(ctx)
 }
 
-// waitNetworkdReady polls until networkd answers again. systemctl returns once
-// the unit is active, but its dbus alias is registered a moment later, and the
-// apply's own reload lands in that gap: "Unit dbus-org.freedesktop.network1
-// .service not found", which fails the whole apply.
+// RestartNetworkd is what a new .netdev needs
+// `networkctl reload` re-reads .network files but never creates devices.
+func RestartNetworkd(ctx context.Context) error {
+	err := exec.CommandContext(ctx, "systemctl", "restart", "systemd-networkd").Run()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil // no systemd here (tests, containers)
+	}
+	if err != nil {
+		return err
+	}
+	return waitNetworkdReady(ctx)
+}
+
+// waitNetworkdReady polls until networkd answers. systemctl returns before the
+// dbus alias is registered, and the apply's own reload lands in that gap.
 func waitNetworkdReady(ctx context.Context) error {
 	var last error
 	for range 20 {
@@ -210,7 +246,33 @@ func RenderSysctl(uplinkNames []string, forwarding bool) string {
 		fmt.Fprintf(&b, "net.ipv4.conf.%s.arp_announce = 2\n", n)
 	}
 
+	b.WriteString(renderIPv6Off(names))
 	return b.String()
+}
+
+// renderIPv6Off makes the box IPv4 only
+func renderIPv6Off(names []string) string {
+	var b strings.Builder
+	b.WriteString("\n# IPv4-only by design: an IPv6 path would bypass the routing policy.\n")
+	b.WriteString("net.ipv6.conf.all.disable_ipv6 = 1\n")
+	b.WriteString("net.ipv6.conf.default.disable_ipv6 = 1\n")
+	for _, n := range names {
+		fmt.Fprintf(&b, "net.ipv6.conf.%s.disable_ipv6 = 1\n", n)
+	}
+	return b.String()
+}
+
+// RenderSysctlWithLAN adds forwarding and the bridge's rp_filter. The kernel
+// takes max(all, per-interface), so the bridge needs the loose value too.
+func RenderSysctlWithLAN(uplinkNames []string, bridgeName string) string {
+	base := RenderSysctl(uplinkNames, true)
+	if bridgeName == "" {
+		return base
+	}
+	return base + fmt.Sprintf(
+		"\n# The LAN bridge is in the forwarded path, so it needs the loose value too.\n"+
+			"net.ipv4.conf.%s.rp_filter = 2\n"+
+			"net.ipv6.conf.%s.disable_ipv6 = 1\n", bridgeName, bridgeName)
 }
 
 // WriteFiles writes rendered units into dir
