@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/config"
+	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
@@ -79,22 +80,36 @@ func runNetRollback(ifExpired bool) error {
 		return fmt.Errorf("netlink backend: %w", err)
 	}
 
+	lanRepo := repository.NewLANRepository(db)
 	applier := &system.Applier{
 		Snap: &system.Snapshotter{
 			Backend: backend,
 			Nft:     nft.NewManager(nft.NewCmdApplier("")),
 			Paths:   paths,
+			// The LAN lives in the database, which the file snapshot cannot see.
+			CaptureLAN: func(ctx context.Context) (*networkDomain.LANConfig, error) {
+				return lanRepo.Get(ctx)
+			},
+			RestoreLAN: func(ctx context.Context, cfg *networkDomain.LANConfig) error {
+				return lanRepo.Save(ctx, cfg)
+			},
 		},
 		Repo:   repository.NewApplyRepository(db),
 		Paths:  paths,
 		Reload: system.ReloadNetworkd,
 	}
 
-	did, err := applier.Rollback(context.Background(), ifExpired)
+	ctx := context.Background()
+	did, err := applier.Rollback(ctx, ifExpired)
 	if err != nil {
 		return fmt.Errorf("rollback: %w", err)
 	}
 	if did {
+		// The kernel is back but the intent is not: an armed firewall would
+		// re-apply the very change just reverted for cutting the operator off.
+		if err := repository.NewLANRepository(db).DisarmInputFirewall(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "nasnet: could not disarm the input firewall: %v\n", err)
+		}
 		fmt.Fprintf(os.Stderr, "nasnet: reverted network apply %d (confirm window expired)\n", m.PlanID)
 	}
 	return nil

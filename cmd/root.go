@@ -333,6 +333,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		networkUC, rmErr = startRouterMode(bgCtx, routerModeDeps{
 			DB: db, NftMgr: embeddedSrv.NftManager(),
 			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus, Log: log,
+			PanelPort: cfg.App.Port, NodeRepo: repos.Node, HTTPFactory: httpFactory,
 		})
 		if rmErr != nil {
 			log.WithError(rmErr).Fatal("Router mode failed to start")
@@ -778,6 +779,14 @@ type routerModeDeps struct {
 	Agent  agent.NodeClient
 	Bus    *events.EventBus
 	Log    *logrus.Logger
+	// PanelPort is what filter_in must keep open, or arming it locks the
+	// operator out of the box they just firewalled.
+	PanelPort int
+	// NodeRepo supplies the inbound rows filter_in derives its accepts from.
+	NodeRepo inboundLister
+	// HTTPFactory routes the domestic address-list refresh like every other
+	// outbound the panel makes.
+	HTTPFactory *httpclient.Factory
 }
 
 // startRouterMode runs preflight, builds the network usecase and reconciles
@@ -809,18 +818,30 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		IfRepo:     networkRepo.NewInterfaceRepository(deps.DB),
 		GroupRepo:  networkRepo.NewGroupRepository(deps.DB),
 		ApplyRepo:  applyRepo,
+		LANRepo:    networkRepo.NewLANRepository(deps.DB),
+		PFRepo:     networkRepo.NewPortForwardRepository(deps.DB),
+		PanelPort:  deps.PanelPort,
 		Backend:    backend,
 		Nft:        deps.NftMgr,
 		Agent:      deps.Agent,
 		Paths:      paths,
 		RouterMode: true,
 		EventBus:   deps.Bus,
+		Inbounds:   inboundSource{repo: deps.NodeRepo, nodeID: 1},
+		// The list is served from behind a redirect to a foreign host, so it
+		// goes out the same way every other foreign fetch does.
+		RangesClient: deps.HTTPFactory.ClientFor(
+			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),
 	})
 
+	// Loud, never fatal: the panel is the only tool the operator has to fix
+	// whatever broke the reconcile.
 	if err := uc.Reconcile(ctx); err != nil {
-		return nil, fmt.Errorf("network reconcile: %w", err)
+		deps.Log.WithError(err).WithField("component", "router").
+			Error("Network reconcile failed; router mode is degraded")
 	}
 	uc.StartHealthLoop(ctx, 5*time.Second)
+	uc.StartRangesRefreshLoop(ctx, 0)
 	deps.Log.Info("Router mode active")
 	return uc, nil
 }
