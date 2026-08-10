@@ -207,3 +207,23 @@ func TestRollback_ExplicitIgnoresTheDeadline(t *testing.T) {
 		t.Fatalf("explicit rollback: did=%v err=%v", did, err)
 	}
 }
+
+// The dead-man runs as its own process, so the panel never hears about a revert
+// and never re-derives the runtime from the restored intent — dnsmasq stayed
+// down after a reverted LAN change on the target until something reconciled.
+func TestShouldReconcileAfterRollback(t *testing.T) {
+	rolled := &domain.ApplyRecord{ID: 7, Phase: domain.PhaseRolledBack}
+
+	if !shouldReconcileAfterRollback(rolled, 0) {
+		t.Error("a revert we have not seen must trigger a reconcile")
+	}
+	if shouldReconcileAfterRollback(rolled, 7) {
+		t.Error("the same revert reconciled twice")
+	}
+	if shouldReconcileAfterRollback(&domain.ApplyRecord{ID: 8, Phase: domain.PhaseConfirmed}, 0) {
+		t.Error("a confirmed apply is not a revert")
+	}
+	if shouldReconcileAfterRollback(nil, 0) {
+		t.Error("no record is not a revert")
+	}
+}

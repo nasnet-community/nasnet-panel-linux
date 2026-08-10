@@ -3,8 +3,10 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -12,6 +14,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	"gorm.io/gorm"
 )
@@ -71,39 +74,99 @@ type NetworkUsecase interface {
 	Rollback(ctx context.Context) error
 	Reconcile(ctx context.Context) error
 	StartHealthLoop(ctx context.Context, interval time.Duration)
+	// StartRangesRefreshLoop keeps the domestic prefix list current. Zero uses
+	// the default weekly cadence.
+	StartRangesRefreshLoop(ctx context.Context, interval time.Duration)
+	RefreshDomesticRanges(ctx context.Context) error
 	SetLabel(ctx context.Context, key, label string) error
 	IngressUplinkIfName() string
+
+	GetLAN(ctx context.Context) (*LANView, error)
+	UpdateLAN(ctx context.Context, cfg domain.LANConfig) ([]domain.Verdict, *ApplyView, error)
+
+	ListPortForwards(ctx context.Context) ([]domain.PortForward, error)
+	CreatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
+	UpdatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
+	DeletePortForward(ctx context.Context, id uint) error
+
+	// OnInboundsChanged re-derives filter_in. Called from the inbound
+	// create/update/delete paths so an accept cannot drift from its inbound.
+	OnInboundsChanged(ctx context.Context) error
 }
 
 type Deps struct {
 	IfRepo     repository.InterfaceRepository
 	GroupRepo  repository.GroupRepository
 	ApplyRepo  repository.ApplyRepository
+	LANRepo    repository.LANRepository
+	PFRepo     repository.PortForwardRepository
 	Backend    system.Backend
 	Nft        *nft.Manager
 	Agent      agent.NodeClient
 	Paths      system.Paths
 	RouterMode bool
 	EventBus   *events.EventBus
+	// PanelPort is the port filter_in must keep open, or the operator is
+	// locked out of the box they just firewalled.
+	PanelPort int
+	// Inbounds is optional: with no source, filter_in stays off rather than
+	// dropping every VPN it does not know about.
+	Inbounds InboundSource
+
+	// RangesURL is where the prefix list refreshes from; empty means the default.
+	// RangesUserID is upstream's optional tracking parameter, omitted when empty.
+	RangesURL    string
+	RangesUserID string
+	// RangesClient carries the fetch. Supplied so it can be routed like every
+	// other outbound the panel makes.
+	RangesClient *http.Client
 }
 
 type networkUsecase struct {
 	Deps
 	applier *system.Applier
 	health  *HealthMonitor
+	dnsmasq *system.DNSMasq
+
+	// The geoip sets are thousands of prefixes; compiling them on every
+	// reconcile tick would be waste.
+	setsMu    sync.Mutex
+	lanSets   []nft.Set
+	nftSetOK  bool
+	setsBuilt bool
+
+	// lastRolledBack is the revert this process has already reacted to.
+	lastRolledBack uint
 }
 
 func NewNetworkUsecase(d Deps) NetworkUsecase {
 	u := &networkUsecase{
-		Deps:   d,
-		health: NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
+		Deps:    d,
+		health:  NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
+		dnsmasq: system.NewDNSMasq(),
+	}
+	snap := &system.Snapshotter{Backend: d.Backend, Nft: d.Nft, Paths: d.Paths}
+	if d.LANRepo != nil {
+		snap.CaptureLAN = func(ctx context.Context) (*domain.LANConfig, error) {
+			return d.LANRepo.Get(ctx)
+		}
+		snap.RestoreLAN = func(ctx context.Context, cfg *domain.LANConfig) error {
+			return d.LANRepo.Save(ctx, cfg)
+		}
 	}
 	u.applier = &system.Applier{
-		Snap:   &system.Snapshotter{Backend: d.Backend, Nft: d.Nft, Paths: d.Paths},
+		Snap:   snap,
 		Repo:   d.ApplyRepo,
 		Paths:  d.Paths,
 		Reload: system.ReloadNetworkd,
 		OnRollback: func(planID uint) {
+			// Same reason as the dead-man's own path: a reverted apply must not
+			// leave the one lockout-capable setting still armed.
+			if u.LANRepo != nil {
+				if err := u.LANRepo.DisarmInputFirewall(context.Background()); err != nil {
+					_ = err
+				}
+			}
 			u.emit(events.EventWANApplyRolledBack, map[string]any{"plan_id": planID})
 		},
 	}
@@ -151,7 +214,133 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err := ApplyNftState(ctx, u.Nft, uplinks); err != nil {
 		return err
 	}
-	return ApplySysctls(ctx, u.Backend, uplinks, false)
+
+	lan := u.lanConfig(ctx)
+	if err := u.applyLAN(ctx, lan, uplinks); err != nil {
+		return err
+	}
+	bridge, on := "", lan != nil && lan.Enabled
+	if on {
+		bridge = lan.BridgeName
+	}
+	return ApplySysctls(ctx, u.Backend, uplinks, on, bridge)
+}
+
+// lanConfig reads the stored LAN row. A read failure is not fatal: the rest of
+// the reconcile still has to run, and a missing LAN just means no LAN.
+func (u *networkUsecase) lanConfig(ctx context.Context) *domain.LANConfig {
+	if u.LANRepo == nil {
+		return nil
+	}
+	cfg, err := u.LANRepo.Get(ctx)
+	if err != nil {
+		return nil
+	}
+	return cfg
+}
+
+// domesticSets compiles the geoip prefixes once and remembers whether this
+// dnsmasq build supports --nftset. Feature-detected, never version-sniffed.
+func (u *networkUsecase) domesticSets(ctx context.Context) ([]nft.Set, bool, error) {
+	u.setsMu.Lock()
+	defer u.setsMu.Unlock()
+	if u.setsBuilt {
+		return u.lanSets, u.nftSetOK, nil
+	}
+	u.nftSetOK = system.NftSetSupported(ctx, "")
+	// A successful fetch wins over the embedded list; the embedded one is the
+	// floor that makes a censored or unreachable upstream a non-event.
+	var fetched []string
+	if c, err := geoip.LoadCachedRanges(u.rangesCachePath()); err == nil && c != nil {
+		fetched = c.V4
+	}
+	sets, err := BuildDomesticSetsFrom(u.nftSetOK, fetched)
+	if err != nil {
+		return nil, false, err
+	}
+	u.lanSets, u.setsBuilt = sets, true
+	return sets, u.nftSetOK, nil
+}
+
+// applyLAN turns the LAN plane on or off: nft classification, NAT, the forward
+// filter, and the dnsmasq that serves it.
+func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig, uplinks []Uplink) error {
+	if lan == nil || !lan.Enabled {
+		if err := ApplyLANNftState(ctx, u.Nft, nil, uplinks, nil); err != nil {
+			return err
+		}
+		return u.dnsmasq.Stop(ctx)
+	}
+
+	sets, nftSetOK, err := u.domesticSets(ctx)
+	if err != nil {
+		return err
+	}
+	if err := ApplyLANNftState(ctx, u.Nft, lan, uplinks, sets); err != nil {
+		return err
+	}
+
+	bridge := lan.BridgeName
+	if bridge == "" {
+		bridge = system.LANBridgeName
+	}
+	// The .network files are on disk but networkd has not been told yet, and
+	// dnsmasq cannot bind an address that does not exist.
+	if err := system.ReloadNetworkd(ctx); err != nil {
+		return err
+	}
+	if err := waitForBridgeAddr(ctx, u.Backend, bridge, bridgeSettleTimeout); err != nil {
+		// A reload re-reads .network files but never creates a .netdev, so the
+		// first time the bridge is rendered only a restart brings it into being.
+		if err := system.RestartNetworkd(ctx); err != nil {
+			return err
+		}
+		if err := waitForBridgeAddr(ctx, u.Backend, bridge, bridgeWaitTimeout); err != nil {
+			return err
+		}
+	}
+
+	cfg := LANDNSConfig(*lan, uplinks, DefaultDomesticDNS, DefaultForeignDNS,
+		DomesticSuffix, nftSetOK)
+	if err := u.dnsmasq.Write(cfg); err != nil {
+		return err
+	}
+	return u.dnsmasq.Restart(ctx)
+}
+
+const (
+	// bridgeSettleTimeout is the short look before falling back to a restart —
+	// on a reconcile where the bridge already exists, a reload is enough.
+	bridgeSettleTimeout = 2 * time.Second
+	// bridgeWaitTimeout is generous: networkd creates the device, then addresses
+	// it, and a slow box mid-apply is exactly when this is tightest.
+	bridgeWaitTimeout = 20 * time.Second
+)
+
+// waitForBridgeAddr blocks until the bridge has an address. Failing loudly beats
+// starting dnsmasq against nothing, which leaves the LAN with no DHCP at all.
+func waitForBridgeAddr(ctx context.Context, be system.Backend, bridge string,
+	timeout time.Duration) error {
+
+	deadline := time.Now().Add(timeout)
+	for {
+		if addrs, err := be.Addrs(ctx); err == nil {
+			for _, a := range addrs {
+				if a.IfName == bridge {
+					return nil
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s never got an address, so the LAN would have no "+
+				"resolver and no DHCP; check `networkctl status %s`", bridge, bridge)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // refreshInterfaces upserts what the agent enumerated and marks the rest absent.
@@ -172,7 +361,9 @@ func (u *networkUsecase) refreshInterfaces(ctx context.Context) error {
 
 	keys := make([]string, 0, len(found))
 	for _, in := range found {
-		if !in.Assignable {
+		// Our own bridge is not a port. It is classified virt_bridge like any
+		// other, so it would otherwise be offered as one.
+		if !in.Assignable || in.IfName == domain.ManagedBridgeName {
 			continue
 		}
 		keys = append(keys, in.Key)
@@ -204,7 +395,7 @@ func (u *networkUsecase) uplinks(ctx context.Context) ([]Uplink, error) {
 			continue
 		}
 		out = append(out, Uplink{
-			IfName: r.IfName, Table: tableFor(r.Slot),
+			IfName: r.IfName, Key: r.Key, Table: tableFor(r.Slot),
 			UplinkIndex: uplinkIndexFor(r.Slot), Slot: r.Slot,
 			GroupIndex: groupIndexFor(r.Slot),
 		})
@@ -228,6 +419,11 @@ func (u *networkUsecase) Enumerate(ctx context.Context) ([]InterfaceView, error)
 
 	out := make([]InterfaceView, 0, len(rows))
 	for _, r := range rows {
+		// Rows are never deleted, so a bridge enumerated by an older build is
+		// still here. It is not a port and must not be offered as one.
+		if r.IfName == domain.ManagedBridgeName {
+			continue
+		}
 		v := InterfaceView{
 			ID: r.ID, Role: string(r.Role), Slot: string(r.Slot), Label: r.Label,
 			Present: r.Present, Healthy: r.Healthy,
@@ -333,8 +529,10 @@ func (u *networkUsecase) validationInput(ctx context.Context, req domain.ChangeR
 	if err != nil {
 		return domain.ValidationInput{}, err
 	}
+	// V14 runs against the live LAN, not a hypothetical one: a static uplink
+	// address that overlaps the configured bridge is the real failure.
 	return domain.ValidationInput{
-		Rows: rows, Req: req, MgmtCIDR: defaultMgmtCIDR,
+		Rows: rows, Req: req, LAN: u.lanConfig(ctx), MgmtCIDR: defaultMgmtCIDR,
 		HostapdInstalled: binaryExists("hostapd"),
 		IWDInstalled:     binaryExists("iwd"),
 	}, nil
@@ -385,11 +583,33 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 		return err
 	}
 
+	lan := u.lanConfig(ctx)
+	lanOn := lan != nil && lan.Enabled
+	bridge := ""
+	if lanOn {
+		bridge = lan.BridgeName
+		if bridge == "" {
+			bridge = system.LANBridgeName
+		}
+	}
+
 	var files []system.UplinkFile
 	tables := map[int]string{}
 	var uplinkNames []string
 
+	if lanOn {
+		files = append(files, system.RenderLANNetdev(bridge), system.RenderLANNetwork(*lan))
+	}
+
 	for _, in := range rows {
+		// The port holding the lan role is enslaved like any other member; the
+		// bridge itself is the device we created.
+		if lanOn && in.Present && (in.Role == domain.RoleLAN || in.Role == domain.RoleLANMember) {
+			if f := system.RenderLANMember(in, bridge); f.Name != "" {
+				files = append(files, f)
+			}
+			continue
+		}
 		switch in.Role {
 		case domain.RoleWAN:
 			table := tableFor(in.Slot)
@@ -427,8 +647,12 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 	if err := os.MkdirAll(u.Paths.SysctlDir, 0o755); err != nil {
 		return err
 	}
+	sysctl := system.RenderSysctl(uplinkNames, false)
+	if lanOn {
+		sysctl = system.RenderSysctlWithLAN(uplinkNames, bridge)
+	}
 	return os.WriteFile(filepath.Join(u.Paths.SysctlDir, "99-nasnet-router.conf"),
-		[]byte(system.RenderSysctl(uplinkNames, false)), 0o644)
+		[]byte(sysctl), 0o644)
 }
 
 func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*ApplyView, error) {
@@ -437,9 +661,14 @@ func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*
 		return nil, err
 	}
 	takeover := !system.TakeoverDone(u.Paths)
+	before := u.rolesOf(ctx, req.InterfaceID, req.EvictID)
 
 	rec, err := u.applier.Apply(ctx, plan, takeover)
 	if err != nil {
+		// The snapshot covers files, rules and nft, not the database. Without
+		// this the role would stick after a failed apply, so the next attempt
+		// would look like it worked and the box would disagree with the UI.
+		u.restoreRoles(ctx, before)
 		return nil, err
 	}
 	ops := rec.Ops
@@ -451,6 +680,69 @@ func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*
 		view.ConfirmDeadlineUnix = rec.Deadline.Unix()
 	}
 	return view, nil
+}
+
+// shouldReconcileAfterRollback reports whether rec is a revert this process has
+// not already reacted to.
+func shouldReconcileAfterRollback(rec *domain.ApplyRecord, lastSeen uint) bool {
+	return rec != nil && rec.Phase == domain.PhaseRolledBack && rec.ID != lastSeen
+}
+
+// watchForRollback re-derives the runtime after the dead-man fires. It runs in
+// its own process, so the restored intent would otherwise sit in the database
+// with nothing acting on it — a reverted LAN change left dnsmasq down.
+func (u *networkUsecase) watchForRollback(ctx context.Context) {
+	if u.ApplyRepo == nil {
+		return
+	}
+	rec, err := u.ApplyRepo.Latest(ctx)
+	if err != nil || !shouldReconcileAfterRollback(rec, u.lastRolledBack) {
+		return
+	}
+	u.lastRolledBack = rec.ID
+	if err := u.Reconcile(ctx); err != nil {
+		u.emit(events.EventWANApplyRolledBack, map[string]any{
+			"plan_id": rec.ID, "error": err.Error(),
+		})
+	}
+}
+
+// roleSnapshot is what a role change has to be able to undo.
+type roleSnapshot struct {
+	ID   uint
+	Role domain.InterfaceRole
+	Slot domain.UplinkSlot
+}
+
+func (u *networkUsecase) rolesOf(ctx context.Context, ids ...any) []roleSnapshot {
+	rows, err := u.IfRepo.List(ctx)
+	if err != nil {
+		return nil
+	}
+	want := map[uint]bool{}
+	for _, id := range ids {
+		switch v := id.(type) {
+		case uint:
+			want[v] = true
+		case *uint:
+			if v != nil {
+				want[*v] = true
+			}
+		}
+	}
+	var out []roleSnapshot
+	for _, r := range rows {
+		if want[r.ID] {
+			out = append(out, roleSnapshot{ID: r.ID, Role: r.Role, Slot: r.Slot})
+		}
+	}
+	return out
+}
+
+func (u *networkUsecase) restoreRoles(ctx context.Context, snaps []roleSnapshot) {
+	for _, s := range snaps {
+		_ = u.IfRepo.SetRoleTx(ctx, nil, s.ID, s.Role, s.Slot)
+	}
 }
 
 func (u *networkUsecase) Confirm(ctx context.Context, planID uint) error {
@@ -484,6 +776,7 @@ func (u *networkUsecase) StartHealthLoop(ctx context.Context, interval time.Dura
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				u.watchForRollback(ctx)
 				u.probeOnce(ctx)
 			}
 		}

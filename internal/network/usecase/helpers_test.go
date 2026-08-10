@@ -32,6 +32,14 @@ func testPaths(t *testing.T) system.Paths {
 	return p
 }
 
+// uplinksWithKeys is twoUplinks() with the stable keys PortForward rows point at.
+func uplinksWithKeys() []Uplink {
+	us := twoUplinks()
+	us[0].Key = "aa:bb:cc:dd:ee:01"
+	us[1].Key = "aa:bb:cc:dd:ee:02"
+	return us
+}
+
 func newTestSnapshotter(t *testing.T, p system.Paths) *system.Snapshotter {
 	t.Helper()
 	return &system.Snapshotter{

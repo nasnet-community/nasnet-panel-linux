@@ -164,7 +164,7 @@ func TestApplyNftState_StampsThePinPerUplink(t *testing.T) {
 func TestApplySysctls_SetsBothAllAndPerInterfaceRPFilter(t *testing.T) {
 	ctx := context.Background()
 	be := system.NewFakeBackend()
-	if err := ApplySysctls(ctx, be, twoUplinks(), false); err != nil {
+	if err := ApplySysctls(ctx, be, twoUplinks(), false, ""); err != nil {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]string{

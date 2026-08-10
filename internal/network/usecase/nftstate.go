@@ -28,8 +28,10 @@ func ApplyNftState(ctx context.Context, m *nft.Manager, uplinks []Uplink) error 
 	return nil
 }
 
-// ApplySysctls sets the runtime values
-func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink, forwarding bool) error {
+// ApplySysctls sets the runtime values; bridgeName is "" with no LAN. The
+// drop-in only lands at boot, so everything it sets is repeated here.
+func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink,
+	forwarding bool, bridgeName string) error {
 	set := func(key, value string) error {
 		if err := be.SysctlSet(ctx, key, value); err != nil {
 			return fmt.Errorf("sysctl %s=%s: %w", key, value, err)
@@ -54,6 +56,24 @@ func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink, forw
 		return err
 	}
 
+	// IPv4-only by design: an IPv6 path would bypass the routing policy, and the
+	// drop-in alone would leave it up until the next reboot.
+	if err := set("net.ipv6.conf.all.disable_ipv6", "1"); err != nil {
+		return err
+	}
+	if err := set("net.ipv6.conf.default.disable_ipv6", "1"); err != nil {
+		return err
+	}
+
+	if bridgeName != "" {
+		if err := set("net.ipv4.conf."+bridgeName+".rp_filter", "2"); err != nil {
+			return err
+		}
+		if err := set("net.ipv6.conf."+bridgeName+".disable_ipv6", "1"); err != nil {
+			return err
+		}
+	}
+
 	for _, u := range uplinks {
 		if err := set("net.ipv4.conf."+u.IfName+".rp_filter", "2"); err != nil {
 			return err
@@ -64,6 +84,9 @@ func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink, forw
 			return err
 		}
 		if err := set("net.ipv4.conf."+u.IfName+".arp_announce", "2"); err != nil {
+			return err
+		}
+		if err := set("net.ipv6.conf."+u.IfName+".disable_ipv6", "1"); err != nil {
 			return err
 		}
 	}
