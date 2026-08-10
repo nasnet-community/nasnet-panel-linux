@@ -28,7 +28,10 @@ const (
 
 // Uplink is one uplink's routing identity.
 type Uplink struct {
-	IfName      string
+	IfName string
+	// Key is the interface's stable identity, which is what a port-forward row
+	// stores — IfName can be reassigned to a different device.
+	Key         string
 	Table       int
 	UplinkIndex uint32
 	Slot        domain.UplinkSlot
