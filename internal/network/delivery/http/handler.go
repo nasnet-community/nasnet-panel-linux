@@ -31,6 +31,13 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.POST("/apply", h.Apply)
 		n.POST("/confirm", h.Confirm)
 		n.POST("/rollback", h.Rollback)
+
+		n.GET("/lan", h.GetLAN)
+		n.PUT("/lan", h.UpdateLAN)
+		n.GET("/port-forwards", h.ListPortForwards)
+		n.POST("/port-forwards", h.CreatePortForward)
+		n.PUT("/port-forwards/:id", h.UpdatePortForward)
+		n.DELETE("/port-forwards/:id", h.DeletePortForward)
 	}
 }
 

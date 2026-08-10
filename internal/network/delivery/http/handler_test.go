@@ -20,6 +20,57 @@ type stubUsecase struct {
 	confirmedID uint
 	planView    *usecase.PlanView
 	applyErr    error
+
+	portForwardVerdicts []domain.Verdict
+	lanVerdicts         []domain.Verdict
+	deletedPFID         uint
+}
+
+func (s *stubUsecase) GetLAN(context.Context) (*usecase.LANView, error) {
+	return &usecase.LANView{
+		LANConfig:     domain.LANConfig{BridgeName: "lan0", CIDR: "10.77.0.1/24"},
+		GeoIPPrefixes: 2027, DomainLayer: true,
+	}, nil
+}
+
+func (s *stubUsecase) UpdateLAN(_ context.Context, _ domain.LANConfig) ([]domain.Verdict, *usecase.ApplyView, error) {
+	if domain.Rejected(s.lanVerdicts) {
+		return s.lanVerdicts, nil, nil
+	}
+	return s.lanVerdicts, &usecase.ApplyView{PlanID: 9, ConfirmDeadlineUnix: 1_800_000_090}, nil
+}
+
+func (s *stubUsecase) ListPortForwards(context.Context) ([]domain.PortForward, error) {
+	return []domain.PortForward{}, nil
+}
+
+func (s *stubUsecase) CreatePortForward(_ context.Context, _ domain.PortForward, confirmed bool) ([]domain.Verdict, error) {
+	return s.portForwardVerdicts, stubVerdictErr(s.portForwardVerdicts, confirmed)
+}
+
+func (s *stubUsecase) UpdatePortForward(_ context.Context, _ domain.PortForward, confirmed bool) ([]domain.Verdict, error) {
+	return s.portForwardVerdicts, stubVerdictErr(s.portForwardVerdicts, confirmed)
+}
+
+func (s *stubUsecase) DeletePortForward(_ context.Context, id uint) error {
+	s.deletedPFID = id
+	return nil
+}
+
+func (s *stubUsecase) OnInboundsChanged(context.Context) error               { return nil }
+func (s *stubUsecase) RefreshDomesticRanges(context.Context) error           { return nil }
+func (s *stubUsecase) StartRangesRefreshLoop(context.Context, time.Duration) {}
+
+func stubVerdictErr(vs []domain.Verdict, confirmed bool) error {
+	if domain.Rejected(vs) {
+		return usecase.ErrValidationFailed
+	}
+	for _, v := range vs {
+		if v.Level == domain.LevelConfirm && !confirmed {
+			return usecase.ErrConfirmRequired
+		}
+	}
+	return nil
 }
 
 func (s *stubUsecase) Enumerate(context.Context) ([]usecase.InterfaceView, error) {
