@@ -1,0 +1,13 @@
+table inet nasnet
+delete table inet nasnet
+table inet nasnet {
+	chain mangle_pre {
+		type filter hook prerouting priority mangle; policy accept;
+		ct mark != 0x0 meta mark set ct mark and 0xfffffff
+	}
+
+	chain mangle_post {
+		type filter hook postrouting priority mangle; policy accept;
+		meta mark and 0xfffffff != 0x0 ct mark set meta mark and 0xfffffff
+	}
+}
