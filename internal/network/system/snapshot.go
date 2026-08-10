@@ -1,6 +1,7 @@
 package system
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
@@ -72,15 +75,30 @@ type Snapshot struct {
 	Addrs  []Addr          `json:"addrs"`
 
 	NftRuleset string `json:"nft_ruleset"`
+	// NftState is what a rollback restores. Kept alongside the rendered text and
+	// omitempty, so an older build's snapshot still loads mid-apply.
+	NftState *nft.Ruleset `json:"nft_state,omitempty"`
 
 	MaskedUnits       []string `json:"masked_units"`
 	CloudInitDisabled bool     `json:"cloud_init_disabled"`
+
+	// LANConfig lives in the database, which no other field here covers. Without
+	// it a reverted LAN change leaves the row disagreeing with the files.
+	LANConfig *domain.LANConfig `json:"lan_config,omitempty"`
 }
 
 type Snapshotter struct {
 	Backend Backend
 	Nft     *nft.Manager
 	Paths   Paths
+	// Restart is swapped in tests. A reload re-reads the files but leaves a link
+	// running under the one it was moved to, so a restore that changed a
+	// .network file has to restart.
+	Restart func(context.Context) error
+	// CaptureLAN and RestoreLAN reach the database without this package knowing
+	// about repositories. Both nil is fine: older snapshots have no LAN either.
+	CaptureLAN func(context.Context) (*domain.LANConfig, error)
+	RestoreLAN func(context.Context, *domain.LANConfig) error
 }
 
 // Capture reads current state
@@ -123,7 +141,14 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 	}
 
 	if s.Nft != nil {
-		snap.NftRuleset = s.Nft.Snapshot().Render()
+		rs := s.Nft.Snapshot()
+		snap.NftRuleset = rs.Render()
+		snap.NftState = &rs
+	}
+	if s.CaptureLAN != nil {
+		if cfg, err := s.CaptureLAN(ctx); err == nil {
+			snap.LANConfig = cfg
+		}
 	}
 	snap.MaskedUnits = maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
 	if _, err := os.Stat(s.cloudInitPath()); err == nil {
@@ -173,9 +198,16 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 // Restore is the exact inverse of an apply
 func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	var errs []string
+	// linkFilesChanged tracks the dirs that decide which .network governs a
+	// link. Reloading is enough to break that binding but not to restore it.
+	var linkFilesChanged bool
 	restoreDir := func(dir string, want map[string][]byte, modes map[string]uint32) {
-		if err := writeDirExactly(dir, want, modes); err != nil {
+		changed, err := writeDirExactly(dir, want, modes)
+		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", dir, err))
+		}
+		if changed {
+			linkFilesChanged = true
 		}
 	}
 	restoreDir(s.Paths.NetworkdDir, snap.NetworkdFiles, snap.NetworkdModes)
@@ -192,11 +224,36 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 		}
 	}
 
-	// The owned table goes away entirely — one command, idempotent, which is
-	// exactly why everything lives in one table.
+	if snap.LANConfig != nil && s.RestoreLAN != nil {
+		if err := s.RestoreLAN(ctx, snap.LANConfig); err != nil {
+			errs = append(errs, fmt.Sprintf("restore the LAN row: %v", err))
+		}
+	}
+
+	// A reload re-reads the files but leaves a link running under the one it was
+	// moved to, and never recreates a .netdev. Only a restart puts both back.
+	if linkFilesChanged {
+		restart := s.Restart
+		if restart == nil {
+			restart = RestartNetworkd
+		}
+		if err := restart(ctx); err != nil {
+			errs = append(errs, fmt.Sprintf("restart networkd: %v", err))
+		}
+	}
+
+	// Put the table back as it was. Tear it down only when there was nothing
+	// there: before the takeover, or a snapshot that never recorded the state.
 	if s.Nft != nil {
-		if err := s.Nft.Teardown(ctx); err != nil {
-			errs = append(errs, fmt.Sprintf("nft teardown: %v", err))
+		switch {
+		case snap.NftState != nil && !snap.NftState.IsZero():
+			if err := s.Nft.Replace(ctx, *snap.NftState); err != nil {
+				errs = append(errs, fmt.Sprintf("nft restore: %v", err))
+			}
+		default:
+			if err := s.Nft.Teardown(ctx); err != nil {
+				errs = append(errs, fmt.Sprintf("nft teardown: %v", err))
+			}
 		}
 	}
 
@@ -235,7 +292,7 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 				errs = append(errs, fmt.Sprintf("route del %d %s: %v", table, r.Dest, err))
 			}
 		}
-		for _, r := range want {
+		for _, r := range restoreOrder(want) {
 			if err := s.Backend.RouteReplace(ctx, r); err != nil {
 				errs = append(errs, fmt.Sprintf("route replace %d %s: %v", table, r.Dest, err))
 			}
@@ -290,25 +347,27 @@ func readDirFiles(dir string) (map[string][]byte, map[string]uint32, error) {
 }
 
 // writeDirExactly makes dir's contents equal want.
-func writeDirExactly(dir string, want map[string][]byte, modes map[string]uint32) error {
+func writeDirExactly(dir string, want map[string][]byte, modes map[string]uint32) (bool, error) {
 	if dir == "" {
-		return nil
+		return false, nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return false, err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return false, err
 	}
+	changed := false
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		if _, keep := want[e.Name()]; !keep {
 			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-				return err
+				return false, err
 			}
+			changed = true
 		}
 	}
 	for name, content := range want {
@@ -317,15 +376,28 @@ func writeDirExactly(dir string, want map[string][]byte, modes map[string]uint32
 			mode = os.FileMode(m)
 		}
 		path := filepath.Join(dir, name)
+		if old, err := os.ReadFile(path); err != nil || !bytes.Equal(old, content) {
+			changed = true
+		}
 		if err := os.WriteFile(path, content, mode); err != nil {
-			return err
+			return false, err
 		}
 		// WriteFile only applies the mode when it creates the file.
 		if err := os.Chmod(path, mode); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return nil
+	return changed, nil
+}
+
+// restoreOrder puts connected routes first: a default's gateway must be on-link
+// or the kernel answers EINVAL, and snapshots list defaults first. Stable.
+func restoreOrder(routes []Route) []Route {
+	out := append([]Route(nil), routes...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Gateway == "" && out[j].Gateway != ""
+	})
+	return out
 }
 
 // unitsToUnmask lists what the takeover masked and the snapshot did not, so a
