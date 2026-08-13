@@ -129,7 +129,7 @@ export default function LoginForm() {
                             </h1>
                         </div>
                         <p className="text-white/50 text-sm">
-                            Manage your xray proxy infrastructure
+                            Your very own internet infrastructure
                         </p>
                     </div>
 
