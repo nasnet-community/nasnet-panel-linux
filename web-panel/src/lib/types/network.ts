@@ -104,3 +104,33 @@ export interface AssignRoleRequest {
     static_address?: string
     static_gateway?: string
 }
+
+/** One client on the LAN bridge. Derived per request; only `label` is stored. */
+export interface LANDevice {
+    mac: string
+    /** Every address seen for the MAC, the leased one first. */
+    ips: string[]
+    /** What the client asked to be called, after sanitizing. */
+    hostname: string
+    /** From the MAC's registered prefix. Empty for a randomized MAC. */
+    vendor: string
+    /** The operator's name for it. */
+    label: string
+    /** Locally-administered MAC: names a session, not a device. */
+    randomized: boolean
+    /** The bridge member it was learned on. */
+    port?: string
+    online: boolean
+    last_seen_seconds?: number
+    lease_expiry?: string
+}
+
+/** Which sources answered, so an empty list is never unexplained. */
+export interface LANDeviceList {
+    devices: LANDevice[]
+    enabled: boolean
+    leases_ok: boolean
+    neighbours_ok: boolean
+    /** The bridge ageing time: how long a departed device keeps reading online. */
+    offline_after_seconds: number
+}

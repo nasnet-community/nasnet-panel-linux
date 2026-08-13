@@ -1,4 +1,9 @@
-import type { InterfaceRole, NetworkInterfaceView, UplinkSlot } from "@/lib/types/network"
+import type {
+    InterfaceRole,
+    LANDevice,
+    NetworkInterfaceView,
+    UplinkSlot,
+} from "@/lib/types/network"
 
 /** netif.Source → what an operator would call the socket. */
 const ATTACHMENT_LABELS: Record<string, string> = {
@@ -137,4 +142,34 @@ const COVERED_WARNINGS = [/^network not managed by nasnet yet/i, /uplink\(s\) as
 
 export function uncoveredWarnings(warnings: string[] | null | undefined): string[] {
     return (warnings ?? []).filter((w) => !COVERED_WARNINGS.some((re) => re.test(w)))
+}
+
+/** Where a device's displayed name came from. The operator's question about any
+ *  row is "is this what I think it is", and the answer is mostly provenance: a
+ *  name you typed is worth more than one the device claims for itself. */
+export type NameProvenance = "named" | "claimed" | "vendor" | "unknown"
+
+export const NAME_PROVENANCE_NOTES: Record<NameProvenance, string> = {
+    named: "You named this device.",
+    claimed: "The device asked to be called this. Clients choose their own hostname.",
+    vendor: "No name offered. This is who registered the MAC address prefix.",
+    unknown: "No name and no registered vendor. A randomized MAC has no vendor.",
+}
+
+export function deviceName(d: LANDevice): { name: string; from: NameProvenance } {
+    if (d.label) return { name: d.label, from: "named" }
+    if (d.hostname) return { name: d.hostname, from: "claimed" }
+    if (d.vendor) return { name: d.vendor, from: "vendor" }
+    return { name: d.mac, from: "unknown" }
+}
+
+/** Plain-language age. Precision past a minute is noise: the bridge only ages
+ *  entries every few minutes anyway. */
+export function lastSeenLabel(seconds: number | undefined): string {
+    if (seconds === undefined) return "Not seen on the bridge"
+    if (seconds < 60) return "Seconds ago"
+    const mins = Math.floor(seconds / 60)
+    if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`
+    const hours = Math.floor(mins / 60)
+    return `${hours} hour${hours === 1 ? "" : "s"} ago`
 }

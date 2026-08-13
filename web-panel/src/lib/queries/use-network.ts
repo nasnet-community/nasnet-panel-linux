@@ -5,11 +5,13 @@ import {
     createPortForward,
     deletePortForward,
     getLAN,
+    getLANDevices,
     getNetworkInterfaces,
     getNetworkState,
     getPortForwards,
     planNetworkChange,
     rollbackNetworkApply,
+    setDeviceLabel,
     updateLAN,
     updatePortForward,
     type PortForwardInput,
@@ -125,6 +127,38 @@ export function useUpdateLAN() {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+/** Polls while the tab is visible. Arrivals land on the device's first frame;
+ *  departures wait out the bridge ageing time, so a faster poll buys nothing. */
+export function useLANDevices(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkLANDevices(),
+        queryFn: async () => {
+            const res = await getLANDevices()
+            if (!res.success) throw new Error(res.error || "Failed to read the connected devices")
+            return res.data!
+        },
+        enabled,
+        refetchInterval: enabled ? 10 * 1000 : false,
+        refetchIntervalInBackground: false,
+        staleTime: 5 * 1000,
+        retry: false,
+    })
+}
+
+export function useSetDeviceLabel() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({ mac, label }: { mac: string; label: string }) => {
+            const res = await setDeviceLabel(mac, label)
+            if (!res.success) throw new Error(res.error || "Failed to save the name")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkLANDevices() })
         },
     })
 }
