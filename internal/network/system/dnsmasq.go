@@ -66,6 +66,9 @@ func RenderDNSMasq(c DNSMasqConfig) string {
 
 	b.WriteString("\n# LAN DHCP\n")
 	fmt.Fprintf(&b, "dhcp-range=%s,%s,%dh\n", c.RangeLow, c.RangeHigh, c.LeaseHours)
+	// Pinned, not left to the compiled-in default: the device list reads this
+	// file, and a distro changing the default would break it silently.
+	fmt.Fprintf(&b, "dhcp-leasefile=%s\n", LeasePath)
 	if c.ListenAddr != "" {
 		fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", c.ListenAddr)
 	}

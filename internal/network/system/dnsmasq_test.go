@@ -129,3 +129,15 @@ func TestDNSMasqStatus_SeparatesInstalledFromRunning(t *testing.T) {
 		t.Errorf("Status = %+v; an undetectable unit must not read as missing", st)
 	}
 }
+
+// The device list reads the lease file, so the writer must name the same path
+// the reader opens rather than relying on a distro default.
+func TestRenderDNSMasq_PinsTheLeaseFile(t *testing.T) {
+	out := RenderDNSMasq(DNSMasqConfig{
+		BridgeName: "lan0", ListenAddr: "10.77.0.1",
+		RangeLow: "10.77.0.100", RangeHigh: "10.77.0.200",
+	})
+	if !strings.Contains(out, "dhcp-leasefile="+LeasePath) {
+		t.Errorf("lease file not pinned:\n%s", out)
+	}
+}

@@ -1,0 +1,1 @@
+[{"dst":"10.88.0.141","lladdr":"b8:27:eb:aa:bb:01","state":["DELAY"]},{"dst":"10.88.0.55","lladdr":"b2:27:eb:aa:bb:02","state":["DELAY"]},{"dst":"10.88.0.163","lladdr":"b2:27:eb:aa:bb:02","state":["DELAY"]},{"dst":"fe80::ba27:ebff:feaa:bb01","lladdr":"b8:27:eb:aa:bb:01","state":["STALE"]},{"dst":"fe80::b027:ebff:feaa:bb02","lladdr":"b2:27:eb:aa:bb:02","state":["STALE"]}]

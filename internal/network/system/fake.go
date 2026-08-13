@@ -133,3 +133,32 @@ func (f *FakeBackend) SysctlGet(_ context.Context, key string) (string, error) {
 	}
 	return v, nil
 }
+
+// FakeDeviceSource is an in-memory DeviceSource for tests. A nil error field
+// means that source answers; set one to exercise the degraded paths.
+type FakeDeviceSource struct {
+	LeaseRows []Lease
+	NeighRows []Neighbour
+	FDBRows   []FDBEntry
+	Ageing    int
+	LeaseErr  error
+	NeighErr  error
+	FDBErr    error
+	AgeingErr error
+}
+
+func (f *FakeDeviceSource) Leases(context.Context) ([]Lease, error) {
+	return f.LeaseRows, f.LeaseErr
+}
+
+func (f *FakeDeviceSource) Neighbours(context.Context, string) ([]Neighbour, error) {
+	return f.NeighRows, f.NeighErr
+}
+
+func (f *FakeDeviceSource) FDB(context.Context, string) ([]FDBEntry, error) {
+	return f.FDBRows, f.FDBErr
+}
+
+func (f *FakeDeviceSource) AgeingSeconds(context.Context, string) (int, error) {
+	return f.Ageing, f.AgeingErr
+}
