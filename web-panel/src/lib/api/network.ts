@@ -2,6 +2,7 @@ import { ApiError, api, type ApiResponse } from "@/lib/api"
 import type {
     AssignRoleRequest,
     LANConfig,
+    LANDeviceList,
     LANView,
     NetworkApply,
     NetworkInterfaceView,
@@ -46,6 +47,15 @@ export async function getLAN(): Promise<ApiResponse<LANView>> {
 
 export async function updateLAN(cfg: Partial<LANConfig>): Promise<ApiResponse<NetworkApply>> {
     return api.put<NetworkApply>("/api/v1/network/lan", cfg)
+}
+
+export async function getLANDevices(): Promise<ApiResponse<LANDeviceList>> {
+    return api.get<LANDeviceList>("/api/v1/network/lan/devices")
+}
+
+/** An empty label removes the name. The MAC goes in the path, like an interface key. */
+export async function setDeviceLabel(mac: string, label: string): Promise<ApiResponse<null>> {
+    return api.put<null>(`/api/v1/network/lan/devices/${encodeURIComponent(mac)}/label`, { label })
 }
 
 export async function getPortForwards(): Promise<ApiResponse<PortForward[]>> {
