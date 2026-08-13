@@ -34,6 +34,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 
 		n.GET("/lan", h.GetLAN)
 		n.PUT("/lan", h.UpdateLAN)
+		n.GET("/lan/devices", h.ListDevices)
+		n.PUT("/lan/devices/:mac/label", h.SetDeviceLabel)
 		n.GET("/port-forwards", h.ListPortForwards)
 		n.POST("/port-forwards", h.CreatePortForward)
 		n.PUT("/port-forwards/:id", h.UpdatePortForward)
