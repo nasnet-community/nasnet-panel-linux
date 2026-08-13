@@ -10,14 +10,17 @@ interface InfoPopoverProps {
     children: React.ReactNode
     className?: string
     iconClassName?: string
+    /** Names the trigger for screen readers; it is an icon with no text. */
+    label?: string
 }
 
-export function InfoPopover({ children, className, iconClassName }: InfoPopoverProps) {
+export function InfoPopover({ children, className, iconClassName, label }: InfoPopoverProps) {
     return (
         <Popover>
             <PopoverTrigger asChild>
                 <button
                     type="button"
+                    aria-label={label ?? "More information"}
                     className={cn(
                         "inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors",
                         iconClassName
