@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { ClassificationLadder } from "@/components/network/classification-ladder"
+import { LanDevices } from "@/components/network/lan-devices"
 import { useLAN, useUpdateLAN } from "@/lib/queries/use-network"
 import { verdictsFromError } from "@/lib/api/network"
 import type { LANConfig, NetworkState, Verdict } from "@/lib/types/network"
@@ -292,6 +293,12 @@ export function LanTab({ state, armed, onApplied }: Props) {
                     />
                 </CardContent>
             </Card>
+
+            {/* Full width below the settings: a device row carries five columns
+                and reading it is what you do once the LAN works. */}
+            <div className="lg:col-span-5">
+                <LanDevices lanEnabled={stored.enabled} />
+            </div>
         </div>
     )
 }
