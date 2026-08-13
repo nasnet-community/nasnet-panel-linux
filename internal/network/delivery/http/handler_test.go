@@ -24,6 +24,12 @@ type stubUsecase struct {
 	portForwardVerdicts []domain.Verdict
 	lanVerdicts         []domain.Verdict
 	deletedPFID         uint
+
+	devices     *usecase.LANDeviceList
+	devicesErr  error
+	labelledMAC string
+	labelledAs  string
+	setLabelErr error
 }
 
 func (s *stubUsecase) GetLAN(context.Context) (*usecase.LANView, error) {
@@ -42,6 +48,15 @@ func (s *stubUsecase) UpdateLAN(_ context.Context, _ domain.LANConfig) ([]domain
 
 func (s *stubUsecase) ListPortForwards(context.Context) ([]domain.PortForward, error) {
 	return []domain.PortForward{}, nil
+}
+
+func (s *stubUsecase) ListDevices(context.Context) (*usecase.LANDeviceList, error) {
+	return s.devices, s.devicesErr
+}
+
+func (s *stubUsecase) SetDeviceLabel(_ context.Context, mac, label string) error {
+	s.labelledMAC, s.labelledAs = mac, label
+	return s.setLabelErr
 }
 
 func (s *stubUsecase) CreatePortForward(_ context.Context, _ domain.PortForward, confirmed bool) ([]domain.Verdict, error) {
