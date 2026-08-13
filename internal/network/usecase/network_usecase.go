@@ -84,6 +84,11 @@ type NetworkUsecase interface {
 	GetLAN(ctx context.Context) (*LANView, error)
 	UpdateLAN(ctx context.Context, cfg domain.LANConfig) ([]domain.Verdict, *ApplyView, error)
 
+	// ListDevices reports what is on the LAN bridge. Derived per request; the
+	// only stored part is the operator's name for a device.
+	ListDevices(ctx context.Context) (*LANDeviceList, error)
+	SetDeviceLabel(ctx context.Context, mac, label string) error
+
 	ListPortForwards(ctx context.Context) ([]domain.PortForward, error)
 	CreatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
 	UpdatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
@@ -95,11 +100,16 @@ type NetworkUsecase interface {
 }
 
 type Deps struct {
-	IfRepo     repository.InterfaceRepository
-	GroupRepo  repository.GroupRepository
-	ApplyRepo  repository.ApplyRepository
-	LANRepo    repository.LANRepository
-	PFRepo     repository.PortForwardRepository
+	IfRepo    repository.InterfaceRepository
+	GroupRepo repository.GroupRepository
+	ApplyRepo repository.ApplyRepository
+	LANRepo   repository.LANRepository
+	PFRepo    repository.PortForwardRepository
+	// DeviceLabels is optional: with no storage the device list still renders,
+	// it just carries no operator-assigned names.
+	DeviceLabels repository.DeviceLabelRepository
+	// Devices reads the bridge. Nil uses the live system; injected in tests.
+	Devices    system.DeviceSource
 	Backend    system.Backend
 	Nft        *nft.Manager
 	Agent      agent.NodeClient

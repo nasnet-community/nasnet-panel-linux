@@ -209,6 +209,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&networkDomain.LANConfig{},
 		&networkDomain.WifiConfig{},
 		&networkDomain.PortForward{},
+		&networkDomain.LANDeviceLabel{},
 		&networkDomain.ApplyRecord{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
@@ -815,19 +816,20 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 	}
 
 	uc := networkUsecase.NewNetworkUsecase(networkUsecase.Deps{
-		IfRepo:     networkRepo.NewInterfaceRepository(deps.DB),
-		GroupRepo:  networkRepo.NewGroupRepository(deps.DB),
-		ApplyRepo:  applyRepo,
-		LANRepo:    networkRepo.NewLANRepository(deps.DB),
-		PFRepo:     networkRepo.NewPortForwardRepository(deps.DB),
-		PanelPort:  deps.PanelPort,
-		Backend:    backend,
-		Nft:        deps.NftMgr,
-		Agent:      deps.Agent,
-		Paths:      paths,
-		RouterMode: true,
-		EventBus:   deps.Bus,
-		Inbounds:   inboundSource{repo: deps.NodeRepo, nodeID: 1},
+		IfRepo:       networkRepo.NewInterfaceRepository(deps.DB),
+		GroupRepo:    networkRepo.NewGroupRepository(deps.DB),
+		ApplyRepo:    applyRepo,
+		LANRepo:      networkRepo.NewLANRepository(deps.DB),
+		PFRepo:       networkRepo.NewPortForwardRepository(deps.DB),
+		DeviceLabels: networkRepo.NewDeviceLabelRepository(deps.DB),
+		PanelPort:    deps.PanelPort,
+		Backend:      backend,
+		Nft:          deps.NftMgr,
+		Agent:        deps.Agent,
+		Paths:        paths,
+		RouterMode:   true,
+		EventBus:     deps.Bus,
+		Inbounds:     inboundSource{repo: deps.NodeRepo, nodeID: 1},
 		// The list is served from behind a redirect to a foreign host, so it
 		// goes out the same way every other foreign fetch does.
 		RangesClient: deps.HTTPFactory.ClientFor(
