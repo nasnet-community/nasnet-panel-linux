@@ -30,6 +30,20 @@ type stubUsecase struct {
 	labelledMAC string
 	labelledAs  string
 	setLabelErr error
+
+	vpnProfiles   []usecase.VPNProfileView
+	vpnCreated    *usecase.CreateVPNProfileRequest
+	vpnCreateErr  error
+	vpnDeletedID  uint
+	vpnDeleteErr  error
+	vpnParsed     string
+	vpnParseErr   error
+	vpnVerdicts   []domain.Verdict
+	vpnActivateID uint
+	vpnApplyView  *usecase.ApplyView
+	vpnApplyErr   error
+	vpnDeactived  bool
+	vpnStatus     *usecase.VPNStatusView
 }
 
 func (s *stubUsecase) GetLAN(context.Context) (*usecase.LANView, error) {
@@ -57,6 +71,60 @@ func (s *stubUsecase) ListDevices(context.Context) (*usecase.LANDeviceList, erro
 func (s *stubUsecase) SetDeviceLabel(_ context.Context, mac, label string) error {
 	s.labelledMAC, s.labelledAs = mac, label
 	return s.setLabelErr
+}
+
+func (s *stubUsecase) ListVPNProfiles(context.Context) ([]usecase.VPNProfileView, error) {
+	return s.vpnProfiles, nil
+}
+
+func (s *stubUsecase) CreateVPNProfile(_ context.Context, req usecase.CreateVPNProfileRequest) (*usecase.VPNProfileView, error) {
+	s.vpnCreated = &req
+	if s.vpnCreateErr != nil {
+		return nil, s.vpnCreateErr
+	}
+	return &usecase.VPNProfileView{ID: 1, Name: req.Name}, nil
+}
+
+func (s *stubUsecase) UpdateVPNProfile(_ context.Context, id uint, req usecase.CreateVPNProfileRequest) (*usecase.VPNProfileView, error) {
+	s.vpnCreated = &req
+	if s.vpnCreateErr != nil {
+		return nil, s.vpnCreateErr
+	}
+	return &usecase.VPNProfileView{ID: id, Name: req.Name}, nil
+}
+
+func (s *stubUsecase) DeleteVPNProfile(_ context.Context, id uint) error {
+	s.vpnDeletedID = id
+	return s.vpnDeleteErr
+}
+
+func (s *stubUsecase) ParseVPNInput(_ context.Context, raw string) (*domain.WireGuardConfig, []domain.Verdict, error) {
+	s.vpnParsed = raw
+	if s.vpnParseErr != nil {
+		return nil, nil, s.vpnParseErr
+	}
+	return &domain.WireGuardConfig{Address: "10.66.0.2/32"}, s.vpnVerdicts, nil
+}
+
+func (s *stubUsecase) GenerateVPNKeypair() (string, string, error) {
+	return "private", "public", nil
+}
+
+func (s *stubUsecase) ActivateVPN(_ context.Context, id uint) ([]domain.Verdict, *usecase.ApplyView, error) {
+	s.vpnActivateID = id
+	return s.vpnVerdicts, s.vpnApplyView, s.vpnApplyErr
+}
+
+func (s *stubUsecase) DeactivateVPN(context.Context) ([]domain.Verdict, *usecase.ApplyView, error) {
+	s.vpnDeactived = true
+	return s.vpnVerdicts, s.vpnApplyView, s.vpnApplyErr
+}
+
+func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNStatusView, error) {
+	if s.vpnStatus == nil {
+		return &usecase.VPNStatusView{KillSwitch: true}, nil
+	}
+	return s.vpnStatus, nil
 }
 
 func (s *stubUsecase) CreatePortForward(_ context.Context, _ domain.PortForward, confirmed bool) ([]domain.Verdict, error) {
