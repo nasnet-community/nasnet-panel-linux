@@ -80,6 +80,8 @@ export const OUTBOUND_PROTOCOLS = [
 export interface Outbound {
     id: number
     node_id: number
+    /** Generated on every config build. No row behind it, so it can't be edited. */
+    managed?: boolean
     tag: string
     protocol: string
     address: string
