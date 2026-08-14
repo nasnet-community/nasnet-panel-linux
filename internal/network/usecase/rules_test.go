@@ -28,7 +28,7 @@ func find(rs []system.Rule, pref int) *system.Rule {
 // A socket bound to an interface only matches routes on that device. resolved's
 // per-link DNS, health probes and `ping -I` all need this.
 func TestBaseRules_OifRulesPerUplink(t *testing.T) {
-	rs := BaseRules(twoUplinks())
+	rs := BaseRules(twoUplinks(), VPNRouteState{})
 
 	r20 := find(rs, 20)
 	if r20 == nil || r20.OifName != "enp1s0" || r20.Table != 201 {
@@ -46,7 +46,7 @@ func TestBaseRules_OifRulesPerUplink(t *testing.T) {
 // pref 30 is load-bearing: without it a marked packet bound for the LAN or an
 // uplink subnet finds nothing in its group table and dies in a blackhole.
 func TestBaseRules_MainSuppressorConsultsMainButRefusesADefault(t *testing.T) {
-	r := find(BaseRules(twoUplinks()), 30)
+	r := find(BaseRules(twoUplinks(), VPNRouteState{}), 30)
 	if r == nil {
 		t.Fatal("no pref 30 rule")
 	}
@@ -61,15 +61,14 @@ func TestBaseRules_MainSuppressorConsultsMainButRefusesADefault(t *testing.T) {
 	}
 }
 
-// Unmarked traffic takes an ordered list, not a chosen group. Secondary first so
-// the box's own traffic doesn't disclose the domestic address; domestic second so
-// a dead dish doesn't take apt and ssh with it.
-func TestBaseRules_OrderedFallbackSecondaryThenDomesticThenDrop(t *testing.T) {
-	rs := BaseRules(twoUplinks())
+// Tunnel first so the box's own traffic doesn't disclose the domestic address;
+// domestic last so a box with no VPN can still fetch updates.
+func TestBaseRules_OrderedFallbackTunnelThenDomesticThenDrop(t *testing.T) {
+	rs := BaseRules(twoUplinks(), VPNRouteState{Active: true})
 
 	r0 := find(rs, 32000)
-	if r0 == nil || r0.Table != 202 {
-		t.Fatalf("pref 32000 = %+v, want the secondary uplink's table", r0)
+	if r0 == nil || r0.Table != system.WGTable {
+		t.Fatalf("pref 32000 = %+v, want the tunnel's table", r0)
 	}
 	r1 := find(rs, 32001)
 	if r1 == nil || r1.Table != 201 {
@@ -86,11 +85,62 @@ func TestBaseRules_OrderedFallbackSecondaryThenDomesticThenDrop(t *testing.T) {
 	}
 }
 
+// The kill switch as a routing invariant: nothing unmarked reaches table 202.
+func TestBaseRules_FallbackNeverReachesTheRawSecondaryUplink(t *testing.T) {
+	for _, vpn := range []VPNRouteState{{Active: false}, {Active: true}} {
+		for _, r := range BaseRules(twoUplinks(), vpn) {
+			if r.Pref >= RulePrefFallbackBase && r.Table == 202 {
+				t.Errorf("vpn active=%v: fallback rule at pref %d sends unmarked traffic "+
+					"out the raw secondary uplink", vpn.Active, r.Pref)
+			}
+		}
+	}
+}
+
+// No profile, so domestic is the whole list — the box still needs its updates.
+func TestBaseRules_FallbackWithoutATunnelIsDomesticOnly(t *testing.T) {
+	rs := BaseRules(twoUplinks(), VPNRouteState{})
+
+	r0 := find(rs, 32000)
+	if r0 == nil || r0.Table != 201 {
+		t.Fatalf("pref 32000 = %+v, want the domestic uplink's table", r0)
+	}
+	if r := find(rs, 32001); r != nil && !r.Blackhole {
+		t.Errorf("pref 32001 = %+v, want nothing between domestic and the terminator", r)
+	}
+	if r := find(rs, 32002); r == nil || !r.Blackhole {
+		t.Error("no fallback terminator")
+	}
+}
+
+// A socket bound to the tunnel finds no route without this.
+func TestBaseRules_TunnelGetsAnOifRuleOnlyWhenActive(t *testing.T) {
+	active := BaseRules(twoUplinks(), VPNRouteState{Active: true})
+	var found *system.Rule
+	for i := range active {
+		if active[i].OifName == system.WGLinkName {
+			found = &active[i]
+		}
+	}
+	if found == nil || found.Table != system.WGTable {
+		t.Fatalf("tunnel oif rule = %+v, want a lookup into table %d", found, system.WGTable)
+	}
+	if found.Pref >= RulePrefMainSuppress {
+		t.Errorf("tunnel oif rule at pref %d, at or past the suppressor", found.Pref)
+	}
+
+	for _, r := range BaseRules(twoUplinks(), VPNRouteState{}) {
+		if r.OifName == system.WGLinkName {
+			t.Error("a tunnel oif rule with no active profile")
+		}
+	}
+}
+
 // A single-uplink box must still get a fallback, or it loses its own egress.
 func TestBaseRules_SingleUplinkStillGetsAFallback(t *testing.T) {
 	rs := BaseRules([]Uplink{
 		{IfName: "enp1s0", Table: 201, UplinkIndex: 1, Slot: domain.SlotDomestic, GroupIndex: 1},
-	})
+	}, VPNRouteState{})
 	if find(rs, 32000) == nil {
 		t.Error("no fallback rule on a single-uplink box")
 	}
@@ -100,7 +150,7 @@ func TestBaseRules_SingleUplinkStillGetsAFallback(t *testing.T) {
 }
 
 func TestBaseRules_NoUplinksEmitsOnlyTheSuppressorAndTerminator(t *testing.T) {
-	rs := BaseRules(nil)
+	rs := BaseRules(nil, VPNRouteState{})
 	if find(rs, 30) == nil {
 		t.Error("pref 30 must exist regardless")
 	}
@@ -121,7 +171,7 @@ func TestBaseRules_OifRulesNeverReachTheSuppressorPref(t *testing.T) {
 			IfName: fmt.Sprintf("eth%d", i), Table: 200 + i, UplinkIndex: uint32(i),
 		})
 	}
-	rs := BaseRules(many)
+	rs := BaseRules(many, VPNRouteState{})
 
 	sup := find(rs, RulePrefMainSuppress)
 	if sup == nil || !sup.SuppressSet {
@@ -144,7 +194,7 @@ func TestReconcileRules_AddsWantedAndRemovesStale(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := BaseRules(twoUplinks())
+	want := BaseRules(twoUplinks(), VPNRouteState{})
 	if err := ReconcileRules(ctx, be, want); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +217,7 @@ func TestReconcileRules_AddsWantedAndRemovesStale(t *testing.T) {
 func TestReconcileRules_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	be := system.NewFakeBackend()
-	want := BaseRules(twoUplinks())
+	want := BaseRules(twoUplinks(), VPNRouteState{})
 	for i := 0; i < 3; i++ {
 		if err := ReconcileRules(ctx, be, want); err != nil {
 			t.Fatalf("pass %d: %v", i, err)
@@ -188,7 +238,7 @@ func TestReconcileRules_LeavesStockRulesAlone(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := ReconcileRules(ctx, be, BaseRules(twoUplinks())); err != nil {
+	if err := ReconcileRules(ctx, be, BaseRules(twoUplinks(), VPNRouteState{})); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := be.RuleList(ctx)

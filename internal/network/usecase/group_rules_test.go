@@ -20,7 +20,7 @@ func twoGroups() []domain.WANGroup {
 // Pins sit above group rules; both fields set means pinned.
 func TestPinRules_AboveGroupRulesAndTerminatePerInterface(t *testing.T) {
 	pins := PinRules(twoUplinks())
-	groups := GroupRules(twoGroups(), twoUplinks())
+	groups := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
 
 	for _, p := range pins {
 		for _, g := range groups {
@@ -85,7 +85,7 @@ func TestPinRules_ExactPreferencesAndMasks(t *testing.T) {
 
 // A foreign spill onto the domestic ISP discloses the real address.
 func TestGroupRules_FailClosedSymmetrically(t *testing.T) {
-	rs := GroupRules(twoGroups(), twoUplinks())
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
 
 	for _, g := range twoGroups() {
 		mark := netmark.GroupMark(g.GroupIndex)
@@ -110,9 +110,61 @@ func TestGroupRules_FailClosedSymmetrically(t *testing.T) {
 	}
 }
 
+// The foreign group's egress is the tunnel, never the uplink underneath it.
+func TestGroupRules_ForeignGroupLeavesByTheTunnel(t *testing.T) {
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+
+	mark := netmark.GroupMark(netmark.GroupForeign)
+	var lookups []system.Rule
+	for _, r := range rs {
+		if r.FwMark == mark && r.FwMask == netmark.MaskGroup && !r.Blackhole {
+			lookups = append(lookups, r)
+		}
+	}
+	if len(lookups) != 1 {
+		t.Fatalf("foreign lookups = %+v, want exactly one", lookups)
+	}
+	if lookups[0].Pref != 150 || lookups[0].Table != system.WGTable {
+		t.Errorf("foreign lookup = %+v, want pref 150 into table %d", lookups[0], system.WGTable)
+	}
+}
+
+// The kill switch: no tunnel, so foreign traffic dies instead of falling through.
+func TestGroupRules_ForeignGroupBlackholesWithoutATunnel(t *testing.T) {
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{})
+
+	mark := netmark.GroupMark(netmark.GroupForeign)
+	var terminator bool
+	for _, r := range rs {
+		if r.FwMark != mark || r.FwMask != netmark.MaskGroup {
+			continue
+		}
+		if r.Blackhole {
+			terminator = r.Pref == 199
+			continue
+		}
+		t.Errorf("foreign traffic still has an exit at pref %d into table %d", r.Pref, r.Table)
+	}
+	if !terminator {
+		t.Error("the foreign group does not fail closed")
+	}
+
+	// The domestic group is untouched by any of this.
+	domestic := netmark.GroupMark(netmark.GroupDomestic)
+	var domesticLookup bool
+	for _, r := range rs {
+		if r.FwMark == domestic && r.FwMask == netmark.MaskGroup && !r.Blackhole && r.Table == 201 {
+			domesticLookup = true
+		}
+	}
+	if !domesticLookup {
+		t.Error("the domestic group lost its exit")
+	}
+}
+
 // A group mark naming an uplink would make failover restart xray.
 func TestGroupRules_MarkNamesTheGroupNotTheUplink(t *testing.T) {
-	rs := GroupRules(twoGroups(), twoUplinks())
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
 	for _, r := range rs {
 		if r.FwMask == netmark.MaskGroup && netmark.Pin(r.FwMark) != 0 {
 			t.Errorf("group rule at pref %d carries a pin field: 0x%08x", r.Pref, r.FwMark)
@@ -124,7 +176,7 @@ func TestGroupRules_MarkNamesTheGroupNotTheUplink(t *testing.T) {
 }
 
 func TestAllRules_NoPreferenceCollisions(t *testing.T) {
-	rs := AllRules(twoGroups(), twoUplinks())
+	rs := AllRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
 	seen := map[int]bool{}
 	for _, r := range rs {
 		if seen[r.Pref] && !r.Blackhole {

@@ -38,22 +38,41 @@ type Uplink struct {
 	GroupIndex  uint32
 }
 
+// VPNRouteState is what the rules need to know about the tunnel. A struct so a
+// second field doesn't mean a new signature everywhere.
+type VPNRouteState struct {
+	// Active makes the tunnel table the foreign group's egress. False and the
+	// group blackholes — that's the kill switch, not a bug.
+	Active bool
+}
+
 // BaseRules builds what must exist the moment RouteTable= empties main
-func BaseRules(uplinks []Uplink) []system.Rule {
+func BaseRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 	var rules []system.Rule
 
 	// pref 20, 21, … in a stable order so preferences don't shuffle per boot
 	ordered := append([]Uplink(nil), uplinks...)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].UplinkIndex < ordered[j].UplinkIndex })
-	if limit := RulePrefMainSuppress - RulePrefOifBase; len(ordered) > limit {
-		// Past this the next oif rule lands on the suppressor and replaces it.
-		ordered = ordered[:limit]
+	oifNames := make([]string, 0, len(ordered)+1)
+	oifTables := make([]int, 0, len(ordered)+1)
+	for _, u := range ordered {
+		oifNames = append(oifNames, u.IfName)
+		oifTables = append(oifTables, u.Table)
 	}
-	for i, u := range ordered {
+	// The tunnel needs one too, or a socket bound to it finds no route.
+	if vpn.Active {
+		oifNames = append(oifNames, system.WGLinkName)
+		oifTables = append(oifTables, system.WGTable)
+	}
+	if limit := RulePrefMainSuppress - RulePrefOifBase; len(oifNames) > limit {
+		// Past this the next oif rule lands on the suppressor and replaces it.
+		oifNames, oifTables = oifNames[:limit], oifTables[:limit]
+	}
+	for i := range oifNames {
 		rules = append(rules, system.Rule{
 			Pref:    RulePrefOifBase + i,
-			OifName: u.IfName,
-			Table:   u.Table,
+			OifName: oifNames[i],
+			Table:   oifTables[i],
 		})
 	}
 
@@ -67,10 +86,10 @@ func BaseRules(uplinks []Uplink) []system.Rule {
 
 	// pref 32000+ — ordered fallback; failover moves these defaults, so the
 	// kernel walks the list itself. Only exception to fail-closed.
-	for i, u := range fallbackOrder(ordered) {
+	for i, table := range fallbackTables(ordered, vpn) {
 		rules = append(rules, system.Rule{
 			Pref:  RulePrefFallbackBase + i,
-			Table: u.Table,
+			Table: table,
 		})
 	}
 	rules = append(rules, system.Rule{Pref: RulePrefFallbackBlackhole, Blackhole: true})
@@ -78,26 +97,39 @@ func BaseRules(uplinks []Uplink) []system.Rule {
 	return rules
 }
 
-// fallbackOrder puts secondary first, then domestic, then the rest by index
-func fallbackOrder(uplinks []Uplink) []Uplink {
-	rank := func(u Uplink) int {
-		switch u.Slot {
-		case domain.SlotSecondary:
-			return 0
-		case domain.SlotDomestic:
-			return 1
-		default:
-			return 2
-		}
+// fallbackTables is what unmarked traffic walks: tunnel, then domestic, then the
+// rest. Never the secondary's own table — that is the leak the kill switch stops.
+// Domestic stays on so a box with no VPN can still fetch its updates.
+func fallbackTables(uplinks []Uplink, vpn VPNRouteState) []int {
+	var out []int
+	if vpn.Active {
+		out = append(out, system.WGTable)
 	}
-	out := append([]Uplink(nil), uplinks...)
-	sort.SliceStable(out, func(i, j int) bool {
-		ri, rj := rank(out[i]), rank(out[j])
+
+	rank := func(u Uplink) int {
+		if u.Slot == domain.SlotDomestic {
+			return 0
+		}
+		return 1
+	}
+	rest := make([]Uplink, 0, len(uplinks))
+	for _, u := range uplinks {
+		if u.Slot == domain.SlotSecondary {
+			continue
+		}
+		rest = append(rest, u)
+	}
+	sort.SliceStable(rest, func(i, j int) bool {
+		ri, rj := rank(rest[i]), rank(rest[j])
 		if ri != rj {
 			return ri < rj
 		}
-		return out[i].UplinkIndex < out[j].UplinkIndex
+		return rest[i].UplinkIndex < rest[j].UplinkIndex
 	})
+	for _, u := range rest {
+		out = append(out, u.Table)
+	}
+
 	// Only this many fit ahead of the terminator.
 	if limit := RulePrefFallbackBlackhole - RulePrefFallbackBase; len(out) > limit {
 		out = out[:limit]
@@ -163,7 +195,10 @@ func PinRules(uplinks []Uplink) []system.Rule {
 }
 
 // GroupRules builds one rule per member, terminated by the group's blackhole.
-func GroupRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
+//
+// The foreign group is the exception: members ignored, egress is the tunnel or
+// its own blackhole.
+func GroupRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 	byGroup := map[uint32][]Uplink{}
 	for _, u := range uplinks {
 		byGroup[u.GroupIndex] = append(byGroup[u.GroupIndex], u)
@@ -174,10 +209,23 @@ func GroupRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
 
 	var rules []system.Rule
 	for _, g := range ordered {
+		mark := netmark.GroupMark(g.GroupIndex)
+
+		if g.GroupIndex == netmark.GroupForeign {
+			if vpn.Active {
+				rules = append(rules, system.Rule{
+					Pref: g.RuleBase, FwMark: mark, FwMask: netmark.MaskGroup, Table: system.WGTable,
+				})
+			}
+			rules = append(rules, system.Rule{
+				Pref: g.RuleBlackhole, FwMark: mark, FwMask: netmark.MaskGroup, Blackhole: true,
+			})
+			continue
+		}
+
 		members := byGroup[g.GroupIndex]
 		sort.Slice(members, func(i, j int) bool { return members[i].UplinkIndex < members[j].UplinkIndex })
 
-		mark := netmark.GroupMark(g.GroupIndex)
 		for i, m := range members {
 			pref := g.RuleBase + i
 			if pref >= g.RuleBlackhole {
@@ -195,8 +243,8 @@ func GroupRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
 }
 
 // AllRules: oif, suppressor, pins, groups, unmarked fallback.
-func AllRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
-	base := BaseRules(uplinks)
+func AllRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []system.Rule {
+	base := BaseRules(uplinks, vpn)
 
 	// Pins and groups go between the suppressor and the fallback.
 	var head, tail []system.Rule
@@ -210,7 +258,7 @@ func AllRules(groups []domain.WANGroup, uplinks []Uplink) []system.Rule {
 
 	out := append([]system.Rule(nil), head...)
 	out = append(out, PinRules(uplinks)...)
-	out = append(out, GroupRules(groups, uplinks)...)
+	out = append(out, GroupRules(groups, uplinks, vpn)...)
 	return append(out, tail...)
 }
 
