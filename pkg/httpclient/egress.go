@@ -79,8 +79,13 @@ func (f *Factory) markingNetDialer(g EgressGroup) *net.Dialer {
 	if mark == 0 {
 		return nil
 	}
+	return MarkedDialer(mark, 30*time.Second)
+}
+
+// MarkedDialer stamps SO_MARK on every socket, for callers outside the factory.
+func MarkedDialer(mark uint32, timeout time.Duration) *net.Dialer {
 	return &net.Dialer{
-		Timeout:   30 * time.Second,
+		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,
 		Control: func(_, _ string, c syscall.RawConn) error {
 			var serr error
