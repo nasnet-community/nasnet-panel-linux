@@ -2,6 +2,7 @@ package process
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -743,6 +744,15 @@ func (m *XrayManager) UpdateConfig(content string) error {
 	// Ensure log directories exist so xray can open log files
 	ensureLogDirs(content, logger)
 
+	// Missing if xray was never installed, and then the write fails with a bare
+	// ENOENT on a ".tmp.json" path, which says nothing about why.
+	if dir := filepath.Dir(m.configPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			logger.WithError(err).Error("Failed to create the config directory")
+			return fmt.Errorf("failed to create config directory %s: %w", dir, err)
+		}
+	}
+
 	logger.Debug("Writing new config to temp file")
 
 	// Write to temp file first
@@ -763,6 +773,10 @@ func (m *XrayManager) UpdateConfig(content string) error {
 	if err != nil {
 		os.Remove(tmpPath)
 		logger.WithError(err).WithField("output", string(output)).Error("Config validation failed")
+		// No output at all means the binary never ran.
+		if len(bytes.TrimSpace(output)) == 0 {
+			return fmt.Errorf("could not run %s to validate the config: %w", m.binPath, err)
+		}
 		return fmt.Errorf("config validation failed: %s", string(output))
 	}
 
