@@ -1,6 +1,9 @@
 package process
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,5 +111,45 @@ func TestStopTimeout(t *testing.T) {
 		_ = err
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() did not return within 5 seconds on a non-started manager")
+	}
+}
+
+// A fresh box has no /usr/local/etc/xray, and the ENOENT it used to fail with
+// reads like a permissions problem.
+func TestUpdateConfig_CreatesTheConfigDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "etc", "xray")
+	m := &XrayManager{
+		configPath: filepath.Join(dir, "config.json"),
+		binPath:    filepath.Join(t.TempDir(), "no-such-xray"),
+		logBuffer:  NewRingBuffer(10),
+	}
+
+	// Still fails on the absent binary; it just has to get past the write.
+	err := m.UpdateConfig(`{"inbounds":[],"outbounds":[]}`)
+	if err == nil {
+		t.Fatal("a missing xray binary somehow validated")
+	}
+	if strings.Contains(err.Error(), "write temp config") {
+		t.Fatalf("failed before validation, on the write: %v", err)
+	}
+	if _, statErr := os.Stat(dir); statErr != nil {
+		t.Errorf("the config directory was not created: %v", statErr)
+	}
+}
+
+// A missing binary used to produce "config validation failed: " and nothing else.
+func TestUpdateConfig_MissingBinaryNamesItself(t *testing.T) {
+	m := &XrayManager{
+		configPath: filepath.Join(t.TempDir(), "etc", "xray", "config.json"),
+		binPath:    "/nonexistent/xray",
+		logBuffer:  NewRingBuffer(10),
+	}
+
+	err := m.UpdateConfig(`{"inbounds":[],"outbounds":[]}`)
+	if err == nil {
+		t.Fatal("a missing binary validated the config")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/xray") {
+		t.Errorf("the error does not name the binary: %v", err)
 	}
 }
