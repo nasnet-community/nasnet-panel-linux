@@ -74,7 +74,7 @@ func (u *networkUsecase) reapplyDomesticSets(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return ApplyLANNftState(ctx, u.Nft, lan, uplinks, sets)
+	return ApplyLANNftState(ctx, u.Nft, lan, uplinks, sets, u.vpnRouteState(ctx))
 }
 
 // StartRangesRefreshLoop refreshes on the same cadence the MikroTik build uses.
