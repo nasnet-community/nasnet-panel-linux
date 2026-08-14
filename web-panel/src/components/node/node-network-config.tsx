@@ -94,7 +94,7 @@ import { OutboundTestResultDialog } from "@/components/outbound/outbound-test-re
 import { BulkActionBar } from "./network/bulk-action-bar"
 import { DesktopInboundRow } from "./network/desktop-inbound-row"
 import { HiOutlineCheckCircle, HiOutlineXCircle } from "react-icons/hi"
-import { Power, Loader2 } from "lucide-react"
+import { Lock, Power, Loader2 } from "lucide-react"
 
 interface NodeNetworkConfigProps {
     nodeId: number
@@ -950,7 +950,21 @@ export function NodeNetworkConfig({
                         {/* Mobile outbound list */}
                         {outbounds.length > 0 && (
                             <div className="md:hidden divide-y rounded-xl border overflow-hidden mb-4">
-                                {outbounds.map((outbound) => (
+                                {outbounds.map((outbound) => outbound.managed ? (
+                                    // No row behind it, so there is nothing to swipe towards.
+                                    <div key={`managed:${outbound.tag}`} className="flex items-center gap-2 px-4 py-3">
+                                        <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono font-semibold truncate">{outbound.tag}</span>
+                                                <Badge variant="secondary" className="text-[10px]">Managed</Badge>
+                                            </div>
+                                            {outbound.remark && (
+                                                <p className="text-xs text-muted-foreground truncate">{outbound.remark}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
                                     <SwipeableOutboundRow
                                         key={outbound.id}
                                         outbound={outbound}
@@ -1025,10 +1039,27 @@ export function NodeNetworkConfig({
                                             const hasTraffic = (outbound.uplink && outbound.uplink > 0) || (outbound.downlink && outbound.downlink > 0)
 
                                             return (
-                                                <TableRow key={outbound.id} className={cn("group", outbound.is_disabled && "opacity-50")}>
+                                                <TableRow
+                                                    key={outbound.managed ? `managed:${outbound.tag}` : outbound.id}
+                                                    className={cn("group", outbound.is_disabled && "opacity-50")}
+                                                >
                                                     {/* Outbound */}
                                                     <TableCell>
                                                         <div className="flex items-start gap-2">
+                                                            {/* Rewritten on every config build, so an edit here is thrown away. */}
+                                                            {outbound.managed ? (
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>
+                                                                        <span className="mt-0.5 shrink-0 p-1 text-muted-foreground/60">
+                                                                            <Lock className="w-3.5 h-3.5" />
+                                                                        </span>
+                                                                    </TooltipTrigger>
+                                                                    <TooltipContent className="max-w-xs">
+                                                                        Router mode writes this one itself on every config
+                                                                        build, so it cannot be edited or removed.
+                                                                    </TooltipContent>
+                                                                </Tooltip>
+                                                            ) : (
                                                             <DropdownMenu>
                                                                 <DropdownMenuTrigger asChild>
                                                                     <button aria-label="Outbound actions" className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors mt-0.5 shrink-0 opacity-60 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -1050,9 +1081,13 @@ export function NodeNetworkConfig({
                                                                     </DropdownMenuItem>
                                                                 </DropdownMenuContent>
                                                             </DropdownMenu>
+                                                            )}
                                                             <div className="space-y-1 min-w-0">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="font-mono font-semibold">{outbound.tag}</span>
+                                                                    {outbound.managed && (
+                                                                        <Badge variant="secondary" className="text-[10px]">Managed</Badge>
+                                                                    )}
                                                                 </div>
                                                                 <p className={cn(
                                                                     "text-xs font-mono truncate max-w-[160px]",
@@ -1070,6 +1105,12 @@ export function NodeNetworkConfig({
                                                     <TableCell>
                                                         <div className="flex flex-wrap gap-1.5">
                                                             <ProtocolBadge protocol={outbound.protocol} />
+                                                            {/* The mark is what picks the uplink — why these exist. */}
+                                                            {outbound.managed && outbound.sockopt_settings?.mark ? (
+                                                                <Badge variant="outline" className="text-xs font-mono">
+                                                                    mark 0x{outbound.sockopt_settings.mark.toString(16)}
+                                                                </Badge>
+                                                            ) : null}
                                                             {!isSpecial && (
                                                                 <>
                                                                     <Badge variant="outline" className="text-xs">{outbound.network || "tcp"}</Badge>
@@ -1135,6 +1176,9 @@ export function NodeNetworkConfig({
                                                     </TableCell>
                                                     {/* Test Action */}
                                                     <TableCell className="text-center">
+                                                        {outbound.managed ? (
+                                                            <span className="text-xs text-muted-foreground/50">—</span>
+                                                        ) : (
                                                         <Tooltip>
                                                             <TooltipTrigger asChild>
                                                                 <Button
@@ -1149,6 +1193,7 @@ export function NodeNetworkConfig({
                                                             </TooltipTrigger>
                                                             <TooltipContent>Test connectivity</TooltipContent>
                                                         </Tooltip>
+                                                        )}
                                                     </TableCell>
                                                 </TableRow>
                                             )
