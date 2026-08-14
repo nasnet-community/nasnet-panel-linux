@@ -13,6 +13,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/dohboot"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
@@ -54,6 +55,15 @@ type StateView struct {
 	Uplinks             []UplinkView `json:"uplinks"`
 	PendingPlanID       uint         `json:"pending_plan_id"`
 	ConfirmDeadlineUnix int64        `json:"confirm_deadline_unix"`
+	// Kept out of the uplink's Healthy: that loop withdraws routes, and a dead
+	// tunnel is the wrong reason to.
+	VPN VPNStateView `json:"vpn"`
+}
+
+// VPNStateView is enough for a chip on the uplink card; the detail is a tab away.
+type VPNStateView struct {
+	Active    bool `json:"active"`
+	Connected bool `json:"connected"`
 }
 
 type PlanView struct {
@@ -92,6 +102,17 @@ type NetworkUsecase interface {
 	ListDevices(ctx context.Context) (*LANDeviceList, error)
 	SetDeviceLabel(ctx context.Context, mac, label string) error
 
+	// Only activate and deactivate ride the apply pipeline; the rest is storage.
+	ListVPNProfiles(ctx context.Context) ([]VPNProfileView, error)
+	CreateVPNProfile(ctx context.Context, req CreateVPNProfileRequest) (*VPNProfileView, error)
+	UpdateVPNProfile(ctx context.Context, id uint, req CreateVPNProfileRequest) (*VPNProfileView, error)
+	DeleteVPNProfile(ctx context.Context, id uint) error
+	ParseVPNInput(ctx context.Context, raw string) (*domain.WireGuardConfig, []domain.Verdict, error)
+	GenerateVPNKeypair() (priv, pub string, err error)
+	ActivateVPN(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
+	DeactivateVPN(ctx context.Context) ([]domain.Verdict, *ApplyView, error)
+	VPNStatus(ctx context.Context) (*VPNStatusView, error)
+
 	ListPortForwards(ctx context.Context) ([]domain.PortForward, error)
 	CreatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
 	UpdatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
@@ -111,6 +132,14 @@ type Deps struct {
 	// DeviceLabels is optional: with no storage the device list still renders,
 	// it just carries no operator-assigned names.
 	DeviceLabels repository.DeviceLabelRepository
+	// VPNRepo holds the profiles. Nil means nothing can be active, so the
+	// foreign group blackholes.
+	VPNRepo repository.VPNRepository
+	// WG owns the tunnel interface. Nil uses the live kernel; injected in tests.
+	WG system.WGDevice
+	// DoH resolves the endpoint hostname before any tunnel exists. Nil uses the
+	// bootstrap resolvers.
+	DoH dohboot.Resolver
 	// Devices reads the bridge. Nil uses the live system; injected in tests.
 	Devices    system.DeviceSource
 	Backend    system.Backend
@@ -150,6 +179,16 @@ type networkUsecase struct {
 
 	// lastRolledBack is the revert this process has already reacted to.
 	lastRolledBack uint
+
+	// vpnWasUp keeps the tunnel events edge-triggered; vpnLastResolve stops a
+	// silent tunnel re-resolving its endpoint every tick.
+	vpnWasUp       bool
+	vpnLastResolve time.Time
+}
+
+// vpnRouteState says whether the foreign group has a tunnel to leave by.
+func (u *networkUsecase) vpnRouteState(ctx context.Context) VPNRouteState {
+	return VPNRouteState{Active: u.vpnPlaneNow(ctx).Active()}
 }
 
 func NewNetworkUsecase(d Deps) NetworkUsecase {
@@ -166,6 +205,12 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 		snap.RestoreLAN = func(ctx context.Context, cfg *domain.LANConfig) error {
 			return d.LANRepo.Save(ctx, cfg)
 		}
+	}
+	if d.VPNRepo != nil {
+		snap.CaptureVPN = func(ctx context.Context) (*domain.VPNProfile, error) {
+			return d.VPNRepo.Active(ctx)
+		}
+		snap.RestoreVPN = u.restoreVPN
 	}
 	u.applier = &system.Applier{
 		Snap:   snap,
@@ -221,22 +266,41 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list groups: %w", err)
 	}
-	if err := ReconcileRules(ctx, u.Backend, AllRules(groups, uplinks)); err != nil {
+	// Device first: the rules below look up a table whose route names its link.
+	plane := u.vpnPlaneNow(ctx)
+	if err := u.applyVPNDevice(ctx); err != nil {
+		return fmt.Errorf("apply the tunnel: %w", err)
+	}
+	vpn := VPNRouteState{Active: plane.Active()}
+
+	if err := ReconcileRules(ctx, u.Backend, AllRules(groups, uplinks, vpn)); err != nil {
 		return err
 	}
 	if err := ApplyNftState(ctx, u.Nft, uplinks); err != nil {
 		return err
 	}
+	rows, err := u.IfRepo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list interfaces: %w", err)
+	}
+	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows)); err != nil {
+		return err
+	}
 
 	lan := u.lanConfig(ctx)
-	if err := u.applyLAN(ctx, lan, uplinks); err != nil {
+	if err := u.applyLAN(ctx, lan, uplinks, plane); err != nil {
 		return err
 	}
 	bridge, on := "", lan != nil && lan.Enabled
 	if on {
 		bridge = lan.BridgeName
 	}
-	return ApplySysctls(ctx, u.Backend, uplinks, on, bridge)
+	if err := ApplySysctls(ctx, u.Backend, uplinks, on, bridge); err != nil {
+		return err
+	}
+	// Last: the LAN can restart networkd, which flushes the tunnel's route out
+	// to the dish along with everything else on the links it owns.
+	return u.applyVPNRoutes(ctx, plane, uplinks)
 }
 
 // lanConfig reads the stored LAN row. A read failure is not fatal: the rest of
@@ -277,9 +341,12 @@ func (u *networkUsecase) domesticSets(ctx context.Context) ([]nft.Set, bool, err
 
 // applyLAN turns the LAN plane on or off: nft classification, NAT, the forward
 // filter, and the dnsmasq that serves it.
-func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig, uplinks []Uplink) error {
+func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig,
+	uplinks []Uplink, plane vpnPlane) error {
+
+	vpn := VPNRouteState{Active: plane.Active()}
 	if lan == nil || !lan.Enabled {
-		if err := ApplyLANNftState(ctx, u.Nft, nil, uplinks, nil); err != nil {
+		if err := ApplyLANNftState(ctx, u.Nft, nil, uplinks, nil, vpn); err != nil {
 			return err
 		}
 		return u.dnsmasq.Stop(ctx)
@@ -289,7 +356,7 @@ func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig, up
 	if err != nil {
 		return err
 	}
-	if err := ApplyLANNftState(ctx, u.Nft, lan, uplinks, sets); err != nil {
+	if err := ApplyLANNftState(ctx, u.Nft, lan, uplinks, sets, vpn); err != nil {
 		return err
 	}
 
@@ -313,7 +380,7 @@ func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig, up
 		}
 	}
 
-	cfg := LANDNSConfig(*lan, uplinks, DefaultDomesticDNS, DefaultForeignDNS,
+	cfg := LANDNSConfig(*lan, uplinks, DefaultDomesticDNS, vpnForeignDNS(plane),
 		DomesticSuffix, nftSetOK)
 	if err := u.dnsmasq.Write(cfg); err != nil {
 		return err
@@ -398,6 +465,9 @@ func (u *networkUsecase) refreshInterfaces(ctx context.Context) error {
 
 // uplinks builds the routing identities from the WAN rows.
 func (u *networkUsecase) uplinks(ctx context.Context) ([]Uplink, error) {
+	if u.IfRepo == nil {
+		return nil, nil
+	}
 	rows, err := u.IfRepo.GetByRole(ctx, domain.RoleWAN)
 	if err != nil {
 		return nil, fmt.Errorf("list uplinks: %w", err)
@@ -494,6 +564,13 @@ func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
 
 	if m, err := system.ReadMarker(u.Paths); err == nil && m != nil {
 		st.PendingPlanID, st.ConfirmDeadlineUnix = m.PlanID, m.DeadlineUnix
+	}
+	// Enough for a chip on the secondary uplink's card; the detail is a tab away.
+	if plane := u.vpnPlaneNow(ctx); plane.Active() {
+		st.VPN.Active = true
+		if s, err := u.wg().Status(ctx); err == nil {
+			st.VPN.Connected = s.Connected()
+		}
 	}
 	if len(uplinks) < 2 {
 		st.Warnings = append(st.Warnings,
@@ -607,7 +684,8 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 	}
 
 	var files []system.UplinkFile
-	tables := map[int]string{}
+	// Named even with no tunnel up: "empty" beats "no such table".
+	tables := map[int]string{system.WGTable: system.WGTableName}
 	var uplinkNames []string
 	// Written once and frozen, so it survives the prune while the role exists.
 	mgmtFile := ""
@@ -799,6 +877,7 @@ func (u *networkUsecase) StartHealthLoop(ctx context.Context, interval time.Dura
 			case <-t.C:
 				u.watchForRollback(ctx)
 				u.probeOnce(ctx)
+				u.checkVPNHealth(ctx)
 			}
 		}
 	}()
@@ -834,6 +913,10 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 			}
 			if gw != "" && gw != learnedByIf[up.IfName] {
 				_ = u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw)
+				// The kill switch names this gateway; the probe has to get past it.
+				if up.Slot == domain.SlotSecondary {
+					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gw)
+				}
 			}
 			if gw == "" {
 				gw = learnedByIf[up.IfName]

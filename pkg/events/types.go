@@ -64,6 +64,10 @@ const (
 	EventWANFailover          EventType = "wan.failover"
 	EventWANApplyRolledBack   EventType = "wan.apply_rolled_back"
 	EventWANLeaseWarning      EventType = "wan.lease_warning"
+	// Separate from uplink health: that loop withdraws routes, and a dead tunnel
+	// is the wrong reason to.
+	EventVPNUp   EventType = "vpn.up"
+	EventVPNDown EventType = "vpn.down"
 )
 
 // Event represents a real-time event that can be published and subscribed to
