@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LanTab } from "@/pages/network/lan-tab"
 import { PortForwardsTab } from "@/pages/network/port-forwards-tab"
+import { VpnTab } from "@/pages/network/vpn-tab"
 import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
@@ -39,6 +40,8 @@ const NETWORK_EVENTS = new Set([
     "wan.failover",
     "wan.apply_rolled_back",
     "wan.lease_warning",
+    "vpn.up",
+    "vpn.down",
 ])
 
 function useFreshness(updatedAt: number | undefined) {
@@ -215,6 +218,7 @@ export default function NetworkPage() {
                 <TabsList>
                     <TabsTrigger value="ports">Ports</TabsTrigger>
                     <TabsTrigger value="lan">Local network</TabsTrigger>
+                    <TabsTrigger value="vpn">VPN</TabsTrigger>
                     <TabsTrigger value="forwards">Port forwards</TabsTrigger>
                 </TabsList>
 
@@ -248,6 +252,10 @@ export default function NetworkPage() {
 
                 <TabsContent value="lan" className="mt-0">
                     <LanTab state={state.data} armed={armed} onApplied={refresh} />
+                </TabsContent>
+
+                <TabsContent value="vpn" className="mt-0">
+                    <VpnTab armed={armed} onApplied={refresh} />
                 </TabsContent>
 
                 <TabsContent value="forwards" className="mt-0">
