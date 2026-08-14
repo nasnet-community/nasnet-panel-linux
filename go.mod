@@ -28,6 +28,7 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
+	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/telebot.v3 v3.3.8
@@ -108,6 +109,7 @@ require (
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
+	github.com/mdlayher/genetlink v1.3.2 // indirect
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/metacubex/utls v1.8.4 // indirect

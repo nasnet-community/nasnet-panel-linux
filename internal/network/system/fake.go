@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"sync"
 )
 
@@ -161,4 +162,67 @@ func (f *FakeDeviceSource) FDB(context.Context, string) ([]FDBEntry, error) {
 
 func (f *FakeDeviceSource) AgeingSeconds(context.Context, string) (int, error) {
 	return f.Ageing, f.AgeingErr
+}
+
+// FakeWGDevice is an in-memory WGDevice. Absent until Ensure runs, like the
+// real one with no profile.
+type FakeWGDevice struct {
+	mu       sync.Mutex
+	Applied  *WGApplyConfig
+	Endpoint netip.AddrPort
+	Stat     *WGStatus
+	Deleted  int
+
+	EnsureErr   error
+	StatusErr   error
+	EndpointErr error
+	DeleteErr   error
+}
+
+func (f *FakeWGDevice) Ensure(_ context.Context, cfg WGApplyConfig) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.EnsureErr != nil {
+		return f.EnsureErr
+	}
+	f.Applied = &cfg
+	f.Endpoint = cfg.Endpoint
+	if f.Stat == nil {
+		f.Stat = &WGStatus{}
+	}
+	return nil
+}
+
+func (f *FakeWGDevice) UpdateEndpoint(_ context.Context, ep netip.AddrPort) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.EndpointErr != nil {
+		return f.EndpointErr
+	}
+	f.Endpoint = ep
+	return nil
+}
+
+func (f *FakeWGDevice) Status(context.Context) (*WGStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.StatusErr != nil {
+		return nil, f.StatusErr
+	}
+	if f.Applied == nil {
+		return nil, ErrNoWGDevice
+	}
+	return f.Stat, nil
+}
+
+func (f *FakeWGDevice) Delete(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.DeleteErr != nil {
+		return f.DeleteErr
+	}
+	f.Deleted++
+	f.Applied = nil
+	f.Stat = nil
+	return nil
 }
