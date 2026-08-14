@@ -69,6 +69,27 @@ type FilterInput struct {
 	Accepts      []InputAccept
 }
 
+// Resolvers the kill switch lets through, so an endpoint hostname can be
+// resolved before the tunnel exists.
+const SetDoHBootstrap = "doh_bootstrap"
+
+// KillSwitch drops everything leaving the secondary uplink in the clear.
+// Rendered whenever a secondary uplink exists, tunnel or not, and unlike the
+// input firewall it is not a setting.
+type KillSwitch struct {
+	SecondaryIfName string
+	// The health probe has to reach the gateway or the uplink reads as down
+	// forever. Empty before the first lease.
+	GatewayIP string
+	// Keeps the Starlink dish's own API reachable. Empty omits it.
+	DishSubnet string
+	// Match the tunnel's transport, the one thing allowed out in the clear.
+	MarkMask  uint32
+	MarkValue uint32
+	// The DoH resolvers. Empty renders no exemption at all.
+	BootstrapIPs []string
+}
+
 // Ruleset is the complete desired state of the owned table. Zero value renders
 // an empty table, which is a valid "everything off" state
 type Ruleset struct {
@@ -91,13 +112,15 @@ type Ruleset struct {
 	FilterForward *FilterForward
 	// FilterInput is the box's own exposure.
 	FilterInput *FilterInput
+	// KillSwitch stops anything leaving the secondary uplink in the clear.
+	KillSwitch *KillSwitch
 }
 
 // IsZero reports whether this renders an empty table
 func (r Ruleset) IsZero() bool {
 	return !r.Connmark && len(r.IngressPins) == 0 && len(r.Sets) == 0 &&
 		r.LANClassify == nil && len(r.Masquerade) == 0 && len(r.PortForwards) == 0 &&
-		r.FilterForward == nil && r.FilterInput == nil
+		r.FilterForward == nil && r.FilterInput == nil && r.KillSwitch == nil
 }
 
 // Render returns a complete `nft -f -` script that atomically replaces the owned
@@ -115,6 +138,7 @@ func (r Ruleset) Render() string {
 		r.renderNatPre(),
 		r.renderFilterInput(),
 		r.renderFilterForward(),
+		r.renderKillSwitch(),
 		r.renderManglePostSection(),
 		r.renderNatPost(),
 	}
@@ -138,11 +162,21 @@ func (r Ruleset) Render() string {
 func (r Ruleset) connmark() bool { return r.Connmark || len(r.IngressPins) > 0 }
 
 func (r Ruleset) renderSets() string {
-	if len(r.Sets) == 0 {
+	sets := r.Sets
+	// Carries its own set: a chain referencing a missing one aborts the whole
+	// transaction.
+	if k := r.KillSwitch; k != nil && len(k.BootstrapIPs) > 0 {
+		sets = append(append([]Set(nil), sets...), Set{
+			Name:     SetDoHBootstrap,
+			Family:   "ipv4_addr",
+			Elements: k.BootstrapIPs,
+		})
+	}
+	if len(sets) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	for _, s := range r.Sets {
+	for _, s := range sets {
 		// Declared even when empty, so a rule referencing it cannot abort the
 		// whole transaction.
 		fmt.Fprintf(&b, "\tset %s {\n", s.Name)
@@ -291,6 +325,71 @@ func (r Ruleset) renderFilterInput() string {
 			quoteList(a.IfNames), a.Proto, a.Port)
 	}
 	b.WriteString("\t}\n")
+	return b.String()
+}
+
+// renderKillSwitch writes the two chains. Both are policy accept with an
+// explicit drop last — a drop policy would take the box off the network if a
+// rule ever failed to render.
+func (r Ruleset) renderKillSwitch() string {
+	k := r.KillSwitch
+	if k == nil || k.SecondaryIfName == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\tchain killswitch_out {\n")
+	b.WriteString("\t\ttype filter hook output priority filter + 10; policy accept;\n")
+	b.WriteString("\n\t\t# Nothing this box originates may leave the secondary uplink in the\n")
+	b.WriteString("\t\t# clear. Everything accepted below is either the tunnel's own crypto\n")
+	b.WriteString("\t\t# or link-scoped, so none of it can carry payload to the internet.\n")
+	fmt.Fprintf(&b, "\t\toifname != %q accept\n", k.SecondaryIfName)
+	b.WriteString("\n\t\t# Replies to flows that arrived here — an inbound VPN user over the\n")
+	b.WriteString("\t\t# dish. An outbound flow's first packet never leaves, so it can\n")
+	b.WriteString("\t\t# never become established through this.\n")
+	b.WriteString("\t\tct state established,related accept\n")
+	b.WriteString(k.exemptions())
+	b.WriteString("\t\tdrop\n")
+	b.WriteString("\t}\n")
+
+	b.WriteString("\n\tchain killswitch_fwd {\n")
+	b.WriteString("\t\ttype filter hook forward priority filter + 10; policy accept;\n")
+	b.WriteString("\n\t\t# The same rule for traffic passing through: a LAN host must not\n")
+	b.WriteString("\t\t# reach the internet over the raw uplink either.\n")
+	fmt.Fprintf(&b, "\t\toifname != %q accept\n", k.SecondaryIfName)
+	b.WriteString("\t\tct state established,related accept\n")
+	if k.DishSubnet != "" {
+		fmt.Fprintf(&b, "\t\tip daddr %s accept\n", k.DishSubnet)
+	}
+	b.WriteString("\t\tdrop\n")
+	b.WriteString("\t}\n")
+	return b.String()
+}
+
+// exemptions is the entire allowlist, in the order a packet meets it.
+func (k *KillSwitch) exemptions() string {
+	var b strings.Builder
+	if k.MarkMask != 0 {
+		mask, value := netmark.Hex(k.MarkMask), netmark.Hex(k.MarkValue)
+		b.WriteString("\n\t\t# The tunnel's own transport. This is the whole point.\n")
+		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s meta l4proto udp accept\n", mask, value)
+		if len(k.BootstrapIPs) > 0 {
+			b.WriteString("\n\t\t# Resolving the endpoint hostname needs a resolver, and the only\n")
+			b.WriteString("\t\t# one reachable before the tunnel is up is out here. Fixed\n")
+			b.WriteString("\t\t# addresses over DoH: an editable list would be an editable hole.\n")
+			fmt.Fprintf(&b, "\t\tmeta mark and %s == %s tcp dport 443 ip daddr @%s accept\n",
+				mask, value, SetDoHBootstrap)
+		}
+	}
+	b.WriteString("\n\t\t# Link-scoped only: a lease, the gateway the health probe pings,\n")
+	b.WriteString("\t\t# and the dish's own management address.\n")
+	b.WriteString("\t\tudp sport 68 udp dport 67 accept\n")
+	if k.GatewayIP != "" {
+		fmt.Fprintf(&b, "\t\tip daddr %s accept\n", k.GatewayIP)
+	}
+	if k.DishSubnet != "" {
+		fmt.Fprintf(&b, "\t\tip daddr %s accept\n", k.DishSubnet)
+	}
 	return b.String()
 }
 
