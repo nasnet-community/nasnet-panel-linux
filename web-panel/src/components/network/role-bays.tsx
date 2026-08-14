@@ -103,6 +103,13 @@ export function RoleBays({ interfaces, state }: Props) {
                                         Port missing — role held for its return
                                     </p>
                                 )}
+
+                                {/* The link can be healthy while the tunnel over it is dead. */}
+                                {bay.slot === "secondary" && state?.vpn?.active && !state.vpn.connected && (
+                                    <p className="text-status-warning text-xs">
+                                        VPN not answering — traffic here is being dropped
+                                    </p>
+                                )}
                             </div>
                         ) : (
                             <div className="mt-2.5 space-y-1.5">
