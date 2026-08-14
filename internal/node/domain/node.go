@@ -748,6 +748,10 @@ type Outbound struct {
 	// Belongs To Relation
 	Node *Node `gorm:"foreignKey:NodeID" json:"node,omitempty"`
 
+	// Managed means the router generates it on every build. Not a column: the
+	// list shows it so the UI knows not to offer edits that get regenerated away.
+	Managed bool `gorm:"-" json:"managed,omitempty"`
+
 	// Tag must match the "tag" in Xray config.json 'outbounds'
 	Tag string `gorm:"size:100;not null" json:"tag"`
 

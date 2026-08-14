@@ -18,6 +18,33 @@ const (
 	TagDirectDomestic = "direct-domestic"
 )
 
+// RouterOutbound is one router mode generates on every build. Never stored, so
+// nothing in the UI can edit split routing away.
+type RouterOutbound struct {
+	Tag      string
+	Protocol string
+	// Stamped on every socket, and what the routing rules match to pick an uplink.
+	Mark   uint32
+	Remark string
+}
+
+// RouterOutbounds returns them in emit order. xray falls back to the first
+// outbound when no rule matches, so foreign leads.
+func RouterOutbounds() []RouterOutbound {
+	return []RouterOutbound{
+		{
+			Tag: TagDirectForeign, Protocol: "freedom",
+			Mark:   netmark.GroupMark(netmark.GroupForeign),
+			Remark: "Foreign traffic (router mode)",
+		},
+		{
+			Tag: TagDirectDomestic, Protocol: "freedom",
+			Mark:   netmark.GroupMark(netmark.GroupDomestic),
+			Remark: "Domestic traffic (router mode)",
+		},
+	}
+}
+
 // OrderedConfig represents the Xray config with fields in the desired JSON output order.
 // The order of fields in this struct determines the order of keys in the JSON output.
 type OrderedConfig struct {
@@ -1044,15 +1071,9 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 			"protocol": "freedom",
 			"settings": map[string]interface{}{},
 		}
-		for _, g := range []struct {
-			tag  string
-			mark uint32
-		}{
-			{TagDirectForeign, netmark.GroupMark(netmark.GroupForeign)},
-			{TagDirectDomestic, netmark.GroupMark(netmark.GroupDomestic)},
-		} {
-			outbounds = append(outbounds, b.cloneOutboundWithMark(plainDirect, g.tag, g.mark))
-			existingTags[g.tag] = true
+		for _, g := range RouterOutbounds() {
+			outbounds = append(outbounds, b.cloneOutboundWithMark(plainDirect, g.Tag, g.Mark))
+			existingTags[g.Tag] = true
 		}
 	}
 

@@ -35,6 +35,10 @@ func (h *Handler) HandleOutbounds(c telebot.Context) error {
 	var rows []telebot.Row
 
 	for _, out := range outbounds {
+		// No row to open or delete, and the buttons key on ID.
+		if out.Managed {
+			continue
+		}
 		// e.g. "freedom (direct) - Direct Out"
 		label := fmt.Sprintf("%s - %s", out.Protocol, out.Tag)
 		if out.Remark != "" {

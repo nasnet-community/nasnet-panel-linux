@@ -8,6 +8,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/link"
 )
 
@@ -146,8 +147,35 @@ func (u *nodeUsecase) AddOutbound(ctx context.Context, outbound *domain.Outbound
 	return nil
 }
 
+// ListOutbounds returns the stored outbounds, preceded in router mode by the
+// generated ones — otherwise the two that pick the uplink are invisible.
 func (u *nodeUsecase) ListOutbounds(ctx context.Context, nodeID uint) ([]*domain.Outbound, error) {
-	return u.nodeRepo.ListOutboundsByNode(ctx, nodeID)
+	stored, err := u.nodeRepo.ListOutboundsByNode(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.routerMode {
+		return stored, nil
+	}
+	return append(managedOutbounds(nodeID), stored...), nil
+}
+
+// From the builder's own definition, so the list can't drift from the config.
+func managedOutbounds(nodeID uint) []*domain.Outbound {
+	gen := xray.RouterOutbounds()
+	out := make([]*domain.Outbound, 0, len(gen))
+	for _, g := range gen {
+		out = append(out, &domain.Outbound{
+			NodeID:          nodeID,
+			Managed:         true,
+			Tag:             g.Tag,
+			Protocol:        g.Protocol,
+			Remark:          g.Remark,
+			FreedomSettings: &domain.FreedomSettings{},
+			SockoptSettings: &domain.SockoptSettings{Mark: g.Mark},
+		})
+	}
+	return out
 }
 
 func (u *nodeUsecase) GetOutbound(ctx context.Context, id uint) (*domain.Outbound, error) {
