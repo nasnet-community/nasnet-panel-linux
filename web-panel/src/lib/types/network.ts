@@ -50,6 +50,8 @@ export interface NetworkState {
     uplinks: UplinkView[]
     pending_plan_id: number
     confirm_deadline_unix: number
+    /** Never folded into uplink health — that's the link, this rides over it. */
+    vpn: { active: boolean; connected: boolean }
 }
 
 export interface NetworkPlan {
@@ -133,4 +135,69 @@ export interface LANDeviceList {
     neighbours_ok: boolean
     /** The bridge ageing time: how long a departed device keeps reading online. */
     offline_after_seconds: number
+}
+
+/** One stored WireGuard config. The private key is served as-is; whoever can
+ *  read it already holds an admin session. */
+export interface WireGuardConfig {
+    private_key: string
+    /** This end's address inside the tunnel, as a CIDR. */
+    address: string
+    dns?: string
+    /** 0 means the default is applied at connect time. */
+    mtu?: number
+    listen_port?: number
+    peer: WGPeerConfig
+    /** So the tunnel can come up before any resolver does. */
+    pinned_endpoint_ip?: string
+    /** What the parser dropped or filled in. */
+    notices?: string[]
+    /** From a URI fragment, offered as the profile name. */
+    suggested_name?: string
+}
+
+export interface WGPeerConfig {
+    public_key: string
+    preshared_key?: string
+    allowed_ips: string[]
+    endpoint: string
+    persistent_keepalive?: number
+}
+
+export interface VPNProfile {
+    id: number
+    name: string
+    type: string
+    active: boolean
+    config: WireGuardConfig
+    /** Derived from the private key, for pasting into your own server. */
+    public_key: string
+    created_at: string
+    updated_at: string
+}
+
+export interface VPNStatus {
+    active_profile_id: number | null
+    name?: string
+    /** A handshake in the last few minutes. There is no link state to read. */
+    connected: boolean
+    handshake_age_seconds: number | null
+    rx_bytes: number
+    tx_bytes: number
+    endpoint?: string
+    /** Applied values, defaults included. */
+    mtu: number
+    keepalive_seconds: number
+    last_error?: string
+    secondary_uplink_up: boolean
+    /** Always true. Stated, never offered. */
+    kill_switch: boolean
+}
+
+export interface VPNProfileInput {
+    name: string
+    /** A wireguard:// URI or the contents of a .conf file. */
+    raw?: string
+    /** The manual-entry path, used when raw is empty. */
+    config?: WireGuardConfig
 }

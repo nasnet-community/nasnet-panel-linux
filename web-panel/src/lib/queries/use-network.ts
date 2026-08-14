@@ -1,23 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+    activateVPN,
     applyNetworkChange,
     confirmNetworkApply,
     createPortForward,
+    createVPNProfile,
+    deactivateVPN,
     deletePortForward,
+    deleteVPNProfile,
+    generateVPNKeypair,
     getLAN,
     getLANDevices,
     getNetworkInterfaces,
     getNetworkState,
     getPortForwards,
+    getVPNProfiles,
+    getVPNStatus,
+    parseVPNInput,
     planNetworkChange,
     rollbackNetworkApply,
     setDeviceLabel,
     updateLAN,
+    updateVPNProfile,
     updatePortForward,
     type PortForwardInput,
 } from "@/lib/api/network"
 import { queryKeys } from "@/lib/queries/keys"
-import type { AssignRoleRequest, LANConfig } from "@/lib/types/network"
+import type { AssignRoleRequest, LANConfig, VPNProfileInput } from "@/lib/types/network"
 
 /** Router mode off 404s every route; not worth retrying, so the page can hide. */
 export function useNetworkInterfaces(enabled = true) {
@@ -203,6 +212,116 @@ export function useDeletePortForward() {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.networkPortForwards() })
+        },
+    })
+}
+
+export function useVPNProfiles(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkVPNProfiles(),
+        queryFn: async () => {
+            const res = await getVPNProfiles()
+            if (!res.success) throw new Error(res.error || "Failed to read the VPN profiles")
+            return res.data!
+        },
+        enabled,
+        staleTime: 10 * 1000,
+        retry: false,
+    })
+}
+
+/** Polls while the tab is visible. The handshake age is the only liveness
+ *  signal WireGuard gives, and it moves slowly. */
+export function useVPNStatus(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkVPNStatus(),
+        queryFn: async () => {
+            const res = await getVPNStatus()
+            if (!res.success) throw new Error(res.error || "Failed to read the VPN status")
+            return res.data!
+        },
+        enabled,
+        refetchInterval: enabled ? 5 * 1000 : false,
+        refetchIntervalInBackground: false,
+        staleTime: 2 * 1000,
+        retry: false,
+    })
+}
+
+export function useSaveVPNProfile() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({ id, ...input }: VPNProfileInput & { id?: number }) => {
+            const res = id ? await updateVPNProfile(id, input) : await createVPNProfile(input)
+            if (!res.success) throw new Error(res.error || "Failed to save the VPN")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
+        },
+    })
+}
+
+export function useDeleteVPNProfile() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (id: number) => {
+            const res = await deleteVPNProfile(id)
+            if (!res.success) throw new Error(res.error || "Failed to delete the VPN")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
+        },
+    })
+}
+
+/** The server's own parser, so the preview can't disagree with what's stored. */
+export function useParseVPNInput() {
+    return useMutation({
+        mutationFn: async (raw: string) => {
+            const res = await parseVPNInput(raw)
+            if (!res.success) throw new Error(res.error || "This is not a WireGuard config")
+            return { config: res.data!, verdicts: res.verdicts ?? [] }
+        },
+    })
+}
+
+export function useGenerateVPNKeypair() {
+    return useMutation({
+        mutationFn: async () => {
+            const res = await generateVPNKeypair()
+            if (!res.success) throw new Error(res.error || "Failed to generate a key")
+            return res.data!
+        },
+    })
+}
+
+/** These rewrite routes and the firewall, so invalidate the whole subtree. */
+export function useActivateVPN() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (profileId: number) => {
+            const res = await activateVPN(profileId)
+            if (!res.success) throw new Error(res.error || "Failed to turn the VPN on")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+export function useDeactivateVPN() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async () => {
+            const res = await deactivateVPN()
+            if (!res.success) throw new Error(res.error || "Failed to turn the VPN off")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.network })
         },
     })
 }

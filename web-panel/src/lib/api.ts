@@ -10,6 +10,8 @@ export interface ApiResponse<T = unknown> {
     error?: string
     code?: string
     warning?: string
+    /** Beside the data, not inside it: a success can still carry warnings. */
+    verdicts?: { rule: string; level: string; message: string }[]
 }
 
 export interface UserInfo {

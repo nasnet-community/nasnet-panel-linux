@@ -11,6 +11,10 @@ import type {
     PortForward,
     Verdict,
     VerdictLevel,
+    VPNProfile,
+    VPNProfileInput,
+    VPNStatus,
+    WireGuardConfig,
 } from "@/lib/types/network"
 
 export async function getNetworkInterfaces(): Promise<ApiResponse<NetworkInterfaceView[]>> {
@@ -169,4 +173,47 @@ export async function confirmWithFallback(
         await new Promise((r) => setTimeout(r, 2000))
     }
     return false
+}
+
+export async function getVPNProfiles(): Promise<ApiResponse<VPNProfile[]>> {
+    return api.get<VPNProfile[]>("/api/v1/network/vpn/profiles")
+}
+
+export async function createVPNProfile(input: VPNProfileInput): Promise<ApiResponse<VPNProfile>> {
+    return api.post<VPNProfile>("/api/v1/network/vpn/profiles", input)
+}
+
+export async function updateVPNProfile(
+    id: number,
+    input: VPNProfileInput,
+): Promise<ApiResponse<VPNProfile>> {
+    return api.put<VPNProfile>(`/api/v1/network/vpn/profiles/${id}`, input)
+}
+
+export async function deleteVPNProfile(id: number): Promise<ApiResponse<null>> {
+    return api.delete<null>(`/api/v1/network/vpn/profiles/${id}`)
+}
+
+/** A dry run: shows what the paste means without storing anything. */
+export async function parseVPNInput(raw: string): Promise<ApiResponse<WireGuardConfig>> {
+    return api.post<WireGuardConfig>("/api/v1/network/vpn/parse", { raw })
+}
+
+export async function generateVPNKeypair(): Promise<
+    ApiResponse<{ private_key: string; public_key: string }>
+> {
+    return api.post<{ private_key: string; public_key: string }>("/api/v1/network/vpn/keypair")
+}
+
+/** Rewrites routes and the firewall, so it arms the dead-man. */
+export async function activateVPN(profileId: number): Promise<ApiResponse<NetworkApply>> {
+    return api.post<NetworkApply>("/api/v1/network/vpn/activate", { profile_id: profileId })
+}
+
+export async function deactivateVPN(): Promise<ApiResponse<NetworkApply>> {
+    return api.post<NetworkApply>("/api/v1/network/vpn/deactivate")
+}
+
+export async function getVPNStatus(): Promise<ApiResponse<VPNStatus>> {
+    return api.get<VPNStatus>("/api/v1/network/vpn/status")
 }
