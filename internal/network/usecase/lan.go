@@ -82,10 +82,27 @@ func BuildDomesticSetsFrom(nftSetSupported bool, fetchedV4 []string) ([]nft.Set,
 	return sets, nil
 }
 
+// lanEgressNames is where LAN hosts may leave by, and what gets masqueraded.
+// Never the secondary uplink: LAN goes through the tunnel or nowhere. The tunnel
+// needs NAT too, or the far end drops our 10.77.0.x source.
+func lanEgressNames(uplinks []Uplink, vpn VPNRouteState) []string {
+	out := make([]string, 0, len(uplinks)+1)
+	for _, u := range uplinks {
+		if u.Slot == domain.SlotSecondary {
+			continue
+		}
+		out = append(out, u.IfName)
+	}
+	if vpn.Active {
+		out = append(out, system.WGLinkName)
+	}
+	return out
+}
+
 // ApplyLANNftState turns the LAN plane on or off. A nil lan disables it but
 // leaves connmark and the pins: those serve shaping and DNAT with no LAN.
 func ApplyLANNftState(ctx context.Context, m *nft.Manager, lan *domain.LANConfig,
-	uplinks []Uplink, sets []nft.Set) error {
+	uplinks []Uplink, sets []nft.Set, vpn VPNRouteState) error {
 
 	return m.Update(ctx, func(rs *nft.Ruleset) {
 		if lan == nil || !lan.Enabled {
@@ -100,7 +117,7 @@ func ApplyLANNftState(ctx context.Context, m *nft.Manager, lan *domain.LANConfig
 		if bridge == "" {
 			bridge = system.LANBridgeName
 		}
-		names := uplinkNames(uplinks)
+		names := lanEgressNames(uplinks, vpn)
 
 		// The mark is worthless without mangle_post writing it back to conntrack.
 		rs.Connmark = true
@@ -126,10 +143,17 @@ func ApplyLANNftState(ctx context.Context, m *nft.Manager, lan *domain.LANConfig
 	})
 }
 
+// ForeignDNS is where the LAN's foreign lookups go. Zero means nowhere — with no
+// tunnel the only path left is plaintext out the raw uplink.
+type ForeignDNS struct {
+	IfName string
+	Server string
+}
+
 // LANDNSConfig maps the uplinks onto dnsmasq's split-DNS servers. nftSetSupported
 // must match what BuildDomesticSets got, or dnsmasq fills an undeclared set.
 func LANDNSConfig(lan domain.LANConfig, uplinks []Uplink,
-	domesticServer, foreignServer, domesticSuffix string,
+	domesticServer string, foreign ForeignDNS, domesticSuffix string,
 	nftSetSupported bool) system.DNSMasqConfig {
 
 	bridge := lan.BridgeName
@@ -146,7 +170,8 @@ func LANDNSConfig(lan domain.LANConfig, uplinks []Uplink,
 		RangeLow: lan.DHCPRangeLow, RangeHigh: lan.DHCPRangeHigh,
 		LeaseHours:     lan.LeaseHours,
 		DomesticServer: domesticServer, DomesticSuffix: domesticSuffix,
-		ForeignServer:   foreignServer,
+		ForeignServer:   foreign.Server,
+		ForeignIfName:   foreign.IfName,
 		NftSetSupported: nftSetSupported,
 	}
 	if nftSetSupported {
@@ -156,12 +181,10 @@ func LANDNSConfig(lan domain.LANConfig, uplinks []Uplink,
 		}
 		c.DomainSets = []system.DomainSet{ds}
 	}
+	// Only the domestic side comes from an uplink; the caller decides the rest.
 	for _, u := range uplinks {
-		switch u.Slot {
-		case domain.SlotDomestic:
+		if u.Slot == domain.SlotDomestic {
 			c.DomesticIfName = u.IfName
-		case domain.SlotSecondary:
-			c.ForeignIfName = u.IfName
 		}
 	}
 	if c.DomesticIfName == "" {

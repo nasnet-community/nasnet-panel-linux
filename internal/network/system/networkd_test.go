@@ -202,16 +202,28 @@ func TestRenderUplink_CarriesPerLinkDNS(t *testing.T) {
 		}
 	}
 
+	// The secondary gets none — a resolver there is plaintext 53 in the clear.
 	secondary := RenderUplink(domain.NetworkInterface{
 		IfName: "enp2s0", PermMAC: "aa:bb:cc:dd:ee:02",
 		Role: domain.RoleWAN, Slot: domain.SlotSecondary, Method: domain.MethodDHCP4,
 	}, 202).Content
-	// "~." is the catch-all routing domain: everything not claimed by another
-	// link resolves here.
-	for _, want := range []string{"DNS=" + DefaultForeignDNS, "Domains=~."} {
-		if !strings.Contains(secondary, want) {
-			t.Errorf("missing %q in the secondary uplink:\n%s", want, secondary)
+	for _, unwanted := range []string{"\nDNS=", "\nDomains="} {
+		if strings.Contains(secondary, unwanted) {
+			t.Errorf("the secondary uplink still carries %q, which leaves in the clear:\n%s",
+				strings.TrimPrefix(unwanted, "\n"), secondary)
 		}
+	}
+}
+
+// Set one anyway and you get it — still subject to the kill switch.
+func TestRenderUplink_SecondaryKeepsAnExplicitResolver(t *testing.T) {
+	got := RenderUplink(domain.NetworkInterface{
+		IfName: "enp2s0", PermMAC: "aa:bb:cc:dd:ee:02",
+		Role: domain.RoleWAN, Slot: domain.SlotSecondary, Method: domain.MethodDHCP4,
+		DNSServer: "9.9.9.9",
+	}, 202).Content
+	if !strings.Contains(got, "DNS=9.9.9.9") {
+		t.Errorf("an explicitly set resolver was dropped:\n%s", got)
 	}
 }
 
