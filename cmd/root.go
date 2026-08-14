@@ -210,6 +210,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&networkDomain.WifiConfig{},
 		&networkDomain.PortForward{},
 		&networkDomain.LANDeviceLabel{},
+		&networkDomain.VPNProfile{},
 		&networkDomain.ApplyRecord{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
@@ -229,6 +230,12 @@ func runServe(cmd *cobra.Command, args []string) {
 		  ON network_interfaces (node_id, slot)
 		  WHERE role = 'wan' AND slot != '' AND deleted_at IS NULL`).Error; err != nil {
 		log.WithError(err).Warn("Failed to create ux_netif_uplink_slot")
+	}
+
+	// One active profile at a time. Indexed on active, not a natural key, so a
+	// deleted profile can't block a later one.
+	if err := networkRepo.EnsureVPNProfileIndex(db); err != nil {
+		log.WithError(err).Warn("Failed to create ux_vpn_profile_active")
 	}
 
 	if cfg.Router.Enabled {
@@ -822,6 +829,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		LANRepo:      networkRepo.NewLANRepository(deps.DB),
 		PFRepo:       networkRepo.NewPortForwardRepository(deps.DB),
 		DeviceLabels: networkRepo.NewDeviceLabelRepository(deps.DB),
+		VPNRepo:      networkRepo.NewVPNRepository(deps.DB),
 		PanelPort:    deps.PanelPort,
 		Backend:      backend,
 		Nft:          deps.NftMgr,
