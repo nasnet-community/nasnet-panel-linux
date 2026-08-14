@@ -35,15 +35,15 @@ const (
 
 // linkDNS picks an uplink's resolver, operator intent first. UseDNS=no with no
 // DNS= leaves the box routing perfectly and resolving nothing.
+//
+// The secondary gets none: plaintext 53 there leaks, and the kill switch drops
+// it anyway. Foreign lookups go through the tunnel, which brings its own.
 func linkDNS(in domain.NetworkInterface) (server, domains string) {
 	if in.DNSServer != "" {
 		return in.DNSServer, in.DNSDomains
 	}
-	switch in.Slot {
-	case domain.SlotDomestic:
+	if in.Slot == domain.SlotDomestic {
 		return DefaultDomesticDNS, DefaultDomesticDomains
-	case domain.SlotSecondary:
-		return DefaultForeignDNS, DefaultForeignDomains
 	}
 	return "", in.DNSDomains
 }

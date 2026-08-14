@@ -92,7 +92,7 @@ func TestApplyLANNftState_EnablesClassificationMasqueradeAndForwardDrop(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ApplyLANNftState(context.Background(), m, &lan, twoUplinks(), sets); err != nil {
+	if err := ApplyLANNftState(context.Background(), m, &lan, twoUplinks(), sets, VPNRouteState{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,8 +103,9 @@ func TestApplyLANNftState_EnablesClassificationMasqueradeAndForwardDrop(t *testi
 	if rs.LANClassify.DomesticV4Set != DomesticSetV4 {
 		t.Errorf("v4 set = %q", rs.LANClassify.DomesticV4Set)
 	}
-	if len(rs.Masquerade) != 2 {
-		t.Errorf("masquerade = %v, want both uplinks", rs.Masquerade)
+	// The secondary is deliberately absent — LAN exits by the tunnel or nowhere.
+	if len(rs.Masquerade) != 1 || rs.Masquerade[0] != "enp1s0" {
+		t.Errorf("masquerade = %v, want the domestic uplink only", rs.Masquerade)
 	}
 	if rs.FilterForward == nil {
 		t.Fatal("filter_fwd not enabled; any host on the domestic segment could route into the LAN")
@@ -132,7 +133,7 @@ func TestApplyLANNftState_ReferencesOnlyDeclaredSets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ApplyLANNftState(context.Background(), m, &lan, twoUplinks(), sets); err != nil {
+	if err := ApplyLANNftState(context.Background(), m, &lan, twoUplinks(), sets, VPNRouteState{}); err != nil {
 		t.Fatal(err)
 	}
 	c := m.Snapshot().LANClassify
@@ -150,10 +151,10 @@ func TestApplyLANNftState_DisableRemovesLANRulesOnly(t *testing.T) {
 	if err := ApplyNftState(ctx, m, twoUplinks()); err != nil {
 		t.Fatal(err)
 	}
-	if err := ApplyLANNftState(ctx, m, &lan, twoUplinks(), sets); err != nil {
+	if err := ApplyLANNftState(ctx, m, &lan, twoUplinks(), sets, VPNRouteState{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ApplyLANNftState(ctx, m, nil, twoUplinks(), nil); err != nil {
+	if err := ApplyLANNftState(ctx, m, nil, twoUplinks(), nil, VPNRouteState{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,15 +170,14 @@ func TestApplyLANNftState_DisableRemovesLANRulesOnly(t *testing.T) {
 	}
 }
 
-// The domestic suffix server must be bound to the domestic uplink and the
-// default to the secondary one.
+// Domestic suffix on the domestic uplink, the default on the tunnel.
 func TestLANDNSConfig_MapsServersToTheRightUplinks(t *testing.T) {
-	c := LANDNSConfig(testLAN(), twoUplinks(), "217.218.127.127", "1.1.1.1", "ir", true)
+	c := LANDNSConfig(testLAN(), twoUplinks(), "217.218.127.127", ForeignDNS{IfName: system.WGLinkName, Server: "1.1.1.1"}, "ir", true)
 	if c.DomesticIfName != "enp1s0" {
 		t.Errorf("DomesticIfName = %q, want the domestic uplink", c.DomesticIfName)
 	}
-	if c.ForeignIfName != "enp2s0" {
-		t.Errorf("ForeignIfName = %q, want the secondary uplink", c.ForeignIfName)
+	if c.ForeignIfName != system.WGLinkName {
+		t.Errorf("ForeignIfName = %q, want the tunnel", c.ForeignIfName)
 	}
 	if c.ListenAddr != "10.77.0.1" {
 		t.Errorf("ListenAddr = %q, want the bridge address without its prefix", c.ListenAddr)
@@ -187,12 +187,12 @@ func TestLANDNSConfig_MapsServersToTheRightUplinks(t *testing.T) {
 // Querying a domestic suffix out the secondary uplink returns the wrong CDN
 // edge, so with no domestic uplink the suffix server is dropped entirely.
 func TestLANDNSConfig_NoDomesticUplinkDropsTheSuffixServer(t *testing.T) {
-	c := LANDNSConfig(testLAN(), twoUplinks()[1:], "217.218.127.127", "1.1.1.1", "ir", true)
+	c := LANDNSConfig(testLAN(), twoUplinks()[1:], "217.218.127.127", ForeignDNS{IfName: system.WGLinkName, Server: "1.1.1.1"}, "ir", true)
 	if c.DomesticServer != "" || c.DomesticSuffix != "" {
 		t.Errorf("kept the domestic server with no domestic uplink: %+v", c)
 	}
-	if c.ForeignIfName != "enp2s0" {
-		t.Errorf("ForeignIfName = %q", c.ForeignIfName)
+	if c.ForeignIfName != system.WGLinkName {
+		t.Errorf("ForeignIfName = %q, want the tunnel", c.ForeignIfName)
 	}
 }
 
@@ -401,7 +401,7 @@ func TestBuildDomesticSets_NoIPv6SetsWhileIPv6IsDisabled(t *testing.T) {
 
 // dnsmasq must not be told to populate a set the ruleset never declares.
 func TestLANDNSConfig_NoIPv6DomainSet(t *testing.T) {
-	c := LANDNSConfig(testLAN(), twoUplinks(), "217.218.127.127", "1.1.1.1", "ir", true)
+	c := LANDNSConfig(testLAN(), twoUplinks(), "217.218.127.127", ForeignDNS{IfName: system.WGLinkName, Server: "1.1.1.1"}, "ir", true)
 	for _, ds := range c.DomainSets {
 		if ds.V6Set != "" {
 			t.Errorf("domain set %+v names an IPv6 set on an IPv4-only box", ds)
