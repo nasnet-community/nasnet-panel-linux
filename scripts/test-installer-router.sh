@@ -31,6 +31,16 @@ check "timer enabled"                           'systemctl enable --now nasnet-n
 check "dnsmasq restarts on failure"             'Restart=always'
 check "dnsmasq never gives up retrying"         'StartLimitIntervalSec=0'
 
+# Every bare-metal install before this shipped without xray.
+check "xray installed where the panel looks"    'XRAY_BINARY="/usr/local/bin/xray"'
+check "xray config dir created"                 'XRAY_CONFIG_DIR="/usr/local/etc/xray"'
+check "xray version pinned to the vendored one" 'XRAY_VERSION="${XRAY_VERSION:-26.2.6}"'
+check "xray installed on a fresh deploy"        'install_xray_core || step_warn'
+check "the vendored copy is checksummed"        'Vendored xray-core failed its checksum'
+check "a download fallback exists"              'releases/download/v${XRAY_VERSION}/Xray-linux-${suffix}.zip'
+check "unzip is a declared dependency"          'wget curl unzip build-essential'
+check "geofiles are seeded"                     '_install_geofiles'
+
 # The installer must NOT touch the network: the takeover is the first apply.
 for forbidden in 'mv /etc/netplan' 'systemctl mask NetworkManager' 'DNSStubListener=no'; do
     if grep -qF -- "$forbidden" "$TOOL"; then

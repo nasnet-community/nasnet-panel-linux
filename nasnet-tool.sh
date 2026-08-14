@@ -25,6 +25,12 @@ BACKEND_SERVICE="nasnet-panel"
 INSTALL_DIR="/usr/local/nasnet-panel"
 BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"
 
+# xray-core. Compiled into the panel (internal/agent/config), not read from .env.
+XRAY_BINARY="/usr/local/bin/xray"
+XRAY_CONFIG_DIR="/usr/local/etc/xray"
+# Must match the panel default and bin/xray/, or we ship a core it never expects.
+XRAY_VERSION="${XRAY_VERSION:-26.2.6}"
+
 # GitHub release auto-update settings
 GITHUB_REPO="${GITHUB_REPO:-nasnet-community/nasnet-panel-linux}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
@@ -874,7 +880,7 @@ wizard_prereqs_systemd() {
     fi
 
     # ── System packages ───────────────────────────────────────────────────
-    local SYSTEM_PKGS=(git openssl apache2-utils ca-certificates wget curl build-essential)
+    local SYSTEM_PKGS=(git openssl apache2-utils ca-certificates wget curl unzip build-essential)
     SYSTEM_PKGS+=(nftables dnsmasq hostapd iw ethtool conntrack)
     local to_install=()
 
@@ -1338,6 +1344,113 @@ PGSVCEOF
 # Section 6.7: Setup Wizard — Build & Start Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+# detect_arch echoes the Go-style arch name, or fails loudly.
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64)        echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *)             return 1 ;;
+    esac
+}
+
+# install_xray_core puts the core where the panel expects it. Prefers the copy
+# vendored in the repo, falls back to the upstream release.
+install_xray_core() {
+    local arch
+    if ! arch=$(detect_arch); then
+        step_warn "Unsupported architecture $(uname -m) — skipping xray-core"
+        return 0
+    fi
+
+    sudo mkdir -p "$XRAY_CONFIG_DIR"
+
+    local vendored="${PROJECT_DIR:-}/bin/xray/v${XRAY_VERSION}/xray-linux-${arch}"
+    local want=""
+    [[ -f "${vendored}.sha256" ]] && want=$(cut -d' ' -f1 < "${vendored}.sha256")
+
+    # Don't reinstall an unchanged core under a running panel.
+    if [[ -x "$XRAY_BINARY" && -n "$want" ]]; then
+        local have
+        have=$(sudo sha256sum "$XRAY_BINARY" 2>/dev/null | cut -d' ' -f1)
+        if [[ "$have" == "$want" ]]; then
+            step_ok "xray-core ${XRAY_VERSION} already installed"
+            _install_geofiles
+            return 0
+        fi
+    fi
+
+    if [[ -f "$vendored" ]]; then
+        if [[ -n "$want" ]]; then
+            local got
+            got=$(sha256sum "$vendored" | cut -d' ' -f1)
+            if [[ "$got" != "$want" ]]; then
+                step_fail "Vendored xray-core failed its checksum — refusing to install it"
+                return 1
+            fi
+        fi
+        sudo install -m 755 "$vendored" "$XRAY_BINARY"
+        step_ok "xray-core ${XRAY_VERSION} installed (${arch}, from the bundle)"
+        _install_geofiles
+        return 0
+    fi
+
+    _download_xray_core "$arch"
+}
+
+# Only reached when the repo copy is absent: an auto-update run, or a tarball
+# without bin/xray.
+_download_xray_core() {
+    local arch="$1" suffix
+    case "$arch" in
+        arm64) suffix="arm64-v8a" ;;
+        *)     suffix="64" ;;
+    esac
+
+    if ! command -v unzip &>/dev/null; then
+        if ! run_logged "Installing unzip" sudo apt-get install -y unzip; then
+            step_fail "unzip is needed to unpack xray-core"
+            return 1
+        fi
+    fi
+
+    local url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-${suffix}.zip"
+    local tmp
+    tmp=$(mktemp -d)
+
+    if ! run_logged "Downloading xray-core ${XRAY_VERSION}" curl -fL -o "${tmp}/xray.zip" "$url"; then
+        step_fail "Could not download xray-core from ${url}"
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! run_logged "Unpacking xray-core" unzip -o "${tmp}/xray.zip" xray -d "$tmp"; then
+        step_fail "Could not unpack xray-core"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    sudo install -m 755 "${tmp}/xray" "$XRAY_BINARY"
+    rm -rf "$tmp"
+    step_ok "xray-core ${XRAY_VERSION} installed (${arch}, downloaded)"
+    _install_geofiles
+}
+
+# Seeds geoip.dat/geosite.dat where xray looks. A geosite rule with no file
+# stops xray from starting at all.
+_install_geofiles() {
+    local src="${PROJECT_DIR:-}/pkg/geofiles/embedded"
+    local seeded=false
+    local f
+    for f in geoip.dat geosite.dat; do
+        if [[ -s "${src}/${f}" && ! -s "${XRAY_CONFIG_DIR}/${f}" ]]; then
+            sudo cp "${src}/${f}" "${XRAY_CONFIG_DIR}/${f}"
+            sudo chmod 644 "${XRAY_CONFIG_DIR}/${f}"
+            seeded=true
+        fi
+    done
+    $seeded && step_ok "Geofiles seeded in ${XRAY_CONFIG_DIR}"
+    return 0
+}
+
 wizard_deploy_artifacts() {
     local run_user="${SUDO_USER:-$(whoami)}"
     local run_group
@@ -1376,6 +1489,9 @@ wizard_deploy_artifacts() {
         sudo chmod +x "$INSTALL_DIR"/bin/agent/nasnet-agent-*
         step_ok "Agent binaries deployed"
     fi
+
+    # Has to be here before the service starts, or every config push fails.
+    install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
 
     # Copy .env
     sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
@@ -2642,6 +2758,9 @@ action_auto_update() {
     sudo cp "${tmp_dir}/nasnet-agent-linux-${arch}" "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
     sudo chmod +x "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
     step_ok "nasnet-agent binary deployed"
+
+    # Also on update: a box installed before xray shipped has none.
+    install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
 
     # Write version marker
     echo "$latest_version" | sudo tee "$INSTALL_DIR/.version" >/dev/null
