@@ -85,6 +85,11 @@ type Snapshot struct {
 	// LANConfig lives in the database, which no other field here covers. Without
 	// it a reverted LAN change leaves the row disagreeing with the files.
 	LANConfig *domain.LANConfig `json:"lan_config,omitempty"`
+
+	// VPNProfile is whatever was active, nil for none. VPNCaptured tells that
+	// apart from an older snapshot, where nil would read as "tear it down".
+	VPNCaptured bool               `json:"vpn_captured,omitempty"`
+	VPNProfile  *domain.VPNProfile `json:"vpn_profile,omitempty"`
 }
 
 type Snapshotter struct {
@@ -99,6 +104,10 @@ type Snapshotter struct {
 	// about repositories. Both nil is fine: older snapshots have no LAN either.
 	CaptureLAN func(context.Context) (*domain.LANConfig, error)
 	RestoreLAN func(context.Context, *domain.LANConfig) error
+	// Same for the tunnel. RestoreVPN gets nil for "none was active", which has
+	// to tear the device down.
+	CaptureVPN func(context.Context) (*domain.VPNProfile, error)
+	RestoreVPN func(context.Context, *domain.VPNProfile) error
 }
 
 // Capture reads current state
@@ -148,6 +157,11 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 	if s.CaptureLAN != nil {
 		if cfg, err := s.CaptureLAN(ctx); err == nil {
 			snap.LANConfig = cfg
+		}
+	}
+	if s.CaptureVPN != nil {
+		if p, err := s.CaptureVPN(ctx); err == nil {
+			snap.VPNProfile, snap.VPNCaptured = p, true
 		}
 	}
 	snap.MaskedUnits = maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
@@ -227,6 +241,13 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	if snap.LANConfig != nil && s.RestoreLAN != nil {
 		if err := s.RestoreLAN(ctx, snap.LANConfig); err != nil {
 			errs = append(errs, fmt.Sprintf("restore the LAN row: %v", err))
+		}
+	}
+
+	// nil is a real value here, so only act when the snapshot recorded one.
+	if snap.VPNCaptured && s.RestoreVPN != nil {
+		if err := s.RestoreVPN(ctx, snap.VPNProfile); err != nil {
+			errs = append(errs, fmt.Sprintf("restore the tunnel: %v", err))
 		}
 	}
 

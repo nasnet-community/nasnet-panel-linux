@@ -10,6 +10,7 @@ import (
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	"github.com/spf13/cobra"
@@ -81,6 +82,9 @@ func runNetRollback(ifExpired bool) error {
 	}
 
 	lanRepo := repository.NewLANRepository(db)
+	vpnRepo := repository.NewVPNRepository(db)
+	// Restored routes point into the tunnel, so the revert has to own it too.
+	restoreVPN := usecase.NewVPNRestorer(vpnRepo, system.NewWGDevice())
 	applier := &system.Applier{
 		Snap: &system.Snapshotter{
 			Backend: backend,
@@ -93,6 +97,10 @@ func runNetRollback(ifExpired bool) error {
 			RestoreLAN: func(ctx context.Context, cfg *networkDomain.LANConfig) error {
 				return lanRepo.Save(ctx, cfg)
 			},
+			CaptureVPN: func(ctx context.Context) (*networkDomain.VPNProfile, error) {
+				return vpnRepo.Active(ctx)
+			},
+			RestoreVPN: restoreVPN,
 		},
 		Repo:   repository.NewApplyRepository(db),
 		Paths:  paths,

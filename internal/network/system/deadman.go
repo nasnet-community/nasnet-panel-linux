@@ -106,8 +106,9 @@ type Applier struct {
 	OnRollback func(planID uint)
 }
 
-// Routing tables this feature owns.
-var tablesToSnapshot = []int{201, 202}
+// Routing tables this feature owns. Without the tunnel's, a revert leaves a
+// stale default route inside it.
+var tablesToSnapshot = []int{201, 202, WGTable}
 
 func (a *Applier) now() time.Time {
 	if a.Now == nil {
