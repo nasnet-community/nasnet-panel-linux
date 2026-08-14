@@ -1,0 +1,153 @@
+package http
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
+)
+
+func (h *Handler) ListVPNProfiles(c *gin.Context) {
+	rows, err := h.uc.ListVPNProfiles(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": rows})
+}
+
+func (h *Handler) CreateVPNProfile(c *gin.Context) {
+	var req usecase.CreateVPNProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	v, err := h.uc.CreateVPNProfile(c.Request.Context(), req)
+	if err != nil {
+		// Everything the parser refuses is the operator's input, not our fault.
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": v})
+}
+
+func (h *Handler) UpdateVPNProfile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	var req usecase.CreateVPNProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	v, err := h.uc.UpdateVPNProfile(c.Request.Context(), uint(id), req)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": v})
+}
+
+func (h *Handler) DeleteVPNProfile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	err = h.uc.DeleteVPNProfile(c.Request.Context(), uint(id))
+	switch {
+	case errors.Is(err, domain.ErrProfileActive):
+		// Deleting the row under a live tunnel leaves nothing to turn it off.
+		fail(c, http.StatusBadRequest, err)
+	case err != nil:
+		fail(c, http.StatusInternalServerError, err)
+	default:
+		c.JSON(http.StatusOK, gin.H{"success": true})
+	}
+}
+
+// ParseVPNInput shows what a pasted URI or config file means before anything is
+// stored, so the operator sees what was dropped and what was filled in.
+func (h *Handler) ParseVPNInput(c *gin.Context) {
+	var req struct {
+		Raw string `json:"raw"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	cfg, verdicts, err := h.uc.ParseVPNInput(c.Request.Context(), req.Raw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": cfg, "verdicts": verdicts})
+}
+
+// GenerateVPNKeypair is for an operator standing up their own server: they need
+// the public half to put on it.
+func (h *Handler) GenerateVPNKeypair(c *gin.Context) {
+	priv, pub, err := h.uc.GenerateVPNKeypair()
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"private_key": priv, "public_key": pub,
+	}})
+}
+
+// ActivateVPN and DeactivateVPN move packets, so both ride the two-phase apply
+// and are settled through the existing confirm endpoint.
+func (h *Handler) ActivateVPN(c *gin.Context) {
+	var req struct {
+		ProfileID uint `json:"profile_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	verdicts, view, err := h.uc.ActivateVPN(c.Request.Context(), req.ProfileID)
+	respondVPNApply(c, verdicts, view, err)
+}
+
+func (h *Handler) DeactivateVPN(c *gin.Context) {
+	verdicts, view, err := h.uc.DeactivateVPN(c.Request.Context())
+	respondVPNApply(c, verdicts, view, err)
+}
+
+func (h *Handler) VPNStatus(c *gin.Context) {
+	st, err := h.uc.VPNStatus(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": st})
+}
+
+// respondVPNApply mirrors UpdateLAN: verdicts ride alongside the envelope, not
+// inside it, so a rejection still explains itself.
+func respondVPNApply(c *gin.Context, verdicts []domain.Verdict, view *usecase.ApplyView, err error) {
+	if verdicts == nil {
+		verdicts = []domain.Verdict{}
+	}
+	switch {
+	case errors.Is(err, usecase.ErrValidationFailed):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false, "error": err.Error(), "verdicts": verdicts})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false, "error": err.Error(), "verdicts": verdicts})
+	case view == nil && domain.Rejected(verdicts):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false, "error": "validation failed", "verdicts": verdicts})
+	default:
+		// A deactivate with nothing active applies nothing and is still a success.
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": view, "verdicts": verdicts})
+	}
+}
