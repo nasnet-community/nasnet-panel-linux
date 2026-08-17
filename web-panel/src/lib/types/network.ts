@@ -174,6 +174,8 @@ export interface VPNProfile {
     public_key: string
     created_at: string
     updated_at: string
+    /** Why the stored config would not decode. Such a row can only be deleted. */
+    unreadable?: string
 }
 
 export interface VPNStatus {
