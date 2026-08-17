@@ -1,6 +1,9 @@
 package events
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // EventType represents the type of event being published
 type EventType string
@@ -64,11 +67,20 @@ const (
 	EventWANFailover          EventType = "wan.failover"
 	EventWANApplyRolledBack   EventType = "wan.apply_rolled_back"
 	EventWANLeaseWarning      EventType = "wan.lease_warning"
+	// EventWANApplied fires when a plan's ops have run and the dead-man is armed.
+	EventWANApplied EventType = "wan.applied"
 	// Separate from uplink health: that loop withdraws routes, and a dead tunnel
 	// is the wrong reason to.
 	EventVPNUp   EventType = "vpn.up"
 	EventVPNDown EventType = "vpn.down"
 )
+
+// IsNetworkEvent is the recorder filter for the flow page's timeline.
+func IsNetworkEvent(e Event) bool {
+	t := string(e.Type)
+	return strings.HasPrefix(t, "wan.") || strings.HasPrefix(t, "vpn.") ||
+		strings.HasPrefix(t, "interface.")
+}
 
 // Event represents a real-time event that can be published and subscribed to
 type Event struct {
