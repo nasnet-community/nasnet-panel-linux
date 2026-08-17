@@ -64,6 +64,24 @@ func TestRenderDNSMasq_SplitDNSIsPerInterface(t *testing.T) {
 	}
 }
 
+// Without no-resolv, foreign names leak to the domestic resolver.
+func TestRenderDNSMasq_NeverFallsBackToResolvConf(t *testing.T) {
+	withTunnel := RenderDNSMasq(lanDNSConfig())
+	if !strings.Contains(withTunnel, "no-resolv") {
+		t.Errorf("missing no-resolv in:\n%s", withTunnel)
+	}
+
+	c := lanDNSConfig()
+	c.ForeignServer, c.ForeignIfName = "", ""
+	noTunnel := RenderDNSMasq(c)
+	if !strings.Contains(noTunnel, "no-resolv") {
+		t.Errorf("with no tunnel, foreign lookups fall back to the system resolver:\n%s", noTunnel)
+	}
+	if strings.Contains(noTunnel, "\nserver=1.1.1.1") {
+		t.Errorf("a foreign server was rendered with no tunnel to carry it:\n%s", noTunnel)
+	}
+}
+
 // Emitted only when the caller feature-detected support, so the config still
 // degrades cleanly on a build without it.
 func TestRenderDNSMasq_NftsetOnlyWhenEnabled(t *testing.T) {

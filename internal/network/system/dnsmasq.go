@@ -77,6 +77,9 @@ func RenderDNSMasq(c DNSMasqConfig) string {
 
 	b.WriteString("\n# Split DNS. @interface binds the query to that link, so it\n")
 	b.WriteString("# hits the oif rules at pref 20/21 and leaves by that uplink.\n")
+	// Or dnsmasq falls back to resolv.conf and foreign names leak to the
+	// domestic resolver whenever no tunnel is up.
+	b.WriteString("no-resolv\n")
 	if c.DomesticServer != "" && c.DomesticSuffix != "" {
 		line := fmt.Sprintf("server=/%s/%s", c.DomesticSuffix, c.DomesticServer)
 		if c.DomesticIfName != "" {

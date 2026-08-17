@@ -26,11 +26,11 @@ const dishSubnet = "192.168.100.0/24"
 
 // Default per-link resolvers. A domestic name resolved abroad returns the wrong
 // CDN edge; a foreign one resolved domestically invites a poisoned answer.
+// No foreign entry: those lookups go through the tunnel now.
 const (
 	DefaultDomesticDNS     = "217.218.127.127"
 	DefaultForeignDNS      = "1.1.1.1"
 	DefaultDomesticDomains = "~ir" // "~ir" claims the domestic suffix
-	DefaultForeignDomains  = "~."
 )
 
 // linkDNS picks an uplink's resolver, operator intent first. UseDNS=no with no
