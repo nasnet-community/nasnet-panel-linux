@@ -41,7 +41,8 @@ func (u *networkUsecase) FlowConns(ctx context.Context) (*FlowConnsView, error) 
 	if err != nil {
 		return nil, err
 	}
-	acct := "1"
+	// Unknown counts as off: the key is missing exactly when nothing counts.
+	acct := "0"
 	if v, serr := u.Backend.SysctlGet(ctx, "net.netfilter.nf_conntrack_acct"); serr == nil {
 		acct = strings.TrimSpace(v)
 	}
