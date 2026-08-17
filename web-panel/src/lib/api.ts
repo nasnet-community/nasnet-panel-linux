@@ -10,8 +10,9 @@ export interface ApiResponse<T = unknown> {
     error?: string
     code?: string
     warning?: string
-    /** Beside the data, not inside it: a success can still carry warnings. */
-    verdicts?: { rule: string; level: string; message: string }[]
+    /** Beside the data, not inside it: a success can still carry warnings.
+     *  Levels match domain.Verdict, so a consumer can switch on them. */
+    verdicts?: { rule: string; level: "reject" | "confirm" | "warn"; message: string }[]
 }
 
 export interface UserInfo {

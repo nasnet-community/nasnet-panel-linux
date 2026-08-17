@@ -304,7 +304,8 @@ export function useActivateVPN() {
         mutationFn: async (profileId: number) => {
             const res = await activateVPN(profileId)
             if (!res.success) throw new Error(res.error || "Failed to turn the VPN on")
-            return res.data!
+            // V32 and V33 ride along with a 200, so keep them.
+            return { ...res.data!, verdicts: res.verdicts ?? [] }
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.network })
@@ -318,7 +319,7 @@ export function useDeactivateVPN() {
         mutationFn: async () => {
             const res = await deactivateVPN()
             if (!res.success) throw new Error(res.error || "Failed to turn the VPN off")
-            return res.data!
+            return { ...res.data!, verdicts: res.verdicts ?? [] }
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.network })
