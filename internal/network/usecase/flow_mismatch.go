@@ -18,6 +18,7 @@ type flowMismatchInput struct {
 	liveRules []system.Rule
 	rulesErr  error
 	routes    map[int][]system.Route
+	routeErrs map[int]error
 	nftObj    *system.NftObjects
 	nftErr    error
 	lan       *domain.LANConfig
@@ -79,6 +80,14 @@ func (u *networkUsecase) ruleMismatches(ctx context.Context, in flowMismatchInpu
 func routeMismatches(in flowMismatchInput) []FlowMismatch {
 	var out []FlowMismatch
 	for _, up := range in.uplinks {
+		if err := in.routeErrs[up.Table]; err != nil {
+			out = append(out, FlowMismatch{
+				NodeID: fmt.Sprintf("table-%d", up.Table), Rule: "route-unreadable", Severity: "warn",
+				Message:  fmt.Sprintf("Could not read table %d, so its routes are unknown.", up.Table),
+				Expected: "default dev " + up.IfName, Actual: err.Error(),
+			})
+			continue
+		}
 		if hasDefault(in.routes[up.Table]) {
 			continue
 		}
