@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Info, Network, RefreshCw, TriangleAlert } from "lucide-react"
+import { Link } from "react-router"
+import { Info, Network, RefreshCw, TriangleAlert, Waypoints } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -42,6 +43,7 @@ const NETWORK_EVENTS = new Set([
     "wan.lease_warning",
     "vpn.up",
     "vpn.down",
+    "wan.applied",
 ])
 
 function useFreshness(updatedAt: number | undefined) {
@@ -158,6 +160,12 @@ export default function NetworkPage() {
                             updated {freshness}
                         </span>
                     )}
+                    <Button variant="outline" size="sm" asChild>
+                        <Link to="/network/flow">
+                            <Waypoints className="mr-1.5 h-3.5 w-3.5" />
+                            Traffic flow
+                        </Link>
+                    </Button>
                     <Button
                         variant="outline"
                         size="sm"
