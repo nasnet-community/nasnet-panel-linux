@@ -15,6 +15,18 @@ export type EventType =
     | 'system.alert'
     | 'xray.recovery_command'
     | 'xray.recovery_exhausted'
+    // Router mode. The backend has always published these; nothing subscribed.
+    | 'interface.added'
+    | 'interface.removed'
+    | 'interface.link_changed'
+    | 'wan.up'
+    | 'wan.down'
+    | 'wan.failover'
+    | 'wan.applied'
+    | 'wan.apply_rolled_back'
+    | 'wan.lease_warning'
+    | 'vpn.up'
+    | 'vpn.down'
 
 // Event payloads
 export interface NodeStatusPayload {

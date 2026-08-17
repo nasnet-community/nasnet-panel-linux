@@ -153,6 +153,11 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
             'xray.recovery_command', 'xray.recovery_exhausted',
+            // Named events only arrive if we ask for them by name.
+            'interface.added', 'interface.removed', 'interface.link_changed',
+            'wan.up', 'wan.down', 'wan.failover', 'wan.applied',
+            'wan.apply_rolled_back', 'wan.lease_warning',
+            'vpn.up', 'vpn.down',
         ]
 
         eventTypes.forEach((eventType) => {
