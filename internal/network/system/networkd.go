@@ -232,6 +232,11 @@ func RenderSysctl(uplinkNames []string, forwarding bool) string {
 	if forwarding {
 		b.WriteString("# forwarding, for LAN clients\n")
 		b.WriteString("net.ipv4.ip_forward = 1\n\n")
+	} else {
+		// No LAN means no forward filter and no masquerade either, so
+		// forwarding left on is an open router.
+		b.WriteString("# no LAN, so nothing should be forwarded\n")
+		b.WriteString("net.ipv4.ip_forward = 0\n\n")
 	}
 
 	b.WriteString("# Loose rp_filter: strict silently drops dual-WAN return traffic.\n")
