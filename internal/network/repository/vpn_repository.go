@@ -52,6 +52,9 @@ func (r *vpnRepository) List(ctx context.Context) ([]domain.VPNProfile, error) {
 func (r *vpnRepository) Get(ctx context.Context, id uint) (*domain.VPNProfile, error) {
 	var p domain.VPNProfile
 	if err := r.db.WithContext(ctx).First(&p, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrProfileNotFound
+		}
 		return nil, err
 	}
 	return &p, nil
@@ -72,6 +75,10 @@ func (r *vpnRepository) Create(ctx context.Context, p *domain.VPNProfile) error 
 func (r *vpnRepository) Update(ctx context.Context, p *domain.VPNProfile) error {
 	if p.ID == 0 {
 		return errors.New("no profile ID given")
+	}
+	// Select writes zero values too, so an empty config would erase the keys.
+	if p.Config == "" {
+		return errors.New("refusing to store a profile with no config")
 	}
 	return r.db.WithContext(ctx).Model(&domain.VPNProfile{}).Where("id = ?", p.ID).
 		Select("Name", "Type", "Config").Updates(p).Error

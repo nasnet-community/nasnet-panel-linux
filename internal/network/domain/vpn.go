@@ -93,6 +93,8 @@ var (
 	ErrNoIPv4Address = errors.New("no IPv4 address, and this router is IPv4 only")
 	ErrNotWireGuard  = errors.New("not a WireGuard URI or config file")
 	ErrProfileActive = errors.New("this VPN is in use — turn it off first")
+	// A stale list is not a server fault.
+	ErrProfileNotFound = errors.New("no such VPN profile")
 	ErrBadKey        = errors.New("not a WireGuard key")
 	ErrBadEndpoint   = errors.New("not a host:port endpoint")
 )

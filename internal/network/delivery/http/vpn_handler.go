@@ -64,6 +64,8 @@ func (h *Handler) DeleteVPNProfile(c *gin.Context) {
 	case errors.Is(err, domain.ErrProfileActive):
 		// Deleting the row under a live tunnel leaves nothing to turn it off.
 		fail(c, http.StatusBadRequest, err)
+	case errors.Is(err, domain.ErrProfileNotFound):
+		fail(c, http.StatusNotFound, err)
 	case err != nil:
 		fail(c, http.StatusInternalServerError, err)
 	default:
