@@ -93,15 +93,18 @@ func (l *LiveNft) SetContains(ctx context.Context, set, element string) (bool, e
 	if net.ParseIP(element) == nil {
 		return false, fmt.Errorf("not an IP: %q", element)
 	}
-	err := exec.CommandContext(ctx, l.Bin, "get", "element", nft.TableFamily, nft.TableName,
-		set, "{ "+element+" }").Run()
+	out, err := exec.CommandContext(ctx, l.Bin, "get", "element", nft.TableFamily, nft.TableName,
+		set, "{ "+element+" }").CombinedOutput()
 	if err == nil {
 		return true, nil
 	}
-	// Non-zero exit means "not in the set" (or the set is missing — the
-	// mismatch checks surface that); only a failure to run is an error.
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
+		// A missing set exits non-zero like a miss does, and calling that
+		// "not a member" makes every domestic address read as foreign.
+		if strings.Contains(string(out), "does not exist") {
+			return false, fmt.Errorf("set %s does not exist", set)
+		}
 		return false, nil
 	}
 	return false, err
