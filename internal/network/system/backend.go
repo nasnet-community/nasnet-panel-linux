@@ -57,6 +57,9 @@ type Backend interface {
 	// RouteReplace overwrites the route for (Table, Dest).
 	RouteReplace(ctx context.Context, r Route) error
 	RouteDel(ctx context.Context, r Route) error
+	// RouteGet asks the kernel where dst would go with this fwmark — the same
+	// decision a real packet gets, rules and all.
+	RouteGet(ctx context.Context, dst string, mark uint32) (*Route, error)
 
 	SysctlSet(ctx context.Context, key, value string) error
 	SysctlGet(ctx context.Context, key string) (string, error)

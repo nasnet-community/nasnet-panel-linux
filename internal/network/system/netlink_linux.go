@@ -200,6 +200,29 @@ func (b *netlinkBackend) RouteList(_ context.Context, table int) ([]Route, error
 	return out, nil
 }
 
+func (b *netlinkBackend) RouteGet(_ context.Context, dst string, mark uint32) (*Route, error) {
+	ip := net.ParseIP(dst)
+	if ip == nil {
+		return nil, fmt.Errorf("not an address: %q", dst)
+	}
+	routes, err := netlink.RouteGetWithOptions(ip, &netlink.RouteGetOptions{Mark: mark})
+	if err != nil {
+		return nil, fmt.Errorf("route get %s mark 0x%x: %w", dst, mark, err)
+	}
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("route get %s mark 0x%x: no route", dst, mark)
+	}
+	r := routes[0]
+	out := &Route{Table: r.Table}
+	if r.Gw != nil {
+		out.Gateway = r.Gw.String()
+	}
+	if l, lerr := netlink.LinkByIndex(r.LinkIndex); lerr == nil {
+		out.OifName = l.Attrs().Name
+	}
+	return out, nil
+}
+
 func sysctlPath(key string) string {
 	return "/proc/sys/" + strings.ReplaceAll(key, ".", "/")
 }
