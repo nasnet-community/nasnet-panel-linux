@@ -186,7 +186,8 @@ func TestApplySysctls_SetsBothAllAndPerInterfaceRPFilter(t *testing.T) {
 	if _, err := be.SysctlGet(ctx, "net.ipv4.conf.enp1s0.arp_filter"); err == nil {
 		t.Error("arp_filter was set; it decides by route lookup and RouteTable= breaks that")
 	}
-	if _, err := be.SysctlGet(ctx, "net.ipv4.ip_forward"); err == nil {
-		t.Error("forwarding enabled with no LAN")
+	// Written as 0, not left alone: forwarding without the LAN rules is open.
+	if got, err := be.SysctlGet(ctx, "net.ipv4.ip_forward"); err != nil || got != "0" {
+		t.Errorf("ip_forward = %q (%v), want \"0\" with no LAN", got, err)
 	}
 }

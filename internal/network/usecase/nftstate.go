@@ -39,10 +39,13 @@ func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink,
 		return nil
 	}
 
+	// Both ways: disabling the LAN drops the forward filter and masquerade too.
+	forward := "0"
 	if forwarding {
-		if err := set("net.ipv4.ip_forward", "1"); err != nil {
-			return err
-		}
+		forward = "1"
+	}
+	if err := set("net.ipv4.ip_forward", forward); err != nil {
+		return err
 	}
 
 	// Kernel takes max(all, per-interface) so both must be loose
