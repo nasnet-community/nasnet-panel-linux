@@ -109,6 +109,16 @@ func TestMismatchRuleMissing(t *testing.T) {
 	}
 }
 
+// The pin rules carry their table, so a missing domestic pin is a domestic
+// finding — pointing the red dot at the secondary sends the operator wrong.
+func TestMismatchPinRuleBlamesTheRightUplink(t *testing.T) {
+	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true, dropRulePref: RulePrefPinBase})
+	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "rule-missing")
+	if m.NodeID != "uplink-domestic" {
+		t.Errorf("NodeID = %q, want uplink-domestic for a table-201 pin", m.NodeID)
+	}
+}
+
 func TestMismatchUnexpectedRule(t *testing.T) {
 	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true, extraRule: true})
 	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "rule-unexpected")
