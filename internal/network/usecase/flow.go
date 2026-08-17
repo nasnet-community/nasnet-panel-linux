@@ -76,6 +76,7 @@ type flowState struct {
 	secondary *Uplink
 	healthy   map[string]bool
 	routes    map[int][]system.Route
+	routeErrs map[int]error
 	wgStatus  *system.WGStatus
 	wgErr     error
 	nftText   string
@@ -93,8 +94,9 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 
 	st := flowState{
 		lan: lan, plane: plane, uplinks: uplinks,
-		healthy: u.healthyKeys(ctx),
-		routes:  map[int][]system.Route{},
+		healthy:   u.healthyKeys(ctx),
+		routes:    map[int][]system.Route{},
+		routeErrs: map[int]error{},
 	}
 	for i := range uplinks {
 		switch uplinks[i].Slot {
@@ -109,9 +111,12 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	// finding, so it lands in Mismatches rather than a 500.
 	liveRules, rulesErr := u.Backend.RuleList(ctx)
 	for _, t := range []int{201, 202, system.WGTable} {
-		if rs, rerr := u.Backend.RouteList(ctx, t); rerr == nil {
-			st.routes[t] = rs
+		rs, rerr := u.Backend.RouteList(ctx, t)
+		if rerr != nil {
+			st.routeErrs[t] = rerr
+			continue
 		}
+		st.routes[t] = rs
 	}
 	nftObj, nftErr := u.nftReader().LiveObjects(ctx)
 	st.nftObj = nftObj
@@ -150,7 +155,8 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	view.Mismatches = u.flowMismatches(ctx, flowMismatchInput{
 		uplinks: uplinks, vpn: vpn, plane: plane,
 		liveRules: liveRules, rulesErr: rulesErr,
-		routes: st.routes, nftObj: nftObj, nftErr: nftErr, lan: lan,
+		routes: st.routes, routeErrs: st.routeErrs,
+		nftObj: nftObj, nftErr: nftErr, lan: lan,
 	})
 	return view, nil
 }
@@ -293,6 +299,11 @@ func tableNode(st flowState, table int, name, sublabel string) FlowNode {
 		n.Sublabel = name + " · " + sublabel
 	}
 	routes := st.routes[table]
+	if err := st.routeErrs[table]; err != nil {
+		n.Status = "unknown"
+		n.Hint = "Could not read this table: " + err.Error()
+		return n
+	}
 
 	if table == system.WGTable && !st.plane.Active() {
 		n.Status = "ghost"

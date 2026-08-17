@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -129,6 +130,25 @@ func TestMismatchVPNRouteGone(t *testing.T) {
 	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "route-missing")
 	if m.NodeID != "table-203" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// A failed table read is its own finding: calling it "no default route" blames
+// the configuration for something the panel simply could not see.
+func TestMismatchUnreadableTableIsNotAMissingRoute(t *testing.T) {
+	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true})
+	in.routeErrs = map[int]error{201: errors.New("netlink is busy")}
+	delete(in.routes, 201)
+
+	got := u.flowMismatches(t.Context(), in)
+	m := mismatchByRule(t, got, "route-unreadable")
+	if m.Severity != "warn" {
+		t.Errorf("severity = %q", m.Severity)
+	}
+	for _, x := range got {
+		if x.Rule == "route-missing" && x.NodeID == "table-201" {
+			t.Error("an unreadable table was also reported as a missing route")
+		}
 	}
 }
 
