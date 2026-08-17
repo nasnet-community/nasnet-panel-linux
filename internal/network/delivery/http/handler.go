@@ -47,6 +47,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.POST("/vpn/deactivate", h.DeactivateVPN)
 		n.GET("/vpn/status", h.VPNStatus)
 
+		// The flow page. Read-only: nothing here touches a packet.
+		n.GET("/flow", h.FlowGraph)
+		n.POST("/flow/trace", h.TraceFlow)
+		n.GET("/flow/conns", h.FlowConns)
+		n.GET("/flow/events", h.FlowEvents)
+
 		n.GET("/port-forwards", h.ListPortForwards)
 		n.POST("/port-forwards", h.CreatePortForward)
 		n.PUT("/port-forwards/:id", h.UpdatePortForward)
