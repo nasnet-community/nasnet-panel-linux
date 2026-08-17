@@ -1397,6 +1397,28 @@ install_xray_core() {
     _download_xray_core "$arch"
 }
 
+# This lands as root and then runs, so verify it first: the release's .dgst,
+# or XRAY_SHA256 to pin. Neither available means no install.
+_verify_xray_zip() {
+    local zip="$1" url="$2" want="${XRAY_SHA256:-}" have dgst
+
+    if [[ -z "$want" ]]; then
+        dgst=$(curl -fsSL "${url}.dgst" 2>/dev/null || true)
+        want=$(printf '%s\n' "$dgst" | grep -iE 'sha2?-?256' | grep -oE '[0-9a-f]{64}' | head -1)
+    fi
+    if [[ -z "$want" ]]; then
+        step_fail "No checksum published for $(basename "$url") — set XRAY_SHA256 to install it anyway"
+        return 1
+    fi
+
+    have=$(sha256sum "$zip" | cut -d' ' -f1)
+    if [[ "$have" != "$want" ]]; then
+        step_fail "Downloaded xray-core failed its checksum — refusing to install it"
+        return 1
+    fi
+    step_ok "xray-core checksum verified"
+}
+
 # Only reached when the repo copy is absent: an auto-update run, or a tarball
 # without bin/xray.
 _download_xray_core() {
@@ -1419,6 +1441,10 @@ _download_xray_core() {
 
     if ! run_logged "Downloading xray-core ${XRAY_VERSION}" curl -fL -o "${tmp}/xray.zip" "$url"; then
         step_fail "Could not download xray-core from ${url}"
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! _verify_xray_zip "${tmp}/xray.zip" "$url"; then
         rm -rf "$tmp"
         return 1
     fi
