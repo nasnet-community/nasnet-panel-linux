@@ -507,11 +507,19 @@ func flowEdges(vpn VPNRouteState, st flowState) []FlowEdge {
 		{ID: "e-updom-world", From: "uplink-domestic", To: "world-domestic", Kind: "data", Status: "ok"},
 		{ID: "e-upsec-world", From: "uplink-secondary", To: "world-foreign", Kind: "data", Status: vpnStatus},
 	}
+	setCounter := func(id, key string) {
+		for i := range edges {
+			if edges[i].ID == id {
+				edges[i].CounterKey = key
+				return
+			}
+		}
+	}
 	if st.domestic != nil {
-		edges[len(edges)-2].CounterKey = "if:" + st.domestic.IfName
+		setCounter("e-updom-world", "if:"+st.domestic.IfName)
 	}
 	if st.secondary != nil {
-		edges[len(edges)-1].CounterKey = "if:" + st.secondary.IfName
+		setCounter("e-upsec-world", "if:"+st.secondary.IfName)
 	}
 	if st.plane.Active() {
 		edges = append(edges, FlowEdge{ID: "e-router-fb", From: "src-router", To: "table-203",
