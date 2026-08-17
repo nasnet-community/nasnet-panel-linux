@@ -120,12 +120,13 @@ func Classify(p Probe) (Source, int) {
 func phoneScore(siblings []string) int {
 	score := 0
 	for _, s := range siblings {
+		// udev spells these as hex class/subclass/protocol triplets.
 		switch strings.ToLower(s) {
-		case "mtp", "ptp":
+		case "mtp", "ptp", "ffff00", "060101":
 			score += 45
-		case "adb":
+		case "adb", "ff4201":
 			score += 40
-		case "usbmux":
+		case "usbmux", "fffe02":
 			score += 45
 		}
 	}

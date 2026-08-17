@@ -74,6 +74,13 @@ func TestClassify_TableDrivenOrder(t *testing.T) {
 			wantSource: SourceTetherAndroid, minConf: 70,
 		},
 		{
+			// What udev actually hands us: ff4201 is ADB, ffff00 is MTP.
+			name: "android tether: the same siblings as udev spells them",
+			probe: Probe{IfName: "enp0s20u2", Subsystem: "usb", Driver: "rndis_host",
+				USBSiblingFunctions: []string{"ffff00", "ff4201"}},
+			wantSource: SourceTetherAndroid, minConf: 70,
+		},
+		{
 			name:       "cdc_ncm with no phone hint is a generic dongle, low confidence",
 			probe:      Probe{IfName: "enx11", Subsystem: "usb", Driver: "cdc_ncm"},
 			wantSource: SourceEthUSB, minConf: 1,
