@@ -48,13 +48,24 @@ func linkDNS(in domain.NetworkInterface) (server, domains string) {
 	return "", in.DNSDomains
 }
 
+// An empty PermanentMACAddress= resets the list and matches every link, so a
+// port without one is matched by name.
+func writeMatch(b *strings.Builder, in domain.NetworkInterface) {
+	if in.PermMAC != "" {
+		fmt.Fprintf(b, "PermanentMACAddress=%s\n", in.PermMAC)
+		return
+	}
+	// No permanent MAC, so the role is tied to the port. V22 warns about it.
+	fmt.Fprintf(b, "Name=%s\n", in.IfName)
+}
+
 // RenderUplink renders an uplink's .network file
 func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 	var b strings.Builder
 
 	b.WriteString("# Managed by nasnet. Do not edit (regenerated on every apply).\n")
 	b.WriteString("[Match]\n")
-	fmt.Fprintf(&b, "PermanentMACAddress=%s\n", in.PermMAC)
+	writeMatch(&b, in)
 
 	b.WriteString("\n[Network]\n")
 	if in.Method == domain.MethodStatic && in.StaticAddress != "" {
@@ -114,7 +125,7 @@ func RenderMgmt(in domain.NetworkInterface, cidr string) UplinkFile {
 	var b strings.Builder
 	b.WriteString("# Managed by nasnet. Written once at role assignment, then frozen.\n")
 	b.WriteString("[Match]\n")
-	fmt.Fprintf(&b, "PermanentMACAddress=%s\n", in.PermMAC)
+	writeMatch(&b, in)
 	b.WriteString("\n[Network]\n")
 	fmt.Fprintf(&b, "Address=%s\n", cidr)
 	b.WriteString("IPv6AcceptRA=no\n")
