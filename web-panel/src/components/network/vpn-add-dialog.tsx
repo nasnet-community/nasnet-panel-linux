@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useGenerateVPNKeypair, useParseVPNInput, useSaveVPNProfile } from "@/lib/queries/use-network"
 import { detectFormat } from "@/lib/vpn-labels"
-import type { VPNProfile, WireGuardConfig } from "@/lib/types/network"
+import type { Verdict, VPNProfile, WireGuardConfig } from "@/lib/types/network"
 import { toast } from "sonner"
 
 const FORMAT_LABEL: Record<"uri" | "conf", string> = {
@@ -43,6 +43,7 @@ export function VpnAddDialog({ open, onOpenChange, profile }: Props) {
     const [manual, setManual] = useState<WireGuardConfig>(profile?.config ?? EMPTY_MANUAL)
     const [mode, setMode] = useState<"paste" | "manual">(profile ? "manual" : "paste")
     const [preview, setPreview] = useState<WireGuardConfig | null>(null)
+    const [verdicts, setVerdicts] = useState<Verdict[]>([])
     const [error, setError] = useState("")
 
     const format = detectFormat(raw)
@@ -54,6 +55,8 @@ export function VpnAddDialog({ open, onOpenChange, profile }: Props) {
         try {
             const res = await parse.mutateAsync(text)
             setPreview(res.config)
+            // The backend's warnings about this config, dropped until now.
+            setVerdicts(res.verdicts ?? [])
             if (!name && res.config.suggested_name) setName(res.config.suggested_name)
         } catch (e) {
             setError(e instanceof Error ? e.message : "This is not a WireGuard config")
@@ -166,6 +169,11 @@ export function VpnAddDialog({ open, onOpenChange, profile }: Props) {
                         {preview?.notices?.map((n) => (
                             <p key={n} className="text-text-tertiary text-xs">
                                 {n}
+                            </p>
+                        ))}
+                        {verdicts.map((v) => (
+                            <p key={v.rule} className="text-status-warning text-xs">
+                                {v.message}
                             </p>
                         ))}
                         {preview && (

@@ -20,10 +20,13 @@ export function VpnTab({ armed, onApplied }: Props) {
     const deactivate = useDeactivateVPN()
     const [verdicts, setVerdicts] = useState<Verdict[]>([])
 
-    async function run(fn: () => Promise<unknown>) {
+    async function run(fn: () => Promise<{ verdicts?: Verdict[] } | unknown>) {
         setVerdicts([])
         try {
-            await fn()
+            const res = await fn()
+            // Warnings arrive with a 200; the error path never sees them.
+            const ok = res as { verdicts?: Verdict[] } | undefined
+            setVerdicts(ok?.verdicts ?? [])
             onApplied()
         } catch (err) {
             setVerdicts(verdictsFromError(err))
