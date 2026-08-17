@@ -126,6 +126,23 @@ func TestParseWireGuardURI_DropsIPv6(t *testing.T) {
 	}
 }
 
+// The fallback to 0.0.0.0/0 makes a split tunnel a full one. Say so.
+func TestParseWireGuardURI_IPv6OnlyAllowedIPsSaysItWidened(t *testing.T) {
+	uri := "wireguard://" + urlenc(testPriv) + "@1.2.3.4:51820" +
+		"?publickey=" + urlenc(testPub) + "&address=10.66.0.2/32&allowedips=" + urlenc("::/0")
+
+	cfg, err := ParseWireGuardURI(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Peer.AllowedIPs) != 1 || cfg.Peer.AllowedIPs[0] != "0.0.0.0/0" {
+		t.Fatalf("allowed ips = %v", cfg.Peer.AllowedIPs)
+	}
+	if !hasNotice(cfg.Notices, "carries everything") {
+		t.Errorf("the tunnel silently became a full tunnel; notices = %v", cfg.Notices)
+	}
+}
+
 func TestParseWireGuardURI_NoIPv4AddressIsFatal(t *testing.T) {
 	uri := "wireguard://" + urlenc(testPriv) + "@1.2.3.4:51820" +
 		"?publickey=" + urlenc(testPub) + "&address=fd00::2/128"
