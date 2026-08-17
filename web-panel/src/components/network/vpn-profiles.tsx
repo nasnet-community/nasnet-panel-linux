@@ -159,7 +159,9 @@ export function VpnProfiles({ profiles, loading, armed, busy, onActivate, onDeac
             </CardContent>
 
             <VpnAddDialog open={adding} onOpenChange={setAdding} />
+            {/* Keyed: the dialog seeds its fields at mount, so it needs a remount. */}
             <VpnAddDialog
+                key={editing?.id ?? "none"}
                 open={editing !== null}
                 onOpenChange={(o) => !o && setEditing(null)}
                 profile={editing}
