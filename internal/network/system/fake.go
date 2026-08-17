@@ -16,6 +16,18 @@ type FakeBackend struct {
 	LinkNames []string
 	AddrList  []Addr
 	Err       error
+	// RouteGetFn answers the tracer's kernel cross-check.
+	RouteGetFn func(dst string, mark uint32) (*Route, error)
+}
+
+func (f *FakeBackend) RouteGet(_ context.Context, dst string, mark uint32) (*Route, error) {
+	f.mu.Lock()
+	fn := f.RouteGetFn
+	f.mu.Unlock()
+	if fn == nil {
+		return nil, fmt.Errorf("no RouteGetFn")
+	}
+	return fn(dst, mark)
 }
 
 func NewFakeBackend() *FakeBackend {
@@ -225,4 +237,52 @@ func (f *FakeWGDevice) Delete(context.Context) error {
 	f.Applied = nil
 	f.Stat = nil
 	return nil
+}
+
+// FakeNft is an in-memory NftReader. Membership is exact-match only; tests
+// list the concrete IPs they resolve.
+type FakeNft struct {
+	RulesetText string
+	Objects     NftObjects
+	Members     map[string][]string
+	Err         error
+}
+
+func (f *FakeNft) ListRuleset(context.Context) (string, error) { return f.RulesetText, f.Err }
+
+func (f *FakeNft) LiveObjects(context.Context) (*NftObjects, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	o := f.Objects
+	if o.Counters == nil {
+		o.Counters = map[string]NftCounter{}
+	}
+	return &o, nil
+}
+
+func (f *FakeNft) SetContains(_ context.Context, set, element string) (bool, error) {
+	if f.Err != nil {
+		return false, f.Err
+	}
+	for _, e := range f.Members[set] {
+		if e == element {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// FakeFlowSource is an in-memory FlowSource.
+type FakeFlowSource struct {
+	Flows    []CTFlow
+	Stats    map[string]LinkStat
+	CTErr    error
+	StatsErr error
+}
+
+func (f *FakeFlowSource) Conntrack(context.Context) ([]CTFlow, error) { return f.Flows, f.CTErr }
+
+func (f *FakeFlowSource) LinkStats(context.Context) (map[string]LinkStat, error) {
+	return f.Stats, f.StatsErr
 }
