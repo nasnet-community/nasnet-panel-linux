@@ -54,6 +54,28 @@ var uriAliases = map[string]string{
 	"reserved":             "reserved",
 }
 
+// encodeURIKey escapes the key so a "/" in it does not end the authority.
+func encodeURIKey(raw string) (string, bool) {
+	const scheme = "wireguard://"
+	if len(raw) <= len(scheme) || !strings.EqualFold(raw[:len(scheme)], scheme) {
+		return "", false
+	}
+	rest := raw[len(scheme):]
+	tail := ""
+	if end := strings.IndexAny(rest, "?#"); end >= 0 {
+		rest, tail = rest[:end], rest[end:]
+	}
+	at := strings.LastIndex(rest, "@")
+	if at <= 0 || at == len(rest)-1 {
+		return "", false
+	}
+	key, host := rest[:at], rest[at+1:]
+	if strings.Contains(key, "%") {
+		return "", false // already encoded, and re-encoding would corrupt it
+	}
+	return scheme + url.User(key).String() + "@" + host + tail, true
+}
+
 // ParseWireGuardURI reads the v2rayN-family form:
 //
 //	wireguard://<urlencoded private key>@host:port?publickey=…&address=…#name
@@ -67,6 +89,14 @@ func ParseWireGuardURI(raw string) (WireGuardConfig, error) {
 	}
 
 	var cfg WireGuardConfig
+	if u.User == nil || u.User.Username() == "" {
+		// An unencoded "/" in the key hides the userinfo. Retry escaped.
+		if fixed, ok := encodeURIKey(strings.TrimSpace(raw)); ok {
+			if u2, perr := url.Parse(fixed); perr == nil && u2.User != nil {
+				u = u2
+			}
+		}
+	}
 	if u.User == nil || u.User.Username() == "" {
 		return WireGuardConfig{}, fmt.Errorf("no private key in the URI: %w", ErrBadKey)
 	}

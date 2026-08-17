@@ -65,6 +65,27 @@ func TestParseWireGuardURI_ReadsTheV2rayNForm(t *testing.T) {
 	}
 }
 
+// An unencoded "/" in the key used to read as "no private key in the URI".
+func TestParseWireGuardURI_UnencodedKeyWithASlash(t *testing.T) {
+	const slashKey = "bmFzbmV0Zml4dHVyZWtleQAAAAAAAAAAAAAAAAAA+/A="
+	uri := "wireguard://" + slashKey + "@1.2.3.4:51820" +
+		"?publickey=" + urlenc(testPub) + "&address=10.66.0.2/32#Frankfurt"
+
+	cfg, err := ParseWireGuardURI(uri)
+	if err != nil {
+		t.Fatalf("a link with an unencoded key was rejected: %v", err)
+	}
+	if cfg.PrivateKey != slashKey {
+		t.Errorf("private key = %q, want the one in the link", cfg.PrivateKey)
+	}
+	if cfg.Peer.Endpoint != "1.2.3.4:51820" {
+		t.Errorf("endpoint = %q", cfg.Peer.Endpoint)
+	}
+	if cfg.SuggestedName != "Frankfurt" {
+		t.Errorf("name = %q", cfg.SuggestedName)
+	}
+}
+
 // A WARP config handshakes forever with the kernel driver. Say so instead.
 func TestParseWireGuardURI_RejectsReserved(t *testing.T) {
 	uri := "wireguard://" + urlenc(testPriv) + "@1.2.3.4:51820" +
