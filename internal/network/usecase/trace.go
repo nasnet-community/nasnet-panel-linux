@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
@@ -87,7 +88,7 @@ func (u *networkUsecase) TraceFlow(ctx context.Context, req TraceRequest) (*Trac
 	v.Steps = append(v.Steps, walk)
 	v.Steps = append(v.Steps, u.traceKernelCheck(ctx, ip, mark, route))
 
-	u.finishTrace(v, startNode, mark, route, matched)
+	u.finishTrace(ctx, v, startNode, mark, route, matched)
 	return v, nil
 }
 
@@ -261,7 +262,13 @@ func (u *networkUsecase) traceKernelCheck(ctx context.Context, ip string, mark u
 	}
 	step.Evidence = append(step.Evidence, fmt.Sprintf(
 		"ip route get %s mark 0x%x → dev %s table %d", ip, mark, got.OifName, got.Table))
-	if route != nil && got.OifName != "" && got.OifName != route.OifName {
+	switch {
+	case route == nil:
+		// The dangerous direction: we are about to call this dropped.
+		step.Verdict = "warn"
+		step.Evidence = append(step.Evidence,
+			"the walk found nothing but the kernel routes it — trust the kernel")
+	case got.OifName != "" && got.OifName != route.OifName:
 		step.Verdict = "warn"
 		step.Evidence = append(step.Evidence, fmt.Sprintf(
 			"the walk said dev %s — trust the kernel and report the difference", route.OifName))
@@ -270,8 +277,8 @@ func (u *networkUsecase) traceKernelCheck(ctx context.Context, ip string, mark u
 }
 
 // finishTrace turns the route into the path the graph highlights.
-func (u *networkUsecase) finishTrace(v *TraceView, startNode string, mark uint32,
-	route *system.Route, matched *system.Rule) {
+func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNode string,
+	mark uint32, route *system.Route, matched *system.Rule) {
 
 	nodes := []string{startNode}
 	switch netmark.Group(mark) {
@@ -313,11 +320,34 @@ func (u *networkUsecase) finishTrace(v *TraceView, startNode string, mark uint32
 		if table > 0 {
 			nodes = append(nodes, fmt.Sprintf("table-%d", table))
 		}
-		nodes = append(nodes, "uplink-domestic", "world-domestic")
-		v.FinalVerdict = "delivered-domestic"
+		// By the interface the route actually names, not by assuming domestic.
+		if u.isSecondaryIf(ctx, route) {
+			nodes = append(nodes, "uplink-secondary", "world-foreign")
+			v.FinalVerdict = "delivered-secondary"
+		} else {
+			nodes = append(nodes, "uplink-domestic", "world-domestic")
+			v.FinalVerdict = "delivered-domestic"
+		}
 	}
 	v.PathNodes = nodes
 	v.PathEdges = edgesFor(nodes)
+}
+
+// isSecondaryIf says whether a route leaves by the secondary uplink.
+func (u *networkUsecase) isSecondaryIf(ctx context.Context, route *system.Route) bool {
+	if route == nil || route.OifName == "" {
+		return false
+	}
+	ups, err := u.uplinks(ctx)
+	if err != nil {
+		return false
+	}
+	for _, up := range ups {
+		if up.IfName == route.OifName {
+			return up.Slot == domain.SlotSecondary
+		}
+	}
+	return false
 }
 
 // blackholeStep ends the story where the packet does. Without it the path

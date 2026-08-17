@@ -207,6 +207,29 @@ func TestTraceReportsKernelDisagreement(t *testing.T) {
 	}
 }
 
+// The walk finding nothing while the kernel routes it is the dangerous half of
+// a disagreement: the page is about to call the packet dropped.
+func TestTraceWarnsWhenOnlyTheKernelRoutes(t *testing.T) {
+	u := newTraceFixture(t, traceOpts{vpnActive: false})
+	be := u.Backend.(*system.FakeBackend)
+	be.RouteGetFn = func(string, uint32) (*system.Route, error) {
+		return &system.Route{Table: 254, OifName: "eth0"}, nil
+	}
+	v, err := u.TraceFlow(t.Context(), TraceRequest{Dest: "142.250.185.78", Source: "lan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range v.Steps {
+		if s.Title == "Kernel check" {
+			if s.Verdict != "warn" {
+				t.Fatalf("kernel routes it but the walk did not, verdict %q: %+v", s.Verdict, s.Evidence)
+			}
+			return
+		}
+	}
+	t.Fatal("no kernel check step")
+}
+
 func TestLookupTablePrefersTheLongerPrefix(t *testing.T) {
 	routes := []system.Route{
 		{Table: 203, Dest: "default", OifName: "nasnet-wg0"},
