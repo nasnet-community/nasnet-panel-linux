@@ -190,6 +190,34 @@ func TestList_UeventDevTypeClassifiesVirtualLinks(t *testing.T) {
 	}
 }
 
+// DEVTYPE=wwan is real hardware; reading it as virtual hid every modem.
+func TestList_WWANDevTypeIsNotAVirtualLink(t *testing.T) {
+	s := newSysTree(t)
+	usbDev := "devices/pci0000:00/0000:00:14.0/usb2/2-1"
+	usbIf := usbDev + "/2-1:1.4"
+
+	s.dir("bus/usb/drivers/qmi_wwan")
+	s.link(usbDev+"/subsystem", "bus/usb")
+	s.link(usbIf+"/subsystem", "bus/usb")
+	s.link(usbIf+"/driver", "bus/usb/drivers/qmi_wwan")
+
+	s.nicFiles(usbIf+"/net/wwan0", "02:aa:bb:cc:dd:01", "8")
+	s.file(usbIf+"/net/wwan0/uevent", "DEVTYPE=wwan\nINTERFACE=wwan0\nIFINDEX=8\n")
+	s.link(usbIf+"/net/wwan0/device", usbIf)
+	s.link("class/net/wwan0", usbIf+"/net/wwan0")
+
+	in := byName(s.list(), "wwan0")
+	if in == nil {
+		t.Fatal("wwan0 missing")
+	}
+	if in.Source != SourceWWANUSB {
+		t.Errorf("source = %q, want %q", in.Source, SourceWWANUSB)
+	}
+	if !in.Assignable {
+		t.Error("the modem cannot hold a role, so it cannot be used")
+	}
+}
+
 // The regression this file exists for: a plain-file-only reader leaves
 // Subsystem and Driver empty here, so the NIC is unknown and unassignable.
 func TestList_SymlinkOnlyNICIsNotUnknown(t *testing.T) {
