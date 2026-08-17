@@ -61,3 +61,15 @@ func TestIsNetworkEvent(t *testing.T) {
 		}
 	}
 }
+
+// A non-positive size used to panic the recorder's goroutine on the first
+// event, taking the process with it.
+func TestNewRecorderSurvivesANonPositiveSize(t *testing.T) {
+	bus := NewEventBus()
+	r := NewRecorder(bus, "guard", 0, func(Event) bool { return true })
+	bus.Publish(Event{Type: EventWANApplied})
+	time.Sleep(20 * time.Millisecond)
+	if got := len(r.Recent()); got > 1 {
+		t.Errorf("kept %d events with a zero size", got)
+	}
+}

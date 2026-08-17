@@ -11,6 +11,9 @@ type Recorder struct {
 }
 
 func NewRecorder(bus *EventBus, id string, max int, keep func(Event) bool) *Recorder {
+	if max < 1 {
+		max = 1
+	}
 	r := &Recorder{max: max}
 	ch := bus.SubscribeFiltered(id, keep)
 	go func() {
