@@ -14,6 +14,10 @@ export function exportDebugBundle(bundle: Bundle) {
     const a = document.createElement("a")
     a.href = url
     a.download = `nasnet-flow-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+    // Firefox ignores a click on a detached anchor, and revoking straight after
+    // it kills the blob before the download starts.
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(url)
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
