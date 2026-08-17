@@ -113,6 +113,12 @@ type NetworkUsecase interface {
 	DeactivateVPN(ctx context.Context) ([]domain.Verdict, *ApplyView, error)
 	VPNStatus(ctx context.Context) (*VPNStatusView, error)
 
+	// The flow page. All read-only: nothing here touches a packet.
+	FlowGraph(ctx context.Context) (*FlowView, error)
+	TraceFlow(ctx context.Context, req TraceRequest) (*TraceView, error)
+	FlowConns(ctx context.Context) (*FlowConnsView, error)
+	RecentNetworkEvents(ctx context.Context) ([]events.Event, error)
+
 	ListPortForwards(ctx context.Context) ([]domain.PortForward, error)
 	CreatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
 	UpdatePortForward(ctx context.Context, pf domain.PortForward, confirmed bool) ([]domain.Verdict, error)
@@ -141,7 +147,13 @@ type Deps struct {
 	// bootstrap resolvers.
 	DoH dohboot.Resolver
 	// Devices reads the bridge. Nil uses the live system; injected in tests.
-	Devices    system.DeviceSource
+	Devices system.DeviceSource
+	// Nftr reads live kernel nftables state for the flow page. Nil execs nft.
+	Nftr system.NftReader
+	// Flow reads conntrack and interface counters. Nil uses the live kernel.
+	Flow system.FlowSource
+	// Events is the flow page's timeline history. Nil means no history.
+	Events     *events.Recorder
 	Backend    system.Backend
 	Nft        *nft.Manager
 	Agent      agent.NodeClient
@@ -184,6 +196,34 @@ type networkUsecase struct {
 	// silent tunnel re-resolving its endpoint every tick.
 	vpnWasUp       bool
 	vpnLastResolve time.Time
+
+	// resolverStatus is a seam: off systemd the real probe always answers
+	// "running", which leaves the flow page's check untestable.
+	resolverStatus func(context.Context) system.DNSMasqStatus
+}
+
+func (u *networkUsecase) dnsmasqStatus(ctx context.Context) system.DNSMasqStatus {
+	if u.resolverStatus != nil {
+		return u.resolverStatus(ctx)
+	}
+	if u.dnsmasq == nil {
+		return system.DNSMasqStatus{}
+	}
+	return u.dnsmasq.Status(ctx)
+}
+
+func (u *networkUsecase) nftReader() system.NftReader {
+	if u.Nftr != nil {
+		return u.Nftr
+	}
+	return system.NewLiveNft()
+}
+
+func (u *networkUsecase) flowSource() system.FlowSource {
+	if u.Flow != nil {
+		return u.Flow
+	}
+	return system.NewFlowSource()
 }
 
 // vpnRouteState says whether the foreign group has a tunnel to leave by.
@@ -778,6 +818,7 @@ func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*
 	if rec.Deadline != nil {
 		view.ConfirmDeadlineUnix = rec.Deadline.Unix()
 	}
+	u.emit(events.EventWANApplied, map[string]any{"plan_id": rec.ID, "ops": ops})
 	return view, nil
 }
 
