@@ -240,7 +240,8 @@ func virtualKind(dir string) string {
 			return k.kind
 		}
 	}
-	if t := ueventDevType(dir); t != "" {
+	// DEVTYPE names real hardware too: a modem is "wwan", a radio "wlan".
+	if t := ueventDevType(dir); t != "" && t != "wwan" && t != "wlan" {
 		return t
 	}
 	if _, err := os.Stat(filepath.Join(dir, "device")); os.IsNotExist(err) {
