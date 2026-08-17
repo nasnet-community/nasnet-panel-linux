@@ -117,6 +117,19 @@ func TestMismatchUnexpectedRule(t *testing.T) {
 	}
 }
 
+// Tailscale, libvirt and a hand-added rule all sit outside the prefs this
+// panel writes, and a warning nothing can clear teaches operators to ignore it.
+func TestMismatchIgnoresRulesWeDoNotOwn(t *testing.T) {
+	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true})
+	in.liveRules = append(in.liveRules, system.Rule{Pref: 5230, Table: 52, FwMark: 0x80000})
+
+	for _, m := range u.flowMismatches(t.Context(), in) {
+		if m.Rule == "rule-unexpected" {
+			t.Fatalf("flagged a rule we do not own: %+v", m)
+		}
+	}
+}
+
 func TestMismatchMissingChain(t *testing.T) {
 	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true, dropChain: "killswitch_out"})
 	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "nft-chain-missing")
