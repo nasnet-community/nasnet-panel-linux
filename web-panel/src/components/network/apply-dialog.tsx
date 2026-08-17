@@ -28,7 +28,8 @@ interface Props {
     applyError?: string | null
     /** Address the plan will move the panel to, "" when it will not move. */
     altOrigin: string
-    onApply: () => void
+    /** Carries the typed CONFIRM through to the request V18 reads. */
+    onApply: (confirmed: boolean) => void
     onDone: () => void
 }
 
@@ -216,7 +217,7 @@ export function ApplyDialog({
                                 }
                                 onClick={() => {
                                     setStep("running")
-                                    onApply()
+                                    onApply(needsConfirm)
                                 }}
                             >
                                 Apply

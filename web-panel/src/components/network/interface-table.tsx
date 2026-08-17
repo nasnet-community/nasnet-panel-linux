@@ -19,7 +19,12 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { attachmentLabel, groupAddresses, linkLabel, linkTone } from "@/lib/network-labels"
-import type { InterfaceRole, NetworkInterfaceView, UplinkSlot } from "@/lib/types/network"
+import type {
+    AssignRoleRequest,
+    InterfaceRole,
+    NetworkInterfaceView,
+    UplinkSlot,
+} from "@/lib/types/network"
 
 /** Role + slot as one picker: stage 1 groups have one member each, so slots are
  *  what the operator actually thinks in. */
@@ -52,6 +57,32 @@ export function slotHolder(
 ): string | null {
     const held = interfaces.find((i) => i.role === "wan" && i.slot === slot && i.key !== exceptKey)
     return held ? held.label || held.if_name : null
+}
+
+/** The request a role pick turns into. Neither id is inferred server side:
+ *  V8 wants the evictee named, V10 the bridge the member joins. */
+export function buildAssignRequest(
+    interfaces: NetworkInterfaceView[],
+    iface: NetworkInterfaceView,
+    choice: RoleChoice,
+): AssignRoleRequest {
+    const req: AssignRoleRequest = {
+        interface_id: iface.id,
+        role: choice.role,
+        slot: choice.slot,
+    }
+    const holder = interfaces.find(
+        (i) =>
+            i.id !== iface.id &&
+            i.role === choice.role &&
+            (choice.slot === "" || i.slot === choice.slot),
+    )
+    if (holder) req.evict_id = holder.id
+    if (choice.role === "lan_member") {
+        const lan = interfaces.find((i) => i.role === "lan")
+        if (lan) req.master_id = lan.id
+    }
+    return req
 }
 
 /** Everything about a port that changes how you'd assign it, in one place —

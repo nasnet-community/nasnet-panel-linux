@@ -12,7 +12,11 @@ import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
 import { RoleBays } from "@/components/network/role-bays"
-import { InterfaceTable, type RoleChoice } from "@/components/network/interface-table"
+import {
+    buildAssignRequest,
+    InterfaceTable,
+    type RoleChoice,
+} from "@/components/network/interface-table"
 import {
     useApplyNetworkChange,
     useNetworkInterfaces,
@@ -122,11 +126,7 @@ export default function NetworkPage() {
     }
 
     function onAssign(iface: NetworkInterfaceView, choice: RoleChoice) {
-        const req: AssignRoleRequest = {
-            interface_id: iface.id,
-            role: choice.role,
-            slot: choice.slot,
-        }
+        const req = buildAssignRequest(interfaces.data ?? [], iface, choice)
         setPending(req)
         plan.mutate(req)
         setDialogOpen(true)
@@ -264,7 +264,7 @@ export default function NetworkPage() {
                 applied={apply.data ?? null}
                 applyError={apply.error?.message ?? null}
                 altOrigin={altOrigin}
-                onApply={() => pending && apply.mutate(pending)}
+                onApply={(confirmed) => pending && apply.mutate({ ...pending, confirmed })}
                 onDone={() => {
                     plan.reset()
                     apply.reset()
