@@ -41,6 +41,19 @@ func TestFlowConnsDecodesMarksAndSorts(t *testing.T) {
 	}
 }
 
+// The key is missing exactly when nothing is counting, so an unreadable sysctl
+// must not claim accounting is on and hide the banner that explains the zeroes.
+func TestFlowConnsUnknownAccountingReadsAsOff(t *testing.T) {
+	u := newConnsFixture(t, []system.CTFlow{{Proto: "tcp", SrcIP: "10.77.0.101", DstIP: "1.1.1.1"}})
+	v, err := u.FlowConns(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.AcctEnabled {
+		t.Error("accounting reported on while the sysctl could not be read")
+	}
+}
+
 func TestFlowConnsCapsAtLimit(t *testing.T) {
 	flows := make([]system.CTFlow, 250)
 	for i := range flows {
