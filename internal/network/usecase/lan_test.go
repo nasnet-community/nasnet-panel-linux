@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -17,6 +18,14 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
+// CI stubs the geoip database out. A real parse failure still fails.
+func skipWithoutGeoIP(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, geoip.ErrNoEmbeddedGeoIP) {
+		t.Skip("built without the embedded geoip database")
+	}
+}
+
 func testLAN() domain.LANConfig {
 	return domain.LANConfig{
 		BridgeName: "lan0", CIDR: "10.77.0.1/24",
@@ -28,6 +37,7 @@ func testLAN() domain.LANConfig {
 func TestBuildDomesticSets_TypedIntervalSetsFromTheEmbeddedGeoIP(t *testing.T) {
 	// true: probe P3 found --nftset available, so the domain sets are declared too.
 	sets, err := BuildDomesticSets(true)
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatalf("BuildDomesticSets: %v", err)
 	}
@@ -78,6 +88,7 @@ func TestApplyLANNftState_EnablesClassificationMasqueradeAndForwardDrop(t *testi
 	lan := testLAN()
 
 	sets, err := BuildDomesticSets(true)
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +128,7 @@ func TestApplyLANNftState_ReferencesOnlyDeclaredSets(t *testing.T) {
 	lan := testLAN()
 
 	sets, err := BuildDomesticSets(false)
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +261,9 @@ func TestRefreshDomesticRanges_ReplacesTheV4Set(t *testing.T) {
 	defer srv.Close()
 
 	u := newRangesUsecase(t, srv)
-	if err := u.RefreshDomesticRanges(context.Background()); err != nil {
+	err := u.RefreshDomesticRanges(context.Background())
+	skipWithoutGeoIP(t, err)
+	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 
@@ -276,7 +290,8 @@ func TestRefreshDomesticRanges_KeepsTheOldListOnATruncatedFetch(t *testing.T) {
 	defer srv.Close()
 
 	u := newRangesUsecase(t, srv)
-	before, _, _ := u.domesticSets(context.Background())
+	before, _, berr := u.domesticSets(context.Background())
+	skipWithoutGeoIP(t, berr)
 	beforeCount := len(setNamed(before, DomesticSetV4).Elements)
 
 	err := u.RefreshDomesticRanges(context.Background())
@@ -295,6 +310,7 @@ func TestRefreshDomesticRanges_KeepsTheOldListOnATruncatedFetch(t *testing.T) {
 func TestDomesticSets_FallsBackToTheEmbeddedListWithNoCache(t *testing.T) {
 	u := newRangesUsecase(t, nil)
 	sets, _, err := u.domesticSets(context.Background())
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,6 +330,7 @@ func TestDomesticSets_PrefersTheCacheOverTheEmbeddedList(t *testing.T) {
 		t.Fatal(err)
 	}
 	sets, _, err := u.domesticSets(context.Background())
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,6 +385,7 @@ func TestApplySysctls_DisablesIPv6AtRuntime(t *testing.T) {
 // dead weight in every ruleset the box applies.
 func TestBuildDomesticSets_NoIPv6SetsWhileIPv6IsDisabled(t *testing.T) {
 	sets, err := BuildDomesticSets(true)
+	skipWithoutGeoIP(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}

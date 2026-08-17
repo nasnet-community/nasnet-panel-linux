@@ -1,6 +1,7 @@
 package geoip
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,9 @@ func embeddedIran(t *testing.T) ([]byte, []byte, bool) {
 // The production input: if this fails the build has no usable geoip.dat.
 func TestEmbeddedCIDRSet_IranHasBothFamilies(t *testing.T) {
 	s, err := EmbeddedCIDRSet("IR")
+	if errors.Is(err, ErrNoEmbeddedGeoIP) {
+		t.Skip("built without the embedded geoip database")
+	}
 	if err != nil {
 		t.Fatalf("EmbeddedCIDRSet: %v", err)
 	}

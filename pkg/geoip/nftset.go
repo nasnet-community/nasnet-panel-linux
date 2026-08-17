@@ -2,6 +2,7 @@ package geoip
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -18,12 +19,16 @@ type CIDRSet struct {
 
 func (s *CIDRSet) Len() int { return len(s.V4) + len(s.V6) }
 
+// ErrNoEmbeddedGeoIP is the build with no database: CI stubs it out, so tests
+// that need real ranges skip instead of failing.
+var ErrNoEmbeddedGeoIP = errors.New("no embedded geoip.dat in this build")
+
 // EmbeddedCIDRSet is the list used until an upstream refresh lands, and after
 // one fails.
 func EmbeddedCIDRSet(code string) (*CIDRSet, error) {
 	data, _, ok := geofiles.GetEmbeddedGeoFiles(geofiles.RegionIran)
 	if !ok || len(data) == 0 {
-		return nil, fmt.Errorf("no embedded geoip.dat in this build")
+		return nil, ErrNoEmbeddedGeoIP
 	}
 	return ParseGeoIP(data, code)
 }
