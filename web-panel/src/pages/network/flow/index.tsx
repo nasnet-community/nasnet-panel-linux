@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router"
-import { ArrowLeft, Download, Network, RefreshCw } from "lucide-react"
+import { ArrowLeft, Download, Network, RefreshCw, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Label } from "@/components/ui/label"
@@ -48,13 +48,21 @@ export default function TrafficFlowPage() {
         localStorage.setItem(DNS_OVERLAY_KEY, String(on))
     }
 
-    // Router mode off 404s every route, so an error means "this box is not a router".
+    // Router mode off 404s every route. Any other error is a real failure, and
+    // this is the page you open to diagnose one.
     if (flow.isError) {
-        return (
+        const status = (flow.error as { status?: number } | null)?.status
+        return status === 404 ? (
             <EmptyState
                 icon={Network}
                 title="Router mode is not enabled"
                 description="The traffic flow view only exists when this box is doing the routing."
+            />
+        ) : (
+            <EmptyState
+                icon={TriangleAlert}
+                title="The flow view could not be loaded"
+                description={flow.error?.message ?? "The panel could not read this box's routing state."}
             />
         )
     }
