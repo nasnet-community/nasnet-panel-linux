@@ -73,6 +73,14 @@ type FilterInput struct {
 // resolved before the tunnel exists.
 const SetDoHBootstrap = "doh_bootstrap"
 
+// Named counters the flow page reads. Declared as a block so a chain
+// referencing one can never abort the transaction.
+const (
+	CounterDomestic   = "cnt_domestic"
+	CounterForeign    = "cnt_foreign"
+	CounterKillSwitch = "cnt_killswitch"
+)
+
 // KillSwitch drops everything leaving the secondary uplink in the clear.
 // Rendered whenever a secondary uplink exists, tunnel or not, and unlike the
 // input firewall it is not a setting.
@@ -96,6 +104,9 @@ type Ruleset struct {
 	// Connmark enables the masked save/restore pair that download shaping,
 	// forwarded reply-path pinning and the DNAT ingress pin all depend on.
 	Connmark bool
+
+	// Counters enables the named traffic counters the flow page reads.
+	Counters bool
 
 	// IngressPins stamp the arrival uplink into ct mark. Requires Connmark.
 	IngressPins []Pin
@@ -134,6 +145,7 @@ func (r Ruleset) Render() string {
 
 	sections := []string{
 		r.renderSets(),
+		r.renderCountersDecl(),
 		r.renderManglePre(),
 		r.renderNatPre(),
 		r.renderFilterInput(),
@@ -194,6 +206,17 @@ func (r Ruleset) renderSets() string {
 			fmt.Fprintf(&b, "\t\telements = { %s }\n", strings.Join(s.Elements, ", "))
 		}
 		b.WriteString("\t}\n")
+	}
+	return b.String()
+}
+
+func (r Ruleset) renderCountersDecl() string {
+	if !r.Counters {
+		return ""
+	}
+	var b strings.Builder
+	for _, n := range []string{CounterDomestic, CounterForeign, CounterKillSwitch} {
+		fmt.Fprintf(&b, "\tcounter %s {\n\t}\n", n)
 	}
 	return b.String()
 }
@@ -349,7 +372,7 @@ func (r Ruleset) renderKillSwitch() string {
 	b.WriteString("\t\t# never become established through this.\n")
 	b.WriteString("\t\tct state established,related accept\n")
 	b.WriteString(k.exemptions())
-	b.WriteString("\t\tdrop\n")
+	b.WriteString(r.renderDrop())
 	b.WriteString("\t}\n")
 
 	b.WriteString("\n\tchain killswitch_fwd {\n")
@@ -361,9 +384,17 @@ func (r Ruleset) renderKillSwitch() string {
 	if k.DishSubnet != "" {
 		fmt.Fprintf(&b, "\t\tip daddr %s accept\n", k.DishSubnet)
 	}
-	b.WriteString("\t\tdrop\n")
+	b.WriteString(r.renderDrop())
 	b.WriteString("\t}\n")
 	return b.String()
+}
+
+// renderDrop counts kills when counters are on; the drop itself never changes.
+func (r Ruleset) renderDrop() string {
+	if r.Counters {
+		return fmt.Sprintf("\t\tcounter name %s drop\n", CounterKillSwitch)
+	}
+	return "\t\tdrop\n"
 }
 
 // exemptions is the entire allowlist, in the order a packet meets it.
@@ -396,19 +427,29 @@ func (k *KillSwitch) exemptions() string {
 // renderManglePostSection wraps the postrouting mangle chain so Render can treat
 // every section uniformly.
 func (r Ruleset) renderManglePostSection() string {
-	if !r.connmark() {
+	if !r.connmark() && !r.Counters {
 		return ""
 	}
 	return r.renderManglePost()
 }
 
-// renderManglePost writes the working skb mark back to conntrack.
+// renderManglePost writes the working skb mark back to conntrack, and counts
+// what left under each group mark.
 func (r Ruleset) renderManglePost() string {
 	all := netmark.Hex(netmark.MaskAll)
 	var b strings.Builder
 	b.WriteString("\tchain mangle_post {\n")
 	b.WriteString("\t\ttype filter hook postrouting priority mangle; policy accept;\n")
-	fmt.Fprintf(&b, "\t\tmeta mark and %s != 0x0 ct mark set meta mark and %s\n", all, all)
+	if r.connmark() {
+		fmt.Fprintf(&b, "\t\tmeta mark and %s != 0x0 ct mark set meta mark and %s\n", all, all)
+	}
+	if r.Counters {
+		group := netmark.Hex(netmark.MaskGroup)
+		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s counter name %s\n",
+			group, netmark.Hex(netmark.GroupMark(netmark.GroupDomestic)), CounterDomestic)
+		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s counter name %s\n",
+			group, netmark.Hex(netmark.GroupMark(netmark.GroupForeign)), CounterForeign)
+	}
 	b.WriteString("\t}\n")
 	return b.String()
 }
@@ -423,6 +464,52 @@ func (r Ruleset) renderNatPost() string {
 	fmt.Fprintf(&b, "\t\toifname { %s } masquerade\n", quoteList(r.Masquerade))
 	b.WriteString("\t}\n")
 	return b.String()
+}
+
+// ChainNames lists the chains Render will emit, for intended-vs-actual checks.
+func (r Ruleset) ChainNames() []string {
+	var out []string
+	if r.connmark() || r.LANClassify != nil {
+		out = append(out, "mangle_pre")
+	}
+	if len(r.PortForwards) > 0 {
+		out = append(out, "nat_pre")
+	}
+	if r.FilterInput != nil {
+		out = append(out, "filter_in")
+	}
+	if r.FilterForward != nil {
+		out = append(out, "filter_fwd")
+	}
+	if r.KillSwitch != nil && r.KillSwitch.SecondaryIfName != "" {
+		out = append(out, "killswitch_out", "killswitch_fwd")
+	}
+	if r.connmark() || r.Counters {
+		out = append(out, "mangle_post")
+	}
+	if len(r.Masquerade) > 0 {
+		out = append(out, "nat_post")
+	}
+	return out
+}
+
+// SetNames mirrors renderSets, bootstrap set included.
+func (r Ruleset) SetNames() []string {
+	var out []string
+	for _, s := range r.Sets {
+		out = append(out, s.Name)
+	}
+	if k := r.KillSwitch; k != nil && len(k.BootstrapIPs) > 0 {
+		out = append(out, SetDoHBootstrap)
+	}
+	return out
+}
+
+func (r Ruleset) CounterNames() []string {
+	if !r.Counters {
+		return nil
+	}
+	return []string{CounterDomestic, CounterForeign, CounterKillSwitch}
 }
 
 // quoteList renders a set of interface names as nftables expects them.
