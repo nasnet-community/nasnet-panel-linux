@@ -149,6 +149,8 @@ func (r Ruleset) renderSets() string {
 		fmt.Fprintf(&b, "\t\ttype %s\n", s.Family)
 		if s.Interval {
 			b.WriteString("\t\tflags interval\n")
+			// One overlapping prefix upstream would abort the whole load.
+			b.WriteString("\t\tauto-merge\n")
 		}
 		if s.Timeout != "" {
 			b.WriteString("\t\tflags timeout\n")

@@ -4,11 +4,13 @@ table inet nasnet {
 	set ir_v4 {
 		type ipv4_addr
 		flags interval
+		auto-merge
 		elements = { 2.144.0.0/13, 5.22.0.0/17 }
 	}
 	set ir_v6 {
 		type ipv6_addr
 		flags interval
+		auto-merge
 		elements = { 2001:db8::/32 }
 	}
 	set ir_dom_v4 {
