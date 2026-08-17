@@ -63,6 +63,37 @@ func newApplier(t *testing.T) (*system.Applier, *stubApplyRepo, system.Paths) {
 	return a, repo, p
 }
 
+// A second apply used to overwrite the marker and orphan the first snapshot.
+func TestApply_RefusesWhileAnotherChangeIsArmed(t *testing.T) {
+	a, _, p := newApplier(t)
+	noop := system.Plan{Ops: []system.Op{{Desc: "noop", Do: func(context.Context) error { return nil }}}}
+
+	first, err := a.Apply(context.Background(), noop, false)
+	if err != nil {
+		t.Fatalf("first Apply: %v", err)
+	}
+
+	ran := false
+	second := system.Plan{Ops: []system.Op{{Desc: "second", Do: func(context.Context) error {
+		ran = true
+		return nil
+	}}}}
+	if _, err := a.Apply(context.Background(), second, false); err == nil {
+		t.Fatal("second apply was allowed while the first was still armed")
+	}
+	if ran {
+		t.Error("the second plan's ops ran anyway")
+	}
+
+	m, err := system.ReadMarker(p)
+	if err != nil || m == nil {
+		t.Fatalf("marker gone: %v", err)
+	}
+	if m.PlanID != first.ID {
+		t.Errorf("marker plan = %d, want the armed one (%d)", m.PlanID, first.ID)
+	}
+}
+
 func TestApply_RunsOpsInOrderAndArmsTheDeadMan(t *testing.T) {
 	a, repo, p := newApplier(t)
 	var order []string

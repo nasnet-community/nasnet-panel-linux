@@ -118,6 +118,15 @@ func (a *Applier) now() time.Time {
 
 // Apply snapshots, runs ops in order, reloads, arms. A failing op restores now, not in 90s.
 func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*domain.ApplyRecord, error) {
+	// One armed change at a time: a second apply orphans the first snapshot.
+	m, err := ReadMarker(a.Paths)
+	if err != nil {
+		return nil, fmt.Errorf("read dead-man: %w", err)
+	}
+	if m != nil {
+		return nil, fmt.Errorf("plan %d is still armed; confirm it or let it revert first", m.PlanID)
+	}
+
 	rec := &domain.ApplyRecord{
 		NodeID:            1,
 		Phase:             domain.PhasePlanned,
@@ -146,7 +155,7 @@ func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*d
 			if rerr := a.Snap.Restore(ctx, snap); rerr != nil {
 				applyErr = fmt.Errorf("%w (restore also failed: %v)", applyErr, rerr)
 			}
-			_ = DeleteMarker(a.Paths)
+			// Nothing to disarm: the marker is written after the ops.
 			_ = a.Repo.SetPhase(ctx, rec.ID, domain.PhaseFailed, applyErr.Error())
 			return nil, applyErr
 		}
