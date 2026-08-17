@@ -78,3 +78,15 @@ func TestIntrospectionMatchesRender(t *testing.T) {
 			len(rs.ChainNames()), strings.Count(out, "\tchain "))
 	}
 }
+
+// IsZero decides whether a rollback restores the table or tears it down, so a
+// ruleset that renders anything can never report zero.
+func TestCountersOnlyRulesetIsNotZero(t *testing.T) {
+	rs := Ruleset{Counters: true}
+	if rs.IsZero() {
+		t.Error("a counters-only ruleset reports zero but renders a table")
+	}
+	if rs.Render() == "" {
+		t.Error("nothing rendered, so the premise is wrong")
+	}
+}
