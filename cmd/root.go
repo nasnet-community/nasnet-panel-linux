@@ -271,6 +271,10 @@ func runServe(cmd *cobra.Command, args []string) {
 	eventBus := events.NewEventBus()
 	log.Info("Event Bus initialized")
 
+	// 200 events is days of wan/vpn churn. The flow page's timeline reads it,
+	// so a page opened after an incident still shows what led up to it.
+	netEvents := events.NewRecorder(eventBus, "network-recorder", 200, events.IsNetworkEvent)
+
 	// Repositories
 	repos := initRepositories(db)
 
@@ -340,7 +344,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		var rmErr error
 		networkUC, rmErr = startRouterMode(bgCtx, routerModeDeps{
 			DB: db, NftMgr: embeddedSrv.NftManager(),
-			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus, Log: log,
+			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
+			NetEvents: netEvents, Log: log,
 			PanelPort: cfg.App.Port, NodeRepo: repos.Node, HTTPFactory: httpFactory,
 		})
 		if rmErr != nil {
@@ -786,7 +791,9 @@ type routerModeDeps struct {
 	NftMgr *nft.Manager
 	Agent  agent.NodeClient
 	Bus    *events.EventBus
-	Log    *logrus.Logger
+	// NetEvents is the flow page's history of what already happened.
+	NetEvents *events.Recorder
+	Log       *logrus.Logger
 	// PanelPort is what filter_in must keep open, or arming it locks the
 	// operator out of the box they just firewalled.
 	PanelPort int
@@ -837,6 +844,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		Paths:        paths,
 		RouterMode:   true,
 		EventBus:     deps.Bus,
+		Events:       deps.NetEvents,
 		Inbounds:     inboundSource{repo: deps.NodeRepo, nodeID: 1},
 		// The list is served from behind a redirect to a foreign host, so it
 		// goes out the same way every other foreign fetch does.
