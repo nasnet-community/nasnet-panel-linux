@@ -251,6 +251,9 @@ func (c *WireGuardConfig) finish(addresses, allowedIPs []string) error {
 		v4Allowed = []string{"0.0.0.0/0"}
 		if len(allowedIPs) == 0 {
 			c.Notices = append(c.Notices, "No allowed IPs were given, so the tunnel carries everything (0.0.0.0/0).")
+		} else {
+			// All IPv6: say so, a split tunnel just became a full one.
+			c.Notices = append(c.Notices, "Every allowed IP was IPv6, so the tunnel now carries everything (0.0.0.0/0).")
 		}
 	}
 	c.Peer.AllowedIPs = v4Allowed
