@@ -73,6 +73,25 @@ func TestRenderUplink_DHCPSecondaryKeepsMainEmpty(t *testing.T) {
 	}
 }
 
+// An empty PermanentMACAddress= empties [Match], which matches every link.
+func TestRender_NoPermanentMACMatchesByName(t *testing.T) {
+	for name, content := range map[string]string{
+		"uplink": RenderUplink(domain.NetworkInterface{
+			IfName: "usb0", Slot: domain.SlotSecondary, Method: domain.MethodDHCP4,
+		}, 202).Content,
+		"mgmt": RenderMgmt(domain.NetworkInterface{
+			IfName: "enp3s0", Role: domain.RoleMgmt,
+		}, "192.168.99.1/24").Content,
+	} {
+		if strings.Contains(content, "PermanentMACAddress=\n") {
+			t.Errorf("%s: empty PermanentMACAddress= matches every link:\n%s", name, content)
+		}
+		if !strings.Contains(content, "Name=") {
+			t.Errorf("%s: no fallback match at all:\n%s", name, content)
+		}
+	}
+}
+
 // mgmt uses networkd's own DHCP server: no resolver, and it needs none.
 func TestRenderMgmt_FrozenFileWithNoEgressPath(t *testing.T) {
 	f := RenderMgmt(domain.NetworkInterface{
