@@ -213,6 +213,9 @@ func nodeForRulePref(r system.Rule) string {
 	case r.Pref >= 150 && r.Pref <= 199:
 		return "mark-foreign"
 	case r.Pref >= RulePrefPinBase && r.Pref < 110:
+		if r.Table == 201 {
+			return "uplink-domestic"
+		}
 		return "uplink-secondary"
 	case r.Table == system.WGTable:
 		return "table-203"
