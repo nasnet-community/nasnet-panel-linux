@@ -81,6 +81,7 @@ type flowState struct {
 	wgErr     error
 	nftText   string
 	nftObj    *system.NftObjects
+	dnsUp     bool
 }
 
 func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
@@ -123,6 +124,8 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	st.nftText, _ = u.nftReader().ListRuleset(ctx)
 	stats, _ := u.flowSource().LinkStats(ctx)
 	st.wgStatus, st.wgErr = u.wg().Status(ctx)
+	// Both are subprocesses and this page polls every 3s, so probe once.
+	st.dnsUp = u.dnsmasqStatus(ctx).Running
 
 	view := &FlowView{
 		GeneratedUnix: time.Now().Unix(),
@@ -157,6 +160,7 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 		liveRules: liveRules, rulesErr: rulesErr,
 		routes: st.routes, routeErrs: st.routeErrs,
 		nftObj: nftObj, nftErr: nftErr, lan: lan,
+		wgStatus: st.wgStatus, wgErr: st.wgErr, dnsUp: st.dnsUp,
 	})
 	return view, nil
 }
@@ -453,7 +457,7 @@ func (u *networkUsecase) dnsNode(ctx context.Context, st flowState) FlowNode {
 		n.Hint = "The resolver only runs with the local network on."
 		return n
 	}
-	if u.dnsmasqStatus(ctx).Running {
+	if st.dnsUp {
 		n.Status = "ok"
 	} else {
 		n.Status = "down"
