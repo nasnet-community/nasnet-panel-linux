@@ -54,3 +54,10 @@ pkg/geofiles/embedded/*.dat
 /GROUPS_REMOVAL_PLAN.md
 /scripts/fork-xray-wg-stats.sh
 .claude/
+/DUAL_WAN_ROUTER_PLAN.md
+/ROUTER_MODE_PLAN.md
+/ROUTER_MODE_CONFIG.md
+/ob.md
+/*.png
+.playwright-mcp/
+docs/superpowers/
