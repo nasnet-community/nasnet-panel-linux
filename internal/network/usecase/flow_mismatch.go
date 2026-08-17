@@ -62,7 +62,7 @@ func (u *networkUsecase) ruleMismatches(ctx context.Context, in flowMismatchInpu
 	// Rules in our range that nothing asked for. Warn, not error: a leftover
 	// from a half-finished apply is worth naming but rarely breaks traffic.
 	for _, live := range in.liveRules {
-		if isStockRule(live.Pref) || live.Pref < RulePrefOifBase || live.Pref > RulePrefFallbackBlackhole {
+		if isStockRule(live.Pref) || !ourPref(live.Pref) {
 			continue
 		}
 		if ruleAmong(want, live) {
@@ -188,6 +188,21 @@ func (u *networkUsecase) dnsMismatches(ctx context.Context, in flowMismatchInput
 		NodeID: "dns", Rule: "dnsmasq-not-running", Severity: "error",
 		Message: "dnsmasq is not running, so LAN clients cannot resolve anything.",
 	}}
+}
+
+// ourPref is the pref ranges this panel writes: oif rules and the main
+// suppressor, the ingress pins, the group rules, and the fallback list.
+// Tailscale, libvirt and a hand-added rule all live outside them.
+func ourPref(pref int) bool {
+	switch {
+	case pref >= RulePrefOifBase && pref <= RulePrefMainSuppress:
+		return true
+	case pref >= RulePrefPinBase && pref <= 199:
+		return true
+	case pref >= RulePrefFallbackBase && pref <= RulePrefFallbackBlackhole:
+		return true
+	}
+	return false
 }
 
 // nodeForRulePref pins a policy-rule finding to the node whose stage it serves.
