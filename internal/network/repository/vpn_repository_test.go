@@ -189,6 +189,44 @@ func TestVPNRepository_DeletedProfileDoesNotBlockTheNextActive(t *testing.T) {
 	}
 }
 
+// An Update with no config used to erase a working profile's keys.
+func TestVPNRepository_UpdateRefusesAnEmptyConfig(t *testing.T) {
+	ctx := context.Background()
+	r := newVPNRepo(t)
+
+	p := makeProfile("a")
+	if err := r.Create(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	stored := p.Config
+
+	blank := *p
+	blank.Config = ""
+	if err := r.Update(ctx, &blank); err == nil {
+		t.Fatal("an empty config was written over a stored one")
+	}
+	got, err := r.Get(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Config != stored {
+		t.Errorf("config = %q, want the stored %q", got.Config, stored)
+	}
+}
+
+// A stale list is not a server fault.
+func TestVPNRepository_MissingProfileIsNotFound(t *testing.T) {
+	ctx := context.Background()
+	r := newVPNRepo(t)
+
+	if _, err := r.Get(ctx, 999); !errors.Is(err, domain.ErrProfileNotFound) {
+		t.Errorf("Get = %v, want ErrProfileNotFound", err)
+	}
+	if err := r.Delete(ctx, 999); !errors.Is(err, domain.ErrProfileNotFound) {
+		t.Errorf("Delete = %v, want ErrProfileNotFound", err)
+	}
+}
+
 func TestVPNRepository_UpdateWritesNameAndConfig(t *testing.T) {
 	ctx := context.Background()
 	r := newVPNRepo(t)
