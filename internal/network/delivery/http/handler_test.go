@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 )
 
 type stubUsecase struct {
@@ -44,6 +45,12 @@ type stubUsecase struct {
 	vpnApplyErr   error
 	vpnDeactived  bool
 	vpnStatus     *usecase.VPNStatusView
+
+	flowView   *usecase.FlowView
+	traceView  *usecase.TraceView
+	traceErr   error
+	connsView  *usecase.FlowConnsView
+	flowEvents []events.Event
 }
 
 func (s *stubUsecase) GetLAN(context.Context) (*usecase.LANView, error) {
@@ -125,6 +132,38 @@ func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNStatusView, error)
 		return &usecase.VPNStatusView{KillSwitch: true}, nil
 	}
 	return s.vpnStatus, nil
+}
+
+func (s *stubUsecase) FlowGraph(context.Context) (*usecase.FlowView, error) {
+	if s.flowView != nil {
+		return s.flowView, nil
+	}
+	return &usecase.FlowView{
+		Nodes: []usecase.FlowNode{}, Edges: []usecase.FlowEdge{},
+		Mismatches: []usecase.FlowMismatch{},
+		Counters:   map[string]usecase.FlowCounter{},
+	}, nil
+}
+
+func (s *stubUsecase) TraceFlow(_ context.Context, req usecase.TraceRequest) (*usecase.TraceView, error) {
+	if s.traceErr != nil {
+		return nil, s.traceErr
+	}
+	if s.traceView != nil {
+		return s.traceView, nil
+	}
+	return &usecase.TraceView{Dest: req.Dest, Source: req.Source}, nil
+}
+
+func (s *stubUsecase) FlowConns(context.Context) (*usecase.FlowConnsView, error) {
+	if s.connsView != nil {
+		return s.connsView, nil
+	}
+	return &usecase.FlowConnsView{Flows: []usecase.FlowConn{}}, nil
+}
+
+func (s *stubUsecase) RecentNetworkEvents(context.Context) ([]events.Event, error) {
+	return s.flowEvents, nil
 }
 
 func (s *stubUsecase) CreatePortForward(_ context.Context, _ domain.PortForward, confirmed bool) ([]domain.Verdict, error) {
