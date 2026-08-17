@@ -71,6 +71,9 @@ func newMismatchFixture(t *testing.T, o mismatchOpts) (*networkUsecase, flowMism
 		obj.Chains = append(obj.Chains, c)
 	}
 	obj.Sets = append(obj.Sets, desired.SetNames()...)
+	for _, c := range desired.CounterNames() {
+		obj.Counters[c] = system.NftCounter{}
+	}
 
 	// dnsmasq is not running under test, and that check has its own case.
 	return u, flowMismatchInput{
@@ -145,6 +148,16 @@ func TestMismatchMissingChain(t *testing.T) {
 	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "nft-chain-missing")
 	if m.NodeID != "killswitch" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// A counter the kernel does not have makes every rate on the graph read empty.
+func TestMismatchMissingCounter(t *testing.T) {
+	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true})
+	delete(in.nftObj.Counters, nft.CounterForeign)
+	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "nft-counter-missing")
+	if m.Severity != "warn" {
+		t.Errorf("severity = %q", m.Severity)
 	}
 }
 
