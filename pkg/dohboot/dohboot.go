@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
@@ -27,6 +28,8 @@ import (
 const (
 	contentType   = "application/dns-message"
 	perServerWait = 5 * time.Second
+	// Long enough to span one outage's re-resolves.
+	idleConnTimeout = 90 * time.Second
 	// A DoH answer is small; anything larger is not one.
 	maxResponse = 64 << 10
 )
@@ -69,11 +72,20 @@ type resolver struct {
 // New returns a resolver whose sockets carry mark, so they match the kill
 // switch exemption and leave by the secondary uplink.
 func New(mark uint32) Resolver {
+	// One client per server: a Transport per request leaks its idle sockets.
+	var mu sync.Mutex
+	clients := map[string]*http.Client{}
+
 	return &resolver{
 		servers: Servers,
 		client: func(s Server) *http.Client {
+			mu.Lock()
+			defer mu.Unlock()
+			if c, ok := clients[s.ServerName]; ok {
+				return c
+			}
 			dialer := httpclient.MarkedDialer(mark, perServerWait)
-			return &http.Client{
+			c := &http.Client{
 				Timeout: perServerWait,
 				Transport: &http.Transport{
 					DialContext: dialer.DialContext,
@@ -81,8 +93,12 @@ func New(mark uint32) Resolver {
 					// explicitly or the certificate never matches.
 					TLSClientConfig:   &tls.Config{ServerName: s.ServerName, MinVersion: tls.VersionTLS12},
 					ForceAttemptHTTP2: true,
+					IdleConnTimeout:   idleConnTimeout,
+					MaxIdleConns:      2,
 				},
 			}
+			clients[s.ServerName] = c
+			return c
 		},
 	}
 }
