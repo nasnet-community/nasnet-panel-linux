@@ -148,6 +148,17 @@ func (u *networkUsecase) nftMismatches(in flowMismatchInput) []FlowMismatch {
 			Expected: "set " + set, Actual: "absent",
 		})
 	}
+	for _, c := range desired.CounterNames() {
+		if _, ok := in.nftObj.Counters[c]; ok {
+			continue
+		}
+		// Without it the graph draws blank rates and says nothing is wrong.
+		out = append(out, FlowMismatch{
+			NodeID: "src-router", Rule: "nft-counter-missing", Severity: "warn",
+			Message:  fmt.Sprintf("Counter %s is not in the kernel, so its rate reads empty.", c),
+			Expected: "counter " + c, Actual: "absent",
+		})
+	}
 	return out
 }
 
