@@ -606,7 +606,8 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, plane vpnPlane, upl
 	if !plane.Active() {
 		have, err := u.Backend.RouteList(ctx, system.WGTable)
 		if err != nil {
-			return nil // an absent table is the state we want anyway
+			// An empty table is not an error, so this read really failed.
+			return fmt.Errorf("read the tunnel's routing table: %w", err)
 		}
 		for _, r := range have {
 			if err := u.Backend.RouteDel(ctx, r); err != nil {

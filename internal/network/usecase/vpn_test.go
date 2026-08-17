@@ -482,6 +482,17 @@ func TestApplyVPNDevice_RebuildsFromTheStoredProfile(t *testing.T) {
 	}
 }
 
+// A failed read used to pass for a clean teardown.
+func TestApplyVPNRoutes_AFailedReadIsNotAnEmptyTable(t *testing.T) {
+	f := newVPNFixture(t)
+	f.be.Err = errors.New("netlink is busy")
+
+	err := f.uc.applyVPNRoutes(context.Background(), vpnPlane{}, twoUplinks())
+	if err == nil {
+		t.Fatal("a failed routing-table read was reported as a successful teardown")
+	}
+}
+
 // An unreadable config must read as "no tunnel", which blackholes, rather than
 // as "no kill switch", which leaks.
 func TestVPNRouteState_FailsTowardsTheBlackhole(t *testing.T) {
