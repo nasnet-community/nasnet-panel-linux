@@ -90,6 +90,8 @@ type Snapshot struct {
 	// apart from an older snapshot, where nil would read as "tear it down".
 	VPNCaptured bool               `json:"vpn_captured,omitempty"`
 	VPNProfile  *domain.VPNProfile `json:"vpn_profile,omitempty"`
+	// Config is json:"-" on the model, so it rides here or not at all.
+	VPNConfig string `json:"vpn_config,omitempty"`
 }
 
 type Snapshotter struct {
@@ -154,14 +156,22 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 		snap.NftRuleset = rs.Render()
 		snap.NftState = &rs
 	}
+	// Fail rather than look like an older snapshot: a rollback trusts this.
 	if s.CaptureLAN != nil {
-		if cfg, err := s.CaptureLAN(ctx); err == nil {
-			snap.LANConfig = cfg
+		cfg, err := s.CaptureLAN(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("capture the LAN row: %w", err)
 		}
+		snap.LANConfig = cfg
 	}
 	if s.CaptureVPN != nil {
-		if p, err := s.CaptureVPN(ctx); err == nil {
-			snap.VPNProfile, snap.VPNCaptured = p, true
+		p, err := s.CaptureVPN(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("capture the active VPN profile: %w", err)
+		}
+		snap.VPNProfile, snap.VPNCaptured = p, true
+		if p != nil {
+			snap.VPNConfig = p.Config
 		}
 	}
 	snap.MaskedUnits = maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
@@ -201,6 +211,10 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 	var snap Snapshot
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return nil, fmt.Errorf("parse snapshot: %w", err)
+	}
+	// Put the config back where the model's json:"-" dropped it.
+	if snap.VPNProfile != nil && snap.VPNConfig != "" {
+		snap.VPNProfile.Config = snap.VPNConfig
 	}
 	if snap.Version != snapshotVersion {
 		return nil, fmt.Errorf("snapshot version %d, this build understands %d",
