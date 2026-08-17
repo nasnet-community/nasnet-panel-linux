@@ -129,7 +129,7 @@ type Ruleset struct {
 
 // IsZero reports whether this renders an empty table
 func (r Ruleset) IsZero() bool {
-	return !r.Connmark && len(r.IngressPins) == 0 && len(r.Sets) == 0 &&
+	return !r.Connmark && !r.Counters && len(r.IngressPins) == 0 && len(r.Sets) == 0 &&
 		r.LANClassify == nil && len(r.Masquerade) == 0 && len(r.PortForwards) == 0 &&
 		r.FilterForward == nil && r.FilterInput == nil && r.KillSwitch == nil
 }
