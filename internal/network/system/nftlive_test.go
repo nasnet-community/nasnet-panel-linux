@@ -1,6 +1,11 @@
 package system
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 const nftJSONFixture = `{"nftables": [
   {"metainfo": {"version": "1.0.9", "json_schema_version": 1}},
@@ -12,6 +17,27 @@ const nftJSONFixture = `{"nftables": [
   {"counter": {"family": "inet", "name": "cnt_killswitch", "table": "nasnet", "handle": 6, "packets": 3, "bytes": 180}},
   {"rule": {"family": "inet", "table": "nasnet", "chain": "mangle_pre", "handle": 7, "expr": []}}
 ]}`
+
+// A missing set exits non-zero exactly like a miss does, and reading that as
+// "not a member" makes every domestic address look foreign.
+func TestSetContainsMissingSetIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "nft")
+	script := "#!/bin/sh\necho \"Error: Could not process rule: No such file or directory\" >&2\n" +
+		"echo \"set ir_v4 does not exist\" >&2\nexit 1\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	l := &LiveNft{Bin: bin}
+	got, err := l.SetContains(context.Background(), "ir_v4", "5.144.128.1")
+	if err == nil {
+		t.Fatal("a missing set was reported as a clean miss")
+	}
+	if got {
+		t.Error("membership reported true")
+	}
+}
 
 func TestParseNftObjects(t *testing.T) {
 	got, err := parseNftObjects([]byte(nftJSONFixture))
