@@ -21,6 +21,7 @@ func ApplyNftState(ctx context.Context, m *nft.Manager, uplinks []Uplink) error 
 
 	if err := m.Update(ctx, func(rs *nft.Ruleset) {
 		rs.Connmark = true
+		rs.Counters = true
 		rs.IngressPins = pins
 	}); err != nil {
 		return fmt.Errorf("apply nft ingress pins: %w", err)
@@ -58,6 +59,10 @@ func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink,
 	if err := set("net.ipv4.fwmark_reflect", "1"); err != nil {
 		return err
 	}
+	// Off by default, and without it every conntrack row reads zero bytes.
+	// Best-effort: the key only exists once nf_conntrack is loaded, and a
+	// debugging counter must never be able to fail a network apply.
+	_ = be.SysctlSet(ctx, "net.netfilter.nf_conntrack_acct", "1")
 
 	// IPv4-only by design: an IPv6 path would bypass the routing policy, and the
 	// drop-in alone would leave it up until the next reboot.
