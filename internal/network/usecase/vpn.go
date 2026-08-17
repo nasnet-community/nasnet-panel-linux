@@ -43,6 +43,8 @@ type VPNProfileView struct {
 	PublicKey string                 `json:"public_key"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
+	// Unreadable rows are still listed, so they can be deleted.
+	Unreadable string `json:"unreadable,omitempty"`
 }
 
 // VPNStatusView is the live tunnel, or the reason there isn't one.
@@ -137,7 +139,14 @@ func (u *networkUsecase) ListVPNProfiles(ctx context.Context) ([]VPNProfileView,
 	for i := range rows {
 		v, err := profileView(&rows[i])
 		if err != nil {
-			return nil, err
+			// One bad row must not hide the rest.
+			r := rows[i]
+			out = append(out, VPNProfileView{
+				ID: r.ID, Name: r.Name, Type: r.Type, Active: r.Active,
+				CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+				Unreadable: err.Error(),
+			})
+			continue
 		}
 		out = append(out, *v)
 	}

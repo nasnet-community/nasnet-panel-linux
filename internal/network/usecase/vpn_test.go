@@ -191,6 +191,31 @@ func newVPNFixture(t *testing.T) *vpnFixture {
 	return f
 }
 
+// One bad row used to empty the whole tab, bad row included.
+func TestListVPNProfiles_OneBadRowDoesNotHideTheOthers(t *testing.T) {
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "broken", Type: domain.VPNTypeWireGuard, Config: "not json"},
+		{ID: 2, Name: "frankfurt", Type: domain.VPNTypeWireGuard,
+			Config: `{"private_key":"` + tPriv + `","address":"10.66.0.2/32",` +
+				`"peer":{"public_key":"` + tPub + `","endpoint":"1.2.3.4:51820","allowed_ips":["0.0.0.0/0"]}}`},
+	}
+
+	got, err := f.uc.ListVPNProfiles(context.Background())
+	if err != nil {
+		t.Fatalf("one unreadable row failed the whole list: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d profiles, want both listed", len(got))
+	}
+	if got[0].Unreadable == "" {
+		t.Error("the unreadable row is not marked, so the UI cannot explain it")
+	}
+	if got[1].Unreadable != "" || got[1].Config.Peer.Endpoint != "1.2.3.4:51820" {
+		t.Errorf("the good row came back wrong: %+v", got[1])
+	}
+}
+
 func TestCreateVPNProfile_FromAPastedURI(t *testing.T) {
 	f := newVPNFixture(t)
 	raw := "wireguard://" + strings.ReplaceAll(tPriv, "/", "%2F") + "@1.2.3.4:51820" +

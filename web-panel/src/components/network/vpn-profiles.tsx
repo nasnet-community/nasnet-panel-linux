@@ -95,9 +95,16 @@ export function VpnProfiles({ profiles, loading, armed, busy, onActivate, onDeac
                                         <span className="truncate font-medium">{p.name}</span>
                                         {p.active && <Badge variant="secondary">In use</Badge>}
                                     </div>
-                                    <p className="text-text-tertiary truncate font-mono text-xs">
-                                        {p.config.peer.endpoint}
-                                    </p>
+                                    {p.unreadable ? (
+                                        // Listed only so it can be deleted.
+                                        <p className="text-status-warning truncate text-xs">
+                                            Stored config cannot be read — {p.unreadable}
+                                        </p>
+                                    ) : (
+                                        <p className="text-text-tertiary truncate font-mono text-xs">
+                                            {p.config.peer.endpoint}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="flex items-center gap-1.5">
@@ -114,7 +121,7 @@ export function VpnProfiles({ profiles, loading, armed, busy, onActivate, onDeac
                                         <Button
                                             size="sm"
                                             onClick={() => onActivate(p.id)}
-                                            disabled={armed || busy}
+                                            disabled={armed || busy || !!p.unreadable}
                                         >
                                             Use this one
                                         </Button>
@@ -127,7 +134,8 @@ export function VpnProfiles({ profiles, loading, armed, busy, onActivate, onDeac
                                         onClick={() => setEditing(p)}
                                         // Editing the running tunnel is a routing
                                         // change, so it goes through turning it off.
-                                        disabled={p.active}
+                                        // An unreadable row has nothing to edit.
+                                        disabled={p.active || !!p.unreadable}
                                     >
                                         <Pencil className="h-3.5 w-3.5" />
                                     </Button>
