@@ -3,6 +3,8 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -37,6 +39,52 @@ func TestSnapshot_CapturesTheActiveProfile(t *testing.T) {
 	}
 	if !back.VPNCaptured || back.VPNProfile == nil || back.VPNProfile.Name != "frankfurt" {
 		t.Errorf("after a round trip: %v / %+v", back.VPNCaptured, back.VPNProfile)
+	}
+}
+
+// Config is json:"-", so losing it here erases the row on rollback.
+func TestSnapshot_KeepsTheConfigThroughTheFile(t *testing.T) {
+	const cfg = `{"private_key":"k","peer":{"endpoint":"1.2.3.4:51820"}}`
+	path := filepath.Join(t.TempDir(), "snap-1.json")
+
+	s := &Snapshotter{
+		Backend: NewFakeBackend(),
+		Paths:   Paths{StateDir: t.TempDir()},
+		CaptureVPN: func(context.Context) (*domain.VPNProfile, error) {
+			return &domain.VPNProfile{ID: 7, Name: "frankfurt", Active: true, Config: cfg}, nil
+		},
+	}
+	snap, err := s.Capture(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(snap, path); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := LoadSnapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.VPNProfile == nil {
+		t.Fatal("no profile in the reloaded snapshot")
+	}
+	if back.VPNProfile.Config != cfg {
+		t.Errorf("config after the round trip = %q, want the stored one", back.VPNProfile.Config)
+	}
+}
+
+// A snapshot that skipped the tunnel still looks complete to a rollback.
+func TestSnapshot_FailsWhenTheProfileCannotBeRead(t *testing.T) {
+	s := &Snapshotter{
+		Backend: NewFakeBackend(),
+		Paths:   Paths{StateDir: t.TempDir()},
+		CaptureVPN: func(context.Context) (*domain.VPNProfile, error) {
+			return nil, errors.New("database is locked")
+		},
+	}
+	if _, err := s.Capture(context.Background(), nil); err == nil {
+		t.Fatal("a failed VPN capture produced a snapshot anyway")
 	}
 }
 
