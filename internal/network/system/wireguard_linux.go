@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
@@ -58,7 +59,8 @@ func (d *wgDevice) Ensure(ctx context.Context, cfg WGApplyConfig) error {
 
 func (d *wgDevice) ensureLink(mtu int) (netlink.Link, error) {
 	if mtu <= 0 {
-		mtu = 1420
+		// Same default the status API reports.
+		mtu = domain.DefaultWGMTU
 	}
 	link, err := netlink.LinkByName(WGLinkName)
 	if err != nil {
