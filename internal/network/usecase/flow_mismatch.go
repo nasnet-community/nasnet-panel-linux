@@ -19,6 +19,9 @@ type flowMismatchInput struct {
 	rulesErr  error
 	routes    map[int][]system.Route
 	routeErrs map[int]error
+	wgStatus  *system.WGStatus
+	wgErr     error
+	dnsUp     bool
 	nftObj    *system.NftObjects
 	nftErr    error
 	lan       *domain.LANConfig
@@ -162,8 +165,8 @@ func (u *networkUsecase) nftMismatches(in flowMismatchInput) []FlowMismatch {
 	return out
 }
 
-func (u *networkUsecase) wgMismatches(ctx context.Context, in flowMismatchInput) []FlowMismatch {
-	st, err := u.wg().Status(ctx)
+func (u *networkUsecase) wgMismatches(_ context.Context, in flowMismatchInput) []FlowMismatch {
+	st, err := in.wgStatus, in.wgErr
 	if !in.plane.Active() {
 		if err == nil && st != nil {
 			return []FlowMismatch{{
@@ -188,11 +191,11 @@ func (u *networkUsecase) wgMismatches(ctx context.Context, in flowMismatchInput)
 	return nil
 }
 
-func (u *networkUsecase) dnsMismatches(ctx context.Context, in flowMismatchInput) []FlowMismatch {
+func (u *networkUsecase) dnsMismatches(_ context.Context, in flowMismatchInput) []FlowMismatch {
 	if in.lan == nil || !in.lan.Enabled {
 		return nil
 	}
-	if u.dnsmasqStatus(ctx).Running {
+	if in.dnsUp {
 		return nil
 	}
 	return []FlowMismatch{{
