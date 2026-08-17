@@ -1,6 +1,8 @@
 package system
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,6 +72,37 @@ func TestRenderUplink_DHCPSecondaryKeepsMainEmpty(t *testing.T) {
 	}
 	if strings.Contains(f.Content, "Gateway=") {
 		t.Error("a DHCP uplink must not carry a static Gateway=")
+	}
+}
+
+// Whatever is left in the directory keeps being applied, at every boot.
+func TestWriteFilesExactly_PrunesOurOwnStaleFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"20-nasnet-lan.netdev", "30-nasnet-lan.network",
+		"40-nasnet-mgmt.network", "99-operator-vpn.network",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("stale\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rendered := []UplinkFile{{Name: "10-nasnet-wan-domestic.network", Content: "fresh\n"}}
+	if err := WriteFilesExactly(dir, rendered, "40-nasnet-mgmt.network"); err != nil {
+		t.Fatalf("WriteFilesExactly: %v", err)
+	}
+
+	for name, want := range map[string]bool{
+		"10-nasnet-wan-domestic.network": true,
+		"40-nasnet-mgmt.network":         true,  // frozen, never re-rendered
+		"99-operator-vpn.network":        true,  // not ours
+		"20-nasnet-lan.netdev":           false, // the LAN is gone
+		"30-nasnet-lan.network":          false,
+	} {
+		_, err := os.Stat(filepath.Join(dir, name))
+		if got := err == nil; got != want {
+			t.Errorf("%s present = %v, want %v", name, got, want)
+		}
 	}
 }
 

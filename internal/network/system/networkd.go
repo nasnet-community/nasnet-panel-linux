@@ -300,6 +300,45 @@ func WriteFiles(dir string, files []UplinkFile) error {
 	return nil
 }
 
+// ownedFile matches only what renderAll writes, never the operator's own.
+func ownedFile(name string) bool {
+	if !strings.Contains(name, "nasnet-") {
+		return false
+	}
+	return strings.HasSuffix(name, ".network") || strings.HasSuffix(name, ".netdev")
+}
+
+// WriteFilesExactly writes files and drops the ones we own that are no longer
+// rendered, or a disabled LAN keeps rebuilding its bridge at every boot.
+// keepExtra is for files we own but never rewrite, like the frozen mgmt port.
+func WriteFilesExactly(dir string, files []UplinkFile, keepExtra ...string) error {
+	if err := WriteFiles(dir, files); err != nil {
+		return err
+	}
+	keep := make(map[string]bool, len(files)+len(keepExtra))
+	for _, f := range files {
+		keep[f.Name] = true
+	}
+	for _, n := range keepExtra {
+		keep[n] = true
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || keep[name] || !ownedFile(name) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			return fmt.Errorf("remove %s: %w", filepath.Join(dir, name), err)
+		}
+	}
+	return nil
+}
+
 // connectedSubnet turns "192.168.1.34/24" into "192.168.1.0/24".
 func connectedSubnet(cidr string) string {
 	p, err := netip.ParsePrefix(cidr)

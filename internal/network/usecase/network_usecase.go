@@ -21,6 +21,9 @@ import (
 
 const defaultMgmtCIDR = "192.168.99.1/24"
 
+// Written once at role assignment, then frozen — renderAll never rewrites it.
+const mgmtFileName = "40-nasnet-mgmt.network"
+
 // InterfaceView is one NIC as the UI sees
 type InterfaceView struct {
 	agent.NetInterface
@@ -606,6 +609,8 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 	var files []system.UplinkFile
 	tables := map[int]string{}
 	var uplinkNames []string
+	// Written once and frozen, so it survives the prune while the role exists.
+	mgmtFile := ""
 
 	if lanOn {
 		files = append(files, system.RenderLANNetdev(bridge), system.RenderLANNetwork(*lan))
@@ -633,14 +638,20 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 			tables[table] = "nasnet-" + string(in.Slot)
 			uplinkNames = append(uplinkNames, in.IfName)
 		case domain.RoleMgmt:
-			mgmtPath := filepath.Join(u.Paths.NetworkdDir, "40-nasnet-mgmt.network")
+			mgmtFile = mgmtFileName
+			mgmtPath := filepath.Join(u.Paths.NetworkdDir, mgmtFileName)
 			if _, err := os.Stat(mgmtPath); os.IsNotExist(err) {
 				files = append(files, system.RenderMgmt(in, defaultMgmtCIDR))
 			}
 		}
 	}
 
-	if err := system.WriteFiles(u.Paths.NetworkdDir, files); err != nil {
+	// A role that went away takes its file with it, or networkd keeps applying it.
+	keep := []string(nil)
+	if mgmtFile != "" {
+		keep = append(keep, mgmtFile)
+	}
+	if err := system.WriteFilesExactly(u.Paths.NetworkdDir, files, keep...); err != nil {
 		return err
 	}
 	// Must take effect before the reload or networkd removes the rules we install next
