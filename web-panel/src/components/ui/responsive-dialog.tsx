@@ -27,6 +27,10 @@ interface ResponsiveDialogProps {
     saveLabel?: string
     saveDisabled?: boolean
     saveVariant?: "default" | "destructive"
+    /** Compact badge/pill rendered next to the title — for state that scopes to the whole object. */
+    headerExtra?: React.ReactNode
+    /** Status line in the footer, left of the buttons (mobile: end of the scroll body). */
+    footerNote?: React.ReactNode
     children: React.ReactNode
     className?: string
 }
@@ -40,6 +44,8 @@ export function ResponsiveDialog({
     saveLabel = "Save",
     saveDisabled = false,
     saveVariant = "default",
+    headerExtra,
+    footerNote,
     children,
     className,
 }: ResponsiveDialogProps) {
@@ -81,7 +87,11 @@ export function ResponsiveDialog({
                     </SheetDescription>
                     {/* Scrollable body */}
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+                        {headerExtra && <div className="flex">{headerExtra}</div>}
                         {children}
+                        {footerNote && (
+                            <div className="pt-2 border-t text-xs text-muted-foreground">{footerNote}</div>
+                        )}
                     </div>
                 </SheetContent>
             </Sheet>
@@ -92,21 +102,29 @@ export function ResponsiveDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className={cn("max-w-2xl max-h-[95vh] flex flex-col", className)}>
                 <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    {description && (
-                        <DialogDescription>{description}</DialogDescription>
-                    )}
+                    <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                            <DialogTitle>{title}</DialogTitle>
+                            {description && (
+                                <DialogDescription>{description}</DialogDescription>
+                            )}
+                        </div>
+                        {headerExtra && <div className="shrink-0 pr-8">{headerExtra}</div>}
+                    </div>
                 </DialogHeader>
                 <div className="flex-1 overflow-y-auto space-y-6 py-4">
                     {children}
                 </div>
-                <DialogFooter className="border-t pt-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
-                        Cancel
-                    </Button>
-                    <Button onClick={onSave} disabled={saveDisabled} variant={saveVariant === "destructive" ? "destructive" : "default"}>
-                        {saveLabel}
-                    </Button>
+                <DialogFooter className="border-t pt-4 sm:justify-between gap-3">
+                    <div className="text-xs text-muted-foreground text-left leading-snug">{footerNote}</div>
+                    <div className="flex gap-2 justify-end">
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={onSave} disabled={saveDisabled} variant={saveVariant === "destructive" ? "destructive" : "default"}>
+                            {saveLabel}
+                        </Button>
+                    </div>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
