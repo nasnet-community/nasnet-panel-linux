@@ -417,10 +417,11 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 		outbounds      []*domain.Outbound
 		routingRules   []*domain.RoutingRule
 		reverseProxies []*domain.ReverseProxy
-		dbErrors       [4]error
+		balancingRules []*domain.BalancingRule
+		dbErrors       [5]error
 	)
 	var dbWg sync.WaitGroup
-	dbWg.Add(4)
+	dbWg.Add(5)
 	go func() {
 		defer dbWg.Done()
 		inbounds, dbErrors[0] = u.nodeRepo.ListInboundsByNode(ctx, node.ID)
@@ -437,6 +438,10 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 		defer dbWg.Done()
 		reverseProxies, dbErrors[3] = u.nodeRepo.ListReverseProxiesByNode(ctx, node.ID)
 	}()
+	go func() {
+		defer dbWg.Done()
+		balancingRules, dbErrors[4] = u.nodeRepo.ListBalancingRulesByNode(ctx, node.ID)
+	}()
 	dbWg.Wait()
 	if dbErrors[0] != nil {
 		return fmt.Errorf("failed to list inbounds: %w", dbErrors[0])
@@ -449,6 +454,9 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 	}
 	if dbErrors[3] != nil {
 		return fmt.Errorf("failed to list reverse proxies: %w", dbErrors[3])
+	}
+	if dbErrors[4] != nil {
+		return fmt.Errorf("failed to list balancing rules: %w", dbErrors[4])
 	}
 
 	// Filter disabled inbounds — excluded from Xray config, certificate injection, and user mapping
@@ -618,6 +626,7 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).
+		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
 		WithUsers(usersMap).
 		WithAPI(true, apiPort)
