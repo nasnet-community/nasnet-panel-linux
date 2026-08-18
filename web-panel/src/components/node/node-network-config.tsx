@@ -96,6 +96,14 @@ import { DesktopInboundRow } from "./network/desktop-inbound-row"
 import { HiOutlineCheckCircle, HiOutlineXCircle } from "react-icons/hi"
 import { Lock, Power, Loader2 } from "lucide-react"
 
+const ROUTING_VIEWS = [
+    { value: "rules", label: "Rules" },
+    { value: "presets", label: "Presets" },
+    { value: "balancers", label: "Balancers" },
+] as const
+
+type RoutingView = (typeof ROUTING_VIEWS)[number]["value"]
+
 interface NodeNetworkConfigProps {
     nodeId: number
     onRefresh?: () => void
@@ -171,6 +179,17 @@ export function NodeNetworkConfig({
     const setActiveTab = (value: string) => {
         const next = new URLSearchParams(searchParams)
         next.set("subtab", value)
+        setSearchParams(next, { replace: true })
+    }
+
+    // Routing pane persisted in URL via ?view= — rules, the presets that write
+    // rules, and the balancers those rules target are three separate jobs.
+    const rawView = searchParams.get("view") || "rules"
+    const routingView = (ROUTING_VIEWS.some(v => v.value === rawView) ? rawView : "rules") as RoutingView
+    const setRoutingView = (value: RoutingView) => {
+        const next = new URLSearchParams(searchParams)
+        next.set("subtab", "routing")
+        next.set("view", value)
         setSearchParams(next, { replace: true })
     }
 
@@ -332,6 +351,12 @@ export function NodeNetworkConfig({
         })) as (RoutingRule & { _unsaved?: boolean })[]
         return [...nonPresetDbRules, ...pendingAsDisplay]
     }, [routingRules, pendingPresetRules])
+
+    // Rules the Presets pane owns — shown as its count in the pane switcher.
+    const presetRuleCount = useMemo(
+        () => routingRules.filter(r => PRESET_RULE_TAGS.has(r.rule_tag)).length,
+        [routingRules],
+    )
 
     // --- Actions ---
 
@@ -1216,36 +1241,69 @@ export function NodeNetworkConfig({
                     </Card>
                 </TabsContent>
 
-                {/* Routing Content */}
+                {/* Routing Content — one pane per job: the rules, the presets that write rules, the balancers rules target */}
                 <TabsContent value="routing" className="animate-in fade-in-50 duration-300">
-                    <RoutingSettingsCard
-                        nodeId={nodeId}
-                        existingRules={routingRules}
-                        outbounds={outbounds}
-                        onSettingsSaved={() => queryClient.invalidateQueries({ queryKey: queryKeys.nodeRouting(nodeId) })}
-                        onPresetRulesChanged={setPendingPresetRules}
-                    />
-                    <RoutingRulesTable
-                        nodeId={nodeId}
-                        rules={displayRoutingRules}
-                        onEdit={(rule) => setRoutingDialog({ open: true, mode: "edit", rule })}
-                        onDelete={handleDeleteRule}
-                        onToggle={handleToggleRule}
-                        onReorderSaved={() => {
-                            queryClient.invalidateQueries({ queryKey: queryKeys.nodeRouting(nodeId) })
-                            onRefresh?.()
-                        }}
-                        onCreate={() => setRoutingDialog({ open: true, mode: "create", rule: null })}
-                    />
-                    <BalancingRulesCard
-                        nodeId={nodeId}
-                        outbounds={outbounds}
-                        rules={balancingRules}
-                        onRulesChanged={() => {
-                            queryClient.invalidateQueries({ queryKey: queryKeys.nodeBalancingRules(nodeId) })
-                            onRefresh?.()
-                        }}
-                    />
+                    <div className="flex items-center gap-1 p-[3px] mb-5 rounded-lg border border-white/[0.06] bg-muted/40 w-fit max-w-full overflow-x-auto no-scrollbar">
+                        {ROUTING_VIEWS.map(v => {
+                            const active = routingView === v.value
+                            const count =
+                                v.value === "rules" ? displayRoutingRules.length
+                                    : v.value === "balancers" ? balancingRules.length
+                                        : presetRuleCount
+                            return (
+                                <button
+                                    key={v.value}
+                                    type="button"
+                                    onClick={() => setRoutingView(v.value)}
+                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${active
+                                        ? "bg-white/10 text-foreground shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+                                        : "text-muted-foreground hover:text-foreground"
+                                        }`}
+                                >
+                                    {v.label}
+                                    <span className="text-[11px] px-1.5 rounded bg-white/[0.08]">{count}</span>
+                                </button>
+                            )
+                        })}
+                    </div>
+
+                    {routingView === "rules" && (
+                        <RoutingRulesTable
+                            nodeId={nodeId}
+                            rules={displayRoutingRules}
+                            onEdit={(rule) => setRoutingDialog({ open: true, mode: "edit", rule })}
+                            onDelete={handleDeleteRule}
+                            onToggle={handleToggleRule}
+                            onReorderSaved={() => {
+                                queryClient.invalidateQueries({ queryKey: queryKeys.nodeRouting(nodeId) })
+                                onRefresh?.()
+                            }}
+                            onCreate={() => setRoutingDialog({ open: true, mode: "create", rule: null })}
+                        />
+                    )}
+
+                    {routingView === "presets" && (
+                        <RoutingSettingsCard
+                            nodeId={nodeId}
+                            existingRules={routingRules}
+                            outbounds={outbounds}
+                            onSettingsSaved={() => queryClient.invalidateQueries({ queryKey: queryKeys.nodeRouting(nodeId) })}
+                            onPresetRulesChanged={setPendingPresetRules}
+                        />
+                    )}
+
+                    {routingView === "balancers" && (
+                        <BalancingRulesCard
+                            nodeId={nodeId}
+                            outbounds={outbounds}
+                            rules={balancingRules}
+                            routingRules={routingRules}
+                            onRulesChanged={() => {
+                                queryClient.invalidateQueries({ queryKey: queryKeys.nodeBalancingRules(nodeId) })
+                                onRefresh?.()
+                            }}
+                        />
+                    )}
                 </TabsContent>
 
                 {/* Reverse Proxy Content */}
