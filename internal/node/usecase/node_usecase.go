@@ -361,6 +361,17 @@ type nodeUsecase struct {
 	// Shields repeat-refresh + multiple panel tabs from fan-out.
 	statsCache *nodeStatsCache
 
+	// Agent/xray version cache — versions change on deploys only, so the
+	// stats sweep serves them from here instead of a per-tick GetVersion.
+	versionCacheMu sync.Mutex
+	versionCache   map[uint]agentVersionCacheEntry
+
+	// Stats-sweep cadence: per-node last-run stamps for the slow collectors
+	// (online IPs, access-log summaries) so they don't run on every tick.
+	statsCadenceMu  sync.Mutex
+	lastOnlineIPsAt map[uint]time.Time
+	lastAccessLogAt map[uint]time.Time
+
 	// Per-node config push rate limiting to prevent infinite retry loops
 	pushStateMu sync.Mutex
 	pushState   map[uint]*configPushState
