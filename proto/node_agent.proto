@@ -704,6 +704,14 @@ message StarlinkStatusResponse {
   // Signal
   bool is_snr_above_noise_floor = 46;
   bool is_snr_persistently_low = 47;
+  // Alignment (extended) — drives the Rotation/Tilt dials and tells the
+  // obstruction map whether the reported boresight can be trusted.
+  float attitude_uncertainty_deg = 48;
+  string attitude_estimation_state = 49;  // FILTER_CONVERGED, FILTER_UNCONVERGED, ...
+  float desired_boresight_azimuth_deg = 50;
+  float desired_boresight_elevation_deg = 51;
+  string actuator_state = 52;   // ACTUATOR_STATE_IDLE, ACTUATOR_STATE_TILT, ...
+  string has_actuators = 53;    // HAS_ACTUATORS_YES / _NO / _UNKNOWN
 }
 
 message StarlinkObstructionMapResponse {

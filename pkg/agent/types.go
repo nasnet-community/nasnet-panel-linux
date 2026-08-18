@@ -185,6 +185,13 @@ type StarlinkStatus struct {
 	Altitude                         float64 `json:"altitude"`
 	IsSnrAboveNoiseFloor             bool    `json:"is_snr_above_noise_floor"`
 	IsSnrPersistentlyLow             bool    `json:"is_snr_persistently_low"`
+	// Alignment (extended)
+	AttitudeUncertaintyDeg       float64 `json:"attitude_uncertainty_deg"`
+	AttitudeEstimationState      string  `json:"attitude_estimation_state"`
+	DesiredBoresightAzimuthDeg   float64 `json:"desired_boresight_azimuth_deg"`
+	DesiredBoresightElevationDeg float64 `json:"desired_boresight_elevation_deg"`
+	ActuatorState                string  `json:"actuator_state"`
+	HasActuators                 string  `json:"has_actuators"`
 }
 
 // StarlinkObstructionMap holds the dish obstruction map data.

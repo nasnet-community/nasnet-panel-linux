@@ -3930,8 +3930,16 @@ type StarlinkStatusResponse struct {
 	// Signal
 	IsSnrAboveNoiseFloor bool `protobuf:"varint,46,opt,name=is_snr_above_noise_floor,json=isSnrAboveNoiseFloor,proto3" json:"is_snr_above_noise_floor,omitempty"`
 	IsSnrPersistentlyLow bool `protobuf:"varint,47,opt,name=is_snr_persistently_low,json=isSnrPersistentlyLow,proto3" json:"is_snr_persistently_low,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Alignment (extended) — drives the Rotation/Tilt dials and tells the
+	// obstruction map whether the reported boresight can be trusted.
+	AttitudeUncertaintyDeg       float32 `protobuf:"fixed32,48,opt,name=attitude_uncertainty_deg,json=attitudeUncertaintyDeg,proto3" json:"attitude_uncertainty_deg,omitempty"`
+	AttitudeEstimationState      string  `protobuf:"bytes,49,opt,name=attitude_estimation_state,json=attitudeEstimationState,proto3" json:"attitude_estimation_state,omitempty"` // FILTER_CONVERGED, FILTER_UNCONVERGED, ...
+	DesiredBoresightAzimuthDeg   float32 `protobuf:"fixed32,50,opt,name=desired_boresight_azimuth_deg,json=desiredBoresightAzimuthDeg,proto3" json:"desired_boresight_azimuth_deg,omitempty"`
+	DesiredBoresightElevationDeg float32 `protobuf:"fixed32,51,opt,name=desired_boresight_elevation_deg,json=desiredBoresightElevationDeg,proto3" json:"desired_boresight_elevation_deg,omitempty"`
+	ActuatorState                string  `protobuf:"bytes,52,opt,name=actuator_state,json=actuatorState,proto3" json:"actuator_state,omitempty"` // ACTUATOR_STATE_IDLE, ACTUATOR_STATE_TILT, ...
+	HasActuators                 string  `protobuf:"bytes,53,opt,name=has_actuators,json=hasActuators,proto3" json:"has_actuators,omitempty"`    // HAS_ACTUATORS_YES / _NO / _UNKNOWN
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *StarlinkStatusResponse) Reset() {
@@ -4291,6 +4299,48 @@ func (x *StarlinkStatusResponse) GetIsSnrPersistentlyLow() bool {
 		return x.IsSnrPersistentlyLow
 	}
 	return false
+}
+
+func (x *StarlinkStatusResponse) GetAttitudeUncertaintyDeg() float32 {
+	if x != nil {
+		return x.AttitudeUncertaintyDeg
+	}
+	return 0
+}
+
+func (x *StarlinkStatusResponse) GetAttitudeEstimationState() string {
+	if x != nil {
+		return x.AttitudeEstimationState
+	}
+	return ""
+}
+
+func (x *StarlinkStatusResponse) GetDesiredBoresightAzimuthDeg() float32 {
+	if x != nil {
+		return x.DesiredBoresightAzimuthDeg
+	}
+	return 0
+}
+
+func (x *StarlinkStatusResponse) GetDesiredBoresightElevationDeg() float32 {
+	if x != nil {
+		return x.DesiredBoresightElevationDeg
+	}
+	return 0
+}
+
+func (x *StarlinkStatusResponse) GetActuatorState() string {
+	if x != nil {
+		return x.ActuatorState
+	}
+	return ""
+}
+
+func (x *StarlinkStatusResponse) GetHasActuators() string {
+	if x != nil {
+		return x.HasActuators
+	}
+	return ""
 }
 
 type StarlinkObstructionMapResponse struct {
@@ -5155,7 +5205,7 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x1dmax_rejected_domains_per_hour\x18\x04 \x01(\x05R\x19maxRejectedDomainsPerHour\x124\n" +
 	"\x17max_source_ips_per_hour\x18\x05 \x01(\x05R\x13maxSourceIpsPerHour\"4\n" +
 	"\x0fStarlinkRequest\x12!\n" +
-	"\fdish_address\x18\x01 \x01(\tR\vdishAddress\"\xd9\x10\n" +
+	"\fdish_address\x18\x01 \x01(\tR\vdishAddress\"\xa5\x13\n" +
 	"\x16StarlinkStatusResponse\x12\x1c\n" +
 	"\tavailable\x18\x01 \x01(\bR\tavailable\x126\n" +
 	"\x17downlink_throughput_bps\x18\x02 \x01(\x02R\x15downlinkThroughputBps\x122\n" +
@@ -5206,7 +5256,13 @@ const file_node_agent_proto_rawDesc = "" +
 	"\tlongitude\x18, \x01(\x01R\tlongitude\x12\x1a\n" +
 	"\baltitude\x18- \x01(\x01R\baltitude\x126\n" +
 	"\x18is_snr_above_noise_floor\x18. \x01(\bR\x14isSnrAboveNoiseFloor\x125\n" +
-	"\x17is_snr_persistently_low\x18/ \x01(\bR\x14isSnrPersistentlyLow\"\xb5\x01\n" +
+	"\x17is_snr_persistently_low\x18/ \x01(\bR\x14isSnrPersistentlyLow\x128\n" +
+	"\x18attitude_uncertainty_deg\x180 \x01(\x02R\x16attitudeUncertaintyDeg\x12:\n" +
+	"\x19attitude_estimation_state\x181 \x01(\tR\x17attitudeEstimationState\x12A\n" +
+	"\x1ddesired_boresight_azimuth_deg\x182 \x01(\x02R\x1adesiredBoresightAzimuthDeg\x12E\n" +
+	"\x1fdesired_boresight_elevation_deg\x183 \x01(\x02R\x1cdesiredBoresightElevationDeg\x12%\n" +
+	"\x0eactuator_state\x184 \x01(\tR\ractuatorState\x12#\n" +
+	"\rhas_actuators\x185 \x01(\tR\fhasActuators\"\xb5\x01\n" +
 	"\x1eStarlinkObstructionMapResponse\x12\x19\n" +
 	"\bnum_rows\x18\x01 \x01(\rR\anumRows\x12\x19\n" +
 	"\bnum_cols\x18\x02 \x01(\rR\anumCols\x12\x10\n" +

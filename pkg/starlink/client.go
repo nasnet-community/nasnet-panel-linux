@@ -134,6 +134,15 @@ type StarlinkStatus struct {
 	TiltAngleDeg          float64 `json:"tilt_angle_deg"`
 	BoresightAzimuthDeg   float64 `json:"boresight_azimuth_deg"`
 	BoresightElevationDeg float64 `json:"boresight_elevation_deg"`
+	// AttitudeUncertaintyDeg is the filter's 1-sigma heading error. The
+	// obstruction map only rotates FRAME_UT into compass coordinates when
+	// the attitude filter has converged, so this rides along with it.
+	AttitudeUncertaintyDeg       float64 `json:"attitude_uncertainty_deg"`
+	AttitudeEstimationState      string  `json:"attitude_estimation_state"`
+	DesiredBoresightAzimuthDeg   float64 `json:"desired_boresight_azimuth_deg"`
+	DesiredBoresightElevationDeg float64 `json:"desired_boresight_elevation_deg"`
+	ActuatorState                string  `json:"actuator_state"`
+	HasActuators                 string  `json:"has_actuators"`
 
 	// Software update
 	SoftwareUpdateState    string  `json:"software_update_state"`
@@ -264,6 +273,12 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 		// Prefer alignment stats over top-level fields
 		status.BoresightAzimuthDeg = float64(align.BoresightAzimuthDeg)
 		status.BoresightElevationDeg = float64(align.BoresightElevationDeg)
+		status.AttitudeUncertaintyDeg = float64(align.AttitudeUncertaintyDeg)
+		status.AttitudeEstimationState = align.AttitudeEstimationState.String()
+		status.DesiredBoresightAzimuthDeg = float64(align.DesiredBoresightAzimuthDeg)
+		status.DesiredBoresightElevationDeg = float64(align.DesiredBoresightElevationDeg)
+		status.ActuatorState = align.ActuatorState.String()
+		status.HasActuators = align.HasActuators.String()
 	}
 
 	// Software update
@@ -327,11 +342,23 @@ func (c *Client) GetObstructionMap(ctx context.Context) (*ObstructionMap, error)
 
 	refFrame := m.MapReferenceFrame.String()
 
+	// encoding/json refuses to marshal NaN/Inf, so a single junk cell would
+	// fail the whole HTTP response instead of one pixel. Fold those into the
+	// dish's own "no data" sentinel (-1).
+	snr := make([]float32, len(m.Snr))
+	for i, v := range m.Snr {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			snr[i] = -1
+			continue
+		}
+		snr[i] = v
+	}
+
 	return &ObstructionMap{
 		NumRows:        m.NumRows,
 		NumCols:        m.NumCols,
-		SNR:            m.Snr,
-		MaxThetaDeg:    m.MaxThetaDeg,
+		SNR:            snr,
+		MaxThetaDeg:    float32(sanitizeFloat64(float64(m.MaxThetaDeg))),
 		ReferenceFrame: refFrame,
 	}, nil
 }
@@ -355,6 +382,20 @@ func clampUnit(v float64) float64 {
 	return v
 }
 
+// normalizeAzimuth wraps a heading into [0,360). The dish reports boresight
+// azimuth signed (-180..180); the panel's compass dial and the FRAME_UT map
+// rotation both want a plain compass bearing.
+func normalizeAzimuth(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	v = math.Mod(v, 360)
+	if v < 0 {
+		v += 360
+	}
+	return v
+}
+
 // clampNonNeg keeps a metric at 0 or above. Drop rate and prolonged-outage
 // counters can briefly emit small negative numbers from float jitter.
 func clampNonNeg(v float64) float64 {
@@ -373,8 +414,11 @@ func sanitizeStatus(s *StarlinkStatus) {
 	s.AvgProlongedObstructionDurationS = clampNonNeg(s.AvgProlongedObstructionDurationS)
 	s.AvgProlongedObstructionIntervalS = clampNonNeg(s.AvgProlongedObstructionIntervalS)
 	s.TiltAngleDeg = sanitizeFloat64(s.TiltAngleDeg)
-	s.BoresightAzimuthDeg = sanitizeFloat64(s.BoresightAzimuthDeg)
+	s.BoresightAzimuthDeg = normalizeAzimuth(s.BoresightAzimuthDeg)
 	s.BoresightElevationDeg = sanitizeFloat64(s.BoresightElevationDeg)
+	s.AttitudeUncertaintyDeg = clampNonNeg(s.AttitudeUncertaintyDeg)
+	s.DesiredBoresightAzimuthDeg = normalizeAzimuth(s.DesiredBoresightAzimuthDeg)
+	s.DesiredBoresightElevationDeg = sanitizeFloat64(s.DesiredBoresightElevationDeg)
 	s.SoftwareUpdateProgress = clampUnit(s.SoftwareUpdateProgress)
 	s.Latitude = sanitizeFloat64(s.Latitude)
 	s.Longitude = sanitizeFloat64(s.Longitude)
