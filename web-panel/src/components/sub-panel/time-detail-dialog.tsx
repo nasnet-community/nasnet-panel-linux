@@ -87,7 +87,7 @@ function PeakActivityChart({ data }: { data: SubPanelHourlyUsagePoint[] }) {
         <div className="space-y-2">
             <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                     Peak Activity
                 </span>
             </div>
@@ -117,11 +117,11 @@ function PeakActivityChart({ data }: { data: SubPanelHourlyUsagePoint[] }) {
             </div>
 
             <div className="flex justify-between">
-                <span className="text-[10px] text-muted-foreground/60">12a</span>
-                <span className="text-[10px] text-muted-foreground/60">11p</span>
+                <span className="text-xs text-muted-foreground">12a</span>
+                <span className="text-xs text-muted-foreground">11p</span>
             </div>
 
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
                 Peak: <span className="font-semibold text-foreground">{formatHourLabel(peakHour)}</span>
             </p>
         </div>
@@ -166,7 +166,7 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                                 <span className="text-2xl font-bold tracking-tight leading-none">
                                     {displayDays}
                                 </span>
-                                <span className="text-[9px] uppercase font-medium text-muted-foreground/80 tracking-wider mt-0.5">
+                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
                                     days
                                 </span>
                             </CircularProgress>
@@ -198,10 +198,10 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                                 />
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-[10px] text-muted-foreground/60">
+                                <span className="text-xs text-muted-foreground">
                                     {formatDate(data.start_date)}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground/60">
+                                <span className="text-xs text-muted-foreground">
                                     {formatDate(data.end_date)}
                                 </span>
                             </div>
@@ -211,7 +211,7 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                     {/* Metrics grid */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Elapsed
                             </p>
                             <p className="text-sm font-semibold">
@@ -219,7 +219,7 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                             </p>
                         </div>
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Remaining
                             </p>
                             <p className="text-sm font-semibold">
@@ -227,20 +227,20 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                             </p>
                         </div>
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Plan
                             </p>
                             <p className="text-sm font-semibold">{data.plan_name}</p>
                         </div>
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Duration
                             </p>
                             <p className="text-sm font-semibold">{data.plan_duration} days</p>
                         </div>
                         {data.created_at && (
                             <div className="col-span-2 space-y-0.5">
-                                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                                <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                     Created
                                 </p>
                                 <p className="text-sm font-semibold">

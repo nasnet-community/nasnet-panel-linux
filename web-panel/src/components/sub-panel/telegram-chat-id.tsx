@@ -128,16 +128,16 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <BsTelegram className="w-4 h-4 text-sky-400" />
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                             Telegram Chat ID
-                        </h3>
+                        </h2>
                     </div>
                     {isSet && !isEditing && (
                         <div className="flex items-center gap-1">
                             <motion.button
                                 type="button"
                                 whileTap={{ scale: 0.95 }}
-                                className="flex items-center gap-1 h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors"
+                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                 onClick={handleEdit}
                             >
                                 <Pencil className="w-3 h-3" />
@@ -147,7 +147,7 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                 type="button"
                                 whileTap={{ scale: 0.95 }}
                                 disabled={mutation.isPending}
-                                className="flex items-center gap-1 h-6 px-2 text-[10px] text-destructive hover:text-destructive/80 rounded-md hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs text-destructive hover:text-destructive/80 rounded-md hover:bg-destructive/10 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                 onClick={handleClear}
                             >
                                 {mutation.isPending ? (
@@ -173,7 +173,7 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                 href={`https://t.me/${botUsername}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 py-1.5 px-2 text-xs text-sky-400 hover:text-sky-300 transition-colors rounded-md hover:bg-muted/50 w-fit"
+                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs font-medium text-sky-700 dark:text-sky-400 hover:text-sky-500 transition-colors rounded-md hover:bg-muted/50 w-fit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                             >
                                 <BsTelegram className="w-3.5 h-3.5" />
                                 <span>@{botUsername}</span>
@@ -198,14 +198,14 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                         href={`https://t.me/${botUsername}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="flex items-center gap-1.5 py-1.5 px-2 text-xs text-sky-400 hover:text-sky-300 transition-colors rounded-md hover:bg-muted/50 w-fit"
+                                        className="flex items-center gap-1.5 min-h-11 px-2 text-xs font-medium text-sky-700 dark:text-sky-400 hover:text-sky-500 transition-colors rounded-md hover:bg-muted/50 w-fit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                     >
                                         <BsTelegram className="w-3.5 h-3.5" />
                                         <span>@{botUsername}</span>
                                         <ExternalLink className="w-3 h-3" />
                                     </a>
                                 )}
-                                <p className="text-[11px] text-muted-foreground/60">
+                                <p className="text-xs text-muted-foreground">
                                     Notifications go to your Telegram. Set a specific Chat ID to override.
                                 </p>
                             </>
@@ -230,7 +230,7 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                         Connect Telegram
                                     </motion.button>
                                 ) : (
-                                    <p className="text-[11px] text-muted-foreground/60">Telegram bot is not configured.</p>
+                                    <p className="text-xs text-muted-foreground">Telegram bot is not configured.</p>
                                 )}
                             </>
                         )}
@@ -242,7 +242,7 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                     setShowManual(true)
                                     setTimeout(() => inputRef.current?.focus(), 0)
                                 }}
-                                className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                                className="-ml-2 min-h-11 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                             >
                                 › {connectedViaAccount ? "set a specific Chat ID" : "enter Chat ID manually"}
                             </button>

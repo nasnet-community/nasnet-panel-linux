@@ -105,7 +105,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                 </div>
                 <div
                     className={cn(
-                        "text-[10px] mt-1 flex items-center gap-1",
+                        "text-xs mt-1 flex items-center gap-1",
                         mine ? "text-primary-foreground/70" : "text-muted-foreground",
                     )}
                 >

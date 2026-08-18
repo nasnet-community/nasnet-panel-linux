@@ -9,7 +9,9 @@ const badgeVariants = cva(
             variant: {
                 default: "bg-primary/10 text-primary border border-primary/20",
                 secondary: "bg-secondary text-secondary-foreground",
-                success: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20",
+                // emerald-500 only clears AA on a dark surface — light mode needs a
+                // darker ink against the same tinted background.
+                success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20",
                 warning: "bg-amber-500/10 text-amber-500 border border-amber-500/20",
                 danger: "bg-red-500/10 text-red-500 border border-red-500/20",
                 outline: "text-foreground border border-border",

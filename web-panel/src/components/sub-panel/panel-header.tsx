@@ -33,7 +33,7 @@ export function PanelHeader() {
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 relative"
+                    className="size-11 relative -mr-2"
                     onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 >
                     <motion.div

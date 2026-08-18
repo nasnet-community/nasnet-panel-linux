@@ -77,7 +77,7 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
                 <CardContent className="p-3.5 sm:p-4 md:p-5">
                     <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-4 h-4 text-emerald-400" />
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h3>
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h2>
                     </div>
                     <p className="text-xs text-muted-foreground">Activity data unavailable right now.</p>
                 </CardContent>
@@ -90,7 +90,7 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
                 <CardContent className="p-3.5 sm:p-4 md:p-5">
                     <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-4 h-4 text-emerald-400" />
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h3>
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h2>
                     </div>
                     <p className="text-xs text-muted-foreground">No activity recorded yet — your hourly usage pattern will appear here once you connect.</p>
                 </CardContent>
@@ -101,14 +101,16 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
     return (
         <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
             <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-3">
-                <div className="flex items-center justify-between">
+                {/* Stacked on phones — at 12px the summary no longer fits beside the
+                    title, and wrapping the title mid-phrase reads worse. */}
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-emerald-400" />
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                             Activity Pattern
-                        </h3>
+                        </h2>
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                         {formatNumber(totalConnections)} connections{peakHour && HOUR_LABELS[peakHour.hour] ? `, peak at ${HOUR_LABELS[peakHour.hour]}` : ""}
                     </p>
                 </div>
@@ -124,7 +126,7 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
                             />
                         ))}
                     </div>
-                    <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
+                    <div className="flex justify-between text-xs text-muted-foreground px-0.5">
                         <span>12am</span>
                         <span>6am</span>
                         <span>12pm</span>
@@ -134,7 +136,7 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
                 </div>
 
                 {/* Legend */}
-                <div className="flex items-center justify-end gap-1.5 text-[9px] text-muted-foreground">
+                <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
                     <span>Less</span>
                     <div className="flex gap-0.5">
                         <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-muted/30" />

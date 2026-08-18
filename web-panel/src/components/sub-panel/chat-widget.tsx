@@ -273,7 +273,7 @@ export function ChatWidget({ uuid }: ChatWidgetProps) {
                         >
                             <MessageCircle className="h-6 w-6" />
                             {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-medium flex items-center justify-center">
+                                <span className="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-xs font-medium flex items-center justify-center">
                                     {unreadCount > 99 ? "99+" : unreadCount}
                                 </span>
                             )}
@@ -305,13 +305,13 @@ export function ChatWidget({ uuid }: ChatWidgetProps) {
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                                 <h3 className="font-semibold text-sm truncate">Support Chat</h3>
                                 {adminOnline && (
-                                    <span className="hidden sm:flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400 shrink-0">
+                                    <span className="hidden sm:flex items-center gap-1 text-xs text-green-600 dark:text-green-400 shrink-0">
                                         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
                                         online
                                     </span>
                                 )}
                                 {ws.status !== "connected" && (
-                                    <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground shrink-0">
+                                    <span className="hidden sm:inline text-xs px-1.5 py-0.5 rounded-full border border-border text-muted-foreground shrink-0">
                                         {ws.status === "connecting" ? "Connecting..." : "Reconnecting..."}
                                     </span>
                                 )}
@@ -464,7 +464,7 @@ export function ChatWidget({ uuid }: ChatWidgetProps) {
                             </Button>
                         </div>
                         {input.length > 1800 && (
-                            <div className="px-3 pb-1 text-[10px] text-muted-foreground text-right">
+                            <div className="px-3 pb-1 text-xs text-muted-foreground text-right">
                                 {input.length}/2000
                             </div>
                         )}

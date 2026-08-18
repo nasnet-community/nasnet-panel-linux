@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { Copy, Check, QrCode, ArrowUpDown, Smartphone, ServerOff, Info } from "lucide-react"
+import { Copy, Check, QrCode, Smartphone, ServerOff, Info } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { motion, AnimatePresence } from "framer-motion"
@@ -9,6 +8,41 @@ import { cn, copyToClipboard, formatRelativeTime } from "@/lib/utils"
 import { QRDialog } from "./qr-dialog"
 import type { SubPanelServer } from "@/lib/types/sub-panel"
 import { ImportToAppSheet } from "./import-to-app-sheet"
+
+const FOCUS_RING =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-inset"
+
+/**
+ * Keeps a 32px-tall control tappable at 44px: an invisible overlay extends the
+ * hit area 6px past each edge without changing how big the button looks. The
+ * row's own padding absorbs the overflow.
+ */
+const HIT_SLOP =
+    "relative before:absolute before:content-[''] before:inset-x-0 before:-top-1.5 before:-bottom-1.5"
+
+/**
+ * Square version for 32px icon buttons: 6px on every side takes them to 44×44.
+ * Pair it with `gap-3` so neighbouring hit areas tile edge-to-edge instead of
+ * overlapping and stealing each other's taps.
+ */
+const HIT_SLOP_SQUARE = "relative before:absolute before:content-[''] before:-inset-1.5"
+
+/**
+ * Remark templates decorate the node label for VPN clients — "🇩🇪 Berlin | 📊 12 GB
+ * left | ⏳ 9d". The panel already shows the flag, usage and expiry in their own
+ * columns, so a row titled with the raw remark repeats them and doubles the flag.
+ * Prefer the plain node name; fall back to stripping the decoration.
+ */
+function cleanServerName(server: SubPanelServer): string {
+    if (server.node_name) return server.node_name
+    const head = (server.name || "").split("|")[0]
+    return (
+        head
+            .replace(/^[\s\u{1F1E6}-\u{1F1FF}‍️\p{Extended_Pictographic}]+/u, "")
+            .replace(/[\s|\-–—]+$/u, "")
+            .trim() || server.address
+    )
+}
 
 const listContainerVariants = {
     hidden: {},
@@ -57,6 +91,15 @@ function CopyIconMorph({ copied }: { copied: boolean }) {
     )
 }
 
+/** Dot-separated technical detail. Skips the "none" transport/security values. */
+function metaLine(server: SubPanelServer): string {
+    const parts = [server.protocol]
+    if (server.network && server.network !== "none") parts.push(server.network)
+    if (server.security && server.security !== "none") parts.push(server.security)
+    if (server.last_activity_at) parts.push(formatRelativeTime(server.last_activity_at))
+    return parts.join(" · ")
+}
+
 function ServerNode({ server, isFirst }: { server: SubPanelServer; isFirst: boolean }) {
     const [copied, setCopied] = useState(false)
     const [qrOpen, setQrOpen] = useState(false)
@@ -68,123 +111,80 @@ function ServerNode({ server, isFirst }: { server: SubPanelServer; isFirst: bool
             return
         }
         setCopied(true)
-        toast.success("Server link copied", { description: server.name })
+        toast.success("Server link copied", { description: cleanServerName(server) })
         setTimeout(() => setCopied(false), 2000)
     }
 
-    const hasTransport = server.network && server.network !== "none"
-    const hasSecurity = server.security && server.security !== "none"
+    const name = cleanServerName(server)
 
     return (
         <>
-            <motion.div
+            <motion.li
                 variants={nodeItemVariants}
                 className={cn(
-                    "transition-colors",
-                    !isFirst && "border-t border-border/50"
+                    "flex items-center gap-3 px-3.5 md:px-4 py-2.5 transition-colors hover:bg-muted/20",
+                    !isFirst && "border-t border-border/40"
                 )}
             >
-                <div className="p-3.5 md:p-4 space-y-2.5">
-                    {/* Header: flag + name (with inline online-dot) | status badge */}
-                    <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                            <span
-                                className="text-xl md:text-2xl leading-none shrink-0 mt-0.5"
-                                title={server.country_code}
-                            >
-                                {server.flag}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-sm md:text-base font-semibold tracking-tight truncate">
-                                        {server.name || server.address}
-                                    </span>
-                                    {server.is_online && (
-                                        <span
-                                            className="relative inline-flex h-2 w-2 shrink-0"
-                                            title="Online"
-                                        >
-                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                                    <Badge
-                                        variant="secondary"
-                                        className="text-[10px] md:text-xs px-1.5 md:px-2 py-0 font-medium"
-                                    >
-                                        {server.protocol}
-                                    </Badge>
-                                    {hasTransport && (
-                                        <Badge
-                                            variant="outline"
-                                            className="text-[10px] md:text-xs px-1.5 md:px-2 py-0"
-                                        >
-                                            {server.network}
-                                        </Badge>
-                                    )}
-                                    {hasSecurity && (
-                                        <Badge
-                                            variant="outline"
-                                            className="text-[10px] md:text-xs px-1.5 md:px-2 py-0"
-                                        >
-                                            {server.security}
-                                        </Badge>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                        <Badge
-                            variant={server.is_online ? "success" : "outline"}
-                            className={cn(
-                                "text-[10px] md:text-xs font-semibold mt-0.5 shrink-0",
-                                !server.is_online && "text-muted-foreground border-zinc-500/20"
-                            )}
-                        >
-                            {server.is_online ? "Online" : "Offline"}
-                        </Badge>
-                    </div>
+                <span className="text-lg leading-none shrink-0" title={server.country_code} aria-hidden>
+                    {server.flag}
+                </span>
 
-                    {/* Data usage row */}
-                    <div className="flex items-center gap-3 bg-muted/40 rounded-lg px-2.5 py-2">
-                        <ArrowUpDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                            <span className="text-base md:text-lg font-semibold tracking-tight truncate">
-                                {server.data_used_display || "0 B"}
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-sm font-semibold tracking-tight truncate">{name}</span>
+                            <span className="relative flex h-2 w-2 shrink-0 self-center">
+                                {server.is_online && (
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                )}
+                                <span className={cn(
+                                    "relative inline-flex h-2 w-2 rounded-full",
+                                    server.is_online ? "bg-emerald-500" : "bg-muted-foreground/50"
+                                )} />
                             </span>
-                            <span className="text-xs text-muted-foreground/80 shrink-0">used</span>
-                        </div>
-                        {server.last_activity_at && (
-                            <span className="text-[10px] md:text-xs text-muted-foreground/70 ml-auto shrink-0">
-                                {formatRelativeTime(server.last_activity_at)}
-                            </span>
-                        )}
+                            <span className="sr-only">{server.is_online ? "Online" : "Offline"}</span>
+                        </span>
+                        <span className="ml-auto shrink-0 text-xs font-medium tabular-nums">
+                            {server.data_used_display || "0 B"}
+                        </span>
                     </div>
+                    <p className="text-xs text-muted-foreground truncate">{metaLine(server)}</p>
                 </div>
 
-                {/* Action buttons — inset within card */}
-                <div className="flex border-t border-border/50">
+                {/* Icon actions: 32px of ink, 44px of tap. Repeating a full-width
+                    "Copy Link / QR Code" bar under every server tripled the card's
+                    height for two secondary actions. */}
+                <div className="flex items-center gap-3 shrink-0">
                     <button
+                        type="button"
                         onClick={handleCopy}
-                        className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 py-2 md:py-2.5 text-xs md:text-sm font-medium text-foreground/60 hover:text-foreground bg-muted/10 hover:bg-muted/40 transition-colors"
+                        aria-label={`Copy link for ${name}`}
+                        title="Copy link"
+                        className={cn(
+                            "grid place-items-center size-8 rounded-md text-muted-foreground",
+                            "hover:text-foreground hover:bg-muted/60 transition-colors",
+                            HIT_SLOP_SQUARE, FOCUS_RING
+                        )}
                     >
                         <CopyIconMorph copied={copied} />
-                        <span className={cn(copied && "text-emerald-500")}>
-                            {copied ? "Copied!" : "Copy Link"}
-                        </span>
                     </button>
-                    <div className="w-px bg-border/50" />
                     <motion.button
+                        type="button"
                         whileTap={{ scale: 0.92 }}
                         onClick={() => setQrOpen(true)}
-                        className="flex-1 flex items-center justify-center gap-1.5 md:gap-2 py-2 md:py-2.5 text-xs md:text-sm font-medium text-foreground/60 hover:text-foreground bg-muted/10 hover:bg-muted/40 transition-colors"
+                        aria-label={`Show QR code for ${name}`}
+                        title="QR code"
+                        className={cn(
+                            "grid place-items-center size-8 rounded-md text-muted-foreground",
+                            "hover:text-foreground hover:bg-muted/60 transition-colors",
+                            HIT_SLOP_SQUARE, FOCUS_RING
+                        )}
                     >
-                        <QrCode className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                        <span>QR Code</span>
+                        <QrCode className="h-4 w-4" />
                     </motion.button>
                 </div>
-            </motion.div>
+            </motion.li>
 
             <QRDialog open={qrOpen} onOpenChange={setQrOpen} value={server.link} />
         </>
@@ -193,10 +193,10 @@ function ServerNode({ server, isFirst }: { server: SubPanelServer; isFirst: bool
 
 function InfoRow({ text, isFirst }: { text: string; isFirst: boolean }) {
     return (
-        <div className={cn("flex items-start gap-2.5 p-3.5 md:p-4", !isFirst && "border-t border-border/50")}>
-            <Info className="h-4 w-4 shrink-0 mt-0.5 text-sky-400" aria-hidden />
+        <li className={cn("flex items-start gap-2.5 px-3.5 md:px-4 py-3", !isFirst && "border-t border-border/40")}>
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" aria-hidden />
             <p className="text-sm text-muted-foreground">{text}</p>
-        </div>
+        </li>
     )
 }
 
@@ -236,7 +236,7 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                         <ServerOff className="h-5 w-5 text-amber-500" aria-hidden />
                     </div>
                     <div className="space-y-1">
-                        <h3 className="text-sm md:text-base font-semibold">No servers linked</h3>
+                        <h2 className="text-sm md:text-base font-semibold">No servers linked</h2>
                         <p className="text-xs md:text-sm text-muted-foreground max-w-sm">
                             This subscription isn't linked to any active servers yet, so there are no connection
                             configs to import. Please contact support to have servers assigned.
@@ -253,16 +253,16 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                 <CardContent className="p-0">
                     {/* Section header inside card */}
                     <div className="flex items-center justify-between gap-2 px-3.5 md:px-4 pt-3 md:pt-3.5 pb-2 md:pb-2.5">
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                             Servers ({realServers.length})
-                        </h3>
+                        </h2>
                         {realServers.length > 0 && (
                         <div className="flex items-center gap-1">
                             <motion.div whileTap={{ scale: 0.95 }}>
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 md:h-8 px-2.5 md:px-3 text-xs md:text-sm text-muted-foreground hover:text-foreground gap-1.5"
+                                    className={cn("h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1.5", HIT_SLOP)}
                                     onClick={handleCopyAll}
                                 >
                                     <CopyIconMorph copied={allCopied} />
@@ -271,14 +271,21 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                                     </span>
                                 </Button>
                             </motion.div>
+                            {/* Getting the config into a VPN app is the job customers
+                                come here for — keep it in the header row, but tinted so
+                                it reads as the action rather than another ghost link. */}
                             <motion.div whileTap={{ scale: 0.95 }}>
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 md:h-8 px-2.5 md:px-3 text-xs md:text-sm text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+                                    className={cn(
+                                        "h-8 px-2.5 text-xs font-semibold gap-1.5 text-emerald-700 dark:text-emerald-400",
+                                        "bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-800 dark:hover:text-emerald-300",
+                                        HIT_SLOP
+                                    )}
                                     onClick={() => setImportSheetOpen(true)}
                                 >
-                                    <Smartphone className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                                    <Smartphone className="h-3.5 w-3.5" />
                                     Import to App
                                 </Button>
                             </motion.div>
@@ -286,11 +293,13 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                         )}
                     </div>
 
-                    {/* Stacked nodes (each separated by its own divider) */}
-                    <motion.div
+                    {/* One hairline-separated row per server — it is a list, so mark
+                        it up as one. */}
+                    <motion.ul
                         variants={listContainerVariants}
                         initial="hidden"
                         animate="visible"
+                        className="border-t border-border/40"
                     >
                         {infoRows.map((s, i) => (
                             <InfoRow key={`info-${i}`} text={s.name} isFirst={i === 0} />
@@ -302,7 +311,7 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                                 isFirst={i === 0 && infoRows.length === 0}
                             />
                         ))}
-                    </motion.div>
+                    </motion.ul>
                 </CardContent>
             </Card>
 

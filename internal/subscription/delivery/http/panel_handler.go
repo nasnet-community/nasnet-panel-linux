@@ -24,7 +24,11 @@ import (
 
 // panelServer is a single server entry in the panel response.
 type panelServer struct {
-	Name            string     `json:"name"`
+	Name string `json:"name"`
+	// NodeName is the plain node label ("Frankfurt"), free of the emoji/data
+	// decoration the remark template adds. The panel titles rows with this;
+	// Name stays as-is because VPN clients show it verbatim.
+	NodeName        string     `json:"node_name"`
 	CountryCode     string     `json:"country_code"`
 	Flag            string     `json:"flag"`
 	Protocol        string     `json:"protocol"`
@@ -532,6 +536,7 @@ func (h *Handler) buildPanelServersWithStatus(ctx context.Context, sub *domain.S
 
 			servers = append(servers, panelServer{
 				Name:            displayName,
+				NodeName:        d.NodeName,
 				CountryCode:     d.CountryCode,
 				Flag:            flag,
 				Protocol:        strings.ToUpper(d.Protocol),

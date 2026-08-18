@@ -89,7 +89,7 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                     {/* Metrics grid */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Remaining
                             </p>
                             <p className="text-sm font-semibold">
@@ -98,7 +98,7 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                         </div>
 
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Daily Avg
                             </p>
                             {isLoading ? (
@@ -113,7 +113,7 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                         </div>
 
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Trend
                             </p>
                             {isLoading ? (
@@ -131,7 +131,7 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                         </div>
 
                         <div className="space-y-0.5">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Data Lasts Until
                             </p>
                             {isLoading ? (
@@ -152,7 +152,7 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                     {/* Server breakdown */}
                     {servers.length > 0 && (
                         <div className="space-y-2">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                                 Usage by Server
                             </p>
                             <div className="space-y-2">

@@ -68,7 +68,10 @@ export interface SubPanelHourlyUsagePoint {
 }
 
 export interface SubPanelServer {
+    /** Client-facing remark — may carry emoji/usage decoration from the template. */
     name: string
+    /** Plain node label. Absent on older backends. */
+    node_name?: string
     country_code: string
     flag: string
     protocol: string
