@@ -42,16 +42,18 @@ type Threshold struct {
 // channel overrides (phase B); v1 leaves it empty and relies on the
 // global notification settings to decide routing.
 type Rule struct {
-	ID          uint       `gorm:"primaryKey" json:"id"`
-	Name        string     `gorm:"size:200;not null" json:"name"`
-	RuleType    RuleType   `gorm:"type:varchar(64);not null;index" json:"rule_type"`
-	Scope       ScopeKind  `gorm:"type:varchar(32);not null;default:'global'" json:"scope"`
-	ScopeValue  string     `gorm:"type:text" json:"scope_value,omitempty"` // JSON-encoded scope payload
-	Threshold   Threshold  `gorm:"serializer:json;type:jsonb" json:"threshold"`
-	CooldownSec int        `gorm:"default:900" json:"cooldown_sec"`
-	Enabled     bool       `gorm:"default:false;index" json:"enabled"`
-	Sinks       string     `gorm:"type:text" json:"sinks,omitempty"` // JSON — reserved, phase B
-	Description string     `gorm:"size:500" json:"description"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"size:200;not null" json:"name"`
+	RuleType    RuleType  `gorm:"type:varchar(64);not null;index" json:"rule_type"`
+	Scope       ScopeKind `gorm:"type:varchar(32);not null;default:'global'" json:"scope"`
+	ScopeValue  string    `gorm:"type:text" json:"scope_value,omitempty"` // JSON-encoded scope payload
+	Threshold   Threshold `gorm:"serializer:json;type:jsonb" json:"threshold"`
+	CooldownSec int       `gorm:"default:900" json:"cooldown_sec"`
+	Enabled     bool      `gorm:"default:false;index" json:"enabled"`
+	Sinks       string    `gorm:"type:text" json:"sinks,omitempty"` // JSON — reserved, phase B
+	// Free text straight from the rule form, length-unchecked at the API, so
+	// it cannot carry a varchar limit into PostgreSQL.
+	Description string     `gorm:"type:text" json:"description"`
 	LastFiredAt *time.Time `json:"last_fired_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
