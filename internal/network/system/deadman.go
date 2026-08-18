@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,7 +22,12 @@ type Marker struct {
 	PlanID       uint   `json:"plan_id"`
 	Snapshot     string `json:"snapshot"`
 	DeadlineUnix int64  `json:"deadline_unix"`
+	// Failed restores. Absent in an older marker, which reads as zero.
+	Attempts int `json:"attempts,omitempty"`
 }
+
+// A snapshot that cannot be restored fails the same way every ten seconds.
+const MaxRollbackAttempts = 3
 
 func (m Marker) Expired(now time.Time) bool { return now.Unix() > m.DeadlineUnix }
 
@@ -192,6 +198,26 @@ func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*d
 }
 
 // Confirm disarms the dead-man.
+// restoreFailed disarms once the budget is spent, or the timer retries forever.
+func (a *Applier) restoreFailed(ctx context.Context, m *Marker, cause error) error {
+	m.Attempts++
+	if m.Attempts < MaxRollbackAttempts {
+		if werr := WriteMarker(a.Paths, *m); werr != nil {
+			return fmt.Errorf("restore: %w (recording the attempt also failed: %v)", cause, werr)
+		}
+		return fmt.Errorf("restore: %w (attempt %d of %d)", cause, m.Attempts, MaxRollbackAttempts)
+	}
+
+	if derr := DeleteMarker(a.Paths); derr != nil {
+		return fmt.Errorf("restore: %w (disarming also failed: %v)", cause, derr)
+	}
+	msg := fmt.Sprintf("restore failed %d times, giving up: %v", m.Attempts, cause)
+	if perr := a.Repo.SetPhase(ctx, m.PlanID, domain.PhaseFailed, msg); perr != nil {
+		return fmt.Errorf("%s (recording it also failed: %v)", msg, perr)
+	}
+	return errors.New(msg)
+}
+
 func (a *Applier) Confirm(ctx context.Context, planID uint) error {
 	m, err := ReadMarker(a.Paths)
 	if err != nil {
@@ -224,11 +250,11 @@ func (a *Applier) Rollback(ctx context.Context, ifExpired bool) (bool, error) {
 		return false, fmt.Errorf("load snapshot %s: %w", m.Snapshot, err)
 	}
 	if err := a.Snap.Restore(ctx, snap); err != nil {
-		return false, fmt.Errorf("restore: %w", err)
+		return false, a.restoreFailed(ctx, m, err)
 	}
 	if a.Reload != nil {
 		if err := a.Reload(ctx); err != nil {
-			return false, fmt.Errorf("networkctl reload after restore: %w", err)
+			return false, a.restoreFailed(ctx, m, err)
 		}
 	}
 	if err := DeleteMarker(a.Paths); err != nil {

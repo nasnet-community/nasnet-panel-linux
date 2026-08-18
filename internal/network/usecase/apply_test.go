@@ -225,6 +225,49 @@ func TestRollback_IfExpiredRevertsAnExpiredMarker(t *testing.T) {
 	}
 }
 
+// A snapshot that will not restore used to keep the marker armed forever.
+func TestRollback_GivesUpAfterRepeatedFailures(t *testing.T) {
+	a, repo, p := newApplier(t)
+	a.Snap.CaptureVPN = func(context.Context) (*domain.VPNProfile, error) {
+		return &domain.VPNProfile{ID: 13, Name: "berlin", Active: true, Config: `{"private_key":"k"}`}, nil
+	}
+	a.Snap.RestoreVPN = func(context.Context, *domain.VPNProfile) error {
+		return errors.New("the stored config will not decode")
+	}
+
+	rec, err := a.Apply(context.Background(), system.Plan{Ops: []system.Op{
+		{Desc: "noop", Do: func(context.Context) error { return nil }},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Now = func() time.Time { return time.Now().Add(2 * system.ConfirmWindow) }
+
+	for i := 1; i < system.MaxRollbackAttempts; i++ {
+		if _, err := a.Rollback(context.Background(), true); err == nil {
+			t.Fatalf("attempt %d reported success", i)
+		}
+		m, _ := system.ReadMarker(p)
+		if m == nil {
+			t.Fatalf("disarmed after %d attempts, want %d", i, system.MaxRollbackAttempts)
+		}
+		if m.Attempts != i {
+			t.Errorf("attempts = %d, want %d", m.Attempts, i)
+		}
+	}
+
+	if _, err := a.Rollback(context.Background(), true); err == nil {
+		t.Fatal("the last attempt reported success")
+	}
+	if m, _ := system.ReadMarker(p); m != nil {
+		t.Error("still armed after the budget ran out, so the timer keeps replaying it")
+	}
+	latest, _ := repo.Latest(context.Background())
+	if latest.ID != rec.ID || latest.Phase != domain.PhaseFailed {
+		t.Errorf("phase = %q, want failed", latest.Phase)
+	}
+}
+
 // An explicit rollback ignores the deadline.
 func TestRollback_ExplicitIgnoresTheDeadline(t *testing.T) {
 	a, _, _ := newApplier(t)
