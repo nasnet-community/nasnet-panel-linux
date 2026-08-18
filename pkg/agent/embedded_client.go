@@ -703,6 +703,12 @@ func (c *EmbeddedClient) GetStarlinkStatus(ctx context.Context, dishAddr string)
 		Altitude:                         resp.Altitude,
 		IsSnrAboveNoiseFloor:             resp.IsSnrAboveNoiseFloor,
 		IsSnrPersistentlyLow:             resp.IsSnrPersistentlyLow,
+		AttitudeUncertaintyDeg:           float64(resp.AttitudeUncertaintyDeg),
+		AttitudeEstimationState:          resp.AttitudeEstimationState,
+		DesiredBoresightAzimuthDeg:       float64(resp.DesiredBoresightAzimuthDeg),
+		DesiredBoresightElevationDeg:     float64(resp.DesiredBoresightElevationDeg),
+		ActuatorState:                    resp.ActuatorState,
+		HasActuators:                     resp.HasActuators,
 	}, nil
 }
 

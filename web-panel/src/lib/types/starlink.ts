@@ -30,6 +30,12 @@ export interface StarlinkStatus {
     tilt_angle_deg: number
     boresight_azimuth_deg: number
     boresight_elevation_deg: number
+    attitude_uncertainty_deg: number
+    attitude_estimation_state: string
+    desired_boresight_azimuth_deg: number
+    desired_boresight_elevation_deg: number
+    actuator_state: string
+    has_actuators: string
     software_update_state: string
     software_update_progress: number
     outage_cause: string

@@ -18,6 +18,7 @@ import { StarlinkSignalDetail } from "./starlink-signal-detail"
 import { StarlinkObstructionDetail } from "./starlink-obstruction-detail"
 import { StarlinkMetricDetail } from "./starlink-metric-detail"
 import { StarlinkAlerts } from "./starlink-alerts"
+import { StarlinkAlignment } from "./starlink-alignment"
 import {
     type DrawerType, type TimeRange,
     formatMbps, latencyColor, dropRateColor,
@@ -56,7 +57,7 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
     const queryClient = useQueryClient()
 
     const { data: status, isLoading: statusLoading, isError: statusError, error: statusErr, refetch: refetchStatus, isFetching: statusFetching, dataUpdatedAt: statusUpdatedAt } = useStarlinkStatus(nodeId, isOnline)
-    const { data: obstructionMap } = useStarlinkObstructionMap(nodeId, isOnline)
+    const { data: obstructionMap, isLoading: mapLoading, isError: mapError } = useStarlinkObstructionMap(nodeId, isOnline)
     const { data: history, isLoading: historyLoading } = useStarlinkHistory(nodeId, isOnline, timeRange, config.limit, config.refetchInterval)
 
     // Backend returns oldest→newest already; chart left-to-right matches.
@@ -176,6 +177,11 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
                     </motion.div>
                 </motion.div>
 
+                {/* Alignment — dish rotation & tilt */}
+                <motion.div variants={cardVar}>
+                    <StarlinkAlignment status={status} />
+                </motion.div>
+
                 {/* Performance Charts */}
                 <motion.div variants={cardVar}>
                     <StarlinkCharts data={history || []} isLoading={historyLoading} compact={isMobile} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
@@ -185,7 +191,21 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
             {/* Detail Drawer */}
             <StarlinkDetailDrawer isOpen={activeDrawer !== null} onClose={() => setActiveDrawer(null)} title={activeDrawer ? drawerTitles[activeDrawer] : ""}>
                 {activeDrawer === "signal" && <StarlinkSignalDetail status={status} />}
-                {activeDrawer === "obstruction" && obstructionMap && <StarlinkObstructionDetail status={status} mapData={obstructionMap} />}
+                {activeDrawer === "obstruction" && (
+                    obstructionMap
+                        ? <StarlinkObstructionDetail status={status} mapData={obstructionMap} />
+                        : (
+                            // Without this the drawer opened completely blank while
+                            // the (60s-interval) map query was still in flight.
+                            <div className="flex items-center justify-center h-[280px] text-sm text-muted-foreground border-2 border-dashed border-white/5 rounded-2xl px-6 text-center">
+                                {mapError
+                                    ? "Failed to load the obstruction map."
+                                    : mapLoading
+                                    ? "Loading obstruction map…"
+                                    : "No obstruction map available."}
+                            </div>
+                        )
+                )}
                 {(activeDrawer === "latency" || activeDrawer === "dropRate" || activeDrawer === "download" || activeDrawer === "upload") && (
                     <StarlinkMetricDetail metricType={activeDrawer} data={history || []} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
                 )}

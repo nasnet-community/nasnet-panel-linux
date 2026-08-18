@@ -84,6 +84,61 @@ export function snrToColor(snr: number | null): string {
     return "#14b8a6"
 }
 
+// ─── Alignment Helpers ──────────────────────────────────────────────
+
+// The attitude filter must be converged before the reported boresight
+// azimuth is trustworthy — that's what gates rotating a dish-relative
+// (FRAME_UT) obstruction map into compass coordinates.
+export function isAttitudeConverged(state: string | undefined): boolean {
+    return state === "FILTER_CONVERGED"
+}
+
+// An agent older than the extended-alignment fields sends zeroes and an empty
+// attitude state. A current agent always sends an enum name (the proto zero
+// value stringifies to "FILTER_RESET"), so a non-empty state is the signal
+// that uncertainty / desired-heading values are real rather than absent.
+export function hasAlignmentTelemetry(status: { attitude_estimation_state?: string }): boolean {
+    return !!status.attitude_estimation_state
+}
+
+export function attitudeStateLabel(state: string | undefined): string {
+    switch (state) {
+        case "FILTER_CONVERGED": return "Converged"
+        case "FILTER_UNCONVERGED": return "Converging"
+        case "FILTER_RESET": return "Reset"
+        case "FILTER_FAULTED": return "Faulted"
+        case "FILTER_INVALID": return "Invalid"
+        default: return "Unknown"
+    }
+}
+
+export function attitudeStateTone(state: string | undefined): "emerald" | "amber" | "red" {
+    switch (state) {
+        case "FILTER_CONVERGED": return "emerald"
+        case "FILTER_UNCONVERGED":
+        case "FILTER_RESET": return "amber"
+        default: return "red"
+    }
+}
+
+// ACTUATOR_STATE_IDLE → "Idle"
+export function actuatorStateLabel(state: string | undefined): string {
+    if (!state) return "Unknown"
+    const bare = state.replace(/^ACTUATOR_STATE_/, "").replace(/_/g, " ").toLowerCase()
+    return bare.charAt(0).toUpperCase() + bare.slice(1)
+}
+
+// Compass bearing → nearest 16-point cardinal name.
+const COMPASS_POINTS = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+]
+
+export function bearingToCardinal(deg: number): string {
+    const norm = ((deg % 360) + 360) % 360
+    return COMPASS_POINTS[Math.round(norm / 22.5) % 16]
+}
+
 // ─── Alert Helpers ──────────────────────────────────────────────────
 
 export function getActiveAlerts(status: StarlinkStatus): AlertInfo[] {

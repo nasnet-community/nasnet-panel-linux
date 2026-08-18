@@ -82,6 +82,12 @@ func (s *Server) GetStarlinkStatus(ctx context.Context, req *pb.StarlinkRequest)
 		Altitude:                         status.Altitude,
 		IsSnrAboveNoiseFloor:             status.IsSnrAboveNoiseFloor,
 		IsSnrPersistentlyLow:             status.IsSnrPersistentlyLow,
+		AttitudeUncertaintyDeg:           float32(status.AttitudeUncertaintyDeg),
+		AttitudeEstimationState:          status.AttitudeEstimationState,
+		DesiredBoresightAzimuthDeg:       float32(status.DesiredBoresightAzimuthDeg),
+		DesiredBoresightElevationDeg:     float32(status.DesiredBoresightElevationDeg),
+		ActuatorState:                    status.ActuatorState,
+		HasActuators:                     status.HasActuators,
 	}, nil
 }
 
