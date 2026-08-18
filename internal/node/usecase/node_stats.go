@@ -503,6 +503,9 @@ const (
 	// accessLogSyncInterval: summaries are hourly buckets; 60s keeps the
 	// panel fresh at a fraction of the old per-tick fetch rate.
 	accessLogSyncInterval = 60 * time.Second
+	// heartbeatStatusFreshness: heartbeat pongs arrive every ~2s; a status
+	// older than this means the stream is struggling — ask the agent then.
+	heartbeatStatusFreshness = 10 * time.Second
 )
 
 // statsCadenceDue reports whether interval has elapsed since the node's last
@@ -612,11 +615,26 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		loadAvg15 = agentSysStats.LoadAvg15
 	}
 
-	// B. Xray Status & Version
-	status, err := client.GetStatus(ctx)
-	if err != nil {
-		log.Debugf("Failed to get xray status: %v", err)
-	} else {
+	// B. Xray Status & Version. The heartbeat pong already carries a full
+	// NodeStatus every couple of seconds — reuse it while it is fresh
+	// instead of asking the agent for the same thing again. A status older
+	// than heartbeatStatusFreshness means the stream is struggling, so fall
+	// back to the RPC.
+	var status *pb.NodeStatus
+	if u.heartbeatMgr != nil {
+		if st, at, ok := u.heartbeatMgr.GetLastStatus(node.ID); ok && time.Since(at) < heartbeatStatusFreshness {
+			status = st
+		}
+	}
+	if status == nil {
+		var statusErr error
+		status, statusErr = client.GetStatus(ctx)
+		if statusErr != nil {
+			log.Debugf("Failed to get xray status: %v", statusErr)
+			status = nil
+		}
+	}
+	if status != nil {
 		if status.XrayRunning {
 			xrayStatus = "running"
 		} else {

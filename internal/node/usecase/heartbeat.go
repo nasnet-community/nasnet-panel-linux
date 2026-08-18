@@ -48,6 +48,11 @@ type heartbeatSession struct {
 	uuidMismatch        bool   // true if agent UUID doesn't match node UUID
 	agentReportedUUID   string // last UUID reported by agent
 
+	// Last full NodeStatus carried by a pong. The stats sweep reads this
+	// instead of firing its own GetStatus RPC when it is fresh enough.
+	lastStatus   *pb.NodeStatus
+	lastStatusAt time.Time
+
 	// Xray crash tracking
 	lastXrayRunning         *bool     // nil = unknown (first pong)
 	crashCount              int       // crashes since last stability reset
@@ -175,6 +180,26 @@ func (hm *HeartbeatManager) GetSessionInfo(nodeID uint) (lastRTT int64, configHa
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastRTT, s.configHash, true
+}
+
+// GetLastStatus returns the most recent NodeStatus a heartbeat pong carried
+// for the node and when it arrived. ok is false when the node has no session
+// or no pong with a status has been seen yet.
+func (hm *HeartbeatManager) GetLastStatus(nodeID uint) (status *pb.NodeStatus, at time.Time, ok bool) {
+	hm.mu.Lock()
+	s, exists := hm.sessions[nodeID]
+	hm.mu.Unlock()
+
+	if !exists {
+		return nil, time.Time{}, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.lastStatus == nil {
+		return nil, time.Time{}, false
+	}
+	return s.lastStatus, s.lastStatusAt, true
 }
 
 // StopNode cancels and removes the heartbeat session for a specific node.
@@ -442,6 +467,12 @@ func (hm *HeartbeatManager) handlePong(ctx context.Context, node *domain.Node, s
 	if pong.Status == nil {
 		return
 	}
+
+	// Cache the full status for the stats sweep (saves a GetStatus RPC).
+	s.mu.Lock()
+	s.lastStatus = pong.Status
+	s.lastStatusAt = time.Now()
+	s.mu.Unlock()
 
 	// --- Xray status tracking (before config hash early returns) ---
 	hm.handleXrayStatus(ctx, node, s, pong.Status.XrayRunning)
