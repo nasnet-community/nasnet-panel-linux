@@ -5,24 +5,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const DefaultRangesURL = "https://s4i.co/irip"
+// DefaultRangesURL is the prefix-fetcher release asset. /latest/download
+// redirects to the newest release, so there is no tag to keep bumping.
+const DefaultRangesURL = "https://github.com/nasnet-community/prefix-fetcher/" +
+	"releases/latest/download/ir_prefixes_v4_collapsed.txt"
 
 const RefreshInterval = 7 * 24 * time.Hour
 
-const (
-	DefaultPageSize = 1000
-	DefaultMaxPages = 50
-)
+// maxRangesBytes caps the body. The collapsed list is ~35 KB, so anything near
+// this is a wrong URL rather than a bigger country.
+const maxRangesBytes = 8 << 20
 
 // Thresholds guarding a refresh. A truncated or censored response must leave the
 // working list alone rather than replace it.
@@ -35,106 +36,55 @@ const (
 	MinRetentionPercent = 70
 )
 
-type FetchConfig struct {
-	BaseURL string
-	// UserID is upstream's optional tracking parameter; omitted when empty.
-	UserID   string
-	PageSize int
-	MaxPages int
-}
-
-func (c FetchConfig) withDefaults() FetchConfig {
-	if c.BaseURL == "" {
-		c.BaseURL = DefaultRangesURL
+// FetchCIDRs downloads the prefix list, keeping only lines that parse: one bad
+// element aborts the whole nft transaction.
+func FetchCIDRs(ctx context.Context, client *http.Client, rangesURL string) ([]string, error) {
+	if rangesURL == "" {
+		rangesURL = DefaultRangesURL
 	}
-	if c.PageSize <= 0 {
-		c.PageSize = DefaultPageSize
-	}
-	if c.MaxPages <= 0 {
-		c.MaxPages = DefaultMaxPages
-	}
-	return c
-}
-
-// FetchCIDRs pages through the list, keeping only lines that parse: one bad
-// element aborts the whole nft transaction. A short page ends the walk.
-func FetchCIDRs(ctx context.Context, client *http.Client, cfg FetchConfig) ([]string, error) {
-	cfg = cfg.withDefaults()
 	if client == nil {
 		client = http.DefaultClient
 	}
 
-	var out []string
-	for page := 0; page < cfg.MaxPages; page++ {
-		lines, err := fetchPage(ctx, client, cfg, page*cfg.PageSize)
-		if err != nil {
-			return nil, err
-		}
-		if page == 0 && len(lines) == 0 {
-			return nil, fmt.Errorf("%s returned no addresses at all", cfg.BaseURL)
-		}
-		out = append(out, parsePrefixes(lines)...)
-		if len(lines) < cfg.PageSize {
-			break
-		}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rangesURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch domestic ranges: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("domestic ranges: unexpected status %d", resp.StatusCode)
+	}
+
+	out := make([]string, 0, 4096)
+	sc := bufio.NewScanner(io.LimitReader(resp.Body, maxRangesBytes))
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		out = appendPrefix(out, sc.Text())
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s returned no addresses at all", rangesURL)
 	}
 	return out, nil
 }
 
-func fetchPage(ctx context.Context, client *http.Client, cfg FetchConfig, offset int) ([]string, error) {
-	q := url.Values{
-		"format": {"addresses"},
-		"limit":  {strconv.Itoa(cfg.PageSize)},
-		"offset": {strconv.Itoa(offset)},
-	}
-	if cfg.UserID != "" {
-		q.Set("user_id", cfg.UserID)
-	}
-
-	sep := "?"
-	if strings.Contains(cfg.BaseURL, "?") {
-		sep = "&"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.BaseURL+sep+q.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch domestic ranges at offset %d: %w", offset, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("domestic ranges at offset %d: unexpected status %d",
-			offset, resp.StatusCode)
-	}
-
-	var lines []string
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		if line := strings.TrimSpace(sc.Text()); line != "" {
-			lines = append(lines, line)
-		}
-	}
-	return lines, sc.Err()
-}
-
 // A bare address is a legitimate single host and becomes a /32.
-func parsePrefixes(lines []string) []string {
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		if p, err := netip.ParsePrefix(line); err == nil && p.Addr().Is4() {
-			out = append(out, p.String())
-			continue
-		}
-		if a, err := netip.ParseAddr(line); err == nil && a.Is4() {
-			out = append(out, a.String()+"/32")
-		}
+func appendPrefix(out []string, line string) []string {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return out
+	}
+	if p, err := netip.ParsePrefix(line); err == nil && p.Addr().Is4() {
+		return append(out, p.String())
+	}
+	if a, err := netip.ParseAddr(line); err == nil && a.Is4() {
+		return append(out, a.String()+"/32")
 	}
 	return out
 }

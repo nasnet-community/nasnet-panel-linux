@@ -5,33 +5,27 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 )
 
-// Serves synthetic prefixes the way the real endpoint does.
-func pagedServer(t *testing.T, total int) *httptest.Server {
+// Serves a list the way the release asset does: one prefix per line, no paging.
+func listServer(t *testing.T, count int) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		limit, _ := strconv.Atoi(q.Get("limit"))
-		offset, _ := strconv.Atoi(q.Get("offset"))
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var b strings.Builder
-		for i := offset; i < offset+limit && i < total; i++ {
+		for i := 0; i < count; i++ {
 			fmt.Fprintf(&b, "10.%d.%d.0/24\n", i/256, i%256)
 		}
 		_, _ = w.Write([]byte(b.String()))
 	}))
 }
 
-func TestFetchCIDRs_PagesUntilAShortPage(t *testing.T) {
-	srv := pagedServer(t, 2105)
+func TestFetchCIDRs_ReadsTheWholeList(t *testing.T) {
+	srv := listServer(t, 2105)
 	defer srv.Close()
 
-	got, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 1000, MaxPages: 50})
+	got, err := FetchCIDRs(context.Background(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchCIDRs: %v", err)
 	}
@@ -40,18 +34,21 @@ func TestFetchCIDRs_PagesUntilAShortPage(t *testing.T) {
 	}
 }
 
-// A page exactly filling the limit must not be mistaken for the end.
-func TestFetchCIDRs_ExactMultipleOfPageSize(t *testing.T) {
-	srv := pagedServer(t, 2000)
-	defer srv.Close()
+// The asset URL is a redirect, which is the only way /latest/download resolves.
+func TestFetchCIDRs_FollowsTheRedirect(t *testing.T) {
+	asset := listServer(t, 1200)
+	defer asset.Close()
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, asset.URL, http.StatusFound)
+	}))
+	defer front.Close()
 
-	got, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 1000, MaxPages: 50})
+	got, err := FetchCIDRs(context.Background(), front.Client(), front.URL)
 	if err != nil {
 		t.Fatalf("FetchCIDRs: %v", err)
 	}
-	if len(got) != 2000 {
-		t.Errorf("got %d prefixes, want 2000", len(got))
+	if len(got) != 1200 {
+		t.Errorf("got %d prefixes, want 1200", len(got))
 	}
 }
 
@@ -59,12 +56,11 @@ func TestFetchCIDRs_ExactMultipleOfPageSize(t *testing.T) {
 func TestFetchCIDRs_SkipsCommentsBlanksAndGarbage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("# a comment\n\n2.144.0.0/13\nnot-an-address\n5.22.0.0/17\n" +
-			"999.1.1.1/24\n  8.8.8.8  \n2.57.3.0/33\n"))
+			"999.1.1.1/24\n  8.8.8.8  \n2.57.3.0/33\n2001:db8::/32\n"))
 	}))
 	defer srv.Close()
 
-	got, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 1000, MaxPages: 2})
+	got, err := FetchCIDRs(context.Background(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchCIDRs: %v", err)
 	}
@@ -76,70 +72,68 @@ func TestFetchCIDRs_SkipsCommentsBlanksAndGarbage(t *testing.T) {
 }
 
 // An answer with nothing in it is not "the country has no addresses".
-func TestFetchCIDRs_EmptyFirstPageIsAnError(t *testing.T) {
+func TestFetchCIDRs_EmptyBodyIsAnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("\n"))
 	}))
 	defer srv.Close()
 
-	if _, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 1000, MaxPages: 5}); err == nil {
-		t.Fatal("an empty first page was accepted")
+	if _, err := FetchCIDRs(context.Background(), srv.Client(), srv.URL); err == nil {
+		t.Fatal("an empty body was accepted")
 	}
 }
 
+// A 404 is what a renamed asset looks like, and it must not read as an empty list.
 func TestFetchCIDRs_HTTPErrorIsReported(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
 
-	if _, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 10, MaxPages: 2}); err == nil {
-		t.Fatal("a 502 was treated as success")
+	if _, err := FetchCIDRs(context.Background(), srv.Client(), srv.URL); err == nil {
+		t.Fatal("a 404 was treated as success")
 	}
 }
 
-// The runaway guard: a server that never returns a short page must not spin.
-func TestFetchCIDRs_StopsAtMaxPages(t *testing.T) {
-	srv := pagedServer(t, 1_000_000)
+// The runaway guard: a wrong URL streaming forever must not eat the box's memory.
+func TestFetchCIDRs_StopsAtTheByteCap(t *testing.T) {
+	line := "10.0.0.0/24\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		for written := 0; written < maxRangesBytes+len(line); written += len(line) {
+			if _, err := w.Write([]byte(line)); err != nil {
+				return
+			}
+		}
+	}))
 	defer srv.Close()
 
-	got, err := FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 100, MaxPages: 3})
+	got, err := FetchCIDRs(context.Background(), srv.Client(), srv.URL)
 	if err != nil {
 		t.Fatalf("FetchCIDRs: %v", err)
 	}
-	if len(got) != 300 {
-		t.Errorf("got %d prefixes, want 300 (3 pages x 100)", len(got))
+	// The cap can slice a line in half, so the count lands within one of it.
+	if cap := maxRangesBytes / len(line); len(got) < cap || len(got) > cap+1 {
+		t.Errorf("got %d prefixes, want about the capped %d", len(got), cap)
 	}
 }
 
-// Passed through when set, omitted when not, per the endpoint's contract.
-func TestFetchCIDRs_UserIDIsOptional(t *testing.T) {
-	var seen []url.Values
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.URL.Query())
-		_, _ = w.Write([]byte("2.144.0.0/13\n"))
-	}))
-	defer srv.Close()
+// An empty URL is the "not configured" case, which must reach upstream's default.
+func TestFetchCIDRs_EmptyURLUsesTheDefault(t *testing.T) {
+	var seen string
+	client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		seen = r.URL.String()
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Header: http.Header{}}, nil
+	})}
 
-	_, _ = FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, PageSize: 10, MaxPages: 1})
-	if _, ok := seen[0]["user_id"]; ok {
-		t.Error("user_id was sent when none was configured")
-	}
-	if got := seen[0].Get("format"); got != "addresses" {
-		t.Errorf("format = %q, want addresses", got)
-	}
-
-	seen = nil
-	_, _ = FetchCIDRs(context.Background(), srv.Client(),
-		FetchConfig{BaseURL: srv.URL, UserID: "abc", PageSize: 10, MaxPages: 1})
-	if got := seen[0].Get("user_id"); got != "abc" {
-		t.Errorf("user_id = %q, want abc", got)
+	_, _ = FetchCIDRs(context.Background(), client, "")
+	if seen != DefaultRangesURL {
+		t.Errorf("fetched %q, want %q", seen, DefaultRangesURL)
 	}
 }
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // The whole safety story: a truncated response must not replace the list.
 func TestAcceptRefresh(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -249,11 +248,9 @@ func TestWaitForBridgeAddr_FailsLoudlyWhenTheBridgeNeverAppears(t *testing.T) {
 }
 
 func TestRefreshDomesticRanges_ReplacesTheV4Set(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var b strings.Builder
-		for i := offset; i < offset+limit && i < 2105; i++ {
+		for i := 0; i < 2105; i++ {
 			fmt.Fprintf(&b, "10.%d.%d.0/24\n", i/256, i%256)
 		}
 		_, _ = w.Write([]byte(b.String()))

@@ -24,9 +24,7 @@ func (u *networkUsecase) RefreshDomesticRanges(ctx context.Context) error {
 		url = geoip.DefaultRangesURL
 	}
 
-	fresh, err := geoip.FetchCIDRs(ctx, u.RangesClient, geoip.FetchConfig{
-		BaseURL: url, UserID: u.RangesUserID,
-	})
+	fresh, err := geoip.FetchCIDRs(ctx, u.RangesClient, url)
 	if err != nil {
 		return err
 	}

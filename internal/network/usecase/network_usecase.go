@@ -168,9 +168,7 @@ type Deps struct {
 	Inbounds InboundSource
 
 	// RangesURL is where the prefix list refreshes from; empty means the default.
-	// RangesUserID is upstream's optional tracking parameter, omitted when empty.
-	RangesURL    string
-	RangesUserID string
+	RangesURL string
 	// RangesClient carries the fetch. Supplied so it can be routed like every
 	// other outbound the panel makes.
 	RangesClient *http.Client

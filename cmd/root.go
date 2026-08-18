@@ -846,8 +846,6 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		EventBus:     deps.Bus,
 		Events:       deps.NetEvents,
 		Inbounds:     inboundSource{repo: deps.NodeRepo, nodeID: 1},
-		// The list is served from behind a redirect to a foreign host, so it
-		// goes out the same way every other foreign fetch does.
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),
 	})
