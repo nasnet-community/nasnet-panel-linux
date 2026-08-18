@@ -90,12 +90,12 @@ export function CircularProgress({
                 {children ? children : (
                     <>
                         {showValue && (
-                            <span className="text-2xl font-bold tracking-tight">
+                            <span className="text-lg md:text-xl font-bold tracking-tight">
                                 {Math.round(value)}%
                             </span>
                         )}
                         {label && (
-                            <span className="text-[10px] uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
+                            <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
                                 {label}
                             </span>
                         )}

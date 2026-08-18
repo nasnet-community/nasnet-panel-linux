@@ -76,6 +76,12 @@ function SubPanelContent({ uuid }: { uuid: string }) {
         }
     }, [setTheme])
 
+    // index.html ships the admin-panel title; this page is customer-facing.
+    const pageLabel = data?.label
+    useEffect(() => {
+        document.title = pageLabel ? `${pageLabel} — Subscription` : "Subscription"
+    }, [pageLabel])
+
     const isAuthRequired = error instanceof AuthRequiredError
     const authLabel = isAuthRequired ? error.label : ""
 
@@ -138,7 +144,9 @@ function SubPanelContent({ uuid }: { uuid: string }) {
 
             <PanelHeader />
 
-            <main className="relative z-[1] max-w-2xl md:max-w-3xl mx-auto px-4 md:px-6 py-4 md:py-6 space-y-3 md:space-y-4">
+            {/* pb clears the fixed 56px support button (bottom-6 right-6) plus the
+                home-indicator inset, so the last card is never sitting under it. */}
+            <main className="relative z-[1] max-w-2xl md:max-w-3xl mx-auto px-4 md:px-6 pt-4 md:pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] space-y-3 md:space-y-4">
                 <AnimatePresence mode="wait">
                     {isLoading && (
                         <motion.div
@@ -198,44 +206,53 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                             {/* Maintenance banner */}
                             <MaintenanceBanner status={maintenance} />
 
-                            {/* Subscription header: name + status badge */}
-                            <motion.div variants={itemVariants} className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <h1 className="text-lg md:text-xl font-bold tracking-tight truncate">{data.label}</h1>
-                                        <span className="relative flex h-2.5 w-2.5 shrink-0" title={data.is_online ? "Online" : "Offline"}>
+                            {/* Subscription header. Plan state (billing) and connection
+                                state (right now) are still distinct facts, but they read
+                                fine on one metadata line — stacking them cost four rows
+                                before the first real content. */}
+                            <motion.div variants={itemVariants} className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 space-y-0.5">
+                                    <h1 className="text-lg md:text-xl font-bold tracking-tight truncate">{data.label}</h1>
+                                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                                        {data.plan_name && data.plan_name !== data.label && (
+                                            <>
+                                                <span className="truncate">{data.plan_name}</span>
+                                                <span aria-hidden>·</span>
+                                            </>
+                                        )}
+                                        <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
                                             {data.is_online && (
                                                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                                             )}
                                             <span className={cn(
-                                                "relative inline-flex h-2.5 w-2.5 rounded-full",
-                                                data.is_online ? "bg-emerald-500" : "bg-zinc-600"
+                                                "relative inline-flex h-2 w-2 rounded-full",
+                                                data.is_online ? "bg-emerald-500" : "bg-muted-foreground/60"
                                             )} />
                                         </span>
+                                        <span>
+                                            {data.is_online
+                                                ? `Connected${data.online_count > 1 ? ` · ${data.online_count} devices` : ""}`
+                                                : "Not connected"}
+                                        </span>
+                                        {data.last_active_at && (
+                                            <span>· {getRelativeTime(new Date(data.last_active_at).getTime())}</span>
+                                        )}
                                     </div>
-                                    {data.plan_name && data.plan_name !== data.label && (
-                                        <p className="text-sm text-muted-foreground">{data.plan_name}</p>
-                                    )}
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                    <StatusBadges status={data.status} />
                                     <button
                                         type="button"
+                                        aria-label="Copy subscription link"
+                                        title="Copy subscription link"
                                         onClick={async () => {
                                             const ok = await copyToClipboard(data.subscription_url)
-                                            if (ok) toast.success("Subscription URL copied")
-                                            else toast.error("Couldn’t copy — long-press to copy manually")
+                                            ok ? toast.success("Subscription URL copied") : toast.error("Couldn’t copy — long-press to copy manually")
                                         }}
-                                        className="flex items-center gap-1.5 mt-1 text-[10px] md:text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors group cursor-pointer"
+                                        className="grid place-items-center size-11 -mr-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                     >
-                                        <Copy className="w-3 h-3" />
-                                        <span>Copy Link</span>
+                                        <Copy className="w-4 h-4" />
                                     </button>
-                                </div>
-                                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                    <StatusBadges status={data.status} />
-                                    {data.last_active_at && (
-                                        <span className="text-[10px] text-muted-foreground/50">
-                                            {getRelativeTime(new Date(data.last_active_at).getTime())}
-                                        </span>
-                                    )}
                                 </div>
                             </motion.div>
 
@@ -251,9 +268,10 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                 const servers = data.servers ?? []
                                 const hasWg = servers.some((s) => s.protocol === "WIREGUARD")
                                 const hasOther = servers.some((s) => s.protocol !== "WIREGUARD")
+                                const showServerList = hasOther || !hasWg
                                 return (
                                     <>
-                                        {(hasOther || !hasWg) && (
+                                        {showServerList && (
                                             <motion.div variants={itemVariants}>
                                                 <ServerList
                                                     servers={servers}
@@ -284,22 +302,21 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
                                                         <Wifi className="w-4 h-4 text-emerald-400" />
-                                                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                                                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                                                             Connected IPs
-                                                        </h3>
-                                                        <Badge variant="success" className="h-4.5 px-1.5 text-[10px] font-semibold">
+                                                        </h2>
+                                                        <Badge variant="success" className="h-5 px-1.5 text-xs font-semibold">
                                                             {data.online_ips.length}
                                                         </Badge>
                                                     </div>
                                                     {data.online_ips.length > 1 && (
                                                         <button
                                                             type="button"
-                                                            className="flex items-center gap-1 h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors"
+                                                            className="flex items-center gap-1.5 min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                                             onClick={async () => {
                                                                 const allIPs = data.online_ips!.join("\n")
                                                                 const ok = await copyToClipboard(allIPs)
-                                                                if (ok) toast.success(`Copied ${data.online_ips!.length} IPs`)
-                                                                else toast.error("Couldn’t copy")
+                                                                ok ? toast.success(`Copied ${data.online_ips!.length} IPs`) : toast.error("Couldn’t copy")
                                                             }}
                                                         >
                                                             <Copy className="w-3 h-3" />
@@ -312,25 +329,24 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                         <button
                                                             key={ip}
                                                             type="button"
-                                                            className="w-full flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-muted/50 active:bg-muted/70 transition-colors cursor-pointer text-left group"
+                                                            className="w-full flex items-center justify-between min-h-11 px-2 rounded-md hover:bg-muted/50 active:bg-muted/70 transition-colors cursor-pointer text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                                             onClick={async () => {
                                                                 const ok = await copyToClipboard(ip)
-                                                                if (ok) toast.success(`Copied ${ip}`)
-                                                                else toast.error("Couldn’t copy")
+                                                                ok ? toast.success(`Copied ${ip}`) : toast.error("Couldn’t copy")
                                                             }}
                                                         >
                                                             <div className="flex items-center gap-2 min-w-0">
                                                                 <Monitor className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
                                                                 <span className="text-sm font-mono truncate">{ip}</span>
                                                                 {geoData?.[ip] && (
-                                                                    <span className="text-[10px] text-muted-foreground/60 shrink-0 flex items-center gap-1">
+                                                                    <span className="text-xs text-muted-foreground shrink-0 flex items-center gap-1">
                                                                         <span>{geoData[ip].flag}</span>
                                                                         <span className="hidden sm:inline">{geoData[ip].city}</span>
                                                                     </span>
                                                                 )}
-                                                                <Badge variant="success" className="h-4 px-1 text-[10px] font-semibold shrink-0">active</Badge>
+                                                                <Badge variant="success" className="h-5 px-1.5 text-xs font-semibold shrink-0">active</Badge>
                                                             </div>
-                                                            <Copy className="w-3 h-3 shrink-0 ml-2 text-muted-foreground/30 sm:text-muted-foreground/0 group-hover:text-muted-foreground transition-colors" />
+                                                            <Copy className="w-3.5 h-3.5 shrink-0 ml-2 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
                                                         </button>
                                                     ))}
                                                 </div>
@@ -368,8 +384,17 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                 <TelegramChatId uuid={uuid} currentChatId={data.telegram_chat_id} connectedViaAccount={data.telegram_connected} botUsername={data.telegram_bot_username} />
                             </motion.div>
 
-                            {/* Footer — reflects real SSE connection state */}
-                            <motion.div {...scrollRevealProps} className="flex items-center justify-center gap-1.5 py-3 text-xs text-muted-foreground/70">
+                            {/* Footer — reflects real SSE connection state. It sits at the
+                                very bottom, where the shared -50px viewport margin can never
+                                be satisfied, so it reveals on its own terms or it never
+                                appears at all. */}
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                whileInView={{ opacity: 1 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.2 }}
+                                className="flex items-center justify-center gap-1.5 py-3 text-xs text-muted-foreground"
+                            >
                                 {eventStatus === "open" ? (
                                     <>
                                         <motion.span

@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { CircularProgress } from "@/components/ui/circular-progress"
 import { Database, Clock, Zap } from "lucide-react"
 import { formatBytes } from "@/lib/utils"
+import { useSubExhaustionPrediction } from "@/lib/queries/use-sub-panel-analytics"
 import type { SubPanelData } from "@/lib/types/sub-panel"
 import { DataDetailDialog } from "./data-detail-dialog"
 import { TimeDetailDialog } from "./time-detail-dialog"
@@ -81,8 +82,8 @@ function AnimatedDaysCount({ days }: { days: number }) {
 function StatRow({ label, value, animated = true }: { label: string; value: string; animated?: boolean }) {
     return (
         <div className="flex justify-between sm:justify-start sm:flex-col sm:items-start gap-0.5">
-            <p className="text-[10px] md:text-xs text-muted-foreground/80 font-medium uppercase tracking-wide">{label}</p>
-            <p className="text-xs sm:text-sm md:text-base font-semibold">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
+            <p className="text-sm md:text-base font-semibold">
                 {animated ? <AnimatedNumber value={value} /> : value}
             </p>
         </div>
@@ -113,13 +114,16 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
     const [dataDialogOpen, setDataDialogOpen] = useState(false)
     const [timeDialogOpen, setTimeDialogOpen] = useState(false)
 
+    // Share the forecast card's number instead of computing a lifetime average
+    // here — two different "per day" figures on one page can't both be right.
+    // Same query key, so this is a cache read, not a second request.
+    const { data: prediction } = useSubExhaustionPrediction(uuid)
+
     const dailyBurnRate = useMemo(() => {
-        if (data.is_unlimited || !data.start_date || data.data_used === 0) return null
-        const msElapsed = Date.now() - new Date(data.start_date).getTime()
-        const daysElapsed = msElapsed / (1000 * 60 * 60 * 24)
-        if (daysElapsed < 0.5) return null
-        return formatBytes(data.data_used / daysElapsed, 1)
-    }, [data.is_unlimited, data.start_date, data.data_used])
+        if (data.is_unlimited) return null
+        if (!prediction || prediction.daily_avg_bytes <= 0) return null
+        return formatBytes(prediction.daily_avg_bytes, 1)
+    }, [data.is_unlimited, prediction])
 
     return (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
@@ -129,7 +133,7 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                 <CardContent className="p-3.5 sm:p-4 md:p-5">
                     <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3">
                         <Database className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-                        <span className="text-[10px] sm:text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Data</span>
+                        <span className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Data</span>
                     </div>
                     <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-3 md:gap-4">
                         {data.is_unlimited ? (
@@ -137,7 +141,7 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                                 className="flex flex-col items-center justify-center shrink-0 md:!w-24 md:!h-24"
                                 style={{ width: 76, height: 76 }}
                             >
-                                <span className="text-3xl md:text-4xl font-bold text-emerald-500 leading-none">∞</span>
+                                <span className="text-3xl md:text-4xl font-bold text-emerald-700 dark:text-emerald-500 leading-none">∞</span>
                             </div>
                         ) : (
                             <CircularProgress
@@ -146,6 +150,7 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                                 strokeWidth={6}
                                 color={dataColor}
                                 showValue
+                                label="used"
                                 className="md:!w-24 md:!h-24"
                             />
                         )}
@@ -159,8 +164,15 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                             )}
                             {dailyBurnRate && (
                                 <div className="flex items-center gap-1.5 pt-1 border-t border-border/30">
-                                    <Zap className="w-3 h-3 text-amber-400 shrink-0" />
-                                    <span className="text-[10px] md:text-xs text-muted-foreground/70">~{dailyBurnRate}/day</span>
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    {/* Must stay on one line — a wrap here makes the Data
+                                        card taller than Time and the grid row grows with it. */}
+                                    <span
+                                        className="text-xs text-muted-foreground whitespace-nowrap truncate"
+                                        title="Recent daily average"
+                                    >
+                                        {dailyBurnRate}/day avg
+                                    </span>
                                 </div>
                             )}
                         </div>
@@ -175,7 +187,7 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                 <CardContent className="p-3.5 sm:p-4 md:p-5">
                     <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3">
                         <Clock className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-                        <span className="text-[10px] sm:text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Time</span>
+                        <span className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Time</span>
                     </div>
                     <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-3 md:gap-4">
                         {hasEndDate ? (
@@ -190,8 +202,8 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                                 <span className="text-lg md:text-xl font-bold tracking-tight leading-none">
                                     <AnimatedDaysCount days={displayDays} />
                                 </span>
-                                <span className="text-[8px] md:text-[10px] uppercase font-medium text-muted-foreground/80 tracking-wider mt-0.5">
-                                    days
+                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
+                                    days left
                                 </span>
                             </CircularProgress>
                         ) : (
@@ -199,22 +211,26 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
                                 className="flex flex-col items-center justify-center shrink-0 md:!w-24 md:!h-24"
                                 style={{ width: 76, height: 76 }}
                             >
-                                <span className="text-3xl md:text-4xl font-bold text-emerald-500 leading-none">∞</span>
+                                <span className="text-3xl md:text-4xl font-bold text-emerald-700 dark:text-emerald-500 leading-none">∞</span>
+                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-1">
+                                    no expiry
+                                </span>
                             </div>
                         )}
                         <div className="w-full space-y-1.5 md:space-y-2.5">
                             {hasEndDate ? (
                                 <StatRow label="Left" value={formatCompactRemaining(data.time_remaining)} animated={false} />
                             ) : (
-                                <StatRow label="Used" value={data.start_date ? `${Math.floor((Date.now() - new Date(data.start_date).getTime()) / 86400000)}d` : "—"} animated={false} />
+                                <StatRow label="Active for" value={data.start_date ? `${Math.floor((Date.now() - new Date(data.start_date).getTime()) / 86400000)}d` : "—"} animated={false} />
                             )}
                             {data.start_date && (
                                 <StatRow label="Start" value={new Date(data.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
                             )}
-                            {data.end_date ? (
+                            {/* Only shown when there IS an end date. A plan duration
+                                printed next to "no expiry" reads as a countdown that
+                                doesn't exist. */}
+                            {data.end_date && (
                                 <StatRow label="End" value={new Date(data.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
-                            ) : (
-                                <StatRow label="Duration" value={data.plan_duration > 0 ? `${data.plan_duration}d` : "∞"} animated={false} />
                             )}
                         </div>
                     </div>

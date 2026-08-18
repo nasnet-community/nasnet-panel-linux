@@ -35,9 +35,9 @@ export function UsageTrendChart({ uuid }: Props) {
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
               Traffic Usage
-            </h3>
+            </h2>
           </div>
           <RangeToggle range={range} onChange={setRange} />
         </div>
@@ -52,7 +52,7 @@ export function UsageTrendChart({ uuid }: Props) {
           rangeDays={rangeDays}
         />
 
-        <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground/70">
+        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{
               background: `repeating-linear-gradient(45deg, ${UPLOAD_COLOR}, ${UPLOAD_COLOR} 1.5px, rgba(0,0,0,0.45) 1.5px, rgba(0,0,0,0.45) 3px)`,
@@ -72,7 +72,7 @@ export function UsageTrendChart({ uuid }: Props) {
 
 function RangeToggle({ range, onChange }: { range: UsageTrendRange; onChange: (r: UsageTrendRange) => void }) {
   return (
-    <div className="inline-flex rounded-md border border-border/50 p-0.5 text-[11px]" role="tablist" aria-label="Time range">
+    <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs" role="tablist" aria-label="Time range">
       {(["7d", "30d"] as const).map(r => (
         <button
           key={r}
@@ -81,7 +81,8 @@ function RangeToggle({ range, onChange }: { range: UsageTrendRange; onChange: (r
           aria-selected={range === r}
           onClick={() => onChange(r)}
           className={cn(
-            "px-2 py-0.5 rounded-[5px] transition-colors",
+            "min-h-11 min-w-11 px-3 rounded-[5px] font-medium transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60",
             range === r ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -104,7 +105,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 // theme-aware axis tick — uses CSS class instead of hardcoded fill
 function AxisTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
   return (
-    <text x={x} y={y} dy={12} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 10 }}>
+    <text x={x} y={y} dy={12} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>
       {payload ? formatAxisDate(payload.value) : ""}
     </text>
   )
@@ -125,21 +126,22 @@ function ChartBody({
   const UPLOAD_COLOR = c.chart5
   const DOWNLOAD_COLOR = c.success
   const LEGACY_COLOR = c.neutral
+
   if (loading) {
     return <div role="status" aria-label="Loading traffic chart" className="h-[140px] rounded-md bg-muted/30 animate-pulse" />
   }
   if (error) {
-    return <p className="h-[140px] flex items-center justify-center text-xs text-muted-foreground/70">Trend unavailable</p>
+    return <p className="h-[140px] flex items-center justify-center text-xs text-muted-foreground">Trend unavailable</p>
   }
   if (points.length === 0 || points.every(p => p.total === 0)) {
-    return <p className="h-[140px] flex items-center justify-center text-xs text-muted-foreground/70">No traffic recorded yet</p>
+    return <p className="h-[140px] flex items-center justify-center text-xs text-muted-foreground">No traffic recorded yet</p>
   }
 
   // recharts: interval 0 = show every tick; non-zero skips that many between ticks.
   const tickInterval = rangeDays === 30 ? 4 : 0
 
   return (
-    <div className="text-muted-foreground/40" style={{ opacity: refetching ? 0.6 : 1, transition: "opacity 150ms" }}>
+    <div className="text-muted-foreground" style={{ opacity: refetching ? 0.6 : 1, transition: "opacity 150ms" }}>
       <ResponsiveContainer width="100%" height={140}>
         <BarChart data={points} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
           <defs>
@@ -177,16 +179,13 @@ type TooltipProps = {
 }
 
 function ChartTooltip({ unit, active, payload }: TooltipProps) {
-  const c = useChartPalette()
-  const UPLOAD_COLOR = c.chart5
-  const DOWNLOAD_COLOR = c.success
   if (!active || !payload || !payload.length) return null
   const row = payload[0].payload
   const localDate = new Date(row.date + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" })
 
   if (row.total === 0) {
     return (
-      <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-[11px] shadow-md">
+      <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-xs shadow-md">
         <div className="font-medium">{localDate}</div>
         <div className="text-muted-foreground">No traffic</div>
       </div>
@@ -195,19 +194,21 @@ function ChartTooltip({ unit, active, payload }: TooltipProps) {
 
   if (row.isLegacy) {
     return (
-      <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-[11px] shadow-md">
+      <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-xs shadow-md">
         <div className="font-medium">{localDate}</div>
         <div>Total {formatValue(row.total, unit)}</div>
-        <div className="text-muted-foreground/70">Split not tracked for this day</div>
+        <div className="text-muted-foreground">Split not tracked for this day</div>
       </div>
     )
   }
 
   return (
-    <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-[11px] shadow-md space-y-0.5">
+    <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-xs shadow-md space-y-0.5">
       <div className="font-medium">{localDate}</div>
-      <div className="flex items-center gap-2"><span style={{ color: UPLOAD_COLOR }}>▲</span>Upload {formatValue(row.upload, unit)}</div>
-      <div className="flex items-center gap-2"><span style={{ color: DOWNLOAD_COLOR }}>▼</span>Download {formatValue(row.download, unit)}</div>
+      {/* The bar fills are tuned for a dark chart; as tooltip *text* they fall
+          under AA, so the glyphs get a darker ink on a light surface. */}
+      <div className="flex items-center gap-2"><span className="text-cyan-700 dark:text-cyan-400">▲</span>Upload {formatValue(row.upload, unit)}</div>
+      <div className="flex items-center gap-2"><span className="text-emerald-700 dark:text-emerald-400">▼</span>Download {formatValue(row.download, unit)}</div>
       <div className="text-muted-foreground">Total {formatValue(row.total, unit)}</div>
     </div>
   )

@@ -9,8 +9,14 @@ declare global {
   }
 }
 
+const DEFAULT_CONFIG: AppConfig = { basePath: "", appName: "NasNet Panel" }
+
 export function getConfig(): AppConfig {
-  return window.__CONFIG__ || { basePath: "", appName: "NasNet Panel" }
+  // In dev the placeholder in index.html is never substituted, so __CONFIG__ is
+  // the raw string — truthy, but with no basePath. Only trust a real object.
+  const cfg = window.__CONFIG__
+  if (!cfg || typeof cfg !== "object") return DEFAULT_CONFIG
+  return cfg
 }
 
 export function getApiBaseUrl(): string {

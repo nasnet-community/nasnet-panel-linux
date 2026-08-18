@@ -186,7 +186,7 @@ function StatusBadge({ status }: { status: string }) {
     return (
         <Badge
             variant={active ? "success" : "outline"}
-            className={cn("h-4 px-1.5 text-[10px] font-semibold", !active && "text-muted-foreground border-zinc-500/20")}
+            className={cn("h-5 px-1.5 text-xs font-semibold", !active && "text-muted-foreground border-border")}
         >
             {active ? "active" : status || "disabled"}
         </Badge>
@@ -269,11 +269,11 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                 <div className="flex items-center justify-between gap-2 px-3.5 md:px-4 pt-3 md:pt-3.5 pb-2 md:pb-2.5">
                     <div className="flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                        <h3 className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
                             WireGuard Devices
-                        </h3>
+                        </h2>
                         {!loading && (
-                            <Badge variant="secondary" className="h-4.5 px-1.5 text-[10px] font-semibold">
+                            <Badge variant="secondary" className="h-5 px-1.5 text-xs font-semibold">
                                 {max > 0 ? `${used} / ${max}` : used}
                             </Badge>
                         )}
@@ -314,18 +314,19 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                                 <span className="text-sm font-medium truncate">{d.label}</span>
                                                 <StatusBadge status={d.status} />
                                             </div>
-                                            <div className="text-[11px] text-muted-foreground font-mono">{d.assigned_ip}</div>
+                                            <div className="text-xs text-muted-foreground font-mono">{d.assigned_ip}</div>
                                             {multi && srvName.get(d.inbound_id) && (
-                                                <div className="text-[11px] text-muted-foreground">🌍 {srvName.get(d.inbound_id)}</div>
+                                                <div className="text-xs text-muted-foreground">🌍 {srvName.get(d.inbound_id)}</div>
                                             )}
-                                            <div className="text-[11px] text-muted-foreground">
+                                            <div className="text-xs text-muted-foreground">
                                                 ↑↓ {fmtBytes((d.up_bytes || 0) + (d.down_bytes || 0))}
                                             </div>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
                                             <Button
                                                 variant="outline"
-                                                size="icon-sm"
+                                                size="icon"
+                                                className="size-11"
                                                 aria-label="Regenerate config"
                                                 disabled={rotate.isPending}
                                                 onClick={() => void onRotate(d)}
@@ -334,10 +335,10 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                             </Button>
                                             <Button
                                                 variant="outline"
-                                                size="icon-sm"
+                                                size="icon"
                                                 aria-label="Remove device"
                                                 disabled={remove.isPending}
-                                                className="text-destructive hover:text-destructive"
+                                                className="size-11 text-destructive hover:text-destructive"
                                                 onClick={() => void onRemove(d)}
                                             >
                                                 <Trash2 className="size-4" />
@@ -348,7 +349,8 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                             </div>
 
                             <Button
-                                className="w-full"
+                                variant="outline"
+                                className="w-full h-11"
                                 disabled={full || servers.length === 0}
                                 onClick={() => setSheetOpen(true)}
                             >
@@ -356,7 +358,7 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                 {full ? "Device limit reached" : "Add device"}
                             </Button>
                             {full && (
-                                <p className="text-center text-[11px] text-muted-foreground">
+                                <p className="text-center text-xs text-muted-foreground">
                                     Remove a device or upgrade your plan to add more.
                                 </p>
                             )}
