@@ -23,7 +23,11 @@ type SNI struct {
 	ChallengeType string    `gorm:"size:20" json:"challenge_type"`       // "http-01", "dns-01"
 	ExpiresAt     time.Time `json:"expires_at"`                          // Certificate expiry date
 	AutoRenew     bool      `gorm:"default:true" json:"auto_renew"`      // Enable auto-renewal
-	IssueError    string    `gorm:"size:500" json:"issue_error"`         // Last issuance/renewal error
+	// IssueError holds whatever the ACME client returned verbatim; a problem
+	// document listing subproblems per domain has no useful upper bound. Must
+	// stay unbounded — PostgreSQL enforces varchar limits, and this is written
+	// on the failure path, where an insert error would bury the real one.
+	IssueError string `gorm:"type:text" json:"issue_error"`
 
 	// Smallest expiry day-threshold (30/7/1) already alerted to admins; 0 = none.
 	// Reset whenever the cert material changes so a renewed cert can alert again.
