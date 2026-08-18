@@ -67,21 +67,32 @@ export function healthDotColor(status: StarlinkStatus): "emerald" | "amber" | "r
     return "emerald"
 }
 
-// ─── SNR Gradient Color ─────────────────────────────────────────────
+// ─── Obstruction Map Cell Classification ────────────────────────────
+//
+// `dish_get_obstruction_map` reports one float per sky cell: 0.0-1.0 for
+// measured directions and -1.0 for "never measured". Current firmware only
+// ever emits the endpoints — 1.0 = clear line of sight, 0.0 = obstructed —
+// so a continuous SNR gradient paints every clear cell mid-scale (the map
+// came out uniformly orange) and bucketing by ">3 = clear" never matched a
+// single cell. Treat it as the binary signal it is, while still tolerating
+// an intermediate value should firmware ever emit one.
 
-function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
-    const r = Math.round(a[0] + (b[0] - a[0]) * t)
-    const g = Math.round(a[1] + (b[1] - a[1]) * t)
-    const bl = Math.round(a[2] + (b[2] - a[2]) * t)
-    return `rgb(${r},${g},${bl})`
+export type ObstructionCell = "clear" | "obstructed" | "nodata"
+
+export const OBSTRUCTION_COLORS = {
+    clear: "rgba(236,242,255,0.82)",
+    obstructed: "#ef4444",
+    nodata: "rgba(255,255,255,0.045)",
+} as const
+
+export function classifyObstructionCell(v: number | null | undefined): ObstructionCell {
+    if (v === null || v === undefined || Number.isNaN(v) || v < 0) return "nodata"
+    // Anything at/below the floor is blocked sky; the rest has a usable path.
+    return v <= 0 ? "obstructed" : "clear"
 }
 
-export function snrToColor(snr: number | null): string {
-    if (snr === null || snr === undefined || isNaN(snr) || snr < 0) return "#1a1a2e"
-    if (snr === 0) return "#ef4444"
-    if (snr <= 3) return lerpColor([239, 68, 68], [245, 158, 11], snr / 3)
-    if (snr <= 6) return lerpColor([245, 158, 11], [20, 184, 166], (snr - 3) / 3)
-    return "#14b8a6"
+export function obstructionCellColor(v: number | null | undefined): string {
+    return OBSTRUCTION_COLORS[classifyObstructionCell(v)]
 }
 
 // ─── Alignment Helpers ──────────────────────────────────────────────
