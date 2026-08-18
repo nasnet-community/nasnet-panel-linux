@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useId, useMemo } from "react"
 import { Area, AreaChart, ResponsiveContainer } from "recharts"
 import { cn } from "@/lib/utils"
 import { useChartPalette } from "@/lib/design/palette"
@@ -26,7 +26,9 @@ export function Sparkline({
         [data]
     )
 
-    const gradientId = useMemo(() => `spark-${Math.random().toString(36).slice(2, 8)}`, [])
+    // useId gives a per-instance stable id; the old Math.random() suffix could
+    // collide between two sparklines and make one steal the other's gradient.
+    const gradientId = `spark-${useId().replace(/:/g, "")}`
 
     if (data.length < 2) return null
 
