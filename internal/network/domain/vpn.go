@@ -95,8 +95,8 @@ var (
 	ErrProfileActive = errors.New("this VPN is in use — turn it off first")
 	// A stale list is not a server fault.
 	ErrProfileNotFound = errors.New("no such VPN profile")
-	ErrBadKey        = errors.New("not a WireGuard key")
-	ErrBadEndpoint   = errors.New("not a host:port endpoint")
+	ErrBadKey          = errors.New("not a WireGuard key")
+	ErrBadEndpoint     = errors.New("not a host:port endpoint")
 )
 
 // ValidateWireGuardConfig checks everything the kernel would reject later, plus
