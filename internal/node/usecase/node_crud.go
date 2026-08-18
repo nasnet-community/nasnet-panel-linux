@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
@@ -618,6 +620,34 @@ func (u *nodeUsecase) triggerBackgroundNodeTasks(nodeID uint, ip string, lookupL
 	if _, healthErr := u.CheckNodeHealth(ctx, nodeID); healthErr != nil {
 		logger.GetLogger().WithError(healthErr).WithField("node_id", nodeID).Debug("[BackgroundTask] Initial health check failed")
 	}
+}
+
+// BackfillNodeUUIDs generates UUIDs for any existing nodes that have an empty
+// UUID. Rows created before the column existed carry "", and the heartbeat's
+// identity check skips a node whose UUID is empty — so an un-backfilled node
+// never notices an agent that isn't its own. Called once at startup after
+// AutoMigrate.
+func (u *nodeUsecase) BackfillNodeUUIDs(ctx context.Context) error {
+	log := logger.GetLogger()
+	nodes, err := u.nodeRepo.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	backfilled := 0
+	for _, node := range nodes {
+		if node.UUID == "" {
+			node.UUID = uuid.New().String()
+			if err := u.nodeRepo.UpdateNode(ctx, node); err != nil {
+				log.Warnf("[BackfillNodeUUIDs] Failed to set UUID for node %d: %v", node.ID, err)
+			} else {
+				backfilled++
+			}
+		}
+	}
+	if backfilled > 0 {
+		log.Infof("[BackfillNodeUUIDs] Generated UUIDs for %d existing nodes", backfilled)
+	}
+	return nil
 }
 
 // CheckNodeHealth checks if a node is reachable (Agent only)
