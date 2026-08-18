@@ -212,6 +212,9 @@ func (m *mockSubscriptionRepo) AddLifetimeDataUpload(_ context.Context, _ uint, 
 func (m *mockSubscriptionRepo) AddLifetimeDataDownload(_ context.Context, _ uint, _ int64) error {
 	return nil
 }
+func (m *mockSubscriptionRepo) AddUsageDelta(_ context.Context, _ uint, _, _ int64, _ time.Time) error {
+	return nil
+}
 func (m *mockSubscriptionRepo) ExistsByUserAndPlan(_ context.Context, _, _ uint) (bool, error) {
 	return false, nil
 }

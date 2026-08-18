@@ -77,6 +77,10 @@ type SubscriptionRepository interface {
 	AddDataDownload(ctx context.Context, id uint, bytes int64) error
 	AddLifetimeDataUpload(ctx context.Context, id uint, bytes int64) error
 	AddLifetimeDataDownload(ctx context.Context, id uint, bytes int64) error
+	// AddUsageDelta applies one stats-sync cycle's traffic counters in a
+	// single UPDATE: data_used/lifetime totals, upload/download splits
+	// (current + lifetime) and last_active_at.
+	AddUsageDelta(ctx context.Context, id uint, upload, download int64, lastActive time.Time) error
 	UpdateDataWarningLevel(ctx context.Context, id uint, level int) error
 	ListApproachingDataLimit(ctx context.Context, thresholdPercent float64) ([]*domain.Subscription, error)
 	ResetDataWarningLevel(ctx context.Context, id uint) error
@@ -576,6 +580,25 @@ func (r *subscriptionRepository) AddLifetimeDataDownload(ctx context.Context, id
 		Model(&domain.Subscription{}).
 		Where("id = ?", id).
 		Update("lifetime_data_download", gorm.Expr("lifetime_data_download + ?", bytes)).Error
+}
+
+// AddUsageDelta folds the seven per-email counter updates the stats sweep
+// used to fire (data_used, lifetime_data_used, up/down splits, lifetime
+// splits, last_active_at) into one UPDATE on the subscription row.
+func (r *subscriptionRepository) AddUsageDelta(ctx context.Context, id uint, upload, download int64, lastActive time.Time) error {
+	total := upload + download
+	return database.GetExecutor(r.db, ctx).
+		Model(&domain.Subscription{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"data_used":              gorm.Expr("data_used + ?", total),
+			"lifetime_data_used":     gorm.Expr("lifetime_data_used + ?", total),
+			"data_upload":            gorm.Expr("data_upload + ?", upload),
+			"data_download":          gorm.Expr("data_download + ?", download),
+			"lifetime_data_upload":   gorm.Expr("lifetime_data_upload + ?", upload),
+			"lifetime_data_download": gorm.Expr("lifetime_data_download + ?", download),
+			"last_active_at":         lastActive,
+		}).Error
 }
 
 // UpdateDataWarningLevel updates the data warning level
