@@ -127,6 +127,12 @@ func (r *fakeStatsSubRepo) UpdateLastActive(_ context.Context, _ uint, _ time.Ti
 	return nil
 }
 
+// AddUsageDelta is a no-op so syncSingleNode can proceed past the
+// user-traffic persist loop without panicking on the nil embed.
+func (r *fakeStatsSubRepo) AddUsageDelta(_ context.Context, _ uint, _, _ int64, _ time.Time) error {
+	return nil
+}
+
 // fakeStatsAgentClient: canned BufferedTraffic + records ack timestamp.
 // Nil embed panics on unstubbed calls.
 
@@ -424,6 +430,16 @@ func (r *fakeStatsAccountRepo) FindByEmailAndInbound(_ context.Context, email st
 		return nil, nil
 	}
 	return a, nil
+}
+
+func (r *fakeStatsAccountRepo) ListTrafficRefsByNode(_ context.Context, _ uint) ([]accountRepo.AccountTrafficRef, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	refs := make([]accountRepo.AccountTrafficRef, 0, len(r.accounts))
+	for k, a := range r.accounts {
+		refs = append(refs, accountRepo.AccountTrafficRef{ID: a.ID, Email: k.email, InboundID: k.inboundID})
+	}
+	return refs, nil
 }
 
 func (r *fakeStatsAccountRepo) AddDataUsed(_ context.Context, id uint, bytes int64) error {

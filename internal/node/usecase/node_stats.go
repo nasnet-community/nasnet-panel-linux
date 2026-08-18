@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	accountDomain "github.com/nasnet-community/nasnet-panel-linux/internal/account/domain"
 	accountRepo "github.com/nasnet-community/nasnet-panel-linux/internal/account/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	subDomain "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
@@ -619,6 +618,12 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		dayUserUplink := make(map[string]map[string]int64)
 		dayUserDownlink := make(map[string]map[string]int64)
 
+		// Node/outbound totals aggregated across all buffered records so
+		// persistence below is one UPDATE per target instead of one per record.
+		var nodeUp, nodeDown int64
+		dailyNodeTraffic := make(map[time.Time][2]int64) // UTC day -> {up, down}
+		outboundTotals := make(map[string][2]int64)      // tag -> {up, down}
+
 		for _, record := range bufferedStats.Records {
 			for tag, bytes := range record.InboundUplink {
 				if bytes > 0 {
@@ -660,44 +665,59 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 				dayUserDownlink[recordDay][email] += bytes
 			}
 
-			// Accumulate node-level traffic totals
+			// Accumulate node-level and per-outbound traffic in memory;
+			// flushed once after the record loop.
 			if record.TotalUplink > 0 || record.TotalDownlink > 0 {
-				if err := u.nodeRepo.AddNodeTraffic(ctx, node.ID, record.TotalUplink, record.TotalDownlink); err != nil {
-					log.Warnf("Failed to accumulate node traffic: %v", err)
-					persistError = true
-				} else {
-					persistedNodeTraffic = true
-				}
-				// Record daily traffic
+				nodeUp += record.TotalUplink
+				nodeDown += record.TotalDownlink
 				recordDate := time.Unix(record.Timestamp, 0).UTC().Truncate(24 * time.Hour)
-				if err := u.nodeRepo.AddNodeDailyTraffic(ctx, node.ID, recordDate, record.TotalUplink, record.TotalDownlink); err != nil {
+				d := dailyNodeTraffic[recordDate]
+				d[0] += record.TotalUplink
+				d[1] += record.TotalDownlink
+				dailyNodeTraffic[recordDate] = d
+			}
+			for tag, bytes := range record.OutboundUplink {
+				if bytes > 0 {
+					o := outboundTotals[tag]
+					o[0] += bytes
+					outboundTotals[tag] = o
+				}
+			}
+			for tag, bytes := range record.OutboundDownlink {
+				if bytes > 0 {
+					o := outboundTotals[tag]
+					o[1] += bytes
+					outboundTotals[tag] = o
+				}
+			}
+		}
+
+		// Flush aggregated node totals: one AddNodeTraffic per pass, one
+		// AddNodeDailyTraffic per distinct UTC day (normally one).
+		if nodeUp > 0 || nodeDown > 0 {
+			if err := u.nodeRepo.AddNodeTraffic(ctx, node.ID, nodeUp, nodeDown); err != nil {
+				log.Warnf("Failed to accumulate node traffic: %v", err)
+				persistError = true
+			} else {
+				persistedNodeTraffic = true
+			}
+			for recordDate, d := range dailyNodeTraffic {
+				if err := u.nodeRepo.AddNodeDailyTraffic(ctx, node.ID, recordDate, d[0], d[1]); err != nil {
 					log.Warnf("Failed to record daily traffic: %v", err)
 					persistError = true
 				} else {
 					persistedNodeTraffic = true
 				}
 			}
+		}
 
-			// Accumulate per-outbound traffic
-			for tag, bytes := range record.OutboundUplink {
-				if bytes > 0 {
-					if err := u.nodeRepo.AddOutboundTraffic(ctx, node.ID, tag, bytes, 0); err != nil {
-						log.Warnf("Failed to accumulate outbound %s uplink traffic: %v", tag, err)
-						persistError = true
-					} else {
-						persistedOutboundTraffic = true
-					}
-				}
-			}
-			for tag, bytes := range record.OutboundDownlink {
-				if bytes > 0 {
-					if err := u.nodeRepo.AddOutboundTraffic(ctx, node.ID, tag, 0, bytes); err != nil {
-						log.Warnf("Failed to accumulate outbound %s downlink traffic: %v", tag, err)
-						persistError = true
-					} else {
-						persistedOutboundTraffic = true
-					}
-				}
+		// Flush aggregated outbound totals: one UPDATE per tag.
+		for tag, o := range outboundTotals {
+			if err := u.nodeRepo.AddOutboundTraffic(ctx, node.ID, tag, o[0], o[1]); err != nil {
+				log.Warnf("Failed to accumulate outbound %s traffic: %v", tag, err)
+				persistError = true
+			} else {
+				persistedOutboundTraffic = true
 			}
 		}
 
@@ -780,6 +800,27 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	// 3. Process User Traffic
 	persistedTraffic := false
 	if len(userTraffic) > 0 {
+		// Account attribution index: one projection query replaces the old
+		// per-(email, inbound) FindByEmailAndInbound lookups. nil map (load
+		// failure or no repo wired) skips account attribution this cycle;
+		// subscription-level usage above still persists.
+		var accountRefs map[string]map[uint]uint // email -> inboundID -> accountID
+		if u.accountRepo != nil && len(node.Inbounds) > 0 {
+			if refs, refErr := u.accountRepo.ListTrafficRefsByNode(ctx, node.ID); refErr != nil {
+				log.WithError(refErr).Warn("ListTrafficRefsByNode failed; skipping account attribution this cycle")
+			} else {
+				accountRefs = make(map[string]map[uint]uint, len(refs))
+				for _, ref := range refs {
+					byInbound := accountRefs[ref.Email]
+					if byInbound == nil {
+						byInbound = make(map[uint]uint)
+						accountRefs[ref.Email] = byInbound
+					}
+					byInbound[ref.InboundID] = ref.ID
+				}
+			}
+		}
+
 		for email, bytes := range userTraffic {
 			if bytes <= 0 {
 				continue
@@ -802,66 +843,37 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 				}
 			}
 
-			// Update data used
-			if err := u.subRepo.AddDataUsed(ctx, sub.ID, bytes); err != nil {
-				log.WithField("email", email).Warnf("Failed to add data usage: %v", err)
-				persistError = true
-			}
-			if err := u.subRepo.AddLifetimeDataUsed(ctx, sub.ID, bytes); err != nil {
-				log.WithField("email", email).Warnf("Failed to add lifetime data usage: %v", err)
-				persistError = true
-			}
-			// Update upload/download separately
-			if ul := userUplink[email]; ul > 0 {
-				if err := u.subRepo.AddDataUpload(ctx, sub.ID, ul); err != nil {
-					log.WithField("email", email).Warnf("Failed to add data upload: %v", err)
-					persistError = true
-				}
-				if err := u.subRepo.AddLifetimeDataUpload(ctx, sub.ID, ul); err != nil {
-					log.WithField("email", email).Warnf("Failed to add lifetime data upload: %v", err)
-					persistError = true
-				}
-			}
-			if dl := userDownlink[email]; dl > 0 {
-				if err := u.subRepo.AddDataDownload(ctx, sub.ID, dl); err != nil {
-					log.WithField("email", email).Warnf("Failed to add data download: %v", err)
-					persistError = true
-				}
-				if err := u.subRepo.AddLifetimeDataDownload(ctx, sub.ID, dl); err != nil {
-					log.WithField("email", email).Warnf("Failed to add lifetime data download: %v", err)
-					persistError = true
-				}
-			}
-
-			// Update last active time
+			// All subscription counters (used/lifetime totals, up/down
+			// splits, last_active_at) in one UPDATE.
 			now := time.Now()
-			if err := u.subRepo.UpdateLastActive(ctx, sub.ID, now); err != nil {
-				log.WithField("email", email).Warnf("Failed to update last active: %v", err)
+			if err := u.subRepo.AddUsageDelta(ctx, sub.ID, userUplink[email], userDownlink[email], now); err != nil {
+				log.WithField("email", email).Warnf("Failed to add usage delta: %v", err)
+				persistError = true
 			}
 
 			// Update account data usage. Equal-split bytes across accounts
 			// on inbounds that saw traffic (xray's per-email stats can't
 			// attribute bytes to a specific inbound).
-			matched := make([]*accountDomain.Account, 0, len(node.Inbounds))
-			for _, inbound := range node.Inbounds {
-				if !activeInboundTags[inbound.Tag] {
-					continue
+			var matched []uint
+			if byInbound := accountRefs[email]; byInbound != nil {
+				for _, inbound := range node.Inbounds {
+					if !activeInboundTags[inbound.Tag] {
+						continue
+					}
+					if accountID, ok := byInbound[inbound.ID]; ok {
+						matched = append(matched, accountID)
+					}
 				}
-				account, err := u.accountRepo.FindByEmailAndInbound(ctx, email, inbound.ID)
-				if err != nil || account == nil {
-					continue
-				}
-				matched = append(matched, account)
 			}
 
 			if len(matched) > 0 {
 				share := bytes / int64(len(matched))
-				for _, account := range matched {
-					if err := u.accountRepo.AddDataUsed(ctx, account.ID, share); err != nil {
+				for _, accountID := range matched {
+					if err := u.accountRepo.AddDataUsed(ctx, accountID, share); err != nil {
 						log.WithField("email", email).Warnf("Failed to update account data usage: %v", err)
 						persistError = true
 					}
-					if err := u.accountRepo.UpdateLastActive(ctx, account.ID, now); err != nil {
+					if err := u.accountRepo.UpdateLastActive(ctx, accountID, now); err != nil {
 						log.WithField("email", email).Warnf("Failed to update account last active: %v", err)
 					}
 				}
