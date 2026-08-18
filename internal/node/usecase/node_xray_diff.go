@@ -117,10 +117,11 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 		outbounds      []*domain.Outbound
 		routingRules   []*domain.RoutingRule
 		reverseProxies []*domain.ReverseProxy
-		dbErrors       [4]error
+		balancingRules []*domain.BalancingRule
+		dbErrors       [5]error
 	)
 	var dbWg sync.WaitGroup
-	dbWg.Add(4)
+	dbWg.Add(5)
 	go func() {
 		defer dbWg.Done()
 		inbounds, dbErrors[0] = u.nodeRepo.ListInboundsByNode(ctx, node.ID)
@@ -136,6 +137,10 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 	go func() {
 		defer dbWg.Done()
 		reverseProxies, dbErrors[3] = u.nodeRepo.ListReverseProxiesByNode(ctx, node.ID)
+	}()
+	go func() {
+		defer dbWg.Done()
+		balancingRules, dbErrors[4] = u.nodeRepo.ListBalancingRulesByNode(ctx, node.ID)
 	}()
 	dbWg.Wait()
 	for _, e := range dbErrors {
@@ -235,6 +240,7 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).
+		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
 		WithUsers(usersMap).
 		WithAPI(true, apiPort).
