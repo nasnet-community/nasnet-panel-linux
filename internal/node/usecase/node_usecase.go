@@ -115,6 +115,8 @@ type NodeUsecase interface {
 	ClearNodeDNSSettings(ctx context.Context, nodeID uint) error
 	UpdateNodeFakeDNSSettings(ctx context.Context, nodeID uint, pools []domain.FakeDNSPool) error
 	CheckNodeHealth(ctx context.Context, id uint) (*domain.NodeHealth, error)
+	// BackfillNodeUUIDs assigns UUIDs to nodes predating the column.
+	BackfillNodeUUIDs(ctx context.Context) error
 
 	// Inbound Management
 	AddInbound(ctx context.Context, inbound *domain.Inbound) error

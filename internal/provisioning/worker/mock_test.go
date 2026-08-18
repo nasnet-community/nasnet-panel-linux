@@ -222,6 +222,8 @@ func (m *mockNodeUsecase) CheckNodeHealth(context.Context, uint) (*nodeDomain.No
 	return nil, nil
 }
 
+func (m *mockNodeUsecase) BackfillNodeUUIDs(context.Context) error { return nil }
+
 // Inbound Management
 func (m *mockNodeUsecase) AddInbound(context.Context, *nodeDomain.Inbound) error { return nil }
 func (m *mockNodeUsecase) ListInbounds(context.Context, uint) ([]*nodeDomain.Inbound, error) {
