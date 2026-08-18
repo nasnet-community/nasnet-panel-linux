@@ -1,6 +1,10 @@
-import { useRef, useEffect, useMemo } from "react"
-import { snrToColor } from "./starlink-helpers"
-import { useChartPalette } from "@/lib/design/palette"
+import { useRef, useEffect, useMemo, useState } from "react"
+import {
+    OBSTRUCTION_COLORS,
+    classifyObstructionCell,
+    obstructionCellColor,
+    isAttitudeConverged,
+} from "./starlink-helpers"
 
 interface StarlinkObstructionMapViewProps {
     data: {
@@ -8,208 +12,277 @@ interface StarlinkObstructionMapViewProps {
         num_rows: number
         num_cols: number
         reference_frame?: string
-        // boresight_azimuth_deg of the dish, used to rotate FRAME_UT into compass coordinates.
+        // Dish boresight azimuth + attitude filter state. Needed to rotate a
+        // dish-relative (FRAME_UT) map into compass coordinates.
         boresight_azimuth_deg?: number
+        attitude_estimation_state?: string
     }
     compact?: boolean
 }
 
-// In FRAME_UT the array is anchored to the dish's forward direction; the
-// rest of the panel speaks compass directions, so we rotate FRAME_UT by the
-// dish boresight so North/East stay correct on screen. FRAME_EARTH is
-// already compass-aligned so no rotation is applied.
-function frameLabels(frame?: string): { top: string; bottom: string; left: string; right: string } {
-    if (frame === "FRAME_UT") {
-        return { top: "Fwd", bottom: "Aft", left: "Port", right: "Stbd" }
+// Reference-frame geometry, straight from the dish API contract:
+//   FRAME_EARTH — top-centre cell points at true north, so the grid is
+//                 already a plan-view compass rose (right edge = east).
+//   FRAME_UT    — bottom-centre cell points along the dish boresight.
+//
+// So FRAME_UT always needs at least a half turn to put "forward" at the top,
+// and a further `boresightAzimuth` turn to land north at the top. The extra
+// turn is only applied once the attitude filter has converged; before that
+// the reported azimuth is noise and would spin the map at random.
+function mapOrientation(data: StarlinkObstructionMapViewProps["data"]) {
+    if (data.reference_frame !== "FRAME_UT") {
+        return {
+            rotationDeg: 0,
+            compass: true,
+            labels: { top: "N", right: "E", bottom: "S", left: "W" },
+        }
     }
-    return { top: "N", bottom: "S", left: "W", right: "E" }
+
+    const az = data.boresight_azimuth_deg
+    const trusted = typeof az === "number" && Number.isFinite(az) &&
+        isAttitudeConverged(data.attitude_estimation_state)
+
+    if (!trusted) {
+        return {
+            rotationDeg: -180,
+            compass: false,
+            labels: { top: "Fwd", right: "Stbd", bottom: "Aft", left: "Port" },
+        }
+    }
+    return {
+        rotationDeg: az - 180,
+        compass: true,
+        labels: { top: "N", right: "E", bottom: "S", left: "W" },
+    }
 }
 
+const LABEL_PAD = 20 // px reserved around the disc for the cardinal labels
+
 export function StarlinkObstructionMapView({ data, compact = false }: StarlinkObstructionMapViewProps) {
-    const c = useChartPalette()
     const canvasRef = useRef<HTMLCanvasElement>(null)
-    const canvasSize = compact ? 240 : 480
-    const labels = frameLabels(data.reference_frame)
+    const boxRef = useRef<HTMLDivElement>(null)
+    const maxSize = compact ? 240 : 460
+    const [cssSize, setCssSize] = useState(0)
+
+    const { rotationDeg, compass, labels } = mapOrientation(data)
+
+    // The canvas is laid out by CSS (width:100%, square) and its bitmap is
+    // sized from the measured box. Writing canvas.style.width here instead
+    // would clobber the responsive layout and overflow the drawer.
+    useEffect(() => {
+        const box = boxRef.current
+        if (!box) return
+        const measure = () => setCssSize(box.clientWidth)
+        measure()
+        const ro = new ResizeObserver(measure)
+        ro.observe(box)
+        return () => ro.disconnect()
+    }, [])
 
     useEffect(() => {
         const canvas = canvasRef.current
-        if (!canvas || !data.snr || data.snr.length === 0) return
+        if (!canvas || cssSize <= 0) return
+        if (!data.snr || data.snr.length === 0) return
         if (!data.num_cols || !data.num_rows) return
 
-        const size = canvasSize
-        const dpr = typeof window !== "undefined" ? (window.devicePixelRatio || 1) : 1
-        canvas.width = size * dpr
-        canvas.height = size * dpr
-        canvas.style.width = `${size}px`
-        canvas.style.height = `${size}px`
+        const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+        canvas.width = Math.round(cssSize * dpr)
+        canvas.height = Math.round(cssSize * dpr)
         const ctx = canvas.getContext("2d")
         if (!ctx) return
+        // Draw in CSS pixels; the transform absorbs the device ratio.
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-        ctx.fillStyle = "#0a0a0f"
-        ctx.fillRect(0, 0, size, size)
+        ctx.clearRect(0, 0, cssSize, cssSize)
 
         const numRows = data.num_rows
         const numCols = data.num_cols
-        const centerX = size / 2
-        const centerY = size / 2
-        // Use the smaller of rows/cols so non-square maps still inscribe a
-        // single circle without clipping the long axis.
-        const maxR = Math.min(numRows, numCols) / 2
-        const scale = (size / 2 - 20) / maxR
+        const center = cssSize / 2
+        const ringR = center - 1
+        const dataR = ringR - (compact ? 5 : 8)
 
-        // Clip cell rendering to the unit circle to prevent overdraw outside border
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(centerX, centerY, maxR * scale, 0, Math.PI * 2)
-        ctx.clip()
-
-        // Concentric ring guides
-        const ringRadii = [0.25, 0.5, 0.75]
-        ctx.strokeStyle = c.grid
-        ctx.lineWidth = 1
-        for (const frac of ringRadii) {
+        // Perimeter ticks — a coarse bearing scale, like the dish's own UI.
+        ctx.strokeStyle = "rgba(255,255,255,0.28)"
+        for (let deg = 0; deg < 360; deg += 5) {
+            const major = deg % 45 === 0
+            const len = major ? 7 : 3.5
+            const rad = ((deg - 90) * Math.PI) / 180
+            ctx.lineWidth = major ? 1.4 : 1
+            ctx.globalAlpha = major ? 0.85 : 0.35
             ctx.beginPath()
-            ctx.arc(centerX, centerY, maxR * scale * frac, 0, Math.PI * 2)
+            ctx.moveTo(center + Math.cos(rad) * (ringR - len), center + Math.sin(rad) * (ringR - len))
+            ctx.lineTo(center + Math.cos(rad) * ringR, center + Math.sin(rad) * ringR)
             ctx.stroke()
         }
+        ctx.globalAlpha = 1
 
-        // Crosshair lines (N-S and E-W)
-        ctx.strokeStyle = c.grid
+        // Everything below is clipped to the data disc so rotated cells and
+        // guide lines can never bleed past the rim.
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(center, center, dataR, 0, Math.PI * 2)
+        ctx.clip()
+
+        ctx.fillStyle = "rgba(255,255,255,0.02)"
+        ctx.fillRect(0, 0, cssSize, cssSize)
+
+        // Elevation rings + cardinal crosshair (frame-independent guides).
+        ctx.strokeStyle = "rgba(255,255,255,0.07)"
         ctx.lineWidth = 1
+        for (const frac of [0.33, 0.66]) {
+            ctx.beginPath()
+            ctx.arc(center, center, dataR * frac, 0, Math.PI * 2)
+            ctx.stroke()
+        }
         ctx.beginPath()
-        ctx.moveTo(centerX, centerY - maxR * scale)
-        ctx.lineTo(centerX, centerY + maxR * scale)
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(centerX - maxR * scale, centerY)
-        ctx.lineTo(centerX + maxR * scale, centerY)
+        ctx.moveTo(center, center - dataR)
+        ctx.lineTo(center, center + dataR)
+        ctx.moveTo(center - dataR, center)
+        ctx.lineTo(center + dataR, center)
         ctx.stroke()
 
-        // FRAME_UT is anchored to the dish — rotate the cell render so the
-        // top of the canvas always points to compass North once the user has
-        // a valid boresight. Without this, a dish pointing East would show
-        // its forward obstructions at the top while the labels say "N".
-        const rotateRad = data.reference_frame === "FRAME_UT" && typeof data.boresight_azimuth_deg === "number"
-            ? (data.boresight_azimuth_deg * Math.PI) / 180
-            : 0
-        if (rotateRad !== 0) {
-            ctx.translate(centerX, centerY)
-            ctx.rotate(rotateRad)
-            ctx.translate(-centerX, -centerY)
+        if (rotationDeg !== 0) {
+            ctx.translate(center, center)
+            ctx.rotate((rotationDeg * Math.PI) / 180)
+            ctx.translate(-center, -center)
         }
 
-        // Draw SNR cells with gradient colors. starlink-grpc-tools convention:
-        // row 0 = top of sky map, increasing row = down. Canvas Y also grows
-        // downward so we add (not subtract) dy * scale.
+        // Grid → disc. Cell centres sit at (col,row) offset from the grid
+        // midpoint; the extra half cell keeps the disc centred for even and
+        // odd grid sizes alike.
+        const maxR = Math.min(numRows, numCols) / 2
+        const scale = dataR / maxR
+        const cellSize = Math.max(scale + 0.5, 1)
+        const rowMid = (numRows - 1) / 2
+        const colMid = (numCols - 1) / 2
+
         for (let row = 0; row < numRows; row++) {
             for (let col = 0; col < numCols; col++) {
                 const idx = row * numCols + col
-                const snr = data.snr[idx]
-                if (snr === undefined) continue
+                if (idx >= data.snr.length) break
+                const dx = col - colMid
+                const dy = row - rowMid
+                if (Math.sqrt(dx * dx + dy * dy) > maxR) continue
 
-                const dx = col - numCols / 2
-                const dy = row - numRows / 2
-                const r = Math.sqrt(dx * dx + dy * dy)
-                if (r > maxR) continue
+                const cell = classifyObstructionCell(data.snr[idx])
+                if (cell === "nodata") continue // leave the unmapped sky bare
 
-                const px = centerX + dx * scale
-                const py = centerY + dy * scale
-                const cellSize = Math.max(scale + 0.5, 1.5)
-
-                ctx.fillStyle = snrToColor(snr)
-                ctx.fillRect(px - cellSize / 2, py - cellSize / 2, cellSize, cellSize)
+                // Row 0 is the top edge of the map in both frames and canvas
+                // y also grows downward, so dy is added, not subtracted.
+                ctx.fillStyle = obstructionCellColor(data.snr[idx])
+                ctx.fillRect(
+                    center + dx * scale - cellSize / 2,
+                    center + dy * scale - cellSize / 2,
+                    cellSize,
+                    cellSize,
+                )
             }
         }
         ctx.restore()
 
-        // Circular border
-        ctx.strokeStyle = c.border
-        ctx.lineWidth = 1.5
+        // Rim
+        ctx.strokeStyle = "rgba(255,255,255,0.14)"
+        ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.arc(centerX, centerY, maxR * scale, 0, Math.PI * 2)
+        ctx.arc(center, center, dataR, 0, Math.PI * 2)
         ctx.stroke()
+    }, [data, cssSize, compact, rotationDeg])
 
-        // Cardinal labels (N/S/E/W for FRAME_EARTH, Fwd/Aft/Port/Stbd for FRAME_UT)
-        ctx.fillStyle = c.label
-        ctx.font = "bold 11px system-ui"
-        ctx.textAlign = "center"
-        ctx.fillText(labels.top, centerX, 14)
-        ctx.fillText(labels.bottom, centerX, size - 4)
-        ctx.textAlign = "left"
-        ctx.fillText(labels.right, size - 16, centerY + 4)
-        ctx.textAlign = "right"
-        ctx.fillText(labels.left, 16, centerY + 4)
+    const stats = useMemo(() => {
+        const empty = { clearPct: 0, obstructedPct: 0, mappedPct: 0, measured: 0 }
+        if (!data.snr || !data.num_cols || !data.num_rows) return empty
 
-    }, [data, compact, canvasSize, labels, c.grid, c.border, c.label])
-
-    const { clearPct, obstructedPct, weakPct } = useMemo(() => {
-        if (!data.snr || !data.num_cols || !data.num_rows) return { clearPct: "0", obstructedPct: "0", weakPct: "0" }
         const maxR = Math.min(data.num_rows, data.num_cols) / 2
-        let circleClear = 0
-        let circleObstructed = 0
-        let circleWeak = 0
+        const rowMid = (data.num_rows - 1) / 2
+        const colMid = (data.num_cols - 1) / 2
+        let clear = 0
+        let obstructed = 0
+        let inDisc = 0
+
         for (let row = 0; row < data.num_rows; row++) {
             for (let col = 0; col < data.num_cols; col++) {
-                const dx = col - data.num_cols / 2
-                const dy = row - data.num_rows / 2
+                const idx = row * data.num_cols + col
+                if (idx >= data.snr.length) break
+                const dx = col - colMid
+                const dy = row - rowMid
                 if (Math.sqrt(dx * dx + dy * dy) > maxR) continue
-                const snr = data.snr[row * data.num_cols + col]
-                if (snr === null || snr === undefined || isNaN(snr) || snr < 0) continue
-                if (snr === 0) circleObstructed++
-                else if (snr <= 3.0) circleWeak++
-                else circleClear++
+                inDisc++
+                const cell = classifyObstructionCell(data.snr[idx])
+                if (cell === "clear") clear++
+                else if (cell === "obstructed") obstructed++
             }
         }
-        const measured = circleClear + circleObstructed + circleWeak
-        if (measured === 0) return { clearPct: "0", obstructedPct: "0", weakPct: "0" }
+
+        const measured = clear + obstructed
+        if (measured === 0) return { ...empty, mappedPct: 0 }
         return {
-            clearPct: (circleClear / measured * 100).toFixed(1),
-            obstructedPct: (circleObstructed / measured * 100).toFixed(1),
-            weakPct: (circleWeak / measured * 100).toFixed(1),
+            clearPct: (clear / measured) * 100,
+            obstructedPct: (obstructed / measured) * 100,
+            mappedPct: inDisc > 0 ? (measured / inDisc) * 100 : 0,
+            measured,
         }
     }, [data])
 
     return (
         <div className="flex flex-col items-center gap-4">
-            <div className="mx-auto aspect-square" style={{ maxWidth: canvasSize }}>
-                <canvas
-                    ref={canvasRef}
-                    role="img"
-                    aria-label={`Sky map: ${clearPct}% clear, ${weakPct}% weak signal, ${obstructedPct}% obstructed`}
-                    className="rounded-full max-w-full"
-                    style={{ width: `min(${canvasSize}px, 100%)`, height: "auto", aspectRatio: "1" }}
-                />
+            <div className="relative w-full" style={{ maxWidth: maxSize }}>
+                <div ref={boxRef} className="relative w-full aspect-square" style={{ padding: LABEL_PAD }}>
+                    <canvas
+                        ref={canvasRef}
+                        role="img"
+                        aria-label={`Sky map, ${compass ? "north up" : "dish forward up"}: ${stats.clearPct.toFixed(1)}% clear, ${stats.obstructedPct.toFixed(1)}% obstructed, ${stats.mappedPct.toFixed(0)}% of the sky mapped`}
+                        className="block w-full h-full"
+                    />
+                </div>
+                {/* Cardinal labels live in HTML, outside the disc — canvas text
+                    at a fixed offset used to get clipped by the canvas edge. */}
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 text-[11px] font-bold text-foreground/80 leading-5">{labels.top}</span>
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[11px] font-bold text-foreground/80 leading-5">{labels.bottom}</span>
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-foreground/80 leading-5">{labels.left}</span>
+                <span className="absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-foreground/80 leading-5">{labels.right}</span>
             </div>
 
-            {/* Gradient legend bar */}
-            <div className="w-full max-w-[280px] space-y-1">
-                <div className="h-2 rounded-full" style={{
-                    background: "linear-gradient(to right, #ef4444, #f59e0b, #14b8a6)"
-                }} />
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>Obstructed</span>
-                    <span>Strong</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-1">
-                    <span className="w-2 h-2 rounded-full" style={{background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)"}} />
-                    <span>No data</span>
-                </div>
+            {!compass && (
+                <p className="text-[10px] text-amber-400/80 text-center -mt-2">
+                    Dish-relative view — heading unavailable, so the map cannot be turned to north.
+                </p>
+            )}
+
+            {/* Legend — the dish reports each cell as blocked or not, so a
+                discrete key is the honest representation. */}
+            <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
+                <LegendSwatch color={OBSTRUCTION_COLORS.clear} label="Clear" />
+                <LegendSwatch color={OBSTRUCTION_COLORS.obstructed} label="Obstructed" />
+                <LegendSwatch color={OBSTRUCTION_COLORS.nodata} label="Not mapped" outline />
             </div>
 
             {/* Summary stats */}
             <div className="w-full space-y-1.5">
                 <div className="flex justify-between text-xs">
-                    <span className="text-emerald-400">{clearPct}% Clear</span>
-                    <span className="text-amber-400">{weakPct}% Weak</span>
-                    <span className="text-red-400">{obstructedPct}% Obstructed</span>
+                    <span className="text-emerald-400">{stats.clearPct.toFixed(1)}% Clear</span>
+                    <span className="text-red-400">{stats.obstructedPct.toFixed(1)}% Obstructed</span>
                 </div>
                 <div className="w-full h-2.5 rounded-full bg-muted overflow-hidden flex">
-                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${clearPct}%` }} />
-                    <div className="h-full bg-amber-500 transition-all" style={{ width: `${weakPct}%` }} />
-                    <div className="h-full bg-red-500 transition-all" style={{ width: `${obstructedPct}%` }} />
+                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${stats.clearPct}%` }} />
+                    <div className="h-full bg-red-500 transition-all" style={{ width: `${stats.obstructedPct}%` }} />
                 </div>
+                <p className="text-[10px] text-muted-foreground/70">
+                    {stats.measured > 0
+                        ? `${stats.mappedPct.toFixed(0)}% of the visible sky mapped so far (${stats.measured.toLocaleString()} cells)`
+                        : "The dish has not mapped any sky yet — this fills in over ~12 hours."}
+                </p>
             </div>
         </div>
+    )
+}
+
+function LegendSwatch({ color, label, outline = false }: { color: string; label: string; outline?: boolean }) {
+    return (
+        <span className="flex items-center gap-1.5">
+            <span
+                className="w-2.5 h-2.5 rounded-[3px]"
+                style={{ background: color, border: outline ? "1px solid rgba(255,255,255,0.14)" : undefined }}
+            />
+            {label}
+        </span>
     )
 }
