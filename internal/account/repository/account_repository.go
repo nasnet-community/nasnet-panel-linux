@@ -16,6 +16,14 @@ type NodeAccountCount struct {
 	Active int64
 }
 
+// AccountTrafficRef is the minimal projection the stats sweep needs to
+// attribute per-email traffic to accounts — no relation preloads.
+type AccountTrafficRef struct {
+	ID        uint
+	Email     string
+	InboundID uint
+}
+
 // AccountFilter defines criteria for listing accounts
 type AccountFilter struct {
 	Offset    int
@@ -43,6 +51,10 @@ type AccountRepository interface {
 	FindBySubscriptionIDs(ctx context.Context, subIDs []uint) ([]*domain.Account, error)
 	ListByInboundID(ctx context.Context, inboundID uint) ([]*domain.Account, error)
 	ListByNodeID(ctx context.Context, nodeID uint) ([]*domain.Account, error)
+	// ListTrafficRefsByNode returns (id, email, inbound_id) for every
+	// account on the node in one query — replaces the stats sweep's
+	// per-(email, inbound) FindByEmailAndInbound lookups.
+	ListTrafficRefsByNode(ctx context.Context, nodeID uint) ([]AccountTrafficRef, error)
 	ListByNodeIDPaginated(ctx context.Context, nodeID uint, offset, limit int) ([]*domain.Account, int64, error)
 	ListBySubscriptionID(ctx context.Context, subID uint) ([]*domain.Account, error)
 	ListAllBySubscriptionID(ctx context.Context, subID uint) ([]*domain.Account, error)
@@ -268,6 +280,20 @@ func (r *accountRepository) ListByNodeID(ctx context.Context, nodeID uint) ([]*d
 		Order("accounts.created_at DESC").
 		Find(&accounts).Error
 	return accounts, err
+}
+
+// ListTrafficRefsByNode: bare-column projection (no preloads) of all
+// accounts on a node. Model() keeps GORM's soft-delete scope so the set
+// matches what FindByEmailAndInbound would have returned per pair.
+func (r *accountRepository) ListTrafficRefsByNode(ctx context.Context, nodeID uint) ([]AccountTrafficRef, error) {
+	var refs []AccountTrafficRef
+	err := database.GetExecutor(r.db, ctx).
+		Model(&domain.Account{}).
+		Select("accounts.id, accounts.email, accounts.inbound_id").
+		Joins("JOIN inbounds ON inbounds.id = accounts.inbound_id").
+		Where("inbounds.node_id = ?", nodeID).
+		Scan(&refs).Error
+	return refs, err
 }
 
 func (r *accountRepository) ListByNodeIDPaginated(ctx context.Context, nodeID uint, offset, limit int) ([]*domain.Account, int64, error) {
