@@ -45,7 +45,7 @@ export function StarlinkSignalCard({ status, onClick }: StarlinkSignalCardProps)
                         GPS {status.gps_valid ? "Valid" : "Invalid"} &middot; {status.gps_sats} sats
                     </span>
                     <span className="text-[11px] text-muted-foreground">
-                        Eth {status.eth_speed_mbps >= 1000 ? `${(status.eth_speed_mbps / 1000).toFixed(0)} Gbps` : `${status.eth_speed_mbps} Mbps`}
+                        Eth {status.eth_speed_mbps >= 1000 ? `${(status.eth_speed_mbps / 1000).toFixed(0)} Gbps` : `${status.eth_speed_mbps} Mbps`}{" "}
                         &middot; Tilt {status.tilt_angle_deg.toFixed(1)}&deg;
                     </span>
                 </div>

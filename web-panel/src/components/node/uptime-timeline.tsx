@@ -67,6 +67,13 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
                 continue
             }
 
+            // Consecutive events with the same status carry no transition.
+            // Skip them so a continuously-online node renders one solid bar
+            // instead of many abutting translucent segments — their 0.3%
+            // min-width edges overlap and the stacked layers composite into
+            // brighter seams.
+            if (event.status === currentStatus) continue
+
             const clampedStart = currentStart < start ? start : currentStart
             const segEnd = eventTime > now ? now : eventTime
 

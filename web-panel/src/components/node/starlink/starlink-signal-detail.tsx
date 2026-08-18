@@ -9,9 +9,9 @@ interface StarlinkSignalDetailProps {
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
-        <div className="flex justify-between items-center text-sm">
-            <span className="text-muted-foreground font-medium">{label}</span>
-            <span className="font-mono font-bold text-sm">{children}</span>
+        <div className="flex justify-between items-center gap-3 text-sm">
+            <span className="text-muted-foreground font-medium shrink-0">{label}</span>
+            <span className="font-mono font-bold text-sm min-w-0 text-right break-words">{children}</span>
         </div>
     )
 }
