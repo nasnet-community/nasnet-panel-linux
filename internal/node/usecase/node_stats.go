@@ -449,6 +449,79 @@ func (u *nodeUsecase) getAgentClientForStats(ctx context.Context, node *domain.N
 	return u.getAgentClient(node)
 }
 
+// agentVersionCacheTTL: agent/xray versions only change on deploys, so
+// the stats sweep refreshes them at this cadence instead of every tick.
+const agentVersionCacheTTL = 10 * time.Minute
+
+// agentVersionCacheEntry holds one node's cached version pair.
+type agentVersionCacheEntry struct {
+	agentVersion string
+	xrayVersion  string
+	fetchedAt    time.Time
+}
+
+// agentVersions returns (agentVersion, xrayVersion) for a node, hitting
+// the agent's GetVersion RPC only when the cache is stale or forceRefresh
+// is set (reconnect path). On a failed refresh the stale pair is served —
+// a wrong-for-minutes version beats an empty one in the panel.
+func (u *nodeUsecase) agentVersions(ctx context.Context, client agent.NodeClient, nodeID uint, forceRefresh bool) (string, string) {
+	u.versionCacheMu.Lock()
+	entry, ok := u.versionCache[nodeID]
+	u.versionCacheMu.Unlock()
+
+	if ok && !forceRefresh && time.Since(entry.fetchedAt) < agentVersionCacheTTL {
+		return entry.agentVersion, entry.xrayVersion
+	}
+
+	ver, err := client.GetVersion(ctx)
+	if err != nil || ver == nil {
+		return entry.agentVersion, entry.xrayVersion
+	}
+
+	entry = agentVersionCacheEntry{
+		agentVersion: ver.AgentVersion,
+		xrayVersion:  ver.XrayVersion,
+		fetchedAt:    time.Now(),
+	}
+	u.versionCacheMu.Lock()
+	if u.versionCache == nil {
+		u.versionCache = make(map[uint]agentVersionCacheEntry)
+	}
+	u.versionCache[nodeID] = entry
+	u.versionCacheMu.Unlock()
+	return entry.agentVersion, entry.xrayVersion
+}
+
+const (
+	// onlineIPsSyncInterval: this sweep is what refreshes the online-user
+	// cache, whose entries expire after 15s (cache.maxAge). Refreshing on
+	// that same period would let them lapse between passes — the sweep
+	// reaches this step only after its DB work — and the online counts
+	// would flap to zero. Stay comfortably inside the window while still
+	// skipping every other 5s tick.
+	onlineIPsSyncInterval = 10 * time.Second
+	// accessLogSyncInterval: summaries are hourly buckets; 60s keeps the
+	// panel fresh at a fraction of the old per-tick fetch rate.
+	accessLogSyncInterval = 60 * time.Second
+)
+
+// statsCadenceDue reports whether interval has elapsed since the node's last
+// stamped run in m, stamping now when due. m points at one of the usecase's
+// cadence maps (lazy-initialised here so test fixtures built as bare struct
+// literals keep working); access is serialized by statsCadenceMu.
+func (u *nodeUsecase) statsCadenceDue(m *map[uint]time.Time, nodeID uint, interval time.Duration) bool {
+	u.statsCadenceMu.Lock()
+	defer u.statsCadenceMu.Unlock()
+	if *m == nil {
+		*m = make(map[uint]time.Time)
+	}
+	if time.Since((*m)[nodeID]) < interval {
+		return false
+	}
+	(*m)[nodeID] = time.Now()
+	return true
+}
+
 // syncSingleNode collects + persists stats for one node. Errors are
 // swallowed — a single bad node must not abort the batch. accountCounts
 // may be nil (single-node path); totals publish as zero then.
@@ -578,15 +651,12 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		}
 	}
 
-	// C. Version Info (if missing from status or separate call needed for Agent Version)
-	// Optimizaion: Try to get Agent Version relative cheaply or assume it's sent in heartbeat?
-	// For now, let's call GetVersion as it's the source of truth for AgentVersion
-	ver, err := client.GetVersion(ctx)
-	if err == nil {
-		agentVer = ver.AgentVersion
-		if xrayVer == "" {
-			xrayVer = ver.XrayVersion
-		}
+	// C. Versions — cached with a TTL and force-refreshed on reconnect
+	// (the agent may have been updated while offline). Versions only
+	// change on deploys, so the previous per-tick GetVersion was waste.
+	agentVer, cachedXrayVer := u.agentVersions(ctx, client, node.ID, wasOffline)
+	if xrayVer == "" {
+		xrayVer = cachedXrayVer
 	}
 
 	// Buffered traffic: retrieve time-bucketed records from the agent
@@ -889,8 +959,9 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	// Online detection via GetAllUsersOnlineIPs. Empty IP list = XHTTP
 	// ghost session (Xray's online counter lingers after disconnect);
 	// clear those from nodeUsers so per-node counts match the
-	// dashboard's userIPs-derived count.
-	{
+	// dashboard's userIPs-derived count. Runs on its own cadence — the
+	// panel's online view refreshes at ~15s, so a faster sweep is waste.
+	if u.statsCadenceDue(&u.lastOnlineIPsAt, node.ID, onlineIPsSyncInterval) {
 		client, err := u.getAgentClientForStats(ctx, node)
 		if err == nil {
 			if bulkIPs, bulkErr := client.GetAllUsersOnlineIPs(ctx); bulkErr == nil {
@@ -969,9 +1040,10 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		}
 	}
 
-	// 4. Access Log Summary: fetch buffered hourly summaries and persist
-	// Braces scope the client/resp locals to this step
-	{
+	// 4. Access Log Summary: fetch buffered hourly summaries and persist.
+	// The summaries are hourly buckets, so this runs on the slower cadence
+	// rather than once per tick. Braces scope the client/resp locals.
+	if u.statsCadenceDue(&u.lastAccessLogAt, node.ID, accessLogSyncInterval) {
 		client, err := u.getAgentClientForStats(ctx, node)
 		if err == nil {
 			resp, err := client.GetBufferedAccessLogSummary(ctx)
