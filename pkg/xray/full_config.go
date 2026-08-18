@@ -93,12 +93,17 @@ func NewFullConfigBuilder(node *nodeDomain.Node) *FullConfigBuilder {
 	for i := range node.RoutingRules {
 		routing[i] = &node.RoutingRules[i]
 	}
+	balancing := make([]*nodeDomain.BalancingRule, len(node.BalancingRules))
+	for i := range node.BalancingRules {
+		balancing[i] = &node.BalancingRules[i]
+	}
 
 	return &FullConfigBuilder{
 		node:       node,
 		inbounds:   inbounds,
 		outbounds:  outbounds,
 		routing:    routing,
+		balancing:  balancing,
 		users:      make(map[string][]*User),
 		apiEnabled: true,
 		apiPort:    10085,
@@ -188,8 +193,34 @@ func (b *FullConfigBuilder) buildReverse() map[string]interface{} {
 	return result
 }
 
+// validateBalancerRefs: every rule that routes to a balancer must have that
+// balancer emitted, or xray refuses the whole config with "app/router:
+// balancer <tag> not found" and the node keeps its stale config. Catch it here
+// where the tag names are known.
+func (b *FullConfigBuilder) validateBalancerRefs() error {
+	tags := make(map[string]bool, len(b.balancing))
+	for _, bal := range b.balancing {
+		if bal != nil && bal.Enabled {
+			tags[bal.Tag] = true
+		}
+	}
+	for _, rule := range b.routing {
+		if rule == nil || !rule.Enabled || rule.OutboundTag != "" || rule.BalancingTag == "" {
+			continue
+		}
+		if !tags[rule.BalancingTag] {
+			return fmt.Errorf("routing rule %q targets balancer %q, which is missing or disabled", rule.RuleTag, rule.BalancingTag)
+		}
+	}
+	return nil
+}
+
 // Build generates the complete config.json as a string with ordered keys
 func (b *FullConfigBuilder) Build() (string, error) {
+	if err := b.validateBalancerRefs(); err != nil {
+		return "", err
+	}
+
 	config := b.buildOrderedConfig()
 
 	jsonBytes, err := json.MarshalIndent(config, "", "  ")
