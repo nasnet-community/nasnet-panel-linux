@@ -363,6 +363,13 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 	log.Info("In-process node agent started (single-binary mode)")
 
+	// Every setter-injected node dependency is in place by now. A missed setter
+	// leaves a nil field whose consumer degrades quietly — audit logging for
+	// node nuke/wipe is nil-guarded to a no-op — so fail here instead.
+	if err := nodeUC.AssertWired(uc.Node); err != nil {
+		log.WithError(err).Fatal("Node usecase wiring incomplete")
+	}
+
 	// Create the single local node
 	if nodes, listErr := uc.Node.ListNodes(context.Background()); listErr != nil {
 		log.WithError(listErr).Warn("Failed to list nodes for local-node bootstrap")
