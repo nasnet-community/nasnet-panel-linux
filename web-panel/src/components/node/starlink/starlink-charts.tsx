@@ -65,7 +65,7 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
     if (isLoading && chartData.length === 0) {
         return (
             <Card className="relative overflow-hidden rounded-2xl p-4 md:p-6 bg-card/50 backdrop-blur-sm border-white/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-                <div className="flex items-center gap-1.5 mb-4">
+                <div className="flex flex-wrap items-center gap-1.5 mb-4">
                     {chartTabs.map((t) => (
                         <Skeleton key={t.key} className="h-7 w-20 rounded-md" />
                     ))}
@@ -88,26 +88,28 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
 
     return (
         <Card className="relative overflow-hidden rounded-2xl p-4 md:p-6 bg-card/50 backdrop-blur-sm border-white/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-            <div className="flex items-center justify-between mb-4 md:mb-6">
-                <div className="flex items-center gap-1.5 bg-muted/30 rounded-lg p-0.5">
-                    {chartTabs.map((t) => (
-                        <button
-                            key={t.key}
-                            type="button"
-                            aria-pressed={tab === t.key}
-                            onClick={() => setTab(t.key)}
-                            className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                                tab === t.key
-                                    ? "bg-foreground text-background shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        >
-                            {t.label}
-                        </button>
-                    ))}
+            <div className="flex flex-col gap-2 mb-4 md:mb-6 md:flex-row md:items-center md:justify-between">
+                <div className="overflow-x-auto no-scrollbar max-w-full">
+                    <div className="flex items-center gap-1.5 bg-muted/30 rounded-lg p-0.5 w-max">
+                        {chartTabs.map((t) => (
+                            <button
+                                key={t.key}
+                                type="button"
+                                aria-pressed={tab === t.key}
+                                onClick={() => setTab(t.key)}
+                                className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                    tab === t.key
+                                        ? "bg-foreground text-background shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                }`}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-0.5">
+                <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-0.5 shrink-0 self-start md:self-auto">
                     {timeRanges.map((r) => (
                         <button
                             key={r}
@@ -115,7 +117,7 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
                             aria-pressed={timeRange === r}
                             aria-label={`Time range ${r}`}
                             onClick={() => onTimeRangeChange(r)}
-                            className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                            className={`shrink-0 px-2 py-1 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                 timeRange === r
                                     ? "bg-foreground text-background shadow-sm"
                                     : "text-muted-foreground hover:text-foreground"
