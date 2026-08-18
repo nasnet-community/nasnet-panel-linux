@@ -184,14 +184,18 @@ func (c *Collector) Collect(ctx context.Context) (*SystemStats, error) {
 		stats.SystemUptimeSeconds = int64(uptime)
 	}
 
-	// Network Connections
-	tcpConns, err := net.ConnectionsWithContext(ctx, "tcp")
-	if err == nil {
-		stats.TcpCount = uint64(len(tcpConns))
-	}
-	udpConns, err := net.ConnectionsWithContext(ctx, "udp")
-	if err == nil {
-		stats.UdpCount = uint64(len(udpConns))
+	// Network connections — kernel-maintained totals from sockstat.
+	// Enumeration fallback only for non-Linux machines without /proc.
+	if tcp, udp, sockErr := sockstatCounts(); sockErr == nil {
+		stats.TcpCount = tcp
+		stats.UdpCount = udp
+	} else {
+		if tcpConns, err := net.ConnectionsWithContext(ctx, "tcp"); err == nil {
+			stats.TcpCount = uint64(len(tcpConns))
+		}
+		if udpConns, err := net.ConnectionsWithContext(ctx, "udp"); err == nil {
+			stats.UdpCount = uint64(len(udpConns))
+		}
 	}
 
 	// File Descriptors
@@ -295,6 +299,61 @@ func (c *Collector) GetNetworkDelta(ctx context.Context) (recv, sent uint64, dur
 	c.lastNetTime = now
 
 	return recv, sent, duration, nil
+}
+
+// sockstatCounts returns system-wide TCP and UDP socket counts from
+// /proc/net/sockstat and /proc/net/sockstat6 — the kernel keeps these
+// totals directly, so the read is two tiny files. The previous
+// net.Connections("tcp"/"udp") calls each enumerated every socket AND
+// readlinked every /proc/<pid>/fd entry of every process to attribute
+// them; on a proxy node with thousands of connections that walk burned
+// a full core on every stats poll.
+func sockstatCounts() (tcp, udp uint64, err error) {
+	data, err := os.ReadFile("/proc/net/sockstat")
+	if err != nil {
+		return 0, 0, err
+	}
+	// IPv6 counters live in a separate file; absence (IPv6 disabled) is fine.
+	if data6, err6 := os.ReadFile("/proc/net/sockstat6"); err6 == nil {
+		data = append(data, '\n')
+		data = append(data, data6...)
+	}
+	tcp, udp = parseSockstat(string(data))
+	return tcp, udp, nil
+}
+
+// parseSockstat extracts TCP/UDP socket counts from concatenated
+// sockstat + sockstat6 content. Lines look like:
+//
+//	TCP: inuse 50 orphan 0 tw 12 alloc 60 mem 10
+//	UDP: inuse 5 mem 3
+//	TCP6: inuse 30
+func parseSockstat(content string) (tcp, udp uint64) {
+	for line := range strings.SplitSeq(content, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		counts := make(map[string]uint64, (len(fields)-1)/2)
+		for i := 1; i+1 < len(fields); i += 2 {
+			if v, convErr := strconv.ParseUint(fields[i+1], 10, 64); convErr == nil {
+				counts[fields[i]] = v
+			}
+		}
+		switch fields[0] {
+		case "TCP:":
+			// inuse excludes TIME_WAIT; tw is the global TIME_WAIT count,
+			// reported on the IPv4 line only. Adding it keeps the number
+			// comparable to the old /proc/net/tcp enumeration, which
+			// listed TIME_WAIT sockets too.
+			tcp += counts["inuse"] + counts["tw"]
+		case "TCP6:":
+			tcp += counts["inuse"]
+		case "UDP:", "UDP6:":
+			udp += counts["inuse"]
+		}
+	}
+	return tcp, udp
 }
 
 // getFDCount tries to read system-wide file descriptor usage
