@@ -29,6 +29,7 @@ func (s *stubIfRepo) Upsert(context.Context, *domain.NetworkInterface) error { r
 func (s *stubIfRepo) MarkAbsent(context.Context, []string) error             { return nil }
 func (s *stubIfRepo) SetHealth(context.Context, uint, bool) error            { return nil }
 func (s *stubIfRepo) SetLearnedGateway(context.Context, uint, string) error  { return nil }
+func (s *stubIfRepo) SetForceState(context.Context, uint, string) error      { return nil }
 func (s *stubIfRepo) DB() *gorm.DB                                           { return nil }
 func (s *stubIfRepo) SetRoleTx(context.Context, *gorm.DB, uint, domain.InterfaceRole, domain.UplinkSlot) error {
 	return nil

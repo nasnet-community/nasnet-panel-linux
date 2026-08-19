@@ -47,6 +47,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.POST("/vpn/deactivate", h.DeactivateVPN)
 		n.GET("/vpn/status", h.VPNStatus)
 
+		// The probe ladder. Assembly only — never dials.
+		n.GET("/health", h.Health)
+		n.PUT("/uplinks/:ifname/force", h.SetUplinkForce)
+
 		// The flow page. Read-only: nothing here touches a packet.
 		n.GET("/flow", h.FlowGraph)
 		n.POST("/flow/trace", h.TraceFlow)

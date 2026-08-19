@@ -20,6 +20,7 @@ type InterfaceRepository interface {
 	SetRoleTx(ctx context.Context, tx *gorm.DB, id uint, role domain.InterfaceRole, slot domain.UplinkSlot) error
 	SetHealth(ctx context.Context, id uint, healthy bool) error
 	SetLearnedGateway(ctx context.Context, id uint, gateway string) error
+	SetForceState(ctx context.Context, id uint, state string) error
 	DB() *gorm.DB
 }
 
@@ -127,6 +128,11 @@ func (r *interfaceRepository) SetHealth(ctx context.Context, id uint, healthy bo
 func (r *interfaceRepository) SetLearnedGateway(ctx context.Context, id uint, gateway string) error {
 	return r.db.WithContext(ctx).Model(&domain.NetworkInterface{}).Where("id = ?", id).
 		Update("learned_gateway", gateway).Error
+}
+
+func (r *interfaceRepository) SetForceState(ctx context.Context, id uint, state string) error {
+	return r.db.WithContext(ctx).Model(&domain.NetworkInterface{}).Where("id = ?", id).
+		Update("force_state", state).Error
 }
 
 // DB exposes the handle so the usecase can open one transaction spanning a role
