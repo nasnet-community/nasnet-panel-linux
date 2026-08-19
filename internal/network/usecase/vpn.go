@@ -630,7 +630,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, plane vpnPlane, upl
 // Rendered whenever a secondary uplink exists, with or without a tunnel, and
 // deliberately independent of the input firewall: that one is a setting the
 // operator chooses, this one is not.
-func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink, gateway string) error {
+func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink, gateway string, probeIPs []string) error {
 	if m == nil {
 		return nil
 	}
@@ -652,6 +652,8 @@ func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink,
 			MarkMask:        netmark.MaskPin,
 			MarkValue:       vpnTransportMark,
 			BootstrapIPs:    dohboot.BootstrapIPs(),
+			ProbeMark:       netmark.PinMark(netmark.PinProbe),
+			ProbeIPs:        probeIPs,
 		}
 	})
 }

@@ -31,6 +31,9 @@ const (
 	GroupForeign  uint32 = 2
 )
 
+// PinProbe marks the health probe's own sockets. Uplinks count up from 1.
+const PinProbe uint32 = 15
+
 // GroupMark returns a mark word carrying only group index g.
 func GroupMark(g uint32) uint32 { return (g << shiftGroup) & MaskGroup }
 

@@ -73,6 +73,9 @@ type FilterInput struct {
 // resolved before the tunnel exists.
 const SetDoHBootstrap = "doh_bootstrap"
 
+// Targets the health probe may reach past the kill switch.
+const SetProbe = "probe_v4"
+
 // Named counters the flow page reads. Declared as a block so a chain
 // referencing one can never abort the transaction.
 const (
@@ -96,6 +99,9 @@ type KillSwitch struct {
 	MarkValue uint32
 	// The DoH resolvers. Empty renders no exemption at all.
 	BootstrapIPs []string
+	// The health probe's own traffic. Empty renders no exemption.
+	ProbeMark uint32
+	ProbeIPs  []string
 }
 
 // Ruleset is the complete desired state of the owned table. Zero value renders
@@ -182,6 +188,13 @@ func (r Ruleset) renderSets() string {
 			Name:     SetDoHBootstrap,
 			Family:   "ipv4_addr",
 			Elements: k.BootstrapIPs,
+		})
+	}
+	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
+		sets = append(append([]Set(nil), sets...), Set{
+			Name:     SetProbe,
+			Family:   "ipv4_addr",
+			Elements: k.ProbeIPs,
 		})
 	}
 	if len(sets) == 0 {
@@ -412,6 +425,12 @@ func (k *KillSwitch) exemptions() string {
 				mask, value, SetDoHBootstrap)
 		}
 	}
+	if k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
+		b.WriteString("\n\t\t# The health probe measuring this uplink.\n")
+		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s ip daddr @%s accept\n",
+			netmark.Hex(netmark.MaskPin), netmark.Hex(k.ProbeMark), SetProbe)
+	}
+
 	b.WriteString("\n\t\t# Link-scoped only: a lease, the gateway the health probe pings,\n")
 	b.WriteString("\t\t# and the dish's own management address.\n")
 	b.WriteString("\t\tudp sport 68 udp dport 67 accept\n")
@@ -501,6 +520,9 @@ func (r Ruleset) SetNames() []string {
 	}
 	if k := r.KillSwitch; k != nil && len(k.BootstrapIPs) > 0 {
 		out = append(out, SetDoHBootstrap)
+	}
+	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
+		out = append(out, SetProbe)
 	}
 	return out
 }
