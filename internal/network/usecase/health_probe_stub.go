@@ -18,3 +18,7 @@ func (kernelProbe) Carrier(context.Context, string) (bool, error) {
 func (kernelProbe) GatewayReachable(context.Context, string, string) (bool, error) {
 	return false, errors.New("router mode requires Linux")
 }
+
+func (kernelProbe) ProbeTarget(context.Context, string, uint32, ProbeTarget) ProbeResult {
+	return ProbeResult{Err: "router mode requires Linux"}
+}
