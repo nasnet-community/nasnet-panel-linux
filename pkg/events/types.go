@@ -65,6 +65,10 @@ const (
 	EventWANUp                EventType = "wan.up"
 	EventWANDown              EventType = "wan.down"
 	EventWANFailover          EventType = "wan.failover"
+	EventWANFailoverLost      EventType = "wan.failover_lost"
+	EventWANFailoverRestored  EventType = "wan.failover_restored"
+	EventWANDegraded          EventType = "wan.degraded"
+	EventWANForceState        EventType = "wan.force_state"
 	EventWANApplyRolledBack   EventType = "wan.apply_rolled_back"
 	EventWANLeaseWarning      EventType = "wan.lease_warning"
 	// EventWANApplied fires when a plan's ops have run and the dead-man is armed.

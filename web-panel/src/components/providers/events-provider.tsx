@@ -155,8 +155,9 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'xray.recovery_command', 'xray.recovery_exhausted',
             // Named events only arrive if we ask for them by name.
             'interface.added', 'interface.removed', 'interface.link_changed',
-            'wan.up', 'wan.down', 'wan.failover', 'wan.applied',
-            'wan.apply_rolled_back', 'wan.lease_warning',
+            'wan.up', 'wan.down', 'wan.failover', 'wan.failover_lost',
+            'wan.failover_restored', 'wan.degraded', 'wan.force_state',
+            'wan.applied', 'wan.apply_rolled_back', 'wan.lease_warning',
             'vpn.up', 'vpn.down',
         ]
 
