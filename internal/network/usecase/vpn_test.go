@@ -579,7 +579,8 @@ func TestApplyVPNRoutes_ClearsTheTableWhenNoTunnelIsUp(t *testing.T) {
 func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	ctx := context.Background()
 	m := nft.NewManager(&nft.FakeApplier{})
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), "100.64.0.1"); err != nil {
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), "100.64.0.1",
+		DefaultHealthConfig().probeExemptIPs()); err != nil {
 		t.Fatal(err)
 	}
 	k := m.Snapshot().KillSwitch
@@ -595,13 +596,19 @@ func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	if len(k.BootstrapIPs) == 0 {
 		t.Error("no bootstrap addresses, so an endpoint hostname could never resolve")
 	}
+	if k.ProbeMark != netmark.PinMark(netmark.PinProbe) {
+		t.Errorf("probe mark = 0x%08x, want the probe pin", k.ProbeMark)
+	}
+	if len(k.ProbeIPs) != 2 || k.ProbeIPs[0] != "1.1.1.1" || k.ProbeIPs[1] != "8.8.8.8" {
+		t.Errorf("probe set = %v, want the default foreign targets", k.ProbeIPs)
+	}
 }
 
 // It is not a VPN setting: it exists because the uplink does.
 func TestApplyKillSwitchState_ArmedWithNoTunnelConfigured(t *testing.T) {
 	ctx := context.Background()
 	m := nft.NewManager(&nft.FakeApplier{})
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), ""); err != nil {
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if m.Snapshot().KillSwitch == nil {
@@ -609,7 +616,7 @@ func TestApplyKillSwitchState_ArmedWithNoTunnelConfigured(t *testing.T) {
 	}
 
 	// With no secondary uplink there is nothing to guard.
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks()[:1], ""); err != nil {
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks()[:1], "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if m.Snapshot().KillSwitch != nil {

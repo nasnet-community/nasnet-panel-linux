@@ -106,3 +106,13 @@ func TestHex(t *testing.T) {
 		t.Errorf("Hex(PinMark(1)) = %q", got)
 	}
 }
+
+func TestProbePinStaysInsidePinField(t *testing.T) {
+	m := PinMark(PinProbe)
+	if m&^MaskPin != 0 {
+		t.Fatalf("probe pin leaks outside the pin field: %#x", m)
+	}
+	if Pin(m) != PinProbe {
+		t.Fatalf("round trip: got %d", Pin(m))
+	}
+}

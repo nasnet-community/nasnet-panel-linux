@@ -208,3 +208,30 @@ func equalLines(a, b []string) bool {
 	}
 	return true
 }
+
+func TestKillSwitchProbeExemption(t *testing.T) {
+	r := Ruleset{KillSwitch: &KillSwitch{
+		SecondaryIfName: "enp0s3",
+		MarkMask:        netmark.MaskPin,
+		MarkValue:       netmark.PinMark(2),
+		ProbeMark:       netmark.PinMark(netmark.PinProbe),
+		ProbeIPs:        []string{"1.1.1.1", "8.8.8.8"},
+	}}
+	out := r.Render()
+	for _, want := range []string{
+		"set probe_v4 {",
+		"elements = { 1.1.1.1, 8.8.8.8 }",
+		"meta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4 accept",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestKillSwitchNoProbeIPsRendersNoProbeRule(t *testing.T) {
+	r := Ruleset{KillSwitch: &KillSwitch{SecondaryIfName: "enp0s3"}}
+	if out := r.Render(); strings.Contains(out, "probe_v4") {
+		t.Fatalf("probe set rendered with no IPs:\n%s", out)
+	}
+}
