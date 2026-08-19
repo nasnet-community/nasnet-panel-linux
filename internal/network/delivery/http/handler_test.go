@@ -224,6 +224,14 @@ func (s *stubUsecase) Confirm(_ context.Context, id uint) error       { s.confir
 func (s *stubUsecase) Rollback(context.Context) error                 { return nil }
 func (s *stubUsecase) Reconcile(context.Context) error                { return nil }
 func (s *stubUsecase) StartHealthLoop(context.Context, time.Duration) {}
+
+func (s *stubUsecase) SetHealthConfig(usecase.HealthConfig) {}
+
+func (s *stubUsecase) HealthState(context.Context) (*usecase.HealthView, error) {
+	return &usecase.HealthView{}, nil
+}
+
+func (s *stubUsecase) SetUplinkForce(context.Context, string, string) error { return nil }
 func (s *stubUsecase) Groups(context.Context) ([]domain.WANGroup, error) {
 	return []domain.WANGroup{{Name: "domestic"}}, nil
 }

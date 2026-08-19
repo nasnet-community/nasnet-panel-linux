@@ -38,7 +38,10 @@ func probeFixture(t *testing.T, reachable bool) (*networkUsecase, *gwRecorder, *
 	}); err != nil {
 		t.Fatal(err)
 	}
-	u := &networkUsecase{Deps: Deps{IfRepo: repo, Backend: be, Paths: testPaths(t)}}
+	// Prober is faked or the internet layer would dial real targets on linux.
+	u := &networkUsecase{Deps: Deps{
+		IfRepo: repo, Backend: be, Paths: testPaths(t), Prober: &fakeProber{},
+	}}
 	u.health = NewHealthMonitor(be, &scriptedProbe{carrier: true, gateway: reachable}, DefaultDamping())
 	return u, repo, be
 }

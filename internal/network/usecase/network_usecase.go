@@ -16,6 +16,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/dohboot"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	"gorm.io/gorm"
 )
@@ -45,6 +46,7 @@ type UplinkView struct {
 	Addrs      []string `json:"addrs"`
 	Gateway    string   `json:"gateway"`
 	Healthy    bool     `json:"healthy"`
+	Verdict    string   `json:"verdict"`
 	ForceState string   `json:"force_state"`
 }
 
@@ -87,6 +89,11 @@ type NetworkUsecase interface {
 	Rollback(ctx context.Context) error
 	Reconcile(ctx context.Context) error
 	StartHealthLoop(ctx context.Context, interval time.Duration)
+	// SetHealthConfig swaps the probe config; live-reloaded from settings.
+	SetHealthConfig(cfg HealthConfig)
+	// HealthState reports the probe ladder; assembly only, never dials.
+	HealthState(ctx context.Context) (*HealthView, error)
+	SetUplinkForce(ctx context.Context, key, state string) error
 	// StartRangesRefreshLoop keeps the domestic prefix list current. Zero uses
 	// the default weekly cadence.
 	StartRangesRefreshLoop(ctx context.Context, interval time.Duration)
@@ -152,6 +159,8 @@ type Deps struct {
 	Nftr system.NftReader
 	// Flow reads conntrack and interface counters. Nil uses the live kernel.
 	Flow system.FlowSource
+	// Prober dials the internet-layer targets. Nil uses the live kernel.
+	Prober TargetProber
 	// Events is the flow page's timeline history. Nil means no history.
 	Events     *events.Recorder
 	Backend    system.Backend
@@ -198,6 +207,17 @@ type networkUsecase struct {
 	// resolverStatus is a seam: off systemd the real probe always answers
 	// "running", which leaves the flow page's check untestable.
 	resolverStatus func(context.Context) system.DNSMasqStatus
+
+	// Everything the probe ladder knows, keyed by interface name.
+	healthMu       sync.Mutex
+	healthCfg      HealthConfig
+	inetStates     map[string]*internetState
+	bootTicks      map[string]int
+	rings          map[string]*healthRing
+	ladders        map[string]uplinkLadder
+	degradedNow    map[string]bool
+	lastEffective  map[string]bool
+	failoverActive bool
 }
 
 func (u *networkUsecase) dnsmasqStatus(ctx context.Context) system.DNSMasqStatus {
@@ -231,9 +251,16 @@ func (u *networkUsecase) vpnRouteState(ctx context.Context) VPNRouteState {
 
 func NewNetworkUsecase(d Deps) NetworkUsecase {
 	u := &networkUsecase{
-		Deps:    d,
-		health:  NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
-		dnsmasq: system.NewDNSMasq(),
+		Deps:          d,
+		health:        NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
+		dnsmasq:       system.NewDNSMasq(),
+		healthCfg:     DefaultHealthConfig(),
+		inetStates:    map[string]*internetState{},
+		bootTicks:     map[string]int{},
+		rings:         map[string]*healthRing{},
+		ladders:       map[string]uplinkLadder{},
+		degradedNow:   map[string]bool{},
+		lastEffective: map[string]bool{},
 	}
 	snap := &system.Snapshotter{Backend: d.Backend, Nft: d.Nft, Paths: d.Paths}
 	if d.LANRepo != nil {
@@ -321,7 +348,8 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list interfaces: %w", err)
 	}
-	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows)); err != nil {
+	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows),
+		u.healthConfigSnapshot().probeExemptIPs()); err != nil {
 		return err
 	}
 
@@ -587,10 +615,13 @@ func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
 
 	for _, up := range uplinks {
 		r := byName[up.IfName]
+		u.healthMu.Lock()
+		verdict := u.ladders[up.IfName].Verdict
+		u.healthMu.Unlock()
 		v := UplinkView{
 			IfName: up.IfName, Slot: string(up.Slot), Label: r.Label,
 			Table: up.Table, Gateway: r.StaticGateway,
-			Healthy: r.Healthy, ForceState: r.ForceState,
+			Healthy: r.Healthy, Verdict: verdict, ForceState: r.ForceState,
 		}
 		for _, a := range addrs {
 			if a.IfName == up.IfName {
@@ -954,7 +985,8 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 				_ = u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw)
 				// The kill switch names this gateway; the probe has to get past it.
 				if up.Slot == domain.SlotSecondary {
-					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gw)
+					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gw,
+						u.healthConfigSnapshot().probeExemptIPs())
 				}
 			}
 			if gw == "" {
@@ -962,26 +994,51 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 			}
 		}
 
-		healthy, changed, err := u.health.Observe(ctx, up, gw, forceByIf[up.IfName])
+		force := forceByIf[up.IfName]
+		gatewayUp, _, err := u.health.Observe(ctx, up, gw, force)
 		if err != nil {
 			continue
 		}
-		// Never withdraw a route we could not put back: with no gateway, or
-		// before the uplink has ever been seen healthy, leave networkd's alone.
-		if gw != "" && (healthy || u.health.EverUp(up.IfName)) {
-			if err := u.health.ApplyRoute(ctx, up, gw, healthy); err != nil {
-				continue
-			}
+
+		cfg := u.healthConfigSnapshot()
+		targets := cfg.targetsFor(up.Slot)
+		var mark uint32
+		if up.Slot == domain.SlotSecondary {
+			// Only the secondary leg meets the kill switch.
+			mark = netmark.PinMark(netmark.PinProbe)
 		}
-		if changed {
-			_ = u.IfRepo.SetHealth(ctx, idByIf[up.IfName], healthy)
+		results := probeAll(ctx, u.targetProber(), up.IfName, mark, targets)
+		// A forced or gateway-dead uplink cannot blame its targets; skip the damper.
+		inetUp := true
+		inetKnown := len(targets) > 0 && gatewayUp && force == ""
+		if inetKnown {
+			inetUp, _ = u.inetState(up.IfName).observe(anyUp(results), defaultInternetLimits(), time.Now())
+		}
+		if inetKnown {
+			u.ring(up.IfName).push(tickSample(time.Now(), results))
+		}
+		u.observeDegraded(up, cfg, u.ring(up.IfName))
+
+		routeErr := u.applyRouteState(ctx, up, gw, routeStateFor(routeInputs{
+			Slot: up.Slot, GatewayUp: gatewayUp, InternetUp: inetUp,
+			FailoverOn: cfg.FailoverToVPN, VPNUp: u.vpnConnectedNow(ctx),
+		}))
+
+		u.storeLadder(ctx, up, force, gatewayUp, inetUp, inetKnown, results)
+		// Kernel refused the route op: recording a recovery would be a lie.
+		effective := gatewayUp && inetUp && routeErr == nil
+		if u.effectiveChanged(up.IfName, effective) {
+			_ = u.IfRepo.SetHealth(ctx, idByIf[up.IfName], effective)
 			t := events.EventWANDown
-			if healthy {
+			if effective {
 				t = events.EventWANUp
 			}
-			u.emit(t, map[string]any{"if_name": up.IfName, "slot": string(up.Slot)})
+			u.emit(t, map[string]any{"if_name": up.IfName, "slot": string(up.Slot),
+				"gateway": gatewayUp, "internet": inetUp})
 		}
 	}
+
+	u.probeTunnel(ctx, u.healthConfigSnapshot())
 
 	if addrs, err := u.Backend.Addrs(ctx); err == nil {
 		for _, v := range LeaseVerdicts(addrs, uplinks, false, "") {

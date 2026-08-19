@@ -101,8 +101,10 @@ func (f *FakeBackend) RouteReplace(_ context.Context, r Route) error {
 	if f.Err != nil {
 		return f.Err
 	}
+	// The kernel keys replace on (dst, metric); a different metric is a new route.
 	for i := range f.Routes {
-		if f.Routes[i].Table == r.Table && f.Routes[i].Dest == r.Dest {
+		if f.Routes[i].Table == r.Table && f.Routes[i].Dest == r.Dest &&
+			f.Routes[i].Metric == r.Metric {
 			f.Routes[i] = r
 			return nil
 		}
@@ -117,11 +119,13 @@ func (f *FakeBackend) RouteDel(_ context.Context, r Route) error {
 	if f.Err != nil {
 		return f.Err
 	}
+	// Kernel-style: no explicit metric only removes that exact metric's alias.
 	out := f.Routes[:0]
 	for _, ex := range f.Routes {
-		if !(ex.Table == r.Table && ex.Dest == r.Dest) {
-			out = append(out, ex)
+		if ex.Table == r.Table && ex.Dest == r.Dest && ex.Metric == r.Metric {
+			continue
 		}
+		out = append(out, ex)
 	}
 	f.Routes = append([]Route(nil), out...)
 	return nil

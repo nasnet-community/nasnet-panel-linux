@@ -35,6 +35,15 @@ func (f *flowIfRepo) GetByRole(_ context.Context, role domain.InterfaceRole) ([]
 	return out, nil
 }
 
+func (f *flowIfRepo) GetByKey(_ context.Context, key string) (*domain.NetworkInterface, error) {
+	for i := range f.rows {
+		if f.rows[i].Key == key {
+			return &f.rows[i], nil
+		}
+	}
+	return nil, nil
+}
+
 // The prefs the repository seeds; the rule generator reads them from here.
 func flowGroups() []domain.WANGroup {
 	return []domain.WANGroup{
