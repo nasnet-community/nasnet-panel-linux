@@ -32,6 +32,7 @@ type SettingUsecase interface {
 	SetOnXrayVersionChange(fn func(string))
 	SetOnMaintenanceChange(fn func())
 	SetOnOutboundProxyChange(fn func(proxyURL string, enabled map[string]bool))
+	SetOnRouterHealthChange(fn func())
 	SetAuditUsecase(auc auditDomain.AuditLogUsecase)
 	ReseedEnvSettings(ctx context.Context) error
 	MigrateGlobalPanelPassword(ctx context.Context)

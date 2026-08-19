@@ -408,6 +408,17 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.Info("[httpclient] outbound proxy settings reloaded")
 	})
 
+	// Settings drive the health prober; reload without a restart.
+	if networkUC != nil {
+		loadHealthCfg := func() {
+			networkUC.SetHealthConfig(networkUsecase.ParseHealthConfig(func(k string) (string, error) {
+				return uc.Setting.GetByKey(context.Background(), k)
+			}))
+		}
+		loadHealthCfg()
+		uc.Setting.SetOnRouterHealthChange(loadHealthCfg)
+	}
+
 	go uc.ProvWorker.Start()
 	log.Info("Provisioning Worker started")
 
