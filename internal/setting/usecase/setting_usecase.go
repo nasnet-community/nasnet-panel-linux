@@ -42,6 +42,7 @@ type settingUsecase struct {
 	onXrayVersionChange   func(version string)
 	onMaintenanceChange   func()
 	onOutboundProxyChange func(proxyURL string, enabled map[string]bool)
+	onRouterHealthChange  func()
 	auditUC               auditDomain.AuditLogUsecase
 }
 
@@ -59,6 +60,10 @@ func (u *settingUsecase) SetOnMaintenanceChange(fn func()) {
 
 func (u *settingUsecase) SetOnOutboundProxyChange(fn func(proxyURL string, enabled map[string]bool)) {
 	u.onOutboundProxyChange = fn
+}
+
+func (u *settingUsecase) SetOnRouterHealthChange(fn func()) {
+	u.onRouterHealthChange = fn
 }
 
 // outboundProxyFeatureKeys lists the suffix names for the proxy_use_* setting
@@ -212,6 +217,16 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 			enabled[feat] = v == "true"
 		}
 		u.onOutboundProxyChange(url, enabled)
+	}
+
+	// The health loop re-reads its config when any router_ key changes.
+	if u.onRouterHealthChange != nil {
+		for _, s := range filtered {
+			if strings.HasPrefix(s.Key, "router_") {
+				u.onRouterHealthChange()
+				break
+			}
+		}
 	}
 
 	return nil
@@ -409,6 +424,28 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 			Label:           "Route wizard/updater traffic via proxy",
 			Description:     "When enabled, set OUTBOUND_PROXY_URL env var before running nasnet-tool. The wizard binary runs as a separate process and cannot read DB settings live; env var is the integration point. This toggle is documentation only.",
 			RequiresRestart: false},
+
+		// Router health probes (only used in router mode)
+		{Key: "router_probe_targets_domestic", Value: `[{"address":"217.218.155.155:53","proto":"dns"},{"address":"178.22.122.100:53","proto":"dns"}]`,
+			Type: "json", Category: "router",
+			Label:       "Domestic probe targets",
+			Description: "Addresses the domestic WAN must reach to count as online. Foreign IPs are filtered on this uplink, so keep these Iranian. Proto: tcp or dns."},
+		{Key: "router_probe_targets_foreign", Value: `[{"address":"1.1.1.1:443","proto":"tcp"},{"address":"8.8.8.8:443","proto":"tcp"}]`,
+			Type: "json", Category: "router",
+			Label:       "Foreign probe targets",
+			Description: "Addresses the secondary uplink and the VPN tunnel must reach. The kill switch only lets probes through to these exact IPs."},
+		{Key: "router_degraded_loss_pct", Value: "25", Type: "int", Category: "router",
+			Label:       "Degraded loss threshold (%)",
+			Description: "Probe loss over the last 100 seconds that marks an uplink degraded. Display and event only, never reroutes."},
+		{Key: "router_degraded_rtt_ms_domestic", Value: "300", Type: "int", Category: "router",
+			Label:       "Degraded RTT, domestic (ms)",
+			Description: "Median probe RTT that marks the domestic WAN degraded."},
+		{Key: "router_degraded_rtt_ms_foreign", Value: "800", Type: "int", Category: "router",
+			Label:       "Degraded RTT, foreign (ms)",
+			Description: "Median probe RTT that marks the secondary uplink degraded. Higher floor: satellite latency is normal."},
+		{Key: "router_failover_domestic_to_vpn", Value: "true", Type: "bool", Category: "router",
+			Label:       "Failover domestic traffic to the VPN",
+			Description: "When the domestic ISP loses internet, send Iranian-destined traffic through the tunnel until it recovers. Turn off if your domestic services reject foreign IPs."},
 	}
 
 	// Server/Infrastructure settings seeded from environment config
