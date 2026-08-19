@@ -177,8 +177,8 @@ func (u *networkUsecase) flowNodes(ctx context.Context, st flowState) []FlowNode
 		tableNode(st, 202, "nasnet-secondary", "transport only"),
 		u.wgNode(st),
 		killSwitchNode(st),
-		uplinkNode(st, domain.SlotDomestic),
-		uplinkNode(st, domain.SlotSecondary),
+		u.uplinkNode(st, domain.SlotDomestic),
+		u.uplinkNode(st, domain.SlotSecondary),
 		worldNode(st, domain.SlotDomestic),
 		worldNode(st, domain.SlotSecondary),
 		u.dnsNode(ctx, st),
@@ -362,6 +362,13 @@ func (u *networkUsecase) wgNode(st flowState) FlowNode {
 		lines = append(lines, fmt.Sprintf("transfer: %d rx / %d tx bytes",
 			st.wgStatus.RxBytes, st.wgStatus.TxBytes))
 	}
+	u.healthMu.Lock()
+	if _, ok := u.ladders[system.WGLinkName]; ok {
+		samples := u.rings[system.WGLinkName].snapshot()
+		lines = append(lines, fmt.Sprintf("probe: %d%% loss, median %dms through the tunnel",
+			lossPct(samples, 20), medianRTT(samples, 20)))
+	}
+	u.healthMu.Unlock()
 	return withDetail(n, section("tunnel", lines))
 }
 
@@ -394,7 +401,7 @@ func killSwitchNode(st flowState) FlowNode {
 	return withDetail(n, details...)
 }
 
-func uplinkNode(st flowState, slot domain.UplinkSlot) FlowNode {
+func (u *networkUsecase) uplinkNode(st flowState, slot domain.UplinkSlot) FlowNode {
 	n := FlowNode{Kind: "uplink"}
 	up := st.domestic
 	if slot == domain.SlotDomestic {
@@ -409,18 +416,64 @@ func uplinkNode(st flowState, slot domain.UplinkSlot) FlowNode {
 		return n
 	}
 	n.Sublabel = up.IfName
-	if st.healthy[up.Key] {
+
+	u.healthMu.Lock()
+	l := u.ladders[up.IfName]
+	failover := u.failoverActive
+	u.healthMu.Unlock()
+
+	switch l.Verdict {
+	case "":
+		// No tick yet; fall back to the persisted flag.
+		if st.healthy[up.Key] {
+			n.Status = "ok"
+		} else {
+			n.Status = "down"
+			n.Hint = "The health probe cannot reach this uplink's gateway."
+		}
+	case "up":
 		n.Status = "ok"
-	} else {
+	case "degraded":
+		n.Status = "warn"
+		n.Hint = "Reachable but lossy or slow — see the health strip."
+	case "no-internet":
+		n.Status = "down"
+		n.Hint = "Gateway answers but nothing past it does — the ISP's upstream looks dead."
+	case "no-gateway":
 		n.Status = "down"
 		n.Hint = "The health probe cannot reach this uplink's gateway."
+	case "no-carrier":
+		n.Status = "down"
+		n.Hint = "No signal on the wire."
+	case "forced-down":
+		n.Status = "down"
+		n.Hint = "Held down by the operator."
+	case "forced-up":
+		n.Status = "warn"
+		n.Hint = "Held up by the operator; the probe is not consulted."
+	default:
+		n.Status = "down"
 	}
+	if failover && slot == domain.SlotDomestic {
+		n.Status = "warn"
+		n.Hint = "Domestic internet is down — traffic is riding the tunnel until it recovers."
+	}
+
 	lines := []string{
 		"interface: " + up.IfName,
 		fmt.Sprintf("table: %d", up.Table),
 		fmt.Sprintf("pin mark: %s", netmark.Hex(netmark.PinMark(up.UplinkIndex))),
 	}
-	return withDetail(n, section("uplink", lines), section("routes", routeLines(st.routes[up.Table])))
+	var health []string
+	for _, r := range l.Results {
+		state := "unreachable"
+		if r.OK {
+			state = fmt.Sprintf("%dms", r.RTT.Milliseconds())
+		}
+		health = append(health, fmt.Sprintf("%s %s: %s", r.Target.Proto, r.Target.Address, state))
+	}
+	return withDetail(n, section("uplink", lines), section("health", health),
+		section("routes", routeLines(st.routes[up.Table])))
 }
 
 func worldNode(st flowState, slot domain.UplinkSlot) FlowNode {
