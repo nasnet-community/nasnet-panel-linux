@@ -24,6 +24,7 @@ import type {
     InterfaceRole,
     NetworkInterfaceView,
     UplinkSlot,
+    UplinkView,
 } from "@/lib/types/network"
 
 /** Role + slot as one picker: stage 1 groups have one member each, so slots are
@@ -103,6 +104,7 @@ export function caveats(iface: NetworkInterfaceView): string[] {
 
 const DOT: Record<string, string> = {
     up: "bg-status-success",
+    warn: "bg-status-warning",
     down: "bg-status-danger",
     absent: "bg-status-neutral",
 }
@@ -170,7 +172,7 @@ function Attachment({ iface }: { iface: NetworkInterfaceView }) {
                 </TooltipContent>
             </Tooltip>
             {iface.driver && (
-                <p className="text-text-tertiary font-mono text-[11px]">{iface.driver}</p>
+                <p className="text-text-tertiary font-mono text-xs">{iface.driver}</p>
             )}
         </div>
     )
@@ -215,8 +217,8 @@ function Addresses({ iface }: { iface: NetworkInterfaceView }) {
     )
 }
 
-function LinkState({ iface }: { iface: NetworkInterfaceView }) {
-    const tone = linkTone(iface)
+function LinkState({ iface, uplink }: { iface: NetworkInterfaceView; uplink?: UplinkView }) {
+    const tone = linkTone(iface, uplink)
     return (
         <div className="space-y-0.5">
             <div className="flex items-center gap-2">
@@ -224,10 +226,10 @@ function LinkState({ iface }: { iface: NetworkInterfaceView }) {
                     aria-hidden
                     className={cn("inline-block h-2 w-2 shrink-0 rounded-full", DOT[tone])}
                 />
-                <span className="text-sm">{linkLabel(iface)}</span>
+                <span className="text-sm">{linkLabel(iface, uplink)}</span>
             </div>
             {iface.speed_mbit > 0 && (
-                <p className="text-text-tertiary font-mono text-[11px]">
+                <p className="text-text-tertiary font-mono text-xs">
                     {iface.speed_mbit} Mbit/s
                 </p>
             )}
@@ -280,9 +282,13 @@ interface Props {
     interfaces: NetworkInterfaceView[]
     onAssign: (iface: NetworkInterfaceView, choice: RoleChoice) => void
     disabled?: boolean
+    /** The probe verdicts; without them the dot falls back to carrier state. */
+    uplinks?: UplinkView[]
 }
 
-export function InterfaceTable({ interfaces, onAssign, disabled }: Props) {
+export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Props) {
+    const uplinkFor = (iface: NetworkInterfaceView) =>
+        uplinks?.find((u) => u.if_name === iface.if_name)
     const rows = interfaces.filter((i) => i.assignable)
 
     if (rows.length === 0) {
@@ -323,7 +329,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled }: Props) {
                                     <Addresses iface={iface} />
                                 </TableCell>
                                 <TableCell>
-                                    <LinkState iface={iface} />
+                                    <LinkState iface={iface} uplink={uplinkFor(iface)} />
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <div className="flex justify-end">
@@ -352,7 +358,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled }: Props) {
                     >
                         <div className="flex items-start justify-between gap-3">
                             <Identity iface={iface} />
-                            <LinkState iface={iface} />
+                            <LinkState iface={iface} uplink={uplinkFor(iface)} />
                         </div>
                         <div className="flex items-start justify-between gap-3">
                             <Addresses iface={iface} />

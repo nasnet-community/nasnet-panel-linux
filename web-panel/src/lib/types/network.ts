@@ -40,6 +40,7 @@ export interface UplinkView {
     addrs: string[]
     gateway: string
     healthy: boolean
+    verdict: string
     force_state: "" | "up" | "down"
 }
 

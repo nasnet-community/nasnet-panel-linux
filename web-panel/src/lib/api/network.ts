@@ -16,6 +16,7 @@ import type {
     VPNStatus,
     WireGuardConfig,
 } from "@/lib/types/network"
+import type { RouterHealth } from "@/lib/types/health"
 
 export async function getNetworkInterfaces(): Promise<ApiResponse<NetworkInterfaceView[]>> {
     return api.get<NetworkInterfaceView[]>("/api/v1/network/interfaces")
@@ -23,6 +24,14 @@ export async function getNetworkInterfaces(): Promise<ApiResponse<NetworkInterfa
 
 export async function getNetworkState(): Promise<ApiResponse<NetworkState>> {
     return api.get<NetworkState>("/api/v1/network/state")
+}
+
+export async function getRouterHealth(): Promise<ApiResponse<RouterHealth>> {
+    return api.get<RouterHealth>("/api/v1/network/health")
+}
+
+export async function setUplinkForce(ifName: string, state: "" | "up" | "down"): Promise<ApiResponse<{ state: string }>> {
+    return api.put<{ state: string }>(`/api/v1/network/uplinks/${encodeURIComponent(ifName)}/force`, { state })
 }
 
 export async function planNetworkChange(req: AssignRoleRequest): Promise<ApiResponse<NetworkPlan>> {

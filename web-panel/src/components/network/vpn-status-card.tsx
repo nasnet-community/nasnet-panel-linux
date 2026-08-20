@@ -4,6 +4,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { formatBytes, handshakeLabel } from "@/lib/vpn-labels"
+import { useRouterHealth } from "@/lib/queries/use-router-health"
 import type { VPNStatus } from "@/lib/types/network"
 
 interface Props {
@@ -12,10 +13,12 @@ interface Props {
 }
 
 export function VpnStatusCard({ status, loading }: Props) {
+    const health = useRouterHealth()
     if (loading) return <Skeleton className="h-44 w-full" />
     if (!status) return null
 
     const on = status.active_profile_id !== null
+    const probe = health.data?.vpn
 
     return (
         <Card>
@@ -89,6 +92,12 @@ export function VpnStatusCard({ status, loading }: Props) {
                             </dd>
                         </div>
                     </dl>
+                )}
+
+                {on && probe?.present && (
+                    <p className="text-text-secondary text-sm tabular-nums">
+                        Tunnel probe: {probe.loss_pct}% loss · median {probe.median_rtt_ms}ms
+                    </p>
                 )}
 
                 {on && !status.connected && !status.secondary_uplink_up && (
