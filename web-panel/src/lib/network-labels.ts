@@ -3,6 +3,7 @@ import type {
     LANDevice,
     NetworkInterfaceView,
     UplinkSlot,
+    UplinkView,
 } from "@/lib/types/network"
 
 /** netif.Source → what an operator would call the socket. */
@@ -69,15 +70,28 @@ export function groupAddresses(addrs: string[] | null | undefined): AddressGroup
     return { primary: sorted[0] ?? null, extra: sorted.slice(1) }
 }
 
-export type LinkTone = "up" | "down" | "absent"
+export type LinkTone = "up" | "warn" | "down" | "absent"
 
-export function linkTone(iface: NetworkInterfaceView): LinkTone {
+// The verdict outranks the carrier bit: a green dot on a dead WAN is a lie.
+export function linkTone(iface: NetworkInterfaceView, uplink?: UplinkView): LinkTone {
     if (!iface.present) return "absent"
+    if (uplink?.verdict) {
+        switch (uplink.verdict) {
+            case "up":
+                return "up"
+            case "degraded":
+            case "forced-up":
+                return "warn"
+            default:
+                return "down"
+        }
+    }
     return iface.carrier ? "up" : "down"
 }
 
-export function linkLabel(iface: NetworkInterfaceView): string {
+export function linkLabel(iface: NetworkInterfaceView, uplink?: UplinkView): string {
     if (!iface.present) return "absent"
+    if (uplink?.verdict) return uplink.verdict.replace("-", " ")
     return iface.carrier ? "up" : iface.oper_state || "down"
 }
 

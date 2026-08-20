@@ -12,6 +12,7 @@ import {
     HiOutlineGlobeAlt,
     HiOutlineExclamationCircle,
 } from "react-icons/hi"
+import { LuRouter } from "react-icons/lu"
 import { BsTelegram, BsDiscord } from "react-icons/bs"
 
 export interface CategoryMeta {
@@ -87,6 +88,12 @@ export const categoryMeta: Record<string, CategoryMeta> = {
         description: "Configure xray crash detection, notification throttling, and auto-disable behavior",
         order: 6.5,
         label: "Xray Monitoring",
+    },
+    router: {
+        icon: LuRouter,
+        description: "Uplink health probes, degraded thresholds, and failover behavior",
+        order: 6.7,
+        label: "Router",
     },
     maintenance: {
         icon: HiOutlineExclamationCircle,
@@ -367,6 +374,26 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
             label: "Auto-Disable Safety",
             description: "Automatically stop xray after too many failures",
             keys: ["xray_auto_disable_enabled", "xray_auto_disable_max_failures"],
+        },
+    ],
+    router: [
+        {
+            label: "Probe Targets",
+            description: "What each uplink must reach to count as online",
+            keys: ["router_probe_targets_domestic", "router_probe_targets_foreign"],
+        },
+        {
+            label: "Degraded Thresholds",
+            description: "When a working uplink gets flagged as lossy or slow",
+            keys: [
+                "router_degraded_loss_pct",
+                "router_degraded_rtt_ms_domestic",
+                "router_degraded_rtt_ms_foreign",
+            ],
+        },
+        {
+            label: "Failover",
+            keys: ["router_failover_domestic_to_vpn"],
         },
     ],
 }

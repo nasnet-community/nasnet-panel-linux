@@ -10,6 +10,7 @@ const ACCENT: Record<RoleBay["accent"], string> = {
 
 const DOT: Record<string, string> = {
     up: "bg-status-success",
+    warn: "bg-status-warning",
     down: "bg-status-danger",
     absent: "bg-status-neutral",
 }
@@ -42,7 +43,7 @@ export function RoleBays({ interfaces, state }: Props) {
                 const held = bayHolder(interfaces, bay)
                 const uplink = state?.uplinks?.find((u) => u.slot === bay.slot && bay.slot !== "")
                 const addr = held ? groupAddresses(held.addrs).primary : null
-                const tone = held ? linkTone(held) : "absent"
+                const tone = held ? linkTone(held, uplink) : "absent"
 
                 return (
                     <div
@@ -64,7 +65,7 @@ export function RoleBays({ interfaces, state }: Props) {
                             />
                         )}
 
-                        <p className="text-text-tertiary text-[11px] font-medium uppercase tracking-[0.12em]">
+                        <p className="text-text-tertiary text-xs font-medium uppercase tracking-[0.12em]">
                             {bay.label}
                         </p>
 
@@ -72,17 +73,17 @@ export function RoleBays({ interfaces, state }: Props) {
                             <div className="mt-2.5 space-y-1.5">
                                 <div className="flex items-center gap-2">
                                     <LiveDot tone={tone} />
-                                    <span className="font-mono text-sm font-medium">
+                                    <span className="font-mono text-base font-medium">
                                         {held.if_name}
                                     </span>
                                     {held.label && (
-                                        <span className="text-text-secondary truncate text-xs">
+                                        <span className="text-text-secondary truncate text-sm">
                                             {held.label}
                                         </span>
                                     )}
                                 </div>
 
-                                <p className="text-text-secondary font-mono text-xs">
+                                <p className="text-text-secondary font-mono text-sm">
                                     {addr ?? "no address"}
                                     {uplink?.gateway && (
                                         <span className="text-text-tertiary">
@@ -113,8 +114,8 @@ export function RoleBays({ interfaces, state }: Props) {
                             </div>
                         ) : (
                             <div className="mt-2.5 space-y-1.5">
-                                <p className="text-text-tertiary text-sm">Not assigned</p>
-                                <p className="text-text-tertiary text-xs leading-relaxed">
+                                <p className="text-text-tertiary text-base">Not assigned</p>
+                                <p className="text-text-tertiary text-sm leading-relaxed">
                                     {bay.hint}
                                 </p>
                             </div>
