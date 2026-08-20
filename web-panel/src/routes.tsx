@@ -8,8 +8,8 @@ import { RouteErrorBoundary } from "@/components/ui/route-error-boundary"
 
 const Login = lazy(() => import("@/pages/login"))
 const Dashboard = lazy(() => import("@/pages/dashboard"))
-const Network = lazy(() => import("@/pages/network"))
-const NetworkFlow = lazy(() => import("@/pages/network/flow"))
+const Router = lazy(() => import("@/pages/router"))
+const RouterFlow = lazy(() => import("@/pages/router/flow"))
 const Users = lazy(() => import("@/pages/users"))
 const UserDetail = lazy(() => import("@/pages/users/[id]"))
 const Subscriptions = lazy(() => import("@/pages/subscriptions"))
@@ -61,8 +61,11 @@ export const router = createBrowserRouter([
         { path: "/users/:id", element: r(<UserDetail />) },
         { path: "/server", element: r(<Server />) },
         { path: "/nodes", element: <Navigate to="/server" replace /> },
-        { path: "/network", element: r(<Network />) },
-        { path: "/network/flow", element: r(<NetworkFlow />) },
+        { path: "/router", element: r(<Router />) },
+        { path: "/router/flow", element: r(<RouterFlow />) },
+        // The old address; shared trace URLs must keep working.
+        { path: "/network", element: <RedirectWithSearch to="/router" /> },
+        { path: "/network/flow", element: <RedirectWithSearch to="/router/flow" /> },
         { path: "/nodes/:id", element: <Navigate to="/server" replace /> },
         { path: "/xray-binaries", element: r(<XrayBinaries />) },
         { path: "/subscriptions", element: r(<Subscriptions />) },

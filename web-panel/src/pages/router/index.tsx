@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LanTab } from "@/pages/network/lan-tab"
-import { PortForwardsTab } from "@/pages/network/port-forwards-tab"
-import { VpnTab } from "@/pages/network/vpn-tab"
+import { HealthStrip } from "@/components/router/health-strip"
+import { LanTab } from "@/pages/router/lan-tab"
+import { PortForwardsTab } from "@/pages/router/port-forwards-tab"
+import { VpnTab } from "@/pages/router/vpn-tab"
 import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
@@ -39,6 +40,9 @@ const NETWORK_EVENTS = new Set([
     "wan.up",
     "wan.down",
     "wan.failover",
+    "wan.failover_lost",
+    "wan.failover_restored",
+    "wan.force_state",
     "wan.apply_rolled_back",
     "wan.lease_warning",
     "vpn.up",
@@ -148,20 +152,20 @@ export default function NetworkPage() {
         <div className="mx-auto max-w-6xl space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="max-w-2xl">
-                    <h1 className="text-2xl font-semibold">Network</h1>
-                    <p className="text-text-secondary text-sm">
+                    <h1 className="text-3xl font-semibold">Router</h1>
+                    <p className="text-text-secondary text-base">
                         Assign each port a role. Every change is reviewed first, then held behind a
                         90-second confirmation that reverts itself if you lose access.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
                     {freshness && (
-                        <span className="text-text-tertiary text-xs tabular-nums">
+                        <span className="text-text-tertiary text-sm tabular-nums">
                             updated {freshness}
                         </span>
                     )}
                     <Button variant="outline" size="sm" asChild>
-                        <Link to="/network/flow">
+                        <Link to="/router/flow">
                             <Waypoints className="mr-1.5 h-3.5 w-3.5" />
                             Traffic flow
                         </Link>
@@ -222,6 +226,9 @@ export default function NetworkPage() {
                 </Alert>
             ))}
 
+            {/* First thing an operator checks; lives above the tabs. */}
+            {!setupPending && uplinkCount > 0 && <HealthStrip />}
+
             <Tabs defaultValue="ports" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="ports">Ports</TabsTrigger>
@@ -233,8 +240,8 @@ export default function NetworkPage() {
                 <TabsContent value="ports" className="mt-0 space-y-6">
                     <section className="space-y-3">
                         <div className="flex items-baseline justify-between gap-4">
-                            <h2 className="text-sm font-medium">Roles</h2>
-                            <p className="text-text-tertiary text-xs">
+                            <h2 className="text-base font-medium">Roles</h2>
+                            <p className="text-text-tertiary text-sm">
                                 Dashed bays are unassigned
                             </p>
                         </div>
@@ -253,6 +260,7 @@ export default function NetworkPage() {
                                 interfaces={rows}
                                 onAssign={onAssign}
                                 disabled={apply.isPending || armed}
+                                uplinks={state.data?.uplinks}
                             />
                         </CardContent>
                     </Card>
