@@ -19,7 +19,7 @@ import { useState, useEffect } from "react"
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Breadcrumbs } from "@/components/shared/breadcrumbs"
 import { useSettings } from "@/lib/queries"
-import { Wrench } from "lucide-react"
+import { Router as RouterIcon, Waypoints, Wrench } from "lucide-react"
 // import { MessageSquare } from "lucide-react"
 // import { useUnreadChatCount } from "@/lib/queries/use-chat"
 import { SidebarHeader } from "@/components/sidebar/sidebar-header"
@@ -52,13 +52,18 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Infrastructure",
         items: [
             {
+                label: "Router", href: "/router", icon: RouterIcon,
+                children: [
+                    { label: "Traffic flow", href: "/router/flow", icon: Waypoints },
+                ],
+            },
+            {
                 label: "Server", href: "/server", icon: HiOutlineServer, mobileQuickAccess: true,
                 children: [
                     { label: "Hosts", href: "/hosts", icon: HiOutlineLink },
                     { label: "Access Logs", href: "/access-logs", icon: HiOutlineGlobeAlt },
                     { label: "Access History", href: "/access-history", icon: HiOutlineSearch },
                     { label: "Xray Core", href: "/xray-binaries", icon: HiOutlineCube },
-                    { label: "Network", href: "/network", icon: HiOutlineLink },
                 ],
             },
             {

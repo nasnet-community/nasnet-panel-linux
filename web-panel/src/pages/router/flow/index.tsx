@@ -82,9 +82,9 @@ export default function TrafficFlowPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" asChild>
-                        <Link to="/network">
+                        <Link to="/router">
                             <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                            Network
+                            Router
                         </Link>
                     </Button>
                     <h1 className="text-xl font-semibold">Traffic flow</h1>

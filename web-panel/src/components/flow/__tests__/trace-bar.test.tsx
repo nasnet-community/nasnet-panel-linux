@@ -40,7 +40,7 @@ function traceView(over: Partial<TraceView> = {}): TraceView {
     }
 }
 
-function renderBar(initialEntry = "/network/flow") {
+function renderBar(initialEntry = "/router/flow") {
     const onResult = vi.fn()
     const onClear = vi.fn()
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -120,7 +120,7 @@ describe("TraceBar", () => {
 
     it("runs a shared trace from the URL without anyone pressing anything", async () => {
         postTrace.mockResolvedValue({ success: true, data: traceView() })
-        renderBar("/network/flow?trace=142.250.185.78&source=lan")
+        renderBar("/router/flow?trace=142.250.185.78&source=lan")
 
         expect(await screen.findByText(/Delivered through the VPN/i)).toBeInTheDocument()
         expect(postTrace).toHaveBeenCalledWith({ dest: "142.250.185.78", source: "lan" })

@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { VpnTab } from "@/pages/network/vpn-tab"
+import { VpnTab } from "@/pages/router/vpn-tab"
 import { detectFormat, formatBytes, handshakeLabel } from "@/lib/vpn-labels"
 import type { VPNProfile, VPNStatus } from "@/lib/types/network"
 
