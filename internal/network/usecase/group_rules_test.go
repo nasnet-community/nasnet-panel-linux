@@ -20,7 +20,7 @@ func twoGroups() []domain.WANGroup {
 // Pins sit above group rules; both fields set means pinned.
 func TestPinRules_AboveGroupRulesAndTerminatePerInterface(t *testing.T) {
 	pins := PinRules(twoUplinks())
-	groups := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+	groups := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 
 	for _, p := range pins {
 		for _, g := range groups {
@@ -85,7 +85,7 @@ func TestPinRules_ExactPreferencesAndMasks(t *testing.T) {
 
 // A foreign spill onto the domestic ISP discloses the real address.
 func TestGroupRules_FailClosedSymmetrically(t *testing.T) {
-	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 
 	for _, g := range twoGroups() {
 		mark := netmark.GroupMark(g.GroupIndex)
@@ -112,7 +112,7 @@ func TestGroupRules_FailClosedSymmetrically(t *testing.T) {
 
 // The foreign group's egress is the tunnel, never the uplink underneath it.
 func TestGroupRules_ForeignGroupLeavesByTheTunnel(t *testing.T) {
-	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 
 	mark := netmark.GroupMark(netmark.GroupForeign)
 	var lookups []system.Rule
@@ -164,7 +164,7 @@ func TestGroupRules_ForeignGroupBlackholesWithoutATunnel(t *testing.T) {
 
 // A group mark naming an uplink would make failover restart xray.
 func TestGroupRules_MarkNamesTheGroupNotTheUplink(t *testing.T) {
-	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+	rs := GroupRules(twoGroups(), twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 	for _, r := range rs {
 		if r.FwMask == netmark.MaskGroup && netmark.Pin(r.FwMark) != 0 {
 			t.Errorf("group rule at pref %d carries a pin field: 0x%08x", r.Pref, r.FwMark)
@@ -176,7 +176,7 @@ func TestGroupRules_MarkNamesTheGroupNotTheUplink(t *testing.T) {
 }
 
 func TestAllRules_NoPreferenceCollisions(t *testing.T) {
-	rs := AllRules(twoGroups(), twoUplinks(), VPNRouteState{Active: true})
+	rs := AllRules(twoGroups(), twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 	seen := map[int]bool{}
 	for _, r := range rs {
 		if seen[r.Pref] && !r.Blackhole {
@@ -220,15 +220,17 @@ func TestApplySysctls_SetsBothAllAndPerInterfaceRPFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]string{
-		"net.ipv4.conf.all.rp_filter":       "2",
-		"net.ipv4.conf.enp1s0.rp_filter":    "2",
-		"net.ipv4.conf.enp2s0.rp_filter":    "2",
-		"net.ipv4.tcp_fwmark_accept":        "1",
-		"net.ipv4.fwmark_reflect":           "1",
-		"net.ipv4.conf.enp1s0.arp_ignore":   "1",
-		"net.ipv4.conf.enp1s0.arp_announce": "2",
-		"net.ipv4.conf.enp2s0.arp_ignore":   "1",
-		"net.ipv4.conf.enp2s0.arp_announce": "2",
+		"net.ipv4.conf.all.rp_filter":    "2",
+		"net.ipv4.conf.enp1s0.rp_filter": "2",
+		"net.ipv4.conf.enp2s0.rp_filter": "2",
+		"net.ipv4.tcp_fwmark_accept":     "1",
+		"net.ipv4.fwmark_reflect":        "1",
+		// L4 hash keeps a flow on one pool member.
+		"net.ipv4.fib_multipath_hash_policy": "1",
+		"net.ipv4.conf.enp1s0.arp_ignore":    "1",
+		"net.ipv4.conf.enp1s0.arp_announce":  "2",
+		"net.ipv4.conf.enp2s0.arp_ignore":    "1",
+		"net.ipv4.conf.enp2s0.arp_announce":  "2",
 	} {
 		got, err := be.SysctlGet(ctx, key)
 		if err != nil || got != want {

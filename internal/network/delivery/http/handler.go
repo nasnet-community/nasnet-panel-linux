@@ -36,15 +36,17 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.PUT("/lan", h.UpdateLAN)
 		n.GET("/lan/devices", h.ListDevices)
 		n.PUT("/lan/devices/:mac/label", h.SetDeviceLabel)
-		// Only activate and deactivate touch packets; the rest is plain storage.
+		// Only enable and disable touch packets; role changes redistribute
+		// flows, and the rest is plain storage.
 		n.GET("/vpn/profiles", h.ListVPNProfiles)
 		n.POST("/vpn/profiles", h.CreateVPNProfile)
 		n.PUT("/vpn/profiles/:id", h.UpdateVPNProfile)
 		n.DELETE("/vpn/profiles/:id", h.DeleteVPNProfile)
 		n.POST("/vpn/parse", h.ParseVPNInput)
 		n.POST("/vpn/keypair", h.GenerateVPNKeypair)
-		n.POST("/vpn/activate", h.ActivateVPN)
-		n.POST("/vpn/deactivate", h.DeactivateVPN)
+		n.POST("/vpn/profiles/:id/enable", h.EnableVPNProfile)
+		n.POST("/vpn/profiles/:id/disable", h.DisableVPNProfile)
+		n.PATCH("/vpn/profiles/:id/role", h.SetVPNProfileRole)
 		n.GET("/vpn/status", h.VPNStatus)
 
 		// The probe ladder. Assembly only — never dials.

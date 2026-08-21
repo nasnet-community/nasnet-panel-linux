@@ -114,6 +114,39 @@ func medianRTT(samples []HealthSample, n int) int {
 	return rtts[len(rtts)/2]
 }
 
+// mergeHistories averages tail-aligned samples; members tick together, so
+// index alignment from the end is honest enough for a sparkline.
+func mergeHistories(hs [][]HealthSample) []HealthSample {
+	if len(hs) == 0 {
+		return nil
+	}
+	n := len(hs[0])
+	for _, h := range hs[1:] {
+		if len(h) < n {
+			n = len(h)
+		}
+	}
+	out := make([]HealthSample, n)
+	for i := 0; i < n; i++ {
+		var okSum float64
+		var rttSum, rttN int
+		for _, h := range hs {
+			s := h[len(h)-n+i]
+			okSum += s.OKRatio
+			if s.RTTms > 0 {
+				rttSum += s.RTTms
+				rttN++
+			}
+			out[i].Unix = s.Unix
+		}
+		out[i].OKRatio = okSum / float64(len(hs))
+		if rttN > 0 {
+			out[i].RTTms = rttSum / rttN
+		}
+	}
+	return out
+}
+
 func tickSample(now time.Time, results []ProbeResult) HealthSample {
 	s := HealthSample{Unix: now.Unix()}
 	if len(results) == 0 {

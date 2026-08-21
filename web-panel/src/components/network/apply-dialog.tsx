@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 import { Ban, Info, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -123,6 +124,8 @@ export function ApplyDialog({
             applied.confirm_deadline_unix,
             altOrigin,
         )
+        // A trace that outlives the dialog closing.
+        if (ok) toast.success("Settings kept")
         setStep(ok ? "kept" : "reverted")
     }
 

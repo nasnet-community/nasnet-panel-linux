@@ -40,11 +40,15 @@ type stubUsecase struct {
 	vpnParsed     string
 	vpnParseErr   error
 	vpnVerdicts   []domain.Verdict
-	vpnActivateID uint
+	vpnEnabledID  uint
 	vpnApplyView  *usecase.ApplyView
 	vpnApplyErr   error
-	vpnDeactived  bool
-	vpnStatus     *usecase.VPNStatusView
+	vpnDisabledID uint
+	vpnRoleID     uint
+	vpnRolePrio   int
+	vpnRoleWeight int
+	vpnRoleErr    error
+	vpnStatus     *usecase.VPNPoolStatusView
 
 	flowView   *usecase.FlowView
 	traceView  *usecase.TraceView
@@ -117,19 +121,24 @@ func (s *stubUsecase) GenerateVPNKeypair() (string, string, error) {
 	return "private", "public", nil
 }
 
-func (s *stubUsecase) ActivateVPN(_ context.Context, id uint) ([]domain.Verdict, *usecase.ApplyView, error) {
-	s.vpnActivateID = id
+func (s *stubUsecase) EnableVPNProfile(_ context.Context, id uint) ([]domain.Verdict, *usecase.ApplyView, error) {
+	s.vpnEnabledID = id
 	return s.vpnVerdicts, s.vpnApplyView, s.vpnApplyErr
 }
 
-func (s *stubUsecase) DeactivateVPN(context.Context) ([]domain.Verdict, *usecase.ApplyView, error) {
-	s.vpnDeactived = true
+func (s *stubUsecase) DisableVPNProfile(_ context.Context, id uint) ([]domain.Verdict, *usecase.ApplyView, error) {
+	s.vpnDisabledID = id
 	return s.vpnVerdicts, s.vpnApplyView, s.vpnApplyErr
 }
 
-func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNStatusView, error) {
+func (s *stubUsecase) SetVPNProfileRole(_ context.Context, id uint, priority, weight int) error {
+	s.vpnRoleID, s.vpnRolePrio, s.vpnRoleWeight = id, priority, weight
+	return s.vpnRoleErr
+}
+
+func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNPoolStatusView, error) {
 	if s.vpnStatus == nil {
-		return &usecase.VPNStatusView{KillSwitch: true}, nil
+		return &usecase.VPNPoolStatusView{Tunnels: []usecase.TunnelStatusView{}, KillSwitch: true}, nil
 	}
 	return s.vpnStatus, nil
 }

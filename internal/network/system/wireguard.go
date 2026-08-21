@@ -3,11 +3,21 @@ package system
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 )
 
-// The tunnel's fixed identities. The table number is pinned like 201/202 are,
+const wgLinkPrefix = "nasnet-wg"
+
+// MaxWGSlots matches domain.MaxEnabledProfiles; both count the oif window.
+const MaxWGSlots = 8
+
+func WGLinkNameFor(slot int) string { return fmt.Sprintf("%s%d", wgLinkPrefix, slot) }
+func IsWGLink(name string) bool     { return strings.HasPrefix(name, wgLinkPrefix) }
+
+// The pool's fixed identities. The table number is pinned like 201/202 are,
 // so a snapshot taken by one build restores under another.
 const (
 	WGLinkName  = "nasnet-wg0"
@@ -60,17 +70,20 @@ func (s *WGStatus) Connected() bool {
 		time.Since(s.LastHandshake) < StaleHandshakeAfter
 }
 
-// WGDevice owns the tunnel interface. Separate from Backend for the same reason
-// DeviceSource is: Backend is the apply/rollback seam for routes and rules.
+// WGDevice owns the tunnel interfaces. Separate from Backend for the same
+// reason DeviceSource is: Backend is the apply/rollback seam for routes and rules.
 type WGDevice interface {
-	// Ensure creates or reconfigures the link. Idempotent.
-	Ensure(ctx context.Context, cfg WGApplyConfig) error
+	// Ensure creates or reconfigures one link. Idempotent.
+	Ensure(ctx context.Context, ifName string, cfg WGApplyConfig) error
 	// UpdateEndpoint moves the peer to a new address without touching anything
 	// else, for when a hostname endpoint has been re-resolved.
-	UpdateEndpoint(ctx context.Context, endpoint netip.AddrPort) error
+	UpdateEndpoint(ctx context.Context, ifName string, endpoint netip.AddrPort) error
 	// Status returns ErrNoWGDevice when the link is absent.
-	Status(ctx context.Context) (*WGStatus, error)
+	Status(ctx context.Context, ifName string) (*WGStatus, error)
 	// Delete removes the link, which takes its addresses, its resolver
 	// registration and its peer state with it. Idempotent.
-	Delete(ctx context.Context) error
+	Delete(ctx context.Context, ifName string) error
+	// List names the nasnet-wg* links present, so a reconcile can remove
+	// devices whose profile left the pool.
+	List(ctx context.Context) ([]string, error)
 }

@@ -36,7 +36,10 @@ func newTraceFixture(t *testing.T, o traceOpts) *networkUsecase {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vpn := VPNRouteState{Active: o.vpnActive}
+	vpn := VPNRouteState{}
+	if o.vpnActive {
+		vpn.IfNames = []string{system.WGLinkName}
+	}
 
 	be := u.Backend.(*system.FakeBackend)
 	be.Rules = AllRules(flowGroups(), uplinks, vpn)
@@ -45,7 +48,9 @@ func newTraceFixture(t *testing.T, o traceOpts) *networkUsecase {
 		{Table: 202, Dest: "default", Gateway: "100.64.0.1", OifName: "eth1"},
 	}
 	if o.vpnActive {
-		be.Routes = append(be.Routes, vpnRoutes(uplinks)...)
+		be.Routes = append(be.Routes,
+			system.Route{Table: system.WGTable, Dest: "default", OifName: system.WGLinkName},
+			system.Route{Table: system.WGTable, Dest: StarlinkDishSubnet, OifName: "eth1", Scope: "link"})
 	}
 	// The kernel agrees with the walk unless a test says otherwise.
 	be.RouteGetFn = func(dst string, mark uint32) (*system.Route, error) {

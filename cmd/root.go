@@ -232,10 +232,10 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Warn("Failed to create ux_netif_uplink_slot")
 	}
 
-	// One active profile at a time. Indexed on active, not a natural key, so a
-	// deleted profile can't block a later one.
-	if err := networkRepo.EnsureVPNProfileIndex(db); err != nil {
-		log.WithError(err).Warn("Failed to create ux_vpn_profile_active")
+	// Pool slots are unique among enabled profiles; also converts the old
+	// single-active row on first boot after the upgrade.
+	if err := networkRepo.EnsureVPNPoolMigration(db); err != nil {
+		log.WithError(err).Warn("Failed to migrate the VPN pool schema")
 	}
 
 	if cfg.Router.Enabled {

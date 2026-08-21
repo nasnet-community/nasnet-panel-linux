@@ -39,17 +39,37 @@ export interface UplinkHealth {
     history: HealthSample[]
 }
 
-export interface VPNHealth {
-    present: boolean
+export type TunnelVerdict = "" | "up" | "no-internet" | "degraded"
+
+export interface TunnelHealth {
+    profile_id: number
+    name: string
+    if_name: string
+    priority: number
+    weight: number
+    /** In the nexthop set right now, i.e. actually carrying traffic. */
+    in_pool: boolean
+    verdict: TunnelVerdict
+    degraded: boolean
     loss_pct: number
     median_rtt_ms: number
     targets: TargetStatus[]
     history: HealthSample[]
 }
 
+export interface VPNPoolHealth {
+    present: boolean
+    active_tier: number
+    loss_pct: number
+    median_rtt_ms: number
+    /** Members' samples averaged, for the pool sparkline. */
+    pool_history: HealthSample[]
+    tunnels: TunnelHealth[]
+}
+
 export interface RouterHealth {
     generated_unix: number
     failover_active: boolean
     uplinks: UplinkHealth[]
-    vpn: VPNHealth | null
+    vpn: VPNPoolHealth | null
 }

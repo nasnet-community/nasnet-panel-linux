@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRollbackNetworkApply } from "@/lib/queries/use-network"
@@ -34,8 +35,10 @@ export function ArmedChangeBar({ planId, deadlineUnix, altOrigin, onSettled }: P
 
     async function keep() {
         setKeeping(true)
-        await confirmWithFallback(planId, deadlineUnix, altOrigin)
+        const ok = await confirmWithFallback(planId, deadlineUnix, altOrigin)
         setKeeping(false)
+        if (ok) toast.success("Settings kept")
+        else toast.error("Could not confirm — the change will revert on its own")
         onSettled()
     }
 
@@ -69,7 +72,16 @@ export function ArmedChangeBar({ planId, deadlineUnix, altOrigin, onSettled }: P
                         size="sm"
                         disabled={rollback.isPending || keeping}
                         onClick={() =>
-                            rollback.mutate(undefined, { onSuccess: () => onSettled() })
+                            rollback.mutate(undefined, {
+                                onSuccess: () => {
+                                    toast.success("Change reverted")
+                                    onSettled()
+                                },
+                                onError: (e) =>
+                                    toast.error(
+                                        e instanceof Error ? e.message : "Failed to revert",
+                                    ),
+                            })
                         }
                     >
                         Revert now

@@ -19,8 +19,14 @@ func (s *stubIfRepo) List(context.Context) ([]domain.NetworkInterface, error) { 
 func (s *stubIfRepo) GetByKey(context.Context, string) (*domain.NetworkInterface, error) {
 	return nil, nil
 }
-func (s *stubIfRepo) GetByRole(context.Context, domain.InterfaceRole) ([]domain.NetworkInterface, error) {
-	return nil, nil
+func (s *stubIfRepo) GetByRole(_ context.Context, role domain.InterfaceRole) ([]domain.NetworkInterface, error) {
+	var out []domain.NetworkInterface
+	for _, r := range s.rows {
+		if r.Role == role {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 func (s *stubIfRepo) GetBySlot(context.Context, domain.UplinkSlot) (*domain.NetworkInterface, error) {
 	return nil, nil

@@ -169,7 +169,12 @@ export interface VPNProfile {
     id: number
     name: string
     type: string
-    active: boolean
+    /** In the pool. Priority 0 is the best tier; weight splits a tier's flows. */
+    enabled: boolean
+    priority: number
+    weight: number
+    /** Names the interface (nasnet-wg{slot}). Null while disabled. */
+    wg_slot: number | null
     config: WireGuardConfig
     /** Derived from the private key, for pasting into your own server. */
     public_key: string
@@ -179,9 +184,12 @@ export interface VPNProfile {
     unreadable?: string
 }
 
-export interface VPNStatus {
-    active_profile_id: number | null
-    name?: string
+export interface TunnelStatus {
+    profile_id: number
+    name: string
+    if_name: string
+    priority: number
+    weight: number
     /** A handshake in the last few minutes. There is no link state to read. */
     connected: boolean
     handshake_age_seconds: number | null
@@ -192,6 +200,12 @@ export interface VPNStatus {
     mtu: number
     keepalive_seconds: number
     last_error?: string
+    /** In the nexthop set right now, i.e. actually carrying traffic. */
+    in_pool: boolean
+}
+
+export interface VPNPoolStatus {
+    tunnels: TunnelStatus[]
     secondary_uplink_up: boolean
     /** Always true. Stated, never offered. */
     kill_switch: boolean

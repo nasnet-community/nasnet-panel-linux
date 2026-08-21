@@ -77,6 +77,9 @@ const (
 	// is the wrong reason to.
 	EventVPNUp   EventType = "vpn.up"
 	EventVPNDown EventType = "vpn.down"
+	// Per-member quality edge and nexthop-set rewrites.
+	EventVPNDegraded    EventType = "vpn.degraded"
+	EventVPNPoolChanged EventType = "vpn.pool_changed"
 )
 
 // IsNetworkEvent is the recorder filter for the flow page's timeline.

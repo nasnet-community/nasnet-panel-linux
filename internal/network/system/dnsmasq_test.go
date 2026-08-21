@@ -11,7 +11,7 @@ func lanDNSConfig() DNSMasqConfig {
 		BridgeName: "lan0", ListenAddr: "10.77.0.1",
 		RangeLow: "10.77.0.100", RangeHigh: "10.77.0.200", LeaseHours: 12,
 		DomesticServer: "217.218.127.127", DomesticSuffix: "ir", DomesticIfName: "enp1s0",
-		ForeignServer: "1.1.1.1", ForeignIfName: "enp2s0",
+		Foreign: []ForeignServer{{Server: "1.1.1.1", IfName: "enp2s0"}},
 	}
 }
 
@@ -72,7 +72,7 @@ func TestRenderDNSMasq_NeverFallsBackToResolvConf(t *testing.T) {
 	}
 
 	c := lanDNSConfig()
-	c.ForeignServer, c.ForeignIfName = "", ""
+	c.Foreign = nil
 	noTunnel := RenderDNSMasq(c)
 	if !strings.Contains(noTunnel, "no-resolv") {
 		t.Errorf("with no tunnel, foreign lookups fall back to the system resolver:\n%s", noTunnel)
@@ -150,6 +150,25 @@ func TestDNSMasqStatus_SeparatesInstalledFromRunning(t *testing.T) {
 
 // The device list reads the lease file, so the writer must name the same path
 // the reader opens rather than relying on a distro default.
+// One resolver line per pool member, each bound to its own tunnel, so a dead
+// member's resolver just times out and dnsmasq shifts to a sibling.
+func TestRenderDNSMasq_OneForeignServerPerTunnel(t *testing.T) {
+	c := lanDNSConfig()
+	c.Foreign = []ForeignServer{
+		{Server: "10.64.0.1", IfName: "nasnet-wg0"},
+		{Server: "1.1.1.1", IfName: "nasnet-wg1"},
+	}
+	out := RenderDNSMasq(c)
+	for _, want := range []string{
+		"server=10.64.0.1@nasnet-wg0\n",
+		"server=1.1.1.1@nasnet-wg1\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderDNSMasq_PinsTheLeaseFile(t *testing.T) {
 	out := RenderDNSMasq(DNSMasqConfig{
 		BridgeName: "lan0", ListenAddr: "10.77.0.1",

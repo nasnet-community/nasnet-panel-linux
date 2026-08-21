@@ -59,6 +59,10 @@ func ApplySysctls(ctx context.Context, be system.Backend, uplinks []Uplink,
 	if err := set("net.ipv4.fwmark_reflect", "1"); err != nil {
 		return err
 	}
+	// L4 hash keeps a flow on one pool member instead of per-packet spray
+	if err := set("net.ipv4.fib_multipath_hash_policy", "1"); err != nil {
+		return err
+	}
 	// Off by default, and without it every conntrack row reads zero bytes.
 	// Best-effort: the key only exists once nf_conntrack is loaded, and a
 	// debugging counter must never be able to fail a network apply.

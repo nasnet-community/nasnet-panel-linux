@@ -26,9 +26,19 @@ type VPNProfile struct {
 	ID     uint `gorm:"primarykey" json:"id"`
 	NodeID uint `gorm:"index;not null;default:1" json:"node_id"`
 
-	Name   string `gorm:"not null" json:"name"`
-	Type   string `gorm:"not null;default:'wireguard'" json:"type"`
-	Active bool   `gorm:"not null;default:false" json:"active"`
+	Name string `gorm:"not null" json:"name"`
+	Type string `gorm:"not null;default:'wireguard'" json:"type"`
+	// Active is the retired single-tunnel flag; the migration drains it.
+	Active bool `gorm:"not null;default:false" json:"-"`
+	// Enabled puts the profile in the pool. Priority 0 is the best tier;
+	// weight splits flows inside a tier.
+	Enabled  bool `gorm:"not null;default:false" json:"enabled"`
+	Priority int  `gorm:"not null;default:0" json:"priority"`
+	Weight   int  `gorm:"not null;default:1" json:"weight"`
+	// WGSlot names the interface (nasnet-wg{slot}). Nil while disabled.
+	WGSlot *int `json:"wg_slot"`
+	// TransportUplink is reserved for multi-secondary; empty and unused today.
+	TransportUplink string `json:"transport_uplink,omitempty"`
 
 	// Config is a marshalled WireGuardConfig. Served decoded, never raw.
 	Config string `gorm:"type:text;not null" json:"-"`
@@ -85,6 +95,21 @@ const (
 	MinWGMTU           = 576
 	MaxWGMTU           = 9000
 )
+
+// MaxEnabledProfiles matches the oif-rule window: 10 slots, two for uplinks.
+const MaxEnabledProfiles = 8
+
+var ErrPoolFull = errors.New("all 8 tunnel slots are in use")
+
+func ValidatePoolRole(priority, weight int) error {
+	if priority < 0 || priority > 7 {
+		return errors.New("priority must be between 0 and 7")
+	}
+	if weight < 1 || weight > 100 {
+		return errors.New("weight must be between 1 and 100")
+	}
+	return nil
+}
 
 var (
 	ErrScriptKey     = errors.New("this config runs shell commands, which is refused")

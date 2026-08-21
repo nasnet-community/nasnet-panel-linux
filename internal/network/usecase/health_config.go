@@ -151,6 +151,21 @@ func routeStateFor(in routeInputs) routeState {
 	return routeUp
 }
 
+// The pool ladder has one rung. answered is this tick's evidence: the damper
+// starts optimistic, so without it a tunnel that never replied reads "up".
+func tunnelVerdict(answered, up, degraded bool) string {
+	switch {
+	case !up:
+		return "no-internet"
+	case !answered:
+		return "" // warm-up, not a claim
+	case degraded:
+		return "degraded"
+	default:
+		return "up"
+	}
+}
+
 type uplinkLadder struct {
 	Carrier  string
 	Gateway  string

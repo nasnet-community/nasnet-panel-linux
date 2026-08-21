@@ -18,6 +18,8 @@ import { toast } from "sonner"
 interface Props {
     /** The LAN is off, so there is no bridge to read. */
     lanEnabled: boolean
+    /** Rendered in the header's right corner — the settings entry point. */
+    action?: React.ReactNode
 }
 
 function NameCell({ device }: { device: LANDevice }) {
@@ -194,7 +196,7 @@ function DeviceRow({ device }: { device: LANDevice }) {
 
 /** What is on the LAN bridge right now, assembled from the DHCP leases, the
  *  neighbour table and the bridge's forwarding database. */
-export function LanDevices({ lanEnabled }: Props) {
+export function LanDevices({ lanEnabled, action }: Props) {
     const devices = useLANDevices(lanEnabled)
 
     if (!lanEnabled) return null
@@ -229,23 +231,26 @@ export function LanDevices({ lanEnabled }: Props) {
                             <MonitorSmartphone className="h-4 w-4" />
                             Connected devices
                         </CardTitle>
-                        {total > 0 && (
-                            <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
-                                <span className="text-foreground font-medium tabular-nums">
-                                    {online}
-                                </span>
-                                connected
-                                {online !== total && <span>of {total} seen</span>}
-                                {/* The lag is surprising enough to explain, but not
-                                    important enough to spend three lines on. */}
-                                <InfoPopover>
-                                    A device shows up as soon as it sends anything. One that leaves
-                                    keeps showing as connected for up to {offlineAfter} minute
-                                    {offlineAfter === 1 ? "" : "s"}, which is how long this box
-                                    remembers it.
-                                </InfoPopover>
-                            </div>
-                        )}
+                        <div className="flex items-center gap-3">
+                            {total > 0 && (
+                                <div className="text-muted-foreground flex items-center gap-1.5 text-sm">
+                                    <span className="text-foreground font-medium tabular-nums">
+                                        {online}
+                                    </span>
+                                    connected
+                                    {online !== total && <span>of {total} seen</span>}
+                                    {/* The lag is surprising enough to explain, but not
+                                        important enough to spend three lines on. */}
+                                    <InfoPopover>
+                                        A device shows up as soon as it sends anything. One that
+                                        leaves keeps showing as connected for up to {offlineAfter}{" "}
+                                        minute{offlineAfter === 1 ? "" : "s"}, which is how long
+                                        this box remembers it.
+                                    </InfoPopover>
+                                </div>
+                            )}
+                            {action}
+                        </div>
                     </div>
                     <CardDescription>
                         Everything reaching the internet through this box's local network.

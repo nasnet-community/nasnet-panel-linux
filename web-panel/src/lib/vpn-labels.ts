@@ -1,14 +1,20 @@
-import type { VPNStatus } from "@/lib/types/network"
-
 /** handshakeLabel turns the only liveness signal WireGuard offers into words.
  *  There is no link state to read: the interface is up whether or not anyone
  *  is on the other end. */
-export function handshakeLabel(status: VPNStatus): string {
+export function handshakeLabel(status: { handshake_age_seconds: number | null }): string {
     if (status.handshake_age_seconds === null) return "No handshake yet"
     const s = status.handshake_age_seconds
     if (s < 60) return "Last handshake just now"
     if (s < 3600) return `Last handshake ${Math.floor(s / 60)} min ago`
     return `Last handshake ${Math.floor(s / 3600)} h ago`
+}
+
+/** The table's compact form of the same signal. */
+export function handshakeShort(age: number | null): string {
+    if (age === null) return "never"
+    if (age < 60) return "just now"
+    if (age < 3600) return `${Math.floor(age / 60)}m ago`
+    return `${Math.floor(age / 3600)}h ago`
 }
 
 export function formatBytes(n: number): string {

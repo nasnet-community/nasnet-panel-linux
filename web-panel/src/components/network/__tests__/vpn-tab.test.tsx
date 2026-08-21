@@ -5,12 +5,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { VpnTab } from "@/pages/router/vpn-tab"
-import { detectFormat, formatBytes, handshakeLabel } from "@/lib/vpn-labels"
-import type { VPNProfile, VPNStatus } from "@/lib/types/network"
+import { detectFormat, formatBytes, handshakeLabel, handshakeShort } from "@/lib/vpn-labels"
+import type { TunnelStatus, VPNPoolStatus, VPNProfile } from "@/lib/types/network"
+import type { RouterHealth, TunnelHealth } from "@/lib/types/health"
 
 const getVPNProfiles = vi.fn()
 const getVPNStatus = vi.fn()
+const getRouterHealth = vi.fn()
 const deleteVPNProfile = vi.fn()
+const setVPNProfileRole = vi.fn()
+const enableVPNProfile = vi.fn()
+const disableVPNProfile = vi.fn()
 
 vi.mock("@/lib/api/network", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/lib/api/network")>()
@@ -18,13 +23,15 @@ vi.mock("@/lib/api/network", async (importOriginal) => {
         ...actual,
         getVPNProfiles: (...a: unknown[]) => getVPNProfiles(...a),
         getVPNStatus: (...a: unknown[]) => getVPNStatus(...a),
+        getRouterHealth: (...a: unknown[]) => getRouterHealth(...a),
         deleteVPNProfile: (...a: unknown[]) => deleteVPNProfile(...a),
+        setVPNProfileRole: (...a: unknown[]) => setVPNProfileRole(...a),
+        enableVPNProfile: (...a: unknown[]) => enableVPNProfile(...a),
+        disableVPNProfile: (...a: unknown[]) => disableVPNProfile(...a),
         createVPNProfile: vi.fn(),
         updateVPNProfile: vi.fn(),
         parseVPNInput: vi.fn(),
         generateVPNKeypair: vi.fn(),
-        activateVPN: vi.fn(),
-        deactivateVPN: vi.fn(),
     }
 })
 
@@ -33,7 +40,10 @@ function profile(over: Partial<VPNProfile> = {}): VPNProfile {
         id: 1,
         name: "frankfurt",
         type: "wireguard",
-        active: false,
+        enabled: false,
+        priority: 0,
+        weight: 1,
+        wg_slot: null,
         public_key: "pub",
         created_at: "",
         updated_at: "",
@@ -50,10 +60,13 @@ function profile(over: Partial<VPNProfile> = {}): VPNProfile {
     }
 }
 
-function status(over: Partial<VPNStatus> = {}): VPNStatus {
+function tunnel(over: Partial<TunnelStatus> = {}): TunnelStatus {
     return {
-        active_profile_id: 1,
+        profile_id: 1,
         name: "frankfurt",
+        if_name: "nasnet-wg0",
+        priority: 0,
+        weight: 1,
         connected: true,
         handshake_age_seconds: 12,
         rx_bytes: 2048,
@@ -61,15 +74,56 @@ function status(over: Partial<VPNStatus> = {}): VPNStatus {
         endpoint: "185.65.135.1:51820",
         mtu: 1420,
         keepalive_seconds: 25,
-        secondary_uplink_up: true,
-        kill_switch: true,
+        in_pool: true,
         ...over,
     }
 }
 
-function renderIt(profiles: VPNProfile[], st: VPNStatus) {
+function poolStatus(tunnels: TunnelStatus[], over: Partial<VPNPoolStatus> = {}): VPNPoolStatus {
+    return { tunnels, secondary_uplink_up: true, kill_switch: true, ...over }
+}
+
+function tunnelHealth(over: Partial<TunnelHealth> = {}): TunnelHealth {
+    return {
+        profile_id: 1,
+        name: "frankfurt",
+        if_name: "nasnet-wg0",
+        priority: 0,
+        weight: 1,
+        in_pool: true,
+        verdict: "up",
+        degraded: false,
+        loss_pct: 3,
+        median_rtt_ms: 82,
+        targets: [],
+        history: [],
+        ...over,
+    }
+}
+
+function health(tunnels: TunnelHealth[]): RouterHealth {
+    return {
+        generated_unix: 0,
+        failover_active: false,
+        uplinks: [],
+        vpn:
+            tunnels.length === 0
+                ? null
+                : {
+                      present: true,
+                      active_tier: 0,
+                      loss_pct: 3,
+                      median_rtt_ms: 82,
+                      pool_history: [],
+                      tunnels,
+                  },
+    }
+}
+
+function renderIt(profiles: VPNProfile[], st: VPNPoolStatus, h?: RouterHealth) {
     getVPNProfiles.mockResolvedValue({ success: true, data: profiles })
     getVPNStatus.mockResolvedValue({ success: true, data: st })
+    getRouterHealth.mockResolvedValue({ success: true, data: h ?? health([]) })
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     // The same providers the dashboard layout supplies in the real app.
     return render(
@@ -85,68 +139,107 @@ describe("VpnTab", () => {
     beforeEach(() => {
         getVPNProfiles.mockReset()
         getVPNStatus.mockReset()
+        getRouterHealth.mockReset()
         deleteVPNProfile.mockReset()
+        setVPNProfileRole.mockReset()
+        enableVPNProfile.mockReset()
+        disableVPNProfile.mockReset()
     })
 
     // Every popover and dialog needs its provider above it. Without one the
     // whole tab throws, which no amount of pure-helper testing would catch.
-    it("renders a connected tunnel without a provider error", async () => {
-        renderIt([profile({ active: true })], status())
-        expect(await screen.findByText("Connected")).toBeInTheDocument()
-        expect(screen.getByText(/Last handshake just now/)).toBeInTheDocument()
+    it("renders a carrying pool without a provider error", async () => {
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0 })],
+            poolStatus([tunnel()]),
+            health([tunnelHealth()]),
+        )
+        expect(await screen.findByText("1 of 1 tunnel carrying traffic")).toBeInTheDocument()
         expect(screen.getAllByText("frankfurt").length).toBeGreaterThan(0)
     })
 
     // The kill switch is not a setting, so the UI has to state what it is doing.
-    it("says why nothing is getting out when no VPN is on", async () => {
-        renderIt([profile()], status({ active_profile_id: null, connected: false, name: undefined }))
-        expect(await screen.findByText("No VPN in use")).toBeInTheDocument()
+    it("says why nothing is getting out when the pool is empty", async () => {
+        renderIt([profile()], poolStatus([]))
+        expect(await screen.findByText("No VPN in the pool")).toBeInTheDocument()
         expect(screen.getByText(/until a VPN is turned on/)).toBeInTheDocument()
     })
 
     // A tunnel that stops looks identical to a working one from the link's side.
-    it("warns when the tunnel is on but not answering", async () => {
+    it("warns when no member of the pool is answering", async () => {
         renderIt(
-            [profile({ active: true })],
-            status({ connected: false, handshake_age_seconds: 900 }),
+            [profile({ enabled: true, wg_slot: 0 })],
+            poolStatus([tunnel({ connected: false, handshake_age_seconds: 900 })]),
         )
-        expect(await screen.findByText(/tunnel is not answering/)).toBeInTheDocument()
-        expect(screen.getByText("Not answering")).toBeInTheDocument()
+        expect(await screen.findByText(/tunnels are answering/)).toBeInTheDocument()
     })
 
     it("invites a first VPN when there are none", async () => {
-        renderIt([], status({ active_profile_id: null, connected: false, name: undefined }))
+        renderIt([], poolStatus([]))
         expect(await screen.findByText("No VPN yet")).toBeInTheDocument()
     })
 
-    // Two intents that must not collapse into one click: stop tunnelling, and
-    // remove the config. Deleting the live one leaves nothing to turn it off.
-    it("refuses to edit or delete the VPN in use", async () => {
-        renderIt([profile({ active: true })], status())
+    // Two intents that must not collapse into one click: leave the pool, and
+    // remove the config. Deleting a live member leaves nothing to turn it off.
+    it("refuses to edit or delete a pool member", async () => {
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0 })],
+            poolStatus([tunnel()]),
+            health([tunnelHealth()]),
+        )
         expect(await screen.findByLabelText("Delete frankfurt")).toBeDisabled()
         expect(screen.getByLabelText("Edit frankfurt")).toBeDisabled()
-        expect(screen.getByRole("button", { name: "Turn off" })).toBeEnabled()
+        expect(screen.getByLabelText("Turn frankfurt off")).toBeEnabled()
     })
 
-    it("offers to switch to a VPN that is not in use", async () => {
-        renderIt([profile(), profile({ id: 2, name: "berlin", active: true })], status())
-        expect(await screen.findByRole("button", { name: "Use this one" })).toBeEnabled()
-        expect(screen.getByLabelText("Delete frankfurt")).toBeEnabled()
-    })
-
-    // The defaults are applied for the operator, so the UI has to say so
-    // somewhere rather than showing two numbers from nowhere.
-    it("explains the applied defaults on demand", async () => {
-        renderIt([profile({ active: true })], status())
-        await screen.findByText("Connected")
-        await userEvent.click(screen.getByRole("button", { name: /about these settings/i }))
-        expect(await screen.findByText(/keepalive of 25 seconds/)).toBeInTheDocument()
-    })
-
-    it("separates a dead uplink from a dead tunnel", async () => {
+    it("shows each member's health and role in the table", async () => {
         renderIt(
-            [profile({ active: true })],
-            status({ connected: false, secondary_uplink_up: false }),
+            [
+                profile({ enabled: true, wg_slot: 0, weight: 3 }),
+                profile({ id: 2, name: "berlin", enabled: true, wg_slot: 1, priority: 1 }),
+            ],
+            poolStatus([tunnel({ weight: 3 }), tunnel({ profile_id: 2, name: "berlin", in_pool: false })]),
+            health([
+                tunnelHealth({ weight: 3 }),
+                tunnelHealth({ profile_id: 2, name: "berlin", in_pool: false, verdict: "up" }),
+            ]),
+        )
+        expect(await screen.findByText("online · standby")).toBeInTheDocument()
+        expect(screen.getAllByText(/3% · 82ms/).length).toBe(2)
+        expect(screen.getByLabelText("Turn berlin off")).toBeEnabled()
+    })
+
+    it("commits a weight edit through the role endpoint", async () => {
+        setVPNProfileRole.mockResolvedValue({ success: true, data: null })
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0, weight: 3 })],
+            poolStatus([tunnel({ weight: 3 })]),
+            health([tunnelHealth({ weight: 3 })]),
+        )
+        await screen.findByText("VPN pool")
+        await userEvent.click(screen.getByLabelText("Change weight"))
+        const input = screen.getByLabelText("weight")
+        await userEvent.clear(input)
+        await userEvent.type(input, "5{Enter}")
+        expect(setVPNProfileRole).toHaveBeenCalledWith(1, { priority: 0, weight: 5 })
+    })
+
+    // The last member's removal blackholes foreign traffic; the dialog says so.
+    it("warns hardest when removing the last member", async () => {
+        disableVPNProfile.mockResolvedValue({ success: true, data: {} })
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0 })],
+            poolStatus([tunnel()]),
+            health([tunnelHealth()]),
+        )
+        await userEvent.click(await screen.findByLabelText("Turn frankfurt off"))
+        expect(await screen.findByText(/This is the last tunnel/)).toBeInTheDocument()
+    })
+
+    it("separates a dead uplink from a dead pool", async () => {
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0 })],
+            poolStatus([tunnel({ connected: false })], { secondary_uplink_up: false }),
         )
         expect(await screen.findByText(/secondary uplink is down/)).toBeInTheDocument()
     })
@@ -167,10 +260,19 @@ describe("detectFormat", () => {
 
 describe("handshakeLabel", () => {
     it("reads as time, not as a number", () => {
-        expect(handshakeLabel(status({ handshake_age_seconds: null }))).toBe("No handshake yet")
-        expect(handshakeLabel(status({ handshake_age_seconds: 5 }))).toMatch(/just now/)
-        expect(handshakeLabel(status({ handshake_age_seconds: 300 }))).toMatch(/5 min ago/)
-        expect(handshakeLabel(status({ handshake_age_seconds: 7300 }))).toMatch(/2 h ago/)
+        expect(handshakeLabel({ handshake_age_seconds: null })).toBe("No handshake yet")
+        expect(handshakeLabel({ handshake_age_seconds: 5 })).toMatch(/just now/)
+        expect(handshakeLabel({ handshake_age_seconds: 300 })).toMatch(/5 min ago/)
+        expect(handshakeLabel({ handshake_age_seconds: 7300 })).toMatch(/2 h ago/)
+    })
+})
+
+describe("handshakeShort", () => {
+    it("compresses the same signal for a table cell", () => {
+        expect(handshakeShort(null)).toBe("never")
+        expect(handshakeShort(5)).toBe("just now")
+        expect(handshakeShort(300)).toBe("5m ago")
+        expect(handshakeShort(7300)).toBe("2h ago")
     })
 })
 

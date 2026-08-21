@@ -28,8 +28,8 @@ func newMismatchFixture(t *testing.T, o mismatchOpts) (*networkUsecase, flowMism
 	if err != nil {
 		t.Fatal(err)
 	}
-	plane := u.vpnPlaneNow(t.Context())
-	vpn := VPNRouteState{Active: plane.Active()}
+	pool := u.vpnPoolNow(t.Context())
+	vpn := VPNRouteState{IfNames: pool.IfNames()}
 
 	live := AllRules(flowGroups(), uplinks, vpn)
 	if o.dropRulePref > 0 {
@@ -50,7 +50,11 @@ func newMismatchFixture(t *testing.T, o mismatchOpts) (*networkUsecase, flowMism
 		202: {{Table: 202, Dest: "default", Gateway: "100.64.0.1", OifName: "eth1"}},
 	}
 	if o.vpnActive && !o.dropVPNRoute {
-		routes[system.WGTable] = vpnRoutes(uplinks)
+		routes[system.WGTable] = []system.Route{
+			{Table: system.WGTable, Dest: "default",
+				Nexthops: []system.Nexthop{{OifName: system.WGLinkName, Weight: 1}}},
+			{Table: system.WGTable, Dest: StarlinkDishSubnet, OifName: "eth1", Scope: "link"},
+		}
 	} else if o.vpnActive {
 		routes[system.WGTable] = nil
 	}
@@ -77,7 +81,7 @@ func newMismatchFixture(t *testing.T, o mismatchOpts) (*networkUsecase, flowMism
 
 	// dnsmasq is not running under test, and that check has its own case.
 	return u, flowMismatchInput{
-		uplinks: uplinks, vpn: vpn, plane: plane,
+		uplinks: uplinks, vpn: vpn, pool: pool,
 		liveRules: live, routes: routes, nftObj: obj,
 		lan: &domain.LANConfig{BridgeName: "lan0", Enabled: false},
 	}

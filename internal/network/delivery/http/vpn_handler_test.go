@@ -11,7 +11,7 @@ import (
 )
 
 func TestListVPNProfiles_ReturnsTheEnvelope(t *testing.T) {
-	uc := &stubUsecase{vpnProfiles: []usecase.VPNProfileView{{ID: 1, Name: "berlin", Active: true}}}
+	uc := &stubUsecase{vpnProfiles: []usecase.VPNProfileView{{ID: 1, Name: "berlin", Enabled: true}}}
 	w := do(t, newRouter(t, uc, true), "GET", "/api/v1/network/vpn/profiles", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
@@ -118,17 +118,17 @@ func TestGenerateVPNKeypair_ReturnsBothHalves(t *testing.T) {
 	}
 }
 
-func TestActivateVPN_ArmsTheDeadManAndCarriesVerdicts(t *testing.T) {
+func TestEnableVPNProfile_ArmsTheDeadManAndCarriesVerdicts(t *testing.T) {
 	uc := &stubUsecase{
 		vpnApplyView: &usecase.ApplyView{PlanID: 12, ConfirmDeadlineUnix: 99},
 		vpnVerdicts:  []domain.Verdict{{Rule: "V33", Level: domain.LevelWarn, Message: "no uplink"}},
 	}
-	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/activate", `{"profile_id":7}`)
+	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/profiles/7/enable", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}
-	if uc.vpnActivateID != 7 {
-		t.Errorf("activated %d, want 7", uc.vpnActivateID)
+	if uc.vpnEnabledID != 7 {
+		t.Errorf("enabled %d, want 7", uc.vpnEnabledID)
 	}
 	// Verdicts sit beside data, not inside it: the UI reads them either way.
 	var env struct {
@@ -145,11 +145,11 @@ func TestActivateVPN_ArmsTheDeadManAndCarriesVerdicts(t *testing.T) {
 }
 
 // A reject applies nothing, and the reason has to survive to the UI.
-func TestActivateVPN_RejectIs400WithVerdicts(t *testing.T) {
+func TestEnableVPNProfile_RejectIs400WithVerdicts(t *testing.T) {
 	uc := &stubUsecase{vpnVerdicts: []domain.Verdict{
 		{Rule: "V34", Level: domain.LevelReject, Message: "could not resolve"},
 	}}
-	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/activate", `{"profile_id":1}`)
+	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/profiles/1/enable", "")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
 	}
@@ -164,40 +164,65 @@ func TestActivateVPN_RejectIs400WithVerdicts(t *testing.T) {
 	}
 }
 
-func TestActivateVPN_FailureIs500(t *testing.T) {
+func TestEnableVPNProfile_FailureIs500(t *testing.T) {
 	uc := &stubUsecase{vpnApplyErr: errors.New("netlink is unhappy")}
-	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/activate", `{"profile_id":1}`)
+	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/profiles/1/enable", "")
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500: %s", w.Code, w.Body.String())
 	}
 }
 
-// Turning it off with nothing on is a no-op, not an error.
-func TestDeactivateVPN_NothingActiveStillSucceeds(t *testing.T) {
+// Turning off a member that is already off is a no-op, not an error.
+func TestDisableVPNProfile_NothingEnabledStillSucceeds(t *testing.T) {
 	uc := &stubUsecase{}
-	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/deactivate", "")
+	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/vpn/profiles/4/disable", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}
-	if !uc.vpnDeactived {
+	if uc.vpnDisabledID != 4 {
 		t.Error("the usecase was never called")
 	}
 }
 
+func TestSetVPNProfileRole_PassesTheRoleThrough(t *testing.T) {
+	uc := &stubUsecase{}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/role",
+		`{"priority":2,"weight":40}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if uc.vpnRoleID != 5 || uc.vpnRolePrio != 2 || uc.vpnRoleWeight != 40 {
+		t.Errorf("role call = id %d prio %d weight %d", uc.vpnRoleID, uc.vpnRolePrio, uc.vpnRoleWeight)
+	}
+}
+
+func TestSetVPNProfileRole_BadRangeIs400(t *testing.T) {
+	uc := &stubUsecase{vpnRoleErr: usecase.ErrValidationFailed}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/role",
+		`{"priority":9,"weight":1}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestVPNStatus_ReturnsTheEnvelope(t *testing.T) {
-	uc := &stubUsecase{vpnStatus: &usecase.VPNStatusView{Connected: true, KillSwitch: true, MTU: 1420}}
+	uc := &stubUsecase{vpnStatus: &usecase.VPNPoolStatusView{
+		Tunnels: []usecase.TunnelStatusView{{ProfileID: 1, Name: "berlin", Connected: true, MTU: 1420, InPool: true}},
+		KillSwitch: true,
+	}}
 	w := do(t, newRouter(t, uc, true), "GET", "/api/v1/network/vpn/status", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}
 	var env struct {
-		Success bool                   `json:"success"`
-		Data    *usecase.VPNStatusView `json:"data"`
+		Success bool                       `json:"success"`
+		Data    *usecase.VPNPoolStatusView `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatal(err)
 	}
-	if !env.Success || env.Data == nil || !env.Data.Connected || !env.Data.KillSwitch {
+	if !env.Success || env.Data == nil || len(env.Data.Tunnels) != 1 ||
+		!env.Data.Tunnels[0].Connected || !env.Data.KillSwitch {
 		t.Errorf("got %s", w.Body.String())
 	}
 }
@@ -210,8 +235,9 @@ func TestVPNRoutes_RequireRouterMode(t *testing.T) {
 		{"DELETE", "/api/v1/network/vpn/profiles/1", ""},
 		{"POST", "/api/v1/network/vpn/parse", `{"raw":"x"}`},
 		{"POST", "/api/v1/network/vpn/keypair", ""},
-		{"POST", "/api/v1/network/vpn/activate", `{"profile_id":1}`},
-		{"POST", "/api/v1/network/vpn/deactivate", ""},
+		{"POST", "/api/v1/network/vpn/profiles/1/enable", ""},
+		{"POST", "/api/v1/network/vpn/profiles/1/disable", ""},
+		{"PATCH", "/api/v1/network/vpn/profiles/1/role", `{"priority":0,"weight":1}`},
 		{"GET", "/api/v1/network/vpn/status", ""},
 	} {
 		w := do(t, newRouter(t, &stubUsecase{}, false), tc.method, tc.path, tc.body)
