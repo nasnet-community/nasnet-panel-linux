@@ -87,6 +87,25 @@ func TestVerdictLadderCollapsesTopDown(t *testing.T) {
 	}
 }
 
+// The damper starts optimistic, so "up" without a reply would be a lie.
+func TestTunnelVerdictNeedsEvidence(t *testing.T) {
+	cases := []struct {
+		name                   string
+		answered, up, degraded bool
+		want                   string
+	}{
+		{"warm-up: optimistic damper, nothing answered yet", false, true, false, ""},
+		{"damper gave up", false, false, false, "no-internet"},
+		{"answering but lossy", true, true, true, "degraded"},
+		{"answering cleanly", true, true, false, "up"},
+	}
+	for _, c := range cases {
+		if got := tunnelVerdict(c.answered, c.up, c.degraded); got != c.want {
+			t.Errorf("%s: want %q got %q", c.name, c.want, got)
+		}
+	}
+}
+
 func TestSetUplinkForceRejectsGarbage(t *testing.T) {
 	u := healthFixture(t, flowOpts{}, true)
 	if err := u.SetUplinkForce(context.Background(), "eth0", "sideways"); err == nil {
@@ -121,15 +140,18 @@ func TestFailoverKeepsAProbeRouteOutTheRealUplink(t *testing.T) {
 		if r.Dest != "default" {
 			continue
 		}
-		if r.OifName == system.WGLinkName {
-			viaTunnel = true
+		// The failover default mirrors the pool's nexthop set.
+		for _, nh := range r.Nexthops {
+			if nh.OifName == system.WGLinkName {
+				viaTunnel = true
+			}
 		}
 		if r.Gateway == "192.0.2.1" && r.Metric > 0 {
 			viaGateway = true
 		}
 	}
 	if !viaTunnel {
-		t.Fatal("failover did not route into the tunnel")
+		t.Fatal("failover did not route into the pool")
 	}
 	if !viaGateway {
 		t.Fatal("failover starved the probe: no gateway route left in the table")

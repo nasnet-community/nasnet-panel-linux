@@ -38,13 +38,13 @@ type Uplink struct {
 	GroupIndex  uint32
 }
 
-// VPNRouteState is what the rules need to know about the tunnel. A struct so a
-// second field doesn't mean a new signature everywhere.
+// VPNRouteState is the pool as the rules need it. Empty IfNames and the
+// foreign group blackholes — that's the kill switch, not a bug.
 type VPNRouteState struct {
-	// Active makes the tunnel table the foreign group's egress. False and the
-	// group blackholes — that's the kill switch, not a bug.
-	Active bool
+	IfNames []string
 }
+
+func (v VPNRouteState) Active() bool { return len(v.IfNames) > 0 }
 
 // BaseRules builds what must exist the moment RouteTable= empties main
 func BaseRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
@@ -59,9 +59,9 @@ func BaseRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 		oifNames = append(oifNames, u.IfName)
 		oifTables = append(oifTables, u.Table)
 	}
-	// The tunnel needs one too, or a socket bound to it finds no route.
-	if vpn.Active {
-		oifNames = append(oifNames, system.WGLinkName)
+	// Each tunnel needs one too, or a socket bound to it finds no route.
+	for _, name := range vpn.IfNames {
+		oifNames = append(oifNames, name)
 		oifTables = append(oifTables, system.WGTable)
 	}
 	if limit := RulePrefMainSuppress - RulePrefOifBase; len(oifNames) > limit {
@@ -102,7 +102,7 @@ func BaseRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 // Domestic stays on so a box with no VPN can still fetch its updates.
 func fallbackTables(uplinks []Uplink, vpn VPNRouteState) []int {
 	var out []int
-	if vpn.Active {
+	if vpn.Active() {
 		out = append(out, system.WGTable)
 	}
 
@@ -212,7 +212,7 @@ func GroupRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) [
 		mark := netmark.GroupMark(g.GroupIndex)
 
 		if g.GroupIndex == netmark.GroupForeign {
-			if vpn.Active {
+			if vpn.Active() {
 				rules = append(rules, system.Rule{
 					Pref: g.RuleBase, FwMark: mark, FwMask: netmark.MaskGroup, Table: system.WGTable,
 				})

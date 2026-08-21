@@ -228,10 +228,10 @@ func TestRollback_IfExpiredRevertsAnExpiredMarker(t *testing.T) {
 // A snapshot that will not restore used to keep the marker armed forever.
 func TestRollback_GivesUpAfterRepeatedFailures(t *testing.T) {
 	a, repo, p := newApplier(t)
-	a.Snap.CaptureVPN = func(context.Context) (*domain.VPNProfile, error) {
-		return &domain.VPNProfile{ID: 13, Name: "berlin", Active: true, Config: `{"private_key":"k"}`}, nil
+	a.Snap.CapturePool = func(context.Context) ([]domain.VPNProfile, error) {
+		return []domain.VPNProfile{{ID: 13, Name: "berlin", Enabled: true, Config: `{"private_key":"k"}`}}, nil
 	}
-	a.Snap.RestoreVPN = func(context.Context, *domain.VPNProfile) error {
+	a.Snap.RestorePool = func(context.Context, []domain.VPNProfile) error {
 		return errors.New("the stored config will not decode")
 	}
 

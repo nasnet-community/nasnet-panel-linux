@@ -301,7 +301,8 @@ func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNod
 		table = matched.Table
 	}
 	switch {
-	case route.OifName == system.WGLinkName:
+	// A multipath default only ever lives in the pool's table.
+	case system.IsWGLink(route.OifName) || len(route.Nexthops) > 0:
 		nodes = append(nodes, "table-203", "wg", "table-202", "uplink-secondary", "world-foreign")
 		v.FinalVerdict = "delivered-vpn"
 	case table == 202:

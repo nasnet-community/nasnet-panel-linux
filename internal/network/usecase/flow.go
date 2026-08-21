@@ -70,15 +70,15 @@ type FlowView struct {
 // flowState is everything the node builders read, gathered once.
 type flowState struct {
 	lan       *domain.LANConfig
-	plane     vpnPlane
+	pool      vpnPool
 	uplinks   []Uplink
 	domestic  *Uplink
 	secondary *Uplink
 	healthy   map[string]bool
 	routes    map[int][]system.Route
 	routeErrs map[int]error
-	wgStatus  *system.WGStatus
-	wgErr     error
+	wgStatus  map[string]*system.WGStatus
+	wgLinks   []string
 	nftText   string
 	nftObj    *system.NftObjects
 	dnsUp     bool
@@ -90,14 +90,15 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 		return nil, err
 	}
 	lan := u.lanConfig(ctx)
-	plane := u.vpnPlaneNow(ctx)
-	vpn := VPNRouteState{Active: plane.Active()}
+	pool := u.vpnPoolNow(ctx)
+	vpn := VPNRouteState{IfNames: pool.IfNames()}
 
 	st := flowState{
-		lan: lan, plane: plane, uplinks: uplinks,
+		lan: lan, pool: pool, uplinks: uplinks,
 		healthy:   u.healthyKeys(ctx),
 		routes:    map[int][]system.Route{},
 		routeErrs: map[int]error{},
+		wgStatus:  map[string]*system.WGStatus{},
 	}
 	for i := range uplinks {
 		switch uplinks[i].Slot {
@@ -123,7 +124,12 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	st.nftObj = nftObj
 	st.nftText, _ = u.nftReader().ListRuleset(ctx)
 	stats, _ := u.flowSource().LinkStats(ctx)
-	st.wgStatus, st.wgErr = u.wg().Status(ctx)
+	for _, t := range pool.Tunnels {
+		if s, err := u.wg().Status(ctx, t.IfName); err == nil {
+			st.wgStatus[t.IfName] = s
+		}
+	}
+	st.wgLinks, _ = u.wg().List(ctx)
 	// Both are subprocesses and this page polls every 3s, so probe once.
 	st.dnsUp = u.dnsmasqStatus(ctx).Running
 
@@ -136,10 +142,13 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 			view.Counters["if:"+up.IfName] = FlowCounter{RxBytes: s.RxBytes, TxBytes: s.TxBytes}
 		}
 	}
-	if st.wgStatus != nil {
-		view.Counters["wg"] = FlowCounter{
-			RxBytes: uint64(st.wgStatus.RxBytes), TxBytes: uint64(st.wgStatus.TxBytes),
-		}
+	var wgRx, wgTx uint64
+	for _, s := range st.wgStatus {
+		wgRx += uint64(s.RxBytes)
+		wgTx += uint64(s.TxBytes)
+	}
+	if len(st.wgStatus) > 0 {
+		view.Counters["wg"] = FlowCounter{RxBytes: wgRx, TxBytes: wgTx}
 	}
 	if nftObj != nil {
 		for key, name := range map[string]string{
@@ -156,11 +165,11 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	view.Nodes = u.flowNodes(ctx, st)
 	view.Edges = flowEdges(vpn, st)
 	view.Mismatches = u.flowMismatches(ctx, flowMismatchInput{
-		uplinks: uplinks, vpn: vpn, plane: plane,
+		uplinks: uplinks, vpn: vpn, pool: pool,
 		liveRules: liveRules, rulesErr: rulesErr,
 		routes: st.routes, routeErrs: st.routeErrs,
 		nftObj: nftObj, nftErr: nftErr, lan: lan,
-		wgStatus: st.wgStatus, wgErr: st.wgErr, dnsUp: st.dnsUp,
+		wgStatus: st.wgStatus, wgLinks: st.wgLinks, dnsUp: st.dnsUp,
 	})
 	return view, nil
 }
@@ -257,7 +266,7 @@ func routerNode(st flowState) FlowNode {
 	n := FlowNode{ID: "src-router", Kind: "source", Label: "the router itself", Status: "ok",
 		Sublabel: "unmarked"}
 	lines := []string{}
-	if st.plane.Active() {
+	if st.pool.Active() {
 		lines = append(lines, fmt.Sprintf("pref %d: lookup %d (tunnel)", RulePrefFallbackBase, system.WGTable))
 		lines = append(lines, fmt.Sprintf("pref %d: lookup 201 (domestic)", RulePrefFallbackBase+1))
 	} else {
@@ -309,7 +318,7 @@ func tableNode(st flowState, table int, name, sublabel string) FlowNode {
 		return n
 	}
 
-	if table == system.WGTable && !st.plane.Active() {
+	if table == system.WGTable && !st.pool.Active() {
 		n.Status = "ghost"
 		n.Hint = "No VPN is active — nothing routes here."
 		return withDetail(n, section("routes", routeLines(routes)))
@@ -324,52 +333,59 @@ func tableNode(st flowState, table int, name, sublabel string) FlowNode {
 }
 
 func (u *networkUsecase) wgNode(st flowState) FlowNode {
-	n := FlowNode{ID: "wg", Kind: "tunnel", Label: "WireGuard", Sublabel: system.WGLinkName}
-	if !st.plane.Active() {
+	n := FlowNode{ID: "wg", Kind: "tunnel", Label: "VPN pool"}
+	if !st.pool.Active() {
 		n.Status = "ghost"
-		n.Hint = "No active VPN — activate a profile on the VPN tab."
+		n.Hint = "No enabled VPN — turn a profile on in the VPN tab."
 		return n
 	}
-	cfg := st.plane.Config
-	n.Sublabel = st.plane.Profile.Name
+	n.Sublabel = fmt.Sprintf("%d tunnels", len(st.pool.Tunnels))
+	if len(st.pool.Tunnels) == 1 {
+		n.Sublabel = st.pool.Tunnels[0].Profile.Name
+	}
 
-	lines := []string{
-		"interface: " + system.WGLinkName,
-		"endpoint: " + cfg.Peer.Endpoint,
-		"address: " + cfg.Address,
-		"allowed ips: " + strings.Join(cfg.Peer.AllowedIPs, ", "),
-		fmt.Sprintf("transport mark: %s (pinned to the secondary uplink)", netmark.Hex(vpnTransportMark)),
-	}
-	switch {
-	case st.wgErr != nil:
-		n.Status = "down"
-		n.Hint = "The tunnel interface is not present."
-		lines = append(lines, "error: "+st.wgErr.Error())
-	case st.wgStatus == nil || st.wgStatus.LastHandshake.IsZero():
-		n.Status = "warn"
-		n.Hint = "No handshake yet — the peer has never answered."
-	case !st.wgStatus.Connected():
-		n.Status = "warn"
-		n.Hint = fmt.Sprintf("No handshake for %ds.", int(time.Since(st.wgStatus.LastHandshake).Seconds()))
-	default:
-		n.Status = "ok"
-	}
-	if st.wgStatus != nil {
-		if !st.wgStatus.LastHandshake.IsZero() {
-			lines = append(lines, fmt.Sprintf("last handshake: %ds ago",
-				int(time.Since(st.wgStatus.LastHandshake).Seconds())))
+	worst := "ok"
+	var details []FlowDetailSection
+	for _, t := range st.pool.Tunnels {
+		lines := []string{
+			"endpoint: " + t.Config.Peer.Endpoint,
+			"address: " + t.Config.Address,
+			fmt.Sprintf("tier %d · weight %d", t.Profile.Priority, t.Profile.Weight),
 		}
-		lines = append(lines, fmt.Sprintf("transfer: %d rx / %d tx bytes",
-			st.wgStatus.RxBytes, st.wgStatus.TxBytes))
+		status := st.wgStatus[t.IfName]
+		switch {
+		case status == nil:
+			worst = "down"
+			n.Hint = fmt.Sprintf("%s is not present.", t.IfName)
+			lines = append(lines, "interface missing")
+		case !status.Connected():
+			if worst == "ok" {
+				worst = "warn"
+				n.Hint = fmt.Sprintf("%s has no recent handshake.", t.IfName)
+			}
+			lines = append(lines, "no recent handshake")
+		default:
+			lines = append(lines, fmt.Sprintf("transfer: %d rx / %d tx bytes",
+				status.RxBytes, status.TxBytes))
+		}
+		if status != nil && !status.LastHandshake.IsZero() {
+			lines = append(lines, fmt.Sprintf("last handshake: %ds ago",
+				int(time.Since(status.LastHandshake).Seconds())))
+		}
+		u.healthMu.Lock()
+		if _, ok := u.ladders[t.IfName]; ok {
+			samples := u.rings[t.IfName].snapshot()
+			lines = append(lines, fmt.Sprintf("probe: %d%% loss, median %dms",
+				lossPct(samples, 20), medianRTT(samples, 20)))
+		}
+		u.healthMu.Unlock()
+		details = append(details, section(t.IfName+" — "+t.Profile.Name, lines))
 	}
-	u.healthMu.Lock()
-	if _, ok := u.ladders[system.WGLinkName]; ok {
-		samples := u.rings[system.WGLinkName].snapshot()
-		lines = append(lines, fmt.Sprintf("probe: %d%% loss, median %dms through the tunnel",
-			lossPct(samples, 20), medianRTT(samples, 20)))
-	}
-	u.healthMu.Unlock()
-	return withDetail(n, section("tunnel", lines))
+	n.Status = worst
+	details = append(details, section("pool", []string{
+		fmt.Sprintf("transport mark: %s (pinned to the secondary uplink)", netmark.Hex(vpnTransportMark)),
+	}))
+	return withDetail(n, details...)
 }
 
 func killSwitchNode(st flowState) FlowNode {
@@ -380,7 +396,7 @@ func killSwitchNode(st flowState) FlowNode {
 		return n
 	}
 	n.Sublabel = "always armed"
-	if st.plane.Active() {
+	if st.pool.Active() {
 		n.Status = "ok"
 	} else {
 		n.Status = "warn"
@@ -484,9 +500,9 @@ func worldNode(st flowState, slot domain.UplinkSlot) FlowNode {
 	} else {
 		n.ID, n.Label = "world-foreign", "foreign sites"
 		up = st.secondary
-		// A live uplink is not reachability: with no tunnel the kill switch
+		// A live uplink is not reachability: with no pool the kill switch
 		// stops every foreign packet, so saying "ok" here would be a lie.
-		if !st.plane.Active() {
+		if !st.pool.Active() {
 			n.Status = "ghost"
 			n.Hint = "Unreachable while the VPN is down — the kill switch drops this traffic."
 			return n
@@ -516,15 +532,16 @@ func (u *networkUsecase) dnsNode(ctx context.Context, st flowState) FlowNode {
 		n.Status = "down"
 		n.Hint = "dnsmasq is not running — clients cannot resolve anything."
 	}
-	fdns := vpnForeignDNS(st.plane)
+	fdns := poolForeignDNS(st.pool)
 	lines := []string{
 		fmt.Sprintf("domestic: %s via %s (%s)", system.DefaultDomesticDNS,
 			ifNameOr(st.domestic, "no uplink"), DomesticSuffix),
 	}
-	if fdns.Server != "" {
-		lines = append(lines, fmt.Sprintf("foreign: %s via %s", fdns.Server, fdns.IfName))
-	} else {
+	if len(fdns) == 0 {
 		lines = append(lines, "foreign: none — no tunnel to send queries through")
+	}
+	for _, f := range fdns {
+		lines = append(lines, fmt.Sprintf("foreign: %s via %s", f.Server, f.IfName))
 	}
 	lines = append(lines, "DoH bootstrap: "+strings.Join(dohboot.BootstrapIPs(), ", "))
 	return withDetail(n, section("resolvers", lines))
@@ -540,7 +557,7 @@ func flowEdges(vpn VPNRouteState, st flowState) []FlowEdge {
 		}
 		return "ghost"
 	}
-	vpnStatus := ghostIf(vpn.Active)
+	vpnStatus := ghostIf(vpn.Active())
 	edges := []FlowEdge{
 		{ID: "e-lan-dom", From: "src-lan", To: "mark-domestic", Kind: "data", Status: ghostIf(lanOK)},
 		{ID: "e-lan-for", From: "src-lan", To: "mark-foreign", Kind: "data", Status: ghostIf(lanOK)},
@@ -549,7 +566,7 @@ func flowEdges(vpn VPNRouteState, st flowState) []FlowEdge {
 		{ID: "e-dom-201", From: "mark-domestic", To: "table-201", Kind: "data", Status: "ok"},
 		{ID: "e-for-203", From: "mark-foreign", To: "table-203", Kind: "data", Status: vpnStatus},
 		// Where foreign traffic dies with no tunnel. Live exactly when the VPN is not.
-		{ID: "e-for-ks", From: "mark-foreign", To: "killswitch", Kind: "drop", Status: ghostIf(!vpn.Active)},
+		{ID: "e-for-ks", From: "mark-foreign", To: "killswitch", Kind: "drop", Status: ghostIf(!vpn.Active())},
 		{ID: "e-201-updom", From: "table-201", To: "uplink-domestic", Kind: "data",
 			Status: "ok", CounterKey: "nft:domestic"},
 		{ID: "e-203-wg", From: "table-203", To: "wg", Kind: "data",
@@ -574,7 +591,7 @@ func flowEdges(vpn VPNRouteState, st flowState) []FlowEdge {
 	if st.secondary != nil {
 		setCounter("e-upsec-world", "if:"+st.secondary.IfName)
 	}
-	if st.plane.Active() {
+	if st.pool.Active() {
 		edges = append(edges, FlowEdge{ID: "e-router-fb", From: "src-router", To: "table-203",
 			Kind: "data", Status: "ok", Label: "fallback"})
 	} else {
@@ -618,6 +635,12 @@ func routeLines(routes []system.Route) []string {
 		}
 		if r.Scope != "" {
 			line += " scope " + r.Scope
+		}
+		for _, nh := range r.Nexthops {
+			line += fmt.Sprintf(" nexthop %s weight %d", nh.OifName, nh.Weight)
+		}
+		if r.Metric != 0 {
+			line += fmt.Sprintf(" metric %d", r.Metric)
 		}
 		out = append(out, line)
 	}

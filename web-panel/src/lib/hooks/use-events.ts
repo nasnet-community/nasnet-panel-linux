@@ -31,6 +31,8 @@ export type EventType =
     | 'wan.lease_warning'
     | 'vpn.up'
     | 'vpn.down'
+    | 'vpn.degraded'
+    | 'vpn.pool_changed'
 
 // Event payloads
 export interface NodeStatusPayload {

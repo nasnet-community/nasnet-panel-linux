@@ -24,13 +24,13 @@ type wgDevice struct{}
 // output is text to scrape rather than structs to read.
 func NewWGDevice() WGDevice { return &wgDevice{} }
 
-func (d *wgDevice) Ensure(ctx context.Context, cfg WGApplyConfig) error {
-	link, err := d.ensureLink(cfg.MTU)
+func (d *wgDevice) Ensure(ctx context.Context, ifName string, cfg WGApplyConfig) error {
+	link, err := d.ensureLink(ifName, cfg.MTU)
 	if err != nil {
 		return err
 	}
 
-	if err := d.ensureAddress(link, cfg.Address); err != nil {
+	if err := d.ensureAddress(ifName, link, cfg.Address); err != nil {
 		return err
 	}
 
@@ -43,44 +43,44 @@ func (d *wgDevice) Ensure(ctx context.Context, cfg WGApplyConfig) error {
 		return fmt.Errorf("wireguard control: %w", err)
 	}
 	defer func() { _ = client.Close() }()
-	if err := client.ConfigureDevice(WGLinkName, wgCfg); err != nil {
-		return fmt.Errorf("configure %s: %w", WGLinkName, err)
+	if err := client.ConfigureDevice(ifName, wgCfg); err != nil {
+		return fmt.Errorf("configure %s: %w", ifName, err)
 	}
 
 	if err := netlink.LinkSetUp(link); err != nil {
-		return fmt.Errorf("bring %s up: %w", WGLinkName, err)
+		return fmt.Errorf("bring %s up: %w", ifName, err)
 	}
 
 	// Best effort: the LAN's resolver is rendered separately, so a box without
 	// resolved still gets working name lookups through dnsmasq.
-	d.registerResolver(ctx, cfg.DNS)
+	d.registerResolver(ctx, ifName, cfg.DNS)
 	return nil
 }
 
-func (d *wgDevice) ensureLink(mtu int) (netlink.Link, error) {
+func (d *wgDevice) ensureLink(ifName string, mtu int) (netlink.Link, error) {
 	if mtu <= 0 {
 		// Same default the status API reports.
 		mtu = domain.DefaultWGMTU
 	}
-	link, err := netlink.LinkByName(WGLinkName)
+	link, err := netlink.LinkByName(ifName)
 	if err != nil {
 		var notFound netlink.LinkNotFoundError
 		if !errors.As(err, &notFound) {
-			return nil, fmt.Errorf("look up %s: %w", WGLinkName, err)
+			return nil, fmt.Errorf("look up %s: %w", ifName, err)
 		}
 		attrs := netlink.NewLinkAttrs()
-		attrs.Name = WGLinkName
+		attrs.Name = ifName
 		attrs.MTU = mtu
 		if err := netlink.LinkAdd(&netlink.Wireguard{LinkAttrs: attrs}); err != nil {
-			return nil, fmt.Errorf("create %s: %w", WGLinkName, err)
+			return nil, fmt.Errorf("create %s: %w", ifName, err)
 		}
-		if link, err = netlink.LinkByName(WGLinkName); err != nil {
-			return nil, fmt.Errorf("look up %s after creating it: %w", WGLinkName, err)
+		if link, err = netlink.LinkByName(ifName); err != nil {
+			return nil, fmt.Errorf("look up %s after creating it: %w", ifName, err)
 		}
 	}
 	if link.Attrs().MTU != mtu {
 		if err := netlink.LinkSetMTU(link, mtu); err != nil {
-			return nil, fmt.Errorf("set MTU on %s: %w", WGLinkName, err)
+			return nil, fmt.Errorf("set MTU on %s: %w", ifName, err)
 		}
 	}
 	return link, nil
@@ -88,7 +88,7 @@ func (d *wgDevice) ensureLink(mtu int) (netlink.Link, error) {
 
 // ensureAddress leaves exactly the configured address on the link. Switching
 // profiles usually changes it, and a stale one would keep answering.
-func (d *wgDevice) ensureAddress(link netlink.Link, want netip.Prefix) error {
+func (d *wgDevice) ensureAddress(ifName string, link netlink.Link, want netip.Prefix) error {
 	if !want.IsValid() {
 		return errors.New("no tunnel address")
 	}
@@ -99,18 +99,18 @@ func (d *wgDevice) ensureAddress(link netlink.Link, want netip.Prefix) error {
 
 	existing, err := netlink.AddrList(link, netlink.FAMILY_V4)
 	if err != nil {
-		return fmt.Errorf("list addresses on %s: %w", WGLinkName, err)
+		return fmt.Errorf("list addresses on %s: %w", ifName, err)
 	}
 	for _, have := range existing {
 		if have.IPNet != nil && have.IPNet.String() == addr.IPNet.String() {
 			continue
 		}
 		if err := netlink.AddrDel(link, &have); err != nil {
-			return fmt.Errorf("remove a stale address from %s: %w", WGLinkName, err)
+			return fmt.Errorf("remove a stale address from %s: %w", ifName, err)
 		}
 	}
 	if err := netlink.AddrReplace(link, addr); err != nil {
-		return fmt.Errorf("address %s: %w", WGLinkName, err)
+		return fmt.Errorf("address %s: %w", ifName, err)
 	}
 	return nil
 }
@@ -166,18 +166,18 @@ func deviceConfig(cfg WGApplyConfig) (wgtypes.Config, error) {
 
 // registerResolver points systemd-resolved at the tunnel for everything. The
 // LAN gets its own answer from dnsmasq; this covers the box's own lookups.
-func (d *wgDevice) registerResolver(ctx context.Context, dns netip.Addr) {
+func (d *wgDevice) registerResolver(ctx context.Context, ifName string, dns netip.Addr) {
 	if !dns.IsValid() {
 		return
 	}
 	if _, err := exec.LookPath("resolvectl"); err != nil {
 		return
 	}
-	_ = exec.CommandContext(ctx, "resolvectl", "dns", WGLinkName, dns.String()).Run()
-	_ = exec.CommandContext(ctx, "resolvectl", "domain", WGLinkName, "~.").Run()
+	_ = exec.CommandContext(ctx, "resolvectl", "dns", ifName, dns.String()).Run()
+	_ = exec.CommandContext(ctx, "resolvectl", "domain", ifName, "~.").Run()
 }
 
-func (d *wgDevice) UpdateEndpoint(_ context.Context, endpoint netip.AddrPort) error {
+func (d *wgDevice) UpdateEndpoint(_ context.Context, ifName string, endpoint netip.AddrPort) error {
 	if !endpoint.IsValid() {
 		return errors.New("no endpoint")
 	}
@@ -187,7 +187,7 @@ func (d *wgDevice) UpdateEndpoint(_ context.Context, endpoint netip.AddrPort) er
 	}
 	defer func() { _ = client.Close() }()
 
-	dev, err := client.Device(WGLinkName)
+	dev, err := client.Device(ifName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrNoWGDevice
@@ -198,7 +198,7 @@ func (d *wgDevice) UpdateEndpoint(_ context.Context, endpoint netip.AddrPort) er
 		return errors.New("the tunnel has no peer to move")
 	}
 	// UpdateOnly, so a race with a teardown cannot resurrect a peer.
-	return client.ConfigureDevice(WGLinkName, wgtypes.Config{
+	return client.ConfigureDevice(ifName, wgtypes.Config{
 		Peers: []wgtypes.PeerConfig{{
 			PublicKey:  dev.Peers[0].PublicKey,
 			UpdateOnly: true,
@@ -207,14 +207,14 @@ func (d *wgDevice) UpdateEndpoint(_ context.Context, endpoint netip.AddrPort) er
 	})
 }
 
-func (d *wgDevice) Status(_ context.Context) (*WGStatus, error) {
+func (d *wgDevice) Status(_ context.Context, ifName string) (*WGStatus, error) {
 	client, err := wgctrl.New()
 	if err != nil {
 		return nil, fmt.Errorf("wireguard control: %w", err)
 	}
 	defer func() { _ = client.Close() }()
 
-	dev, err := client.Device(WGLinkName)
+	dev, err := client.Device(ifName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNoWGDevice
@@ -234,17 +234,31 @@ func (d *wgDevice) Status(_ context.Context) (*WGStatus, error) {
 	return st, nil
 }
 
-func (d *wgDevice) Delete(context.Context) error {
-	link, err := netlink.LinkByName(WGLinkName)
+func (d *wgDevice) Delete(_ context.Context, ifName string) error {
+	link, err := netlink.LinkByName(ifName)
 	if err != nil {
 		var notFound netlink.LinkNotFoundError
 		if errors.As(err, &notFound) {
 			return nil
 		}
-		return fmt.Errorf("look up %s: %w", WGLinkName, err)
+		return fmt.Errorf("look up %s: %w", ifName, err)
 	}
 	if err := netlink.LinkDel(link); err != nil {
-		return fmt.Errorf("delete %s: %w", WGLinkName, err)
+		return fmt.Errorf("delete %s: %w", ifName, err)
 	}
 	return nil
+}
+
+func (d *wgDevice) List(context.Context) ([]string, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return nil, fmt.Errorf("link list: %w", err)
+	}
+	var out []string
+	for _, l := range links {
+		if IsWGLink(l.Attrs().Name) {
+			out = append(out, l.Attrs().Name)
+		}
+	}
+	return out, nil
 }

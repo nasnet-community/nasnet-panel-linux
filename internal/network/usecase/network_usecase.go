@@ -109,16 +109,18 @@ type NetworkUsecase interface {
 	ListDevices(ctx context.Context) (*LANDeviceList, error)
 	SetDeviceLabel(ctx context.Context, mac, label string) error
 
-	// Only activate and deactivate ride the apply pipeline; the rest is storage.
+	// Only enable and disable ride the apply pipeline; role changes only
+	// redistribute flows, and the rest is storage.
 	ListVPNProfiles(ctx context.Context) ([]VPNProfileView, error)
 	CreateVPNProfile(ctx context.Context, req CreateVPNProfileRequest) (*VPNProfileView, error)
 	UpdateVPNProfile(ctx context.Context, id uint, req CreateVPNProfileRequest) (*VPNProfileView, error)
 	DeleteVPNProfile(ctx context.Context, id uint) error
 	ParseVPNInput(ctx context.Context, raw string) (*domain.WireGuardConfig, []domain.Verdict, error)
 	GenerateVPNKeypair() (priv, pub string, err error)
-	ActivateVPN(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
-	DeactivateVPN(ctx context.Context) ([]domain.Verdict, *ApplyView, error)
-	VPNStatus(ctx context.Context) (*VPNStatusView, error)
+	EnableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
+	DisableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
+	SetVPNProfileRole(ctx context.Context, id uint, priority, weight int) error
+	VPNStatus(ctx context.Context) (*VPNPoolStatusView, error)
 
 	// The flow page. All read-only: nothing here touches a packet.
 	FlowGraph(ctx context.Context) (*FlowView, error)
@@ -199,10 +201,13 @@ type networkUsecase struct {
 	// lastRolledBack is the revert this process has already reacted to.
 	lastRolledBack uint
 
-	// vpnWasUp keeps the tunnel events edge-triggered; vpnLastResolve stops a
-	// silent tunnel re-resolving its endpoint every tick.
-	vpnWasUp       bool
-	vpnLastResolve time.Time
+	// tunnelWasUp keeps the per-member events edge-triggered; tunnelLastResolve
+	// stops a silent tunnel re-resolving its endpoint every tick.
+	tunnelWasUp       map[string]bool
+	tunnelLastResolve map[string]time.Time
+	// lastPoolKey detects nexthop-set changes; poolNH is the set as applied.
+	lastPoolKey string
+	poolNH      []system.Nexthop
 
 	// resolverStatus is a seam: off systemd the real probe always answers
 	// "running", which leaves the flow page's check untestable.
@@ -244,9 +249,9 @@ func (u *networkUsecase) flowSource() system.FlowSource {
 	return system.NewFlowSource()
 }
 
-// vpnRouteState says whether the foreign group has a tunnel to leave by.
+// vpnRouteState says what the foreign group has to leave by.
 func (u *networkUsecase) vpnRouteState(ctx context.Context) VPNRouteState {
-	return VPNRouteState{Active: u.vpnPlaneNow(ctx).Active()}
+	return VPNRouteState{IfNames: u.vpnPoolNow(ctx).IfNames()}
 }
 
 func NewNetworkUsecase(d Deps) NetworkUsecase {
@@ -254,13 +259,15 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 		Deps:          d,
 		health:        NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
 		dnsmasq:       system.NewDNSMasq(),
-		healthCfg:     DefaultHealthConfig(),
-		inetStates:    map[string]*internetState{},
-		bootTicks:     map[string]int{},
-		rings:         map[string]*healthRing{},
-		ladders:       map[string]uplinkLadder{},
-		degradedNow:   map[string]bool{},
-		lastEffective: map[string]bool{},
+		healthCfg:         DefaultHealthConfig(),
+		inetStates:        map[string]*internetState{},
+		bootTicks:         map[string]int{},
+		rings:             map[string]*healthRing{},
+		ladders:           map[string]uplinkLadder{},
+		degradedNow:       map[string]bool{},
+		lastEffective:     map[string]bool{},
+		tunnelWasUp:       map[string]bool{},
+		tunnelLastResolve: map[string]time.Time{},
 	}
 	snap := &system.Snapshotter{Backend: d.Backend, Nft: d.Nft, Paths: d.Paths}
 	if d.LANRepo != nil {
@@ -272,10 +279,10 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 		}
 	}
 	if d.VPNRepo != nil {
-		snap.CaptureVPN = func(ctx context.Context) (*domain.VPNProfile, error) {
-			return d.VPNRepo.Active(ctx)
+		snap.CapturePool = func(ctx context.Context) ([]domain.VPNProfile, error) {
+			return d.VPNRepo.Enabled(ctx)
 		}
-		snap.RestoreVPN = u.restoreVPN
+		snap.RestorePool = u.restorePool
 	}
 	u.applier = &system.Applier{
 		Snap:   snap,
@@ -331,12 +338,12 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list groups: %w", err)
 	}
-	// Device first: the rules below look up a table whose route names its link.
-	plane := u.vpnPlaneNow(ctx)
-	if err := u.applyVPNDevice(ctx); err != nil {
-		return fmt.Errorf("apply the tunnel: %w", err)
+	// Devices first: the rules below look up a table whose routes name links.
+	if err := u.applyVPNDevices(ctx); err != nil {
+		return fmt.Errorf("apply the tunnels: %w", err)
 	}
-	vpn := VPNRouteState{Active: plane.Active()}
+	pool := u.vpnPoolNow(ctx)
+	vpn := VPNRouteState{IfNames: pool.IfNames()}
 
 	if err := ReconcileRules(ctx, u.Backend, AllRules(groups, uplinks, vpn)); err != nil {
 		return err
@@ -354,7 +361,7 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	}
 
 	lan := u.lanConfig(ctx)
-	if err := u.applyLAN(ctx, lan, uplinks, plane); err != nil {
+	if err := u.applyLAN(ctx, lan, uplinks, pool); err != nil {
 		return err
 	}
 	bridge, on := "", lan != nil && lan.Enabled
@@ -364,9 +371,9 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err := ApplySysctls(ctx, u.Backend, uplinks, on, bridge); err != nil {
 		return err
 	}
-	// Last: the LAN can restart networkd, which flushes the tunnel's route out
+	// Last: the LAN can restart networkd, which flushes the pool's routes out
 	// to the dish along with everything else on the links it owns.
-	return u.applyVPNRoutes(ctx, plane, uplinks)
+	return u.applyVPNRoutes(ctx, pool, uplinks)
 }
 
 // lanConfig reads the stored LAN row. A read failure is not fatal: the rest of
@@ -408,9 +415,9 @@ func (u *networkUsecase) domesticSets(ctx context.Context) ([]nft.Set, bool, err
 // applyLAN turns the LAN plane on or off: nft classification, NAT, the forward
 // filter, and the dnsmasq that serves it.
 func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig,
-	uplinks []Uplink, plane vpnPlane) error {
+	uplinks []Uplink, pool vpnPool) error {
 
-	vpn := VPNRouteState{Active: plane.Active()}
+	vpn := VPNRouteState{IfNames: pool.IfNames()}
 	if lan == nil || !lan.Enabled {
 		if err := ApplyLANNftState(ctx, u.Nft, nil, uplinks, nil, vpn); err != nil {
 			return err
@@ -446,7 +453,7 @@ func (u *networkUsecase) applyLAN(ctx context.Context, lan *domain.LANConfig,
 		}
 	}
 
-	cfg := LANDNSConfig(*lan, uplinks, DefaultDomesticDNS, vpnForeignDNS(plane),
+	cfg := LANDNSConfig(*lan, uplinks, DefaultDomesticDNS, poolForeignDNS(pool),
 		DomesticSuffix, nftSetOK)
 	if err := u.dnsmasq.Write(cfg); err != nil {
 		return err
@@ -635,10 +642,13 @@ func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
 		st.PendingPlanID, st.ConfirmDeadlineUnix = m.PlanID, m.DeadlineUnix
 	}
 	// Enough for a chip on the secondary uplink's card; the detail is a tab away.
-	if plane := u.vpnPlaneNow(ctx); plane.Active() {
+	if pool := u.vpnPoolNow(ctx); pool.Active() {
 		st.VPN.Active = true
-		if s, err := u.wg().Status(ctx); err == nil {
-			st.VPN.Connected = s.Connected()
+		for _, tn := range pool.Tunnels {
+			if s, err := u.wg().Status(ctx, tn.IfName); err == nil && s.Connected() {
+				st.VPN.Connected = true
+				break
+			}
 		}
 	}
 	if len(uplinks) < 2 {
@@ -1021,7 +1031,7 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 
 		routeErr := u.applyRouteState(ctx, up, gw, routeStateFor(routeInputs{
 			Slot: up.Slot, GatewayUp: gatewayUp, InternetUp: inetUp,
-			FailoverOn: cfg.FailoverToVPN, VPNUp: u.vpnConnectedNow(ctx),
+			FailoverOn: cfg.FailoverToVPN, VPNUp: u.poolConnectedNow(ctx),
 		}))
 
 		u.storeLadder(ctx, up, force, gatewayUp, inetUp, inetKnown, results)
@@ -1038,7 +1048,7 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 		}
 	}
 
-	u.probeTunnel(ctx, u.healthConfigSnapshot())
+	u.probePool(ctx, u.healthConfigSnapshot())
 
 	if addrs, err := u.Backend.Addrs(ctx); err == nil {
 		for _, v := range LeaseVerdicts(addrs, uplinks, false, "") {

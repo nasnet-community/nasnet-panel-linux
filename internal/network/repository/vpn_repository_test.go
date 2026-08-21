@@ -3,23 +3,30 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
+	"gorm.io/gorm"
 )
 
-func newVPNRepo(t *testing.T) VPNRepository {
+func newVPNDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newOwnDB(t)
 	if err := db.AutoMigrate(&domain.VPNProfile{}); err != nil {
 		t.Fatal(err)
 	}
-	// The single-active rule is a database constraint, so the test has to carry
-	// it too or it proves nothing about production.
-	if err := EnsureVPNProfileIndex(db); err != nil {
+	// The slot-uniqueness rule is a database constraint, so the test has to
+	// carry it too or it proves nothing about production.
+	if err := EnsureVPNPoolMigration(db); err != nil {
 		t.Fatal(err)
 	}
-	return NewVPNRepository(db)
+	return db
+}
+
+func newVPNRepo(t *testing.T) VPNRepository {
+	t.Helper()
+	return NewVPNRepository(newVPNDB(t))
 }
 
 func makeProfile(name string) *domain.VPNProfile {
@@ -46,8 +53,11 @@ func TestVPNRepository_CreateAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "frankfurt" || got.Config != p.Config || got.Active {
+	if got.Name != "frankfurt" || got.Config != p.Config || got.Enabled {
 		t.Errorf("got %+v", got)
+	}
+	if got.Weight != 1 {
+		t.Errorf("weight = %d, want the default 1", got.Weight)
 	}
 
 	list, err := r.List(ctx)
@@ -59,133 +69,215 @@ func TestVPNRepository_CreateAndRead(t *testing.T) {
 	}
 }
 
-func TestVPNRepository_NoActiveIsNotAnError(t *testing.T) {
-	got, err := newVPNRepo(t).Active(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != nil {
-		t.Errorf("got %+v, want nil", got)
-	}
-}
-
-// Switching profiles has to be one step, or the partial unique index rejects
-// the moment both rows are active.
-func TestVPNRepository_SetActiveSwitchesAtomically(t *testing.T) {
+func TestSetEnabled_AllocatesLowestFreeSlot(t *testing.T) {
 	ctx := context.Background()
 	r := newVPNRepo(t)
-
-	a, b := makeProfile("a"), makeProfile("b")
-	if err := r.Create(ctx, a); err != nil {
+	for _, n := range []string{"a", "b", "c"} {
+		if err := r.Create(ctx, makeProfile(n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id := uint(1); id <= 3; id++ {
+		if err := r.SetEnabled(ctx, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// b freed slot 1; the next enable must reuse it, not append.
+	if err := r.SetEnabled(ctx, 2, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Create(ctx, b); err != nil {
+	if err := r.Create(ctx, makeProfile("d")); err != nil {
 		t.Fatal(err)
 	}
-
-	if err := r.SetActive(ctx, a.ID); err != nil {
+	if err := r.SetEnabled(ctx, 4, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.SetActive(ctx, b.ID); err != nil {
-		t.Fatalf("switching profiles failed: %v", err)
-	}
-
-	act, err := r.Active(ctx)
+	rows, err := r.Enabled(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if act == nil || act.ID != b.ID {
-		t.Fatalf("active = %+v, want b", act)
+	slots := map[string]int{}
+	for _, p := range rows {
+		if p.WGSlot == nil {
+			t.Fatalf("%s enabled with no slot", p.Name)
+		}
+		slots[p.Name] = *p.WGSlot
 	}
-	// And the old one really let go, rather than the index just hiding it.
-	old, err := r.Get(ctx, a.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if old.Active {
-		t.Error("the previous profile is still marked active")
+	if slots["a"] != 0 || slots["c"] != 2 || slots["d"] != 1 {
+		t.Fatalf("slots = %v", slots)
 	}
 }
 
-func TestVPNRepository_ClearActive(t *testing.T) {
+func TestSetEnabled_RefusesANinthMember(t *testing.T) {
 	ctx := context.Background()
 	r := newVPNRepo(t)
-
-	p := makeProfile("a")
-	if err := r.Create(ctx, p); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 9; i++ {
+		if err := r.Create(ctx, makeProfile(fmt.Sprintf("p%d", i))); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := r.SetActive(ctx, p.ID); err != nil {
-		t.Fatal(err)
+	for id := uint(1); id <= 8; id++ {
+		if err := r.SetEnabled(ctx, id, true); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := r.ClearActive(ctx); err != nil {
-		t.Fatal(err)
-	}
-	act, err := r.Active(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if act != nil {
-		t.Errorf("active = %+v, want nil", act)
+	if err := r.SetEnabled(ctx, 9, true); !errors.Is(err, domain.ErrPoolFull) {
+		t.Fatalf("err = %v, want ErrPoolFull", err)
 	}
 }
 
-func TestVPNRepository_SetActiveOnAMissingProfile(t *testing.T) {
-	if err := newVPNRepo(t).SetActive(context.Background(), 999); err == nil {
-		t.Error("activated a profile that does not exist")
-	}
-}
-
-// A live tunnel with no row behind it is unrecoverable through the UI.
-func TestVPNRepository_RefusesToDeleteTheActiveProfile(t *testing.T) {
+func TestSetEnabled_IsIdempotentWhileOn(t *testing.T) {
 	ctx := context.Background()
 	r := newVPNRepo(t)
+	if err := r.Create(ctx, makeProfile("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	// A second enable must not shuffle the slot.
+	if err := r.SetEnabled(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := r.Enabled(ctx)
+	if len(rows) != 1 || rows[0].WGSlot == nil || *rows[0].WGSlot != 0 {
+		t.Fatalf("rows = %+v", rows)
+	}
+}
 
-	p := makeProfile("a")
-	if err := r.Create(ctx, p); err != nil {
+func TestMigration_ConvertsTheActiveRowOnce(t *testing.T) {
+	ctx := context.Background()
+	db := newVPNDB(t)
+	r := NewVPNRepository(db)
+	if err := r.Create(ctx, makeProfile("old")); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.SetActive(ctx, p.ID); err != nil {
+	db.Exec(`UPDATE vpn_profiles SET active = true WHERE id = 1`)
+	if err := EnsureVPNPoolMigration(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Delete(ctx, p.ID); !errors.Is(err, domain.ErrProfileActive) {
+	rows, _ := r.Enabled(ctx)
+	if len(rows) != 1 || !rows[0].Enabled || rows[0].WGSlot == nil || *rows[0].WGSlot != 0 ||
+		rows[0].Weight != 1 || rows[0].Priority != 0 {
+		t.Fatalf("migrated rows = %+v", rows)
+	}
+	// Idempotent: a disable must survive a second run.
+	if err := r.SetEnabled(ctx, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureVPNPoolMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := r.Enabled(ctx); len(rows) != 0 {
+		t.Fatal("a second migration re-enabled a profile the operator turned off")
+	}
+}
+
+func TestDelete_RefusesAnEnabledProfile(t *testing.T) {
+	ctx := context.Background()
+	r := newVPNRepo(t)
+	if err := r.Create(ctx, makeProfile("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(ctx, 1); !errors.Is(err, domain.ErrProfileActive) {
 		t.Fatalf("err = %v, want ErrProfileActive", err)
 	}
 }
 
-// The LANDeviceLabel trap, checked from the other side: the index is on active,
-// not on a natural key, so a deleted profile can never block a later one.
-func TestVPNRepository_DeletedProfileDoesNotBlockTheNextActive(t *testing.T) {
+func TestSetRole_ValidatesAndWrites(t *testing.T) {
 	ctx := context.Background()
 	r := newVPNRepo(t)
+	if err := r.Create(ctx, makeProfile("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetRole(ctx, 1, 3, 40); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := r.Get(ctx, 1)
+	if got.Priority != 3 || got.Weight != 40 {
+		t.Fatalf("got %+v", got)
+	}
+	if err := r.SetRole(ctx, 1, 8, 1); err == nil {
+		t.Error("priority 8 accepted")
+	}
+	if err := r.SetRole(ctx, 1, 0, 0); err == nil {
+		t.Error("weight 0 accepted")
+	}
+	if err := r.SetRole(ctx, 999, 0, 1); !errors.Is(err, domain.ErrProfileNotFound) {
+		t.Errorf("err = %v, want ErrProfileNotFound", err)
+	}
+}
 
-	a := makeProfile("a")
-	if err := r.Create(ctx, a); err != nil {
+// The rollback path: the enabled set becomes exactly what the snapshot held.
+func TestSetPool_RestoresTheExactSet(t *testing.T) {
+	ctx := context.Background()
+	r := newVPNRepo(t)
+	for _, n := range []string{"a", "b", "c"} {
+		if err := r.Create(ctx, makeProfile(n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.SetEnabled(ctx, 1, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.SetActive(ctx, a.ID); err != nil {
+	if err := r.SetEnabled(ctx, 2, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ClearActive(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Delete(ctx, a.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	b := makeProfile("b")
-	if err := r.Create(ctx, b); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.SetActive(ctx, b.ID); err != nil {
-		t.Fatalf("a deleted profile blocked the next one: %v", err)
-	}
-	list, err := r.List(ctx)
+	want, err := r.Enabled(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].ID != b.ID {
-		t.Errorf("list = %+v, want only b", list)
+
+	// Drift: a off, c on with a different role.
+	if err := r.SetEnabled(ctx, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 3, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetRole(ctx, 3, 5, 9); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.SetPool(ctx, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Enabled(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 2 {
+		t.Fatalf("restored set = %+v", got)
+	}
+	if got[0].WGSlot == nil || *got[0].WGSlot != 0 || got[1].WGSlot == nil || *got[1].WGSlot != 1 {
+		t.Fatalf("slots came back wrong: %+v", got)
+	}
+}
+
+// A deleted profile's slot must not block a later enable.
+func TestSetEnabled_DeletedProfileFreesItsSlot(t *testing.T) {
+	ctx := context.Background()
+	r := newVPNRepo(t)
+	if err := r.Create(ctx, makeProfile("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Create(ctx, makeProfile("b")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetEnabled(ctx, 2, true); err != nil {
+		t.Fatalf("a deleted profile's slot blocked the next one: %v", err)
 	}
 }
 
@@ -225,6 +317,9 @@ func TestVPNRepository_MissingProfileIsNotFound(t *testing.T) {
 	if err := r.Delete(ctx, 999); !errors.Is(err, domain.ErrProfileNotFound) {
 		t.Errorf("Delete = %v, want ErrProfileNotFound", err)
 	}
+	if err := r.SetEnabled(ctx, 999, true); !errors.Is(err, domain.ErrProfileNotFound) {
+		t.Errorf("SetEnabled = %v, want ErrProfileNotFound", err)
+	}
 }
 
 func TestVPNRepository_UpdateWritesNameAndConfig(t *testing.T) {
@@ -247,8 +342,8 @@ func TestVPNRepository_UpdateWritesNameAndConfig(t *testing.T) {
 	if got.Name != "renamed" || got.Config != `{"private_key":"other"}` {
 		t.Errorf("got %+v", got)
 	}
-	// Update must not disturb which profile is active.
-	if got.Active {
-		t.Error("update activated the profile")
+	// Update must not disturb pool membership.
+	if got.Enabled {
+		t.Error("update enabled the profile")
 	}
 }

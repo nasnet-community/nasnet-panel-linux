@@ -158,6 +158,7 @@ func TestRenderSysctl(t *testing.T) {
 		"net.ipv4.conf.enp2s0.rp_filter = 2",
 		"net.ipv4.tcp_fwmark_accept = 1",
 		"net.ipv4.fwmark_reflect = 1",
+		"net.ipv4.fib_multipath_hash_policy = 1",
 		"net.ipv4.conf.enp1s0.arp_ignore = 1",
 		"net.ipv4.conf.enp1s0.arp_announce = 2",
 		"net.ipv4.conf.enp2s0.arp_ignore = 1",

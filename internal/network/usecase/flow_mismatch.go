@@ -14,13 +14,13 @@ import (
 type flowMismatchInput struct {
 	uplinks   []Uplink
 	vpn       VPNRouteState
-	plane     vpnPlane
+	pool      vpnPool
 	liveRules []system.Rule
 	rulesErr  error
 	routes    map[int][]system.Route
 	routeErrs map[int]error
-	wgStatus  *system.WGStatus
-	wgErr     error
+	wgStatus  map[string]*system.WGStatus
+	wgLinks   []string
 	dnsUp     bool
 	nftObj    *system.NftObjects
 	nftErr    error
@@ -101,17 +101,14 @@ func routeMismatches(in flowMismatchInput) []FlowMismatch {
 			Actual:   "absent",
 		})
 	}
-	if !in.vpn.Active {
+	if !in.vpn.Active() {
 		return out
 	}
-	for _, want := range vpnRoutes(in.uplinks) {
-		if routeAmong(in.routes[want.Table], want) {
-			continue
-		}
+	if err := in.routeErrs[system.WGTable]; err == nil && !hasDefault(in.routes[system.WGTable]) {
 		out = append(out, FlowMismatch{
-			NodeID: fmt.Sprintf("table-%d", want.Table), Rule: "route-missing", Severity: "error",
-			Message:  fmt.Sprintf("The tunnel route %q is missing from table %d.", want.Dest, want.Table),
-			Expected: fmt.Sprintf("%s dev %s", want.Dest, want.OifName),
+			NodeID: "table-203", Rule: "route-missing", Severity: "error",
+			Message:  "The pool's default route is missing from table 203.",
+			Expected: "default across the pool members",
 			Actual:   "absent",
 		})
 	}
@@ -166,29 +163,35 @@ func (u *networkUsecase) nftMismatches(in flowMismatchInput) []FlowMismatch {
 }
 
 func (u *networkUsecase) wgMismatches(_ context.Context, in flowMismatchInput) []FlowMismatch {
-	st, err := in.wgStatus, in.wgErr
-	if !in.plane.Active() {
-		if err == nil && st != nil {
-			return []FlowMismatch{{
+	inPool := map[string]bool{}
+	for _, t := range in.pool.Tunnels {
+		inPool[t.IfName] = true
+	}
+	var out []FlowMismatch
+	// A link with no enabled profile behind it must not keep answering.
+	for _, name := range in.wgLinks {
+		if !inPool[name] {
+			out = append(out, FlowMismatch{
 				NodeID: "wg", Rule: "wg-device-unexpected", Severity: "warn",
-				Message: "A tunnel interface exists with no active profile.",
-				Actual:  "peer " + st.PublicKey,
-			}}
+				Message: fmt.Sprintf("Tunnel interface %s exists with no enabled profile.", name),
+				Actual:  name,
+			})
 		}
-		return nil
 	}
-	if err != nil || st == nil {
-		return nil // the node itself already says the device is missing
+	for _, t := range in.pool.Tunnels {
+		st := in.wgStatus[t.IfName]
+		if st == nil {
+			continue // the node itself already says the device is missing
+		}
+		if st.PublicKey != "" && st.PublicKey != t.Config.Peer.PublicKey {
+			out = append(out, FlowMismatch{
+				NodeID: "wg", Rule: "wg-peer-mismatch", Severity: "error",
+				Message:  fmt.Sprintf("The live peer on %s is not the one %q configures.", t.IfName, t.Profile.Name),
+				Expected: t.Config.Peer.PublicKey, Actual: st.PublicKey,
+			})
+		}
 	}
-	wantKey := in.plane.Config.Peer.PublicKey
-	if st.PublicKey != "" && st.PublicKey != wantKey {
-		return []FlowMismatch{{
-			NodeID: "wg", Rule: "wg-peer-mismatch", Severity: "error",
-			Message:  "The live tunnel peer is not the one this profile configures.",
-			Expected: wantKey, Actual: st.PublicKey,
-		}}
-	}
-	return nil
+	return out
 }
 
 func (u *networkUsecase) dnsMismatches(_ context.Context, in flowMismatchInput) []FlowMismatch {

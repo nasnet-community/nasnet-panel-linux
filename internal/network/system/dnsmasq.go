@@ -24,9 +24,9 @@ type DNSMasqConfig struct {
 	DomesticSuffix string
 	DomesticIfName string
 
-	// ForeignServer is the default, queried out ForeignIfName
-	ForeignServer string
-	ForeignIfName string
+	// Foreign are the default resolvers: one per tunnel, each bound to its
+	// link so the query leaves by the same tunnel that answers it.
+	Foreign []ForeignServer
 
 	// From NftSetSupported(), never a version check. Gates DomainSets.
 	NftSetSupported bool
@@ -40,6 +40,12 @@ type DomainSet struct {
 	Suffix string
 	V4Set  string
 	V6Set  string
+}
+
+// ForeignServer is one tunnel's resolver line.
+type ForeignServer struct {
+	Server string
+	IfName string
 }
 
 // RenderDNSMasq builds the config. dnsmasq serves the LAN; the box itself uses
@@ -87,10 +93,13 @@ func RenderDNSMasq(c DNSMasqConfig) string {
 		}
 		b.WriteString(line + "\n")
 	}
-	if c.ForeignServer != "" {
-		line := "server=" + c.ForeignServer
-		if c.ForeignIfName != "" {
-			line += "@" + c.ForeignIfName
+	for _, f := range c.Foreign {
+		if f.Server == "" {
+			continue
+		}
+		line := "server=" + f.Server
+		if f.IfName != "" {
+			line += "@" + f.IfName
 		}
 		b.WriteString(line + "\n")
 	}

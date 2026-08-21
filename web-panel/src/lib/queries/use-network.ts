@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-    activateVPN,
     applyNetworkChange,
     confirmNetworkApply,
     createPortForward,
     createVPNProfile,
-    deactivateVPN,
     deletePortForward,
     deleteVPNProfile,
+    disableVPNProfile,
+    enableVPNProfile,
     generateVPNKeypair,
     getLAN,
     getLANDevices,
@@ -20,6 +20,7 @@ import {
     planNetworkChange,
     rollbackNetworkApply,
     setDeviceLabel,
+    setVPNProfileRole,
     updateLAN,
     updateVPNProfile,
     updatePortForward,
@@ -298,13 +299,13 @@ export function useGenerateVPNKeypair() {
 }
 
 /** These rewrite routes and the firewall, so invalidate the whole subtree. */
-export function useActivateVPN() {
+export function useEnableVPNProfile() {
     const qc = useQueryClient()
     return useMutation({
-        mutationFn: async (profileId: number) => {
-            const res = await activateVPN(profileId)
+        mutationFn: async (id: number) => {
+            const res = await enableVPNProfile(id)
             if (!res.success) throw new Error(res.error || "Failed to turn the VPN on")
-            // V32 and V33 ride along with a 200, so keep them.
+            // V33 rides along with a 200, so keep it.
             return { ...res.data!, verdicts: res.verdicts ?? [] }
         },
         onSuccess: () => {
@@ -313,16 +314,33 @@ export function useActivateVPN() {
     })
 }
 
-export function useDeactivateVPN() {
+export function useDisableVPNProfile() {
     const qc = useQueryClient()
     return useMutation({
-        mutationFn: async () => {
-            const res = await deactivateVPN()
+        mutationFn: async (id: number) => {
+            const res = await disableVPNProfile(id)
             if (!res.success) throw new Error(res.error || "Failed to turn the VPN off")
             return { ...res.data!, verdicts: res.verdicts ?? [] }
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+/** Redistribution only; refresh the pool views, not the whole subtree. */
+export function useSetVPNRole() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({ id, priority, weight }: { id: number; priority: number; weight: number }) => {
+            const res = await setVPNProfileRole(id, { priority, weight })
+            if (!res.success) throw new Error(res.error || "Failed to change the tunnel's role")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkHealth() })
         },
     })
 }

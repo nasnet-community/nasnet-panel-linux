@@ -64,7 +64,7 @@ func TestBaseRules_MainSuppressorConsultsMainButRefusesADefault(t *testing.T) {
 // Tunnel first so the box's own traffic doesn't disclose the domestic address;
 // domestic last so a box with no VPN can still fetch updates.
 func TestBaseRules_OrderedFallbackTunnelThenDomesticThenDrop(t *testing.T) {
-	rs := BaseRules(twoUplinks(), VPNRouteState{Active: true})
+	rs := BaseRules(twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 
 	r0 := find(rs, 32000)
 	if r0 == nil || r0.Table != system.WGTable {
@@ -87,11 +87,11 @@ func TestBaseRules_OrderedFallbackTunnelThenDomesticThenDrop(t *testing.T) {
 
 // The kill switch as a routing invariant: nothing unmarked reaches table 202.
 func TestBaseRules_FallbackNeverReachesTheRawSecondaryUplink(t *testing.T) {
-	for _, vpn := range []VPNRouteState{{Active: false}, {Active: true}} {
+	for _, vpn := range []VPNRouteState{{}, {IfNames: []string{system.WGLinkName}}} {
 		for _, r := range BaseRules(twoUplinks(), vpn) {
 			if r.Pref >= RulePrefFallbackBase && r.Table == 202 {
 				t.Errorf("vpn active=%v: fallback rule at pref %d sends unmarked traffic "+
-					"out the raw secondary uplink", vpn.Active, r.Pref)
+					"out the raw secondary uplink", vpn.Active(), r.Pref)
 			}
 		}
 	}
@@ -115,7 +115,7 @@ func TestBaseRules_FallbackWithoutATunnelIsDomesticOnly(t *testing.T) {
 
 // A socket bound to the tunnel finds no route without this.
 func TestBaseRules_TunnelGetsAnOifRuleOnlyWhenActive(t *testing.T) {
-	active := BaseRules(twoUplinks(), VPNRouteState{Active: true})
+	active := BaseRules(twoUplinks(), VPNRouteState{IfNames: []string{system.WGLinkName}})
 	var found *system.Rule
 	for i := range active {
 		if active[i].OifName == system.WGLinkName {

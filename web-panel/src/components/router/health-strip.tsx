@@ -1,6 +1,13 @@
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useRouterHealth, useSetUplinkForce } from "@/lib/queries/use-router-health"
-import type { HealthSample, UplinkHealth, UplinkVerdict, VPNHealth } from "@/lib/types/health"
+import type {
+    HealthSample,
+    TunnelHealth,
+    UplinkHealth,
+    UplinkVerdict,
+    VPNPoolHealth,
+} from "@/lib/types/health"
 
 // Closed over UplinkVerdict so a new verdict is a compile error.
 // Severities match linkTone.
@@ -121,7 +128,25 @@ function ForceControl({ ifName, force }: { ifName: string; force: string }) {
                     key={s.label}
                     type="button"
                     disabled={set.isPending}
-                    onClick={() => set.mutate({ ifName, state: s.state })}
+                    onClick={() =>
+                        set.mutate(
+                            { ifName, state: s.state },
+                            {
+                                onSuccess: () =>
+                                    toast.success(
+                                        s.state === ""
+                                            ? `${ifName} back on auto`
+                                            : `${ifName} forced ${s.state}`,
+                                    ),
+                                onError: (e) =>
+                                    toast.error(
+                                        e instanceof Error
+                                            ? e.message
+                                            : "Failed to set the override",
+                                    ),
+                            },
+                        )
+                    }
                     className={cn(
                         "px-2.5 py-1 text-xs transition-colors",
                         force === s.state
@@ -169,9 +194,26 @@ function UplinkCard({ up }: { up: UplinkHealth }) {
     )
 }
 
-function VPNCard({ vpn }: { vpn: VPNHealth }) {
-    // Total loss means nothing came back through the tunnel.
-    const reachable = vpn.loss_pct < 100
+// One dot per member, so a flap is visible without eight sibling cards.
+function memberDotTone(t: TunnelHealth): string {
+    // No verdict yet: the damper is warming up, which is not a claim either way.
+    if (t.verdict === "") return "bg-status-neutral"
+    if (t.in_pool) {
+        return t.degraded ? "bg-status-warning" : "bg-status-success"
+    }
+    // Out of the set: a healthy standby tier is idle, everything else is down.
+    return t.verdict === "up" ? "bg-surface-3" : "bg-status-danger"
+}
+
+function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
+    const total = vpn.tunnels.length
+    const carrying = vpn.tunnels.filter((t) => t.in_pool).length
+    const badge =
+        carrying === 0
+            ? { tone: TONE_DOWN, label: "down" }
+            : carrying < total
+              ? { tone: TONE_WARN, label: `${carrying} of ${total}` }
+              : { tone: TONE_OK, label: "online" }
     return (
         <div
             data-uplink="vpn"
@@ -179,23 +221,33 @@ function VPNCard({ vpn }: { vpn: VPNHealth }) {
         >
             <div className="flex items-start justify-between gap-2">
                 <div>
-                    <p className="font-mono text-base font-medium">tunnel</p>
-                    <p className="text-text-tertiary text-xs">probed through the VPN</p>
+                    <p className="font-mono text-base font-medium">VPN pool</p>
+                    <p className="text-text-tertiary text-xs">
+                        {total === 1 ? "1 tunnel" : `${total} tunnels`} · probed through each
+                    </p>
                 </div>
-                <VerdictBadge verdict={reachable ? "up" : "no-internet"} />
+                <span
+                    data-pool-state={badge.label}
+                    className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
+                        badge.tone,
+                    )}
+                >
+                    {badge.label}
+                </span>
             </div>
-            <div className="space-y-1">
-                <div
-                    data-layer="tunnel"
-                    data-layer-status={reachable ? "up" : "down"}
-                    className={cn("h-1.5 rounded-full", reachable ? LAYER_BAR.up : LAYER_BAR.down)}
-                />
-                <p className="text-text-tertiary text-center font-mono text-[11px] tracking-wide">
-                    through the tunnel
-                </p>
+            <div className="flex items-center gap-1.5" aria-label="Pool members">
+                {vpn.tunnels.map((t) => (
+                    <span
+                        key={t.if_name}
+                        data-member={t.if_name}
+                        title={`${t.name} — ${t.verdict || "waiting"}${t.in_pool ? "" : t.verdict === "up" ? " (standby)" : " (out of the pool)"}`}
+                        className={cn("h-2.5 w-2.5 rounded-full", memberDotTone(t))}
+                    />
+                ))}
             </div>
             <div className="mt-auto">
-                <StatsRow loss={vpn.loss_pct} rtt={vpn.median_rtt_ms} history={vpn.history} />
+                <StatsRow loss={vpn.loss_pct} rtt={vpn.median_rtt_ms} history={vpn.pool_history} />
             </div>
         </div>
     )
@@ -227,14 +279,14 @@ export function HealthStrip() {
             </div>
             {failover_active && (
                 <div className="bg-status-warning-soft text-status-warning rounded-md px-3 py-2 text-sm font-medium">
-                    Domestic internet is down — traffic is riding the VPN until it recovers.
+                    Domestic internet is down — traffic is riding the VPN pool until it recovers.
                 </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {uplinks.map((up) => (
                     <UplinkCard key={up.if_name} up={up} />
                 ))}
-                {vpn?.present && <VPNCard vpn={vpn} />}
+                {vpn?.present && <PoolCard vpn={vpn} />}
             </div>
         </section>
     )

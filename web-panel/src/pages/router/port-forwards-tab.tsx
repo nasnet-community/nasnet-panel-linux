@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
-import { ArrowRight, Plus, ShieldAlert, Trash2, TriangleAlert } from "lucide-react"
+import { toast } from "sonner"
+import { ArrowRight, Pencil, Plus, ShieldAlert, Trash2, TriangleAlert } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     Card,
@@ -21,6 +21,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetFooter,
+    SheetHeader,
+    SheetTitle,
+} from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useConfirm } from "@/components/ui/confirm-dialog"
@@ -30,6 +38,7 @@ import {
     useSavePortForward,
 } from "@/lib/queries/use-network"
 import { collidesLocally, needsConfirm, verdictsFromError } from "@/lib/api/network"
+import { cn } from "@/lib/utils"
 import type {
     NetworkInterfaceView,
     NetworkState,
@@ -61,6 +70,17 @@ const blank: Draft = {
     to_port: "",
     comment: "",
     enabled: true,
+}
+
+const CONFIRM_EXPOSURE = {
+    title: "This forward exposes a way in",
+    confirmLabel: "Open it",
+    variant: "warning" as const,
+    typeToConfirm: "CONFIRM",
+}
+
+function forwardName(pf: Pick<PortForward, "proto" | "dport">): string {
+    return `${pf.proto.toUpperCase()}/${pf.dport}`
 }
 
 export function PortForwardsTab({ state, interfaces }: Props) {
@@ -105,7 +125,12 @@ export function PortForwardsTab({ state, interfaces }: Props) {
 
     const forwards = rows.data ?? []
 
-    function edit(pf: PortForward) {
+    function openNew() {
+        setVerdicts([])
+        setDraft({ ...blank })
+    }
+
+    function openEdit(pf: PortForward) {
         setVerdicts([])
         setDraft({
             id: pf.id,
@@ -149,17 +174,15 @@ export function PortForwardsTab({ state, interfaces }: Props) {
         try {
             await save.mutateAsync(payload)
             setDraft(null)
+            toast.success(draft.id ? "Forward updated" : "Forward added — live now")
         } catch (err) {
             const vs = verdictsFromError(err)
             if (needsConfirm(err)) {
                 const ok = await confirm({
-                    title: "This forward exposes a way in",
+                    ...CONFIRM_EXPOSURE,
                     description:
                         vs.map((v) => v.message).join(" ") ||
                         "Anyone who reaches your uplink can attempt to use it.",
-                    confirmLabel: "Add the forward",
-                    variant: "warning",
-                    typeToConfirm: "CONFIRM",
                     icon: <ShieldAlert className="h-5 w-5" />,
                 })
                 if (ok) await submit(true)
@@ -169,18 +192,50 @@ export function PortForwardsTab({ state, interfaces }: Props) {
         }
     }
 
+    // The row switch: firewall-only, so it lands at once — same as saving.
+    async function toggle(pf: PortForward, on: boolean, confirmed = false) {
+        const payload = { ...pf, enabled: on, confirmed }
+        try {
+            await save.mutateAsync(payload)
+            toast.success(on ? `${forwardName(pf)} turned on` : `${forwardName(pf)} turned off`)
+        } catch (err) {
+            const vs = verdictsFromError(err)
+            if (needsConfirm(err)) {
+                const ok = await confirm({
+                    ...CONFIRM_EXPOSURE,
+                    description:
+                        vs.map((v) => v.message).join(" ") ||
+                        "Anyone who reaches your uplink can attempt to use it.",
+                    icon: <ShieldAlert className="h-5 w-5" />,
+                })
+                if (ok) await toggle(pf, on, true)
+                return
+            }
+            toast.error(
+                vs.map((v) => v.message).join(" ") ||
+                    (err instanceof Error ? err.message : "Failed to change the forward"),
+            )
+        }
+    }
+
     async function del(pf: PortForward) {
         const ok = await confirm({
             title: "Remove this forward?",
-            description: `${pf.proto.toUpperCase()}/${pf.dport} stops reaching ${pf.to_addr}:${pf.to_port}. Connections using it now will drop.`,
+            description: `${forwardName(pf)} stops reaching ${pf.to_addr}:${pf.to_port}. Connections using it now will drop.`,
             confirmLabel: "Remove",
             variant: "destructive",
         })
-        if (ok) await remove.mutateAsync(pf.id)
+        if (!ok) return
+        try {
+            await remove.mutateAsync(pf.id)
+            toast.success("Forward removed")
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to remove the forward")
+        }
     }
 
     return (
-        <div className="space-y-4">
+        <>
             <Card>
                 <CardHeader>
                     <CardTitle>Port forwards</CardTitle>
@@ -188,17 +243,15 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                         Let traffic from the internet reach one device on your network. Replies
                         leave by whichever uplink the request arrived on.
                     </CardDescription>
-                    {!draft && (
-                        <CardAction>
-                            <Button size="sm" onClick={() => setDraft({ ...blank })}>
-                                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                Add forward
-                            </Button>
-                        </CardAction>
-                    )}
+                    <CardAction>
+                        <Button size="sm" onClick={openNew}>
+                            <Plus className="mr-1.5 h-3.5 w-3.5" />
+                            Add forward
+                        </Button>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
-                    {forwards.length === 0 && !draft ? (
+                    {forwards.length === 0 ? (
                         <EmptyState
                             icon={ArrowRight}
                             title="No port forwards"
@@ -209,42 +262,61 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                             {forwards.map((pf) => (
                                 <li
                                     key={pf.id}
-                                    className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0"
+                                    className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
                                 >
-                                    <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="font-mono text-sm tabular-nums">
-                                                {pf.proto.toUpperCase()}/{pf.dport}
-                                            </span>
-                                            <ArrowRight className="text-text-tertiary h-3.5 w-3.5" />
-                                            <span className="font-mono text-sm tabular-nums">
-                                                {pf.to_addr}:{pf.to_port}
-                                            </span>
-                                            {!pf.enabled && (
-                                                <Badge variant="secondary">Turned off</Badge>
+                                    <div className="flex min-w-0 items-center gap-3.5">
+                                        <Switch
+                                            checked={pf.enabled}
+                                            aria-label={
+                                                pf.enabled
+                                                    ? `Turn ${forwardName(pf)} off`
+                                                    : `Turn ${forwardName(pf)} on`
+                                            }
+                                            disabled={save.isPending}
+                                            onCheckedChange={(v) => void toggle(pf, v)}
+                                        />
+                                        <div
+                                            className={cn(
+                                                "min-w-0",
+                                                !pf.enabled && "text-text-tertiary opacity-70",
                                             )}
+                                        >
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="bg-surface-3 rounded px-1.5 py-0.5 font-mono text-xs font-medium tabular-nums">
+                                                    {forwardName(pf)}
+                                                </span>
+                                                <ArrowRight
+                                                    aria-hidden
+                                                    className="text-text-tertiary h-3.5 w-3.5"
+                                                />
+                                                <span className="font-mono text-sm tabular-nums">
+                                                    {pf.to_addr}:{pf.to_port}
+                                                </span>
+                                            </div>
+                                            <p className="text-text-secondary mt-0.5 text-xs">
+                                                on{" "}
+                                                {pf.uplink_key
+                                                    ? (labels[pf.uplink_key] ?? pf.uplink_key)
+                                                    : "any uplink"}
+                                                {pf.comment && ` · ${pf.comment}`}
+                                            </p>
                                         </div>
-                                        <p className="text-text-secondary mt-0.5 text-xs">
-                                            Arriving on{" "}
-                                            {pf.uplink_key
-                                                ? (labels[pf.uplink_key] ?? pf.uplink_key)
-                                                : "any uplink"}
-                                            {pf.comment && ` · ${pf.comment}`}
-                                        </p>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <Button
+                                            size="icon"
                                             variant="ghost"
-                                            size="sm"
-                                            onClick={() => edit(pf)}
-                                            disabled={!!draft}
+                                            className="h-8 w-8"
+                                            aria-label={`Edit ${forwardName(pf)}`}
+                                            onClick={() => openEdit(pf)}
                                         >
-                                            Edit
+                                            <Pencil className="h-3.5 w-3.5" />
                                         </Button>
                                         <Button
+                                            size="icon"
                                             variant="ghost"
-                                            size="sm"
-                                            onClick={() => del(pf)}
+                                            className="h-8 w-8"
+                                            onClick={() => void del(pf)}
                                             disabled={remove.isPending}
                                             aria-label={`Remove the forward on port ${pf.dport}`}
                                         >
@@ -258,144 +330,177 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                 </CardContent>
             </Card>
 
-            {draft && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>{draft.id ? "Edit forward" : "New forward"}</CardTitle>
-                        <CardDescription>
-                            Takes effect as soon as you save — this changes the firewall, not the
-                            addressing, so there is nothing to confirm afterwards.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="space-y-1.5">
-                                <Label>Accept on</Label>
-                                <Select
-                                    value={draft.uplink_key || "any"}
-                                    onValueChange={(v) =>
-                                        setDraft({ ...draft, uplink_key: v === "any" ? "" : v })
-                                    }
+            <Sheet
+                open={draft !== null}
+                onOpenChange={(o) => {
+                    if (!o) {
+                        setDraft(null)
+                        setVerdicts([])
+                    }
+                }}
+            >
+                <SheetContent className="overflow-y-auto sm:max-w-lg">
+                    {draft && (
+                        <>
+                            <SheetHeader className="pb-0">
+                                <SheetTitle>
+                                    {draft.id ? "Edit forward" : "New forward"}
+                                </SheetTitle>
+                                <SheetDescription>
+                                    Takes effect as soon as you save — this changes the firewall,
+                                    not the addressing, so there is nothing to confirm afterwards.
+                                </SheetDescription>
+                            </SheetHeader>
+
+                            <div className="space-y-4 px-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-1.5">
+                                        <Label>Accept on</Label>
+                                        <Select
+                                            value={draft.uplink_key || "any"}
+                                            onValueChange={(v) =>
+                                                setDraft({
+                                                    ...draft,
+                                                    uplink_key: v === "any" ? "" : v,
+                                                })
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="any">Any uplink</SelectItem>
+                                                {uplinks.map((u) => (
+                                                    <SelectItem key={u.key} value={u.key}>
+                                                        {u.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label>Protocol</Label>
+                                        <Select
+                                            value={draft.proto}
+                                            onValueChange={(v) =>
+                                                setDraft({ ...draft, proto: v as "tcp" | "udp" })
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="tcp">TCP</SelectItem>
+                                                <SelectItem value="udp">UDP</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="pf-dport">Outside port</Label>
+                                    <Input
+                                        id="pf-dport"
+                                        className="font-mono tabular-nums"
+                                        inputMode="numeric"
+                                        value={draft.dport}
+                                        onChange={(e) =>
+                                            setDraft({ ...draft, dport: e.target.value })
+                                        }
+                                        placeholder="8080"
+                                    />
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="pf-addr">Device address</Label>
+                                        <Input
+                                            id="pf-addr"
+                                            className="font-mono"
+                                            value={draft.to_addr}
+                                            onChange={(e) =>
+                                                setDraft({ ...draft, to_addr: e.target.value })
+                                            }
+                                            placeholder="10.77.0.5"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label htmlFor="pf-toport">Port on the device</Label>
+                                        <Input
+                                            id="pf-toport"
+                                            className="font-mono tabular-nums"
+                                            inputMode="numeric"
+                                            value={draft.to_port}
+                                            onChange={(e) =>
+                                                setDraft({ ...draft, to_port: e.target.value })
+                                            }
+                                            placeholder="80"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <Label htmlFor="pf-comment">Note (optional)</Label>
+                                    <Input
+                                        id="pf-comment"
+                                        value={draft.comment}
+                                        onChange={(e) =>
+                                            setDraft({ ...draft, comment: e.target.value })
+                                        }
+                                        placeholder="NAS web interface"
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <Switch
+                                        id="pf-enabled"
+                                        checked={draft.enabled}
+                                        onCheckedChange={(v) =>
+                                            setDraft({ ...draft, enabled: v })
+                                        }
+                                    />
+                                    <Label htmlFor="pf-enabled" className="text-sm font-normal">
+                                        Active
+                                    </Label>
+                                </div>
+
+                                {verdicts.map((v) => (
+                                    <Alert key={v.rule + v.message} variant="warning">
+                                        <TriangleAlert className="h-4 w-4" />
+                                        <AlertDescription>
+                                            {v.rule && (
+                                                <span className="text-text-tertiary font-mono text-xs">
+                                                    {v.rule}{" "}
+                                                </span>
+                                            )}
+                                            {v.message}
+                                        </AlertDescription>
+                                    </Alert>
+                                ))}
+                            </div>
+
+                            <SheetFooter className="flex-row items-center gap-2">
+                                <Button onClick={() => void submit()} disabled={save.isPending}>
+                                    {save.isPending
+                                        ? "Saving…"
+                                        : draft.id
+                                          ? "Save forward"
+                                          : "Add forward"}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setDraft(null)
+                                        setVerdicts([])
+                                    }}
                                 >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="any">Any uplink</SelectItem>
-                                        {uplinks.map((u) => (
-                                            <SelectItem key={u.key} value={u.key}>
-                                                {u.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label>Protocol</Label>
-                                <Select
-                                    value={draft.proto}
-                                    onValueChange={(v) =>
-                                        setDraft({ ...draft, proto: v as "tcp" | "udp" })
-                                    }
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="tcp">TCP</SelectItem>
-                                        <SelectItem value="udp">UDP</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        <div className="grid gap-4 sm:grid-cols-3">
-                            <div className="space-y-1.5">
-                                <Label htmlFor="pf-dport">Outside port</Label>
-                                <Input
-                                    id="pf-dport"
-                                    className="font-mono tabular-nums"
-                                    inputMode="numeric"
-                                    value={draft.dport}
-                                    onChange={(e) => setDraft({ ...draft, dport: e.target.value })}
-                                    placeholder="8080"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="pf-addr">Device address</Label>
-                                <Input
-                                    id="pf-addr"
-                                    className="font-mono"
-                                    value={draft.to_addr}
-                                    onChange={(e) => setDraft({ ...draft, to_addr: e.target.value })}
-                                    placeholder="10.77.0.5"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <Label htmlFor="pf-toport">Port on the device</Label>
-                                <Input
-                                    id="pf-toport"
-                                    className="font-mono tabular-nums"
-                                    inputMode="numeric"
-                                    value={draft.to_port}
-                                    onChange={(e) => setDraft({ ...draft, to_port: e.target.value })}
-                                    placeholder="80"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <Label htmlFor="pf-comment">Note (optional)</Label>
-                            <Input
-                                id="pf-comment"
-                                value={draft.comment}
-                                onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
-                                placeholder="NAS web interface"
-                            />
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                            <Switch
-                                id="pf-enabled"
-                                checked={draft.enabled}
-                                onCheckedChange={(v) => setDraft({ ...draft, enabled: v })}
-                            />
-                            <Label htmlFor="pf-enabled" className="text-sm font-normal">
-                                Active
-                            </Label>
-                        </div>
-
-                        {verdicts.map((v) => (
-                            <Alert key={v.rule + v.message} variant="warning">
-                                <TriangleAlert className="h-4 w-4" />
-                                <AlertDescription>
-                                    {v.rule && (
-                                        <span className="text-text-tertiary font-mono text-xs">
-                                            {v.rule}{" "}
-                                        </span>
-                                    )}
-                                    {v.message}
-                                </AlertDescription>
-                            </Alert>
-                        ))}
-
-                        <div className="flex items-center gap-2">
-                            <Button onClick={() => submit()} disabled={save.isPending}>
-                                {save.isPending ? "Saving…" : "Save forward"}
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                onClick={() => {
-                                    setDraft(null)
-                                    setVerdicts([])
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-        </div>
+                                    Cancel
+                                </Button>
+                            </SheetFooter>
+                        </>
+                    )}
+                </SheetContent>
+            </Sheet>
+        </>
     )
 }

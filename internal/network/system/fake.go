@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"sort"
 	"sync"
 )
 
@@ -180,14 +181,18 @@ func (f *FakeDeviceSource) AgeingSeconds(context.Context, string) (int, error) {
 	return f.Ageing, f.AgeingErr
 }
 
-// FakeWGDevice is an in-memory WGDevice. Absent until Ensure runs, like the
-// real one with no profile.
-type FakeWGDevice struct {
-	mu       sync.Mutex
+// FakeWGState is one fake link: absent until Ensure runs, like the real one.
+type FakeWGState struct {
 	Applied  *WGApplyConfig
 	Endpoint netip.AddrPort
 	Stat     *WGStatus
-	Deleted  int
+}
+
+// FakeWGDevice is an in-memory WGDevice keyed by interface name.
+type FakeWGDevice struct {
+	mu      sync.Mutex
+	Devices map[string]*FakeWGState
+	Deleted map[string]int
 
 	EnsureErr   error
 	StatusErr   error
@@ -195,52 +200,85 @@ type FakeWGDevice struct {
 	DeleteErr   error
 }
 
-func (f *FakeWGDevice) Ensure(_ context.Context, cfg WGApplyConfig) error {
+// State is a test convenience: the device's fake state, nil when absent.
+func (f *FakeWGDevice) State(ifName string) *FakeWGState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Devices[ifName]
+}
+
+func (f *FakeWGDevice) Ensure(_ context.Context, ifName string, cfg WGApplyConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.EnsureErr != nil {
 		return f.EnsureErr
 	}
-	f.Applied = &cfg
-	f.Endpoint = cfg.Endpoint
-	if f.Stat == nil {
-		f.Stat = &WGStatus{}
+	if f.Devices == nil {
+		f.Devices = map[string]*FakeWGState{}
+	}
+	st, ok := f.Devices[ifName]
+	if !ok {
+		st = &FakeWGState{}
+		f.Devices[ifName] = st
+	}
+	st.Applied = &cfg
+	st.Endpoint = cfg.Endpoint
+	if st.Stat == nil {
+		st.Stat = &WGStatus{}
 	}
 	return nil
 }
 
-func (f *FakeWGDevice) UpdateEndpoint(_ context.Context, ep netip.AddrPort) error {
+func (f *FakeWGDevice) UpdateEndpoint(_ context.Context, ifName string, ep netip.AddrPort) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.EndpointErr != nil {
 		return f.EndpointErr
 	}
-	f.Endpoint = ep
+	st, ok := f.Devices[ifName]
+	if !ok {
+		return ErrNoWGDevice
+	}
+	st.Endpoint = ep
 	return nil
 }
 
-func (f *FakeWGDevice) Status(context.Context) (*WGStatus, error) {
+func (f *FakeWGDevice) Status(_ context.Context, ifName string) (*WGStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.StatusErr != nil {
 		return nil, f.StatusErr
 	}
-	if f.Applied == nil {
+	st, ok := f.Devices[ifName]
+	if !ok || st.Applied == nil {
 		return nil, ErrNoWGDevice
 	}
-	return f.Stat, nil
+	return st.Stat, nil
 }
 
-func (f *FakeWGDevice) Delete(context.Context) error {
+func (f *FakeWGDevice) Delete(_ context.Context, ifName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.DeleteErr != nil {
 		return f.DeleteErr
 	}
-	f.Deleted++
-	f.Applied = nil
-	f.Stat = nil
+	if f.Deleted == nil {
+		f.Deleted = map[string]int{}
+	}
+	f.Deleted[ifName]++
+	delete(f.Devices, ifName)
 	return nil
+}
+
+func (f *FakeWGDevice) List(context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	names := make([]string, 0, len(f.Devices))
+	for name := range f.Devices {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // FakeNft is an in-memory NftReader. Membership is exact-match only; tests

@@ -86,12 +86,12 @@ type Snapshot struct {
 	// it a reverted LAN change leaves the row disagreeing with the files.
 	LANConfig *domain.LANConfig `json:"lan_config,omitempty"`
 
-	// VPNProfile is whatever was active, nil for none. VPNCaptured tells that
-	// apart from an older snapshot, where nil would read as "tear it down".
-	VPNCaptured bool               `json:"vpn_captured,omitempty"`
-	VPNProfile  *domain.VPNProfile `json:"vpn_profile,omitempty"`
-	// Config is json:"-" on the model, so it rides here or not at all.
-	VPNConfig string `json:"vpn_config,omitempty"`
+	// VPNProfiles is the enabled pool, empty for none. VPNPoolCaptured tells
+	// that apart from an older snapshot, where empty would read as "tear it
+	// all down". Configs ride separately: json:"-" on the model drops them.
+	VPNPoolCaptured bool                `json:"vpn_pool_captured,omitempty"`
+	VPNProfiles     []domain.VPNProfile `json:"vpn_profiles,omitempty"`
+	VPNConfigs      []string            `json:"vpn_configs,omitempty"`
 }
 
 type Snapshotter struct {
@@ -106,10 +106,10 @@ type Snapshotter struct {
 	// about repositories. Both nil is fine: older snapshots have no LAN either.
 	CaptureLAN func(context.Context) (*domain.LANConfig, error)
 	RestoreLAN func(context.Context, *domain.LANConfig) error
-	// Same for the tunnel. RestoreVPN gets nil for "none was active", which has
-	// to tear the device down.
-	CaptureVPN func(context.Context) (*domain.VPNProfile, error)
-	RestoreVPN func(context.Context, *domain.VPNProfile) error
+	// Same for the pool. RestorePool gets an empty set for "nothing was
+	// enabled", which has to tear every device down.
+	CapturePool func(context.Context) ([]domain.VPNProfile, error)
+	RestorePool func(context.Context, []domain.VPNProfile) error
 }
 
 // Capture reads current state
@@ -164,14 +164,14 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 		}
 		snap.LANConfig = cfg
 	}
-	if s.CaptureVPN != nil {
-		p, err := s.CaptureVPN(ctx)
+	if s.CapturePool != nil {
+		rows, err := s.CapturePool(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("capture the active VPN profile: %w", err)
+			return nil, fmt.Errorf("capture the VPN pool: %w", err)
 		}
-		snap.VPNProfile, snap.VPNCaptured = p, true
-		if p != nil {
-			snap.VPNConfig = p.Config
+		snap.VPNProfiles, snap.VPNPoolCaptured = rows, true
+		for i := range rows {
+			snap.VPNConfigs = append(snap.VPNConfigs, rows[i].Config)
 		}
 	}
 	snap.MaskedUnits = maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
@@ -212,9 +212,11 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return nil, fmt.Errorf("parse snapshot: %w", err)
 	}
-	// Put the config back where the model's json:"-" dropped it.
-	if snap.VPNProfile != nil && snap.VPNConfig != "" {
-		snap.VPNProfile.Config = snap.VPNConfig
+	// Put the configs back where the model's json:"-" dropped them.
+	for i := range snap.VPNProfiles {
+		if i < len(snap.VPNConfigs) {
+			snap.VPNProfiles[i].Config = snap.VPNConfigs[i]
+		}
 	}
 	if snap.Version != snapshotVersion {
 		return nil, fmt.Errorf("snapshot version %d, this build understands %d",
@@ -258,10 +260,10 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 		}
 	}
 
-	// nil is a real value here, so only act when the snapshot recorded one.
-	if snap.VPNCaptured && s.RestoreVPN != nil {
-		if err := s.RestoreVPN(ctx, snap.VPNProfile); err != nil {
-			errs = append(errs, fmt.Sprintf("restore the tunnel: %v", err))
+	// Empty is a real value here, so only act when the snapshot recorded it.
+	if snap.VPNPoolCaptured && s.RestorePool != nil {
+		if err := s.RestorePool(ctx, snap.VPNProfiles); err != nil {
+			errs = append(errs, fmt.Sprintf("restore the VPN pool: %v", err))
 		}
 	}
 

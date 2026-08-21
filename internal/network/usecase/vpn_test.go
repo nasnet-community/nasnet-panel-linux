@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/netip"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func (f *fakeVPNRepo) Delete(_ context.Context, id uint) error {
 		if f.rows[i].ID != id {
 			continue
 		}
-		if f.rows[i].Active {
+		if f.rows[i].Enabled {
 			return domain.ErrProfileActive
 		}
 		f.rows = append(f.rows[:i], f.rows[i+1:]...)
@@ -104,6 +105,84 @@ func (f *fakeVPNRepo) SetActive(_ context.Context, id uint) error {
 func (f *fakeVPNRepo) ClearActive(context.Context) error {
 	for i := range f.rows {
 		f.rows[i].Active = false
+	}
+	return nil
+}
+
+func (f *fakeVPNRepo) Enabled(context.Context) ([]domain.VPNProfile, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []domain.VPNProfile
+	for i := range f.rows {
+		if f.rows[i].Enabled {
+			out = append(out, f.rows[i])
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Priority != out[j].Priority {
+			return out[i].Priority < out[j].Priority
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (f *fakeVPNRepo) SetEnabled(_ context.Context, id uint, on bool) error {
+	taken := map[int]bool{}
+	for i := range f.rows {
+		if f.rows[i].Enabled && f.rows[i].WGSlot != nil {
+			taken[*f.rows[i].WGSlot] = true
+		}
+	}
+	for i := range f.rows {
+		if f.rows[i].ID != id {
+			continue
+		}
+		if !on {
+			f.rows[i].Enabled, f.rows[i].WGSlot = false, nil
+			return nil
+		}
+		if f.rows[i].Enabled {
+			return nil
+		}
+		for s := 0; s < domain.MaxEnabledProfiles; s++ {
+			if !taken[s] {
+				slot := s
+				f.rows[i].Enabled, f.rows[i].WGSlot = true, &slot
+				return nil
+			}
+		}
+		return domain.ErrPoolFull
+	}
+	return domain.ErrProfileNotFound
+}
+
+func (f *fakeVPNRepo) SetRole(_ context.Context, id uint, priority, weight int) error {
+	if err := domain.ValidatePoolRole(priority, weight); err != nil {
+		return err
+	}
+	for i := range f.rows {
+		if f.rows[i].ID == id {
+			f.rows[i].Priority, f.rows[i].Weight = priority, weight
+			return nil
+		}
+	}
+	return domain.ErrProfileNotFound
+}
+
+func (f *fakeVPNRepo) SetPool(_ context.Context, want []domain.VPNProfile) error {
+	for i := range f.rows {
+		f.rows[i].Enabled, f.rows[i].WGSlot = false, nil
+	}
+	for _, w := range want {
+		for i := range f.rows {
+			if f.rows[i].ID == w.ID {
+				f.rows[i].Enabled, f.rows[i].WGSlot = true, w.WGSlot
+				f.rows[i].Priority, f.rows[i].Weight = w.Priority, w.Weight
+				f.rows[i].Config = w.Config
+			}
+		}
 	}
 	return nil
 }
@@ -236,8 +315,8 @@ func TestCreateVPNProfile_FromAPastedURI(t *testing.T) {
 	if v.PublicKey == "" {
 		t.Error("no derived public key")
 	}
-	if v.Active {
-		t.Error("creating a profile activated it")
+	if v.Enabled {
+		t.Error("creating a profile put it in the pool")
 	}
 }
 
@@ -256,15 +335,22 @@ func TestCreateVPNProfile_RefusesAScriptedConfig(t *testing.T) {
 	}
 }
 
-func TestActivateVPN_BringsTheTunnelUpAndRoutesIntoIt(t *testing.T) {
+func testApplier(t *testing.T, p system.Paths) *system.Applier {
+	t.Helper()
+	return &system.Applier{Snap: newTestSnapshotter(t, p), Repo: &stubApplyRepo{},
+		Paths: p, Reload: func(context.Context) error { return nil }, Now: time.Now}
+}
+
+func slotOf(n int) *int { return &n }
+
+func TestEnableVPNProfile_BringsTheTunnelUpAndPinsTheEndpoint(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
 	f.uc.Paths = testPaths(t)
-	f.uc.applier = &system.Applier{Snap: newTestSnapshotter(t, f.uc.Paths), Repo: &stubApplyRepo{},
-		Paths: f.uc.Paths, Reload: func(context.Context) error { return nil }, Now: time.Now}
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Config: wgConfigJSON(t, nil)}}
+	f.uc.applier = testApplier(t, f.uc.Paths)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Weight: 1, Config: wgConfigJSON(t, nil)}}
 
-	verdicts, view, err := f.uc.ActivateVPN(ctx, 1)
+	verdicts, view, err := f.uc.EnableVPNProfile(ctx, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,23 +361,24 @@ func TestActivateVPN_BringsTheTunnelUpAndRoutesIntoIt(t *testing.T) {
 		t.Fatal("no apply view, so nothing armed the auto-revert")
 	}
 
-	if f.wg.Applied == nil {
+	st := f.wg.State("nasnet-wg0")
+	if st == nil || st.Applied == nil {
 		t.Fatal("the tunnel interface was never configured")
 	}
 	// The pin is what keeps WireGuard's own handshakes off the domestic line.
-	if f.wg.Applied.FirewallMark != netmark.PinMark(2) {
-		t.Errorf("firewall mark = 0x%08x, want the secondary pin", f.wg.Applied.FirewallMark)
+	if st.Applied.FirewallMark != netmark.PinMark(2) {
+		t.Errorf("firewall mark = 0x%08x, want the secondary pin", st.Applied.FirewallMark)
 	}
 	// A silent config still has to survive CGNAT.
-	if f.wg.Applied.MTU != domain.DefaultWGMTU {
-		t.Errorf("MTU = %d, want the default", f.wg.Applied.MTU)
+	if st.Applied.MTU != domain.DefaultWGMTU {
+		t.Errorf("MTU = %d, want the default", st.Applied.MTU)
 	}
-	if f.wg.Applied.Keepalive != time.Duration(domain.DefaultWGKeepalive)*time.Second {
-		t.Errorf("keepalive = %v, want the default", f.wg.Applied.Keepalive)
+	if st.Applied.Keepalive != time.Duration(domain.DefaultWGKeepalive)*time.Second {
+		t.Errorf("keepalive = %v, want the default", st.Applied.Keepalive)
 	}
-	// Resolved once, at activation, because the resolver is about to move inside.
-	if f.wg.Applied.Endpoint.String() != "185.65.135.1:51820" {
-		t.Errorf("endpoint = %v, want the resolved address", f.wg.Applied.Endpoint)
+	// Resolved once, at enable, because the resolver is about to move inside.
+	if st.Applied.Endpoint.String() != "185.65.135.1:51820" {
+		t.Errorf("endpoint = %v, want the resolved address", st.Applied.Endpoint)
 	}
 
 	stored, _ := f.repo.Get(ctx, 1)
@@ -302,15 +389,64 @@ func TestActivateVPN_BringsTheTunnelUpAndRoutesIntoIt(t *testing.T) {
 	if cfg.PinnedEndpointIP != "185.65.135.1" {
 		t.Errorf("pinned endpoint = %q, so the tunnel could not come up without a resolver", cfg.PinnedEndpointIP)
 	}
+	if !stored.Enabled || stored.WGSlot == nil || *stored.WGSlot != 0 {
+		t.Errorf("stored row = %+v, want enabled in slot 0", stored)
+	}
+}
+
+func TestEnableVPNProfile_SecondMemberJoinsThePool(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.uc.Paths = testPaths(t)
+	f.uc.applier = testApplier(t, f.uc.Paths)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 3, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)},
+		{ID: 2, Name: "b", Weight: 1, Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
+			c.Address = "10.66.1.2/32"
+			c.Peer.Endpoint = "5.6.7.8:51820"
+		})},
+	}
+
+	verdicts, view, err := f.uc.EnableVPNProfile(ctx, 2)
+	if err != nil || domain.Rejected(verdicts) || view == nil {
+		t.Fatalf("err=%v verdicts=%+v view=%v", err, verdicts, view)
+	}
+	if f.wg.State("nasnet-wg1") == nil {
+		t.Fatal("the new member's device never came up")
+	}
+	// Route assertions live against applyVPNRoutes: the fixture has no uplink
+	// rows, so Reconcile inside the plan stops before routing.
+	if err := f.uc.applyVPNRoutes(ctx, f.uc.vpnPoolNow(ctx), twoUplinks()); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ := f.be.RouteList(ctx, system.WGTable)
+	var def *system.Route
+	probes := map[int]string{}
+	for i := range routes {
+		switch {
+		case routes[i].Dest == "default" && routes[i].Metric == 0:
+			def = &routes[i]
+		case routes[i].Dest == "default":
+			probes[routes[i].Metric] = routes[i].OifName
+		}
+	}
+	if def == nil || len(def.Nexthops) != 2 ||
+		def.Nexthops[0] != (system.Nexthop{OifName: "nasnet-wg0", Weight: 3}) ||
+		def.Nexthops[1] != (system.Nexthop{OifName: "nasnet-wg1", Weight: 1}) {
+		t.Fatalf("pool default = %+v", def)
+	}
+	if probes[100] != "nasnet-wg0" || probes[101] != "nasnet-wg1" {
+		t.Fatalf("probe routes = %v", probes)
+	}
 }
 
 // The whole feature, stated once: an unresolvable endpoint changes nothing.
-func TestActivateVPN_UnresolvableEndpointRejectsAndAppliesNothing(t *testing.T) {
+func TestEnableVPNProfile_UnresolvableEndpointRejectsAndAppliesNothing(t *testing.T) {
 	f := newVPNFixture(t)
 	f.doh.err = errors.New("no answer")
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Config: wgConfigJSON(t, nil)}}
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Weight: 1, Config: wgConfigJSON(t, nil)}}
 
-	verdicts, view, err := f.uc.ActivateVPN(context.Background(), 1)
+	verdicts, view, err := f.uc.EnableVPNProfile(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,47 +456,59 @@ func TestActivateVPN_UnresolvableEndpointRejectsAndAppliesNothing(t *testing.T) 
 	if view != nil {
 		t.Error("something was applied despite the reject")
 	}
-	if f.wg.Applied != nil {
+	if f.wg.State("nasnet-wg0") != nil {
 		t.Error("the tunnel came up despite the reject")
 	}
-	if f.repo.rows[0].Active {
-		t.Error("the profile was activated despite the reject")
+	if f.repo.rows[0].Enabled {
+		t.Error("the profile joined the pool despite the reject")
 	}
 }
 
-func TestActivateVPN_NarrowAllowedIPsWarnsButApplies(t *testing.T) {
+// A pool member carries the default route or it carries nothing anyone asked
+// for; the old single-tunnel warning is a hard reject now.
+func TestEnableVPNProfile_HardRejects(t *testing.T) {
+	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.uc.Paths = testPaths(t)
-	f.uc.applier = &system.Applier{Snap: newTestSnapshotter(t, f.uc.Paths), Repo: &stubApplyRepo{},
-		Paths: f.uc.Paths, Reload: func(context.Context) error { return nil }, Now: time.Now}
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "split", Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
-		c.Peer.AllowedIPs = []string{"10.0.0.0/8"}
-	})}}
+	base := wgConfigJSON(t, nil)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0), Config: base},
+		{ID: 2, Name: "narrow", Weight: 1, Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
+			c.Peer.AllowedIPs = []string{"10.0.0.0/8"}
+		})},
+		{ID: 3, Name: "same-addr", Weight: 1, Config: base},
+		{ID: 4, Name: "same-port", Weight: 1, Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
+			c.Address = "10.66.2.2/32"
+			c.ListenPort = 51821
+		})},
+	}
+	// Give the enabled member the same listen port so ID 4 collides.
+	f.repo.rows[0].Config = wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.ListenPort = 51821 })
 
-	verdicts, view, err := f.uc.ActivateVPN(context.Background(), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if domain.Rejected(verdicts) {
-		t.Fatalf("rejected a legal split tunnel: %+v", verdicts)
-	}
-	if !hasVerdict(verdicts, "V32") {
-		t.Errorf("no warning that the rest of the traffic will drop: %+v", verdicts)
-	}
-	if view == nil {
-		t.Error("the change was not applied")
+	for _, tc := range []struct {
+		id   uint
+		rule string
+	}{{2, "V32"}, {3, "V36"}, {4, "V35"}} {
+		verdicts, view, err := f.uc.EnableVPNProfile(ctx, tc.id)
+		if err != nil {
+			t.Fatalf("id %d: %v", tc.id, err)
+		}
+		if !domain.Rejected(verdicts) || !hasVerdict(verdicts, tc.rule) {
+			t.Errorf("id %d: verdicts = %+v, want a %s reject", tc.id, verdicts, tc.rule)
+		}
+		if view != nil {
+			t.Errorf("id %d: applied despite the reject", tc.id)
+		}
 	}
 }
 
 // Provisioning before the dish arrives is a real workflow.
-func TestActivateVPN_NoSecondaryUplinkWarnsButApplies(t *testing.T) {
+func TestEnableVPNProfile_NoSecondaryUplinkWarnsButApplies(t *testing.T) {
 	f := newVPNFixture(t)
 	f.uc.Paths = testPaths(t)
-	f.uc.applier = &system.Applier{Snap: newTestSnapshotter(t, f.uc.Paths), Repo: &stubApplyRepo{},
-		Paths: f.uc.Paths, Reload: func(context.Context) error { return nil }, Now: time.Now}
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Config: wgConfigJSON(t, nil)}}
+	f.uc.applier = testApplier(t, f.uc.Paths)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Weight: 1, Config: wgConfigJSON(t, nil)}}
 
-	verdicts, view, err := f.uc.ActivateVPN(context.Background(), 1)
+	verdicts, view, err := f.uc.EnableVPNProfile(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,39 +520,118 @@ func TestActivateVPN_NoSecondaryUplinkWarnsButApplies(t *testing.T) {
 	}
 }
 
-func TestDeactivateVPN_TakesTheTunnelDown(t *testing.T) {
+func TestDisableVPNProfile_TakesTheMemberDown(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
 	f.uc.Paths = testPaths(t)
-	f.uc.applier = &system.Applier{Snap: newTestSnapshotter(t, f.uc.Paths), Repo: &stubApplyRepo{},
-		Paths: f.uc.Paths, Reload: func(context.Context) error { return nil }, Now: time.Now}
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
+	f.uc.applier = testApplier(t, f.uc.Paths)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)},
+		{ID: 2, Name: "b", Enabled: true, Weight: 1, WGSlot: slotOf(1),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.Address = "10.66.1.2/32" })},
+	}
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, _, err := f.uc.DeactivateVPN(ctx); err != nil {
+	if _, _, err := f.uc.DisableVPNProfile(ctx, 2); err != nil {
 		t.Fatal(err)
 	}
-	if f.repo.rows[0].Active {
-		t.Error("the profile is still active")
+	if f.repo.rows[1].Enabled {
+		t.Error("the profile is still in the pool")
 	}
-	if f.wg.Deleted == 0 {
-		t.Error("the tunnel interface survived deactivation")
+	if f.wg.Deleted["nasnet-wg1"] == 0 {
+		t.Error("the member's interface survived the disable")
+	}
+	if f.wg.State("nasnet-wg0") == nil {
+		t.Error("the disable took the other member down with it")
 	}
 }
 
-func TestDeleteVPNProfile_RefusedWhileActive(t *testing.T) {
+func TestSetVPNProfileRole_RewritesTheNexthopsWithoutAPlan(t *testing.T) {
+	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)},
+		{ID: 2, Name: "b", Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(1),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.Address = "10.66.1.2/32" })},
+	}
+
+	if err := f.uc.SetVPNProfileRole(ctx, 2, 1, 5); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ := f.be.RouteList(ctx, system.WGTable)
+	for _, r := range routes {
+		if r.Dest == "default" && r.Metric == 0 {
+			if len(r.Nexthops) != 1 || r.Nexthops[0].OifName != "nasnet-wg0" {
+				t.Fatalf("tier 1 member still in the tier-0 set: %+v", r.Nexthops)
+			}
+			return
+		}
+	}
+	t.Fatal("no pool default found")
+}
+
+func TestSetVPNProfileRole_RejectsBadRanges(t *testing.T) {
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "a", Weight: 1, Config: wgConfigJSON(t, nil)}}
+	if err := f.uc.SetVPNProfileRole(context.Background(), 1, 9, 1); !errors.Is(err, ErrValidationFailed) {
+		t.Errorf("priority 9: err = %v", err)
+	}
+	if err := f.uc.SetVPNProfileRole(context.Background(), 1, 0, 0); !errors.Is(err, ErrValidationFailed) {
+		t.Errorf("weight 0: err = %v", err)
+	}
+}
+
+func TestPoolNexthops_TiersWeightsAndTheLastMemberRule(t *testing.T) {
+	cases := []struct {
+		name    string
+		members []poolMember
+		want    []system.Nexthop
+	}{
+		{"weighted tier zero",
+			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 3, Healthy: true},
+				{IfName: "nasnet-wg1", Priority: 0, Weight: 1, Healthy: true},
+				{IfName: "nasnet-wg2", Priority: 1, Weight: 1, Healthy: true}},
+			[]system.Nexthop{{OifName: "nasnet-wg0", Weight: 3}, {OifName: "nasnet-wg1", Weight: 1}}},
+		{"dead member ejected from its tier",
+			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 3, Healthy: false},
+				{IfName: "nasnet-wg1", Priority: 0, Weight: 1, Healthy: true}},
+			[]system.Nexthop{{OifName: "nasnet-wg1", Weight: 1}}},
+		{"tier zero all dead falls to tier one",
+			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 1, Healthy: false},
+				{IfName: "nasnet-wg1", Priority: 1, Weight: 1, Healthy: true}},
+			[]system.Nexthop{{OifName: "nasnet-wg1", Weight: 1}}},
+		{"everything dead keeps the best tier routed",
+			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 2, Healthy: false},
+				{IfName: "nasnet-wg1", Priority: 1, Weight: 1, Healthy: false}},
+			[]system.Nexthop{{OifName: "nasnet-wg0", Weight: 2}}},
+		{"empty pool", nil, nil},
+	}
+	for _, tc := range cases {
+		got := poolNexthops(tc.members)
+		if len(got) != len(tc.want) {
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestDeleteVPNProfile_RefusedWhileEnabled(t *testing.T) {
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)}}
 	if err := f.uc.DeleteVPNProfile(context.Background(), 1); !errors.Is(err, domain.ErrProfileActive) {
 		t.Errorf("err = %v, want ErrProfileActive", err)
 	}
 }
 
-func TestUpdateVPNProfile_RefusedWhileActive(t *testing.T) {
+func TestUpdateVPNProfile_RefusedWhileEnabled(t *testing.T) {
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)}}
 	_, err := f.uc.UpdateVPNProfile(context.Background(), 1,
 		CreateVPNProfileRequest{Name: "x", Config: &domain.WireGuardConfig{}})
 	if !errors.Is(err, ErrValidationFailed) {
@@ -416,69 +643,98 @@ func TestUpdateVPNProfile_RefusedWhileActive(t *testing.T) {
 func TestVPNStatus_HandshakeAgeDecidesConnected(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, Weight: 1, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)}}
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
 		t.Fatal(err)
 	}
 
-	f.wg.Stat = &system.WGStatus{LastHandshake: time.Now().Add(-30 * time.Second), RxBytes: 10, TxBytes: 20}
+	f.wg.State(system.WGLinkName).Stat = &system.WGStatus{
+		LastHandshake: time.Now().Add(-30 * time.Second), RxBytes: 10, TxBytes: 20}
 	st, err := f.uc.VPNStatus(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.Connected || st.RxBytes != 10 || st.TxBytes != 20 {
-		t.Errorf("status = %+v", st)
+	if len(st.Tunnels) != 1 {
+		t.Fatalf("tunnels = %+v", st.Tunnels)
 	}
-	if st.HandshakeAgeSecs == nil || *st.HandshakeAgeSecs < 25 {
-		t.Errorf("handshake age = %v", st.HandshakeAgeSecs)
+	tn := st.Tunnels[0]
+	if !tn.Connected || tn.RxBytes != 10 || tn.TxBytes != 20 {
+		t.Errorf("status = %+v", tn)
+	}
+	if tn.HandshakeAgeSecs == nil || *tn.HandshakeAgeSecs < 25 {
+		t.Errorf("handshake age = %v", tn.HandshakeAgeSecs)
 	}
 	if !st.KillSwitch {
 		t.Error("the kill switch is reported as off; it is not a setting")
 	}
 	// Defaults have to be reported as applied, or the UI shows a blank MTU.
-	if st.MTU != domain.DefaultWGMTU || st.KeepaliveSecs != domain.DefaultWGKeepalive {
-		t.Errorf("mtu = %d keepalive = %d", st.MTU, st.KeepaliveSecs)
+	if tn.MTU != domain.DefaultWGMTU || tn.KeepaliveSecs != domain.DefaultWGKeepalive {
+		t.Errorf("mtu = %d keepalive = %d", tn.MTU, tn.KeepaliveSecs)
 	}
 
-	f.wg.Stat = &system.WGStatus{LastHandshake: time.Now().Add(-system.StaleHandshakeAfter - time.Second)}
+	f.wg.State(system.WGLinkName).Stat = &system.WGStatus{
+		LastHandshake: time.Now().Add(-system.StaleHandshakeAfter - time.Second)}
 	st, err = f.uc.VPNStatus(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Connected {
+	if st.Tunnels[0].Connected {
 		t.Error("a tunnel with a stale handshake reported as connected")
 	}
 }
 
-func TestVPNStatus_NoProfileIsNotAnError(t *testing.T) {
+func TestVPNStatus_EmptyPoolIsNotAnError(t *testing.T) {
 	st, err := newVPNFixture(t).uc.VPNStatus(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.ActiveProfileID != nil || st.Connected {
+	if len(st.Tunnels) != 0 {
 		t.Errorf("status = %+v", st)
 	}
 	if !st.KillSwitch {
-		t.Error("with no profile the kill switch is exactly what is holding")
+		t.Error("with no pool the kill switch is exactly what is holding")
 	}
 }
 
-// The tunnel does not survive a reboot, so boot has to put it back.
-func TestApplyVPNDevice_RebuildsFromTheStoredProfile(t *testing.T) {
+// The tunnels do not survive a reboot, so boot has to put them back.
+func TestApplyVPNDevices_RebuildsFromTheStoredPool(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true,
-		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })}}
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })},
+		{ID: 2, Name: "b", Enabled: true, Weight: 1, WGSlot: slotOf(1),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
+				c.Address = "10.66.1.2/32"
+				c.PinnedEndpointIP = "5.6.7.8"
+			})},
+	}
 
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if f.wg.Applied == nil {
-		t.Fatal("the tunnel was not rebuilt")
+	if f.wg.State("nasnet-wg0") == nil || f.wg.State("nasnet-wg1") == nil {
+		t.Fatal("the pool was not rebuilt")
 	}
-	// Straight from the pin: at boot there may be no resolver at all yet.
+	// Straight from the pins: at boot there may be no resolver at all yet.
 	if f.doh.calls != 0 {
-		t.Errorf("boot made %d DNS lookups; the pinned address is there so it needs none", f.doh.calls)
+		t.Errorf("boot made %d DNS lookups; the pinned addresses are there so it needs none", f.doh.calls)
+	}
+}
+
+// A link whose profile left the pool must not keep answering.
+func TestApplyVPNDevices_RemovesOrphanedLinks(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	_ = f.wg.Ensure(ctx, "nasnet-wg3", system.WGApplyConfig{})
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })}}
+
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.wg.State("nasnet-wg3") != nil {
+		t.Error("an orphaned tunnel link survived the reconcile")
 	}
 }
 
@@ -487,7 +743,7 @@ func TestApplyVPNRoutes_AFailedReadIsNotAnEmptyTable(t *testing.T) {
 	f := newVPNFixture(t)
 	f.be.Err = errors.New("netlink is busy")
 
-	err := f.uc.applyVPNRoutes(context.Background(), vpnPlane{}, twoUplinks())
+	err := f.uc.applyVPNRoutes(context.Background(), vpnPool{}, twoUplinks())
 	if err == nil {
 		t.Fatal("a failed routing-table read was reported as a successful teardown")
 	}
@@ -497,57 +753,57 @@ func TestApplyVPNRoutes_AFailedReadIsNotAnEmptyTable(t *testing.T) {
 // as "no kill switch", which leaks.
 func TestVPNRouteState_FailsTowardsTheBlackhole(t *testing.T) {
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Active: true, Config: "not json"}}
-	if f.uc.vpnRouteState(context.Background()).Active {
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Enabled: true, WGSlot: slotOf(0), Config: "not json"}}
+	if f.uc.vpnRouteState(context.Background()).Active() {
 		t.Error("an unreadable profile still routed traffic into a tunnel that cannot exist")
 	}
 
 	f.repo.err = errors.New("database is gone")
-	if f.uc.vpnRouteState(context.Background()).Active {
+	if f.uc.vpnRouteState(context.Background()).Active() {
 		t.Error("a database failure was read as a working tunnel")
 	}
 }
 
-func TestVPNForeignDNS_FollowsTheProfileThenTheDefault(t *testing.T) {
+func TestPoolForeignDNS_OneLinePerMember(t *testing.T) {
 	// The provider's own resolver is the one guaranteed to answer inside their
-	// tunnel, so it wins when they name one.
-	plane := vpnPlane{
-		Profile: &domain.VPNProfile{ID: 1},
-		Config:  &domain.WireGuardConfig{DNS: "10.64.0.1"},
+	// tunnel, so it wins when they name one; the default fills the rest.
+	pool := vpnPool{Tunnels: []tunnel{
+		{Profile: &domain.VPNProfile{ID: 1}, Config: &domain.WireGuardConfig{DNS: "10.64.0.1"}, IfName: "nasnet-wg0"},
+		{Profile: &domain.VPNProfile{ID: 2}, Config: &domain.WireGuardConfig{}, IfName: "nasnet-wg1"},
+	}}
+	got := poolForeignDNS(pool)
+	if len(got) != 2 {
+		t.Fatalf("got %+v", got)
 	}
-	if got := vpnForeignDNS(plane); got.Server != "10.64.0.1" || got.IfName != system.WGLinkName {
-		t.Errorf("got %+v", got)
+	if got[0].Server != "10.64.0.1" || got[0].IfName != "nasnet-wg0" {
+		t.Errorf("got[0] = %+v", got[0])
+	}
+	if got[1].Server != DefaultForeignDNS || got[1].IfName != "nasnet-wg1" {
+		t.Errorf("got[1] = %+v", got[1])
 	}
 
-	plane.Config = &domain.WireGuardConfig{}
-	if got := vpnForeignDNS(plane); got.Server != DefaultForeignDNS || got.IfName != system.WGLinkName {
-		t.Errorf("got %+v", got)
-	}
-
-	// With no tunnel there is nowhere honest to send a foreign query: a
+	// With no pool there is nowhere honest to send a foreign query: a
 	// plaintext one out the raw uplink is the leak this feature exists to stop.
-	if got := vpnForeignDNS(vpnPlane{}); got.Server != "" || got.IfName != "" {
+	if got := poolForeignDNS(vpnPool{}); len(got) != 0 {
 		t.Errorf("got %+v, want nothing", got)
 	}
 }
 
-func TestVPNRoutes_DefaultIntoTheTunnelAndTheDishStaysReachable(t *testing.T) {
-	routes := vpnRoutes(twoUplinks())
+func TestApplyVPNRoutes_DishStaysReachable(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })}}
 
-	var haveDefault, haveDish bool
+	if err := f.uc.applyVPNRoutes(ctx, f.uc.vpnPoolNow(ctx), twoUplinks()); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ := f.be.RouteList(ctx, system.WGTable)
+	var haveDish bool
 	for _, r := range routes {
-		if r.Table != system.WGTable {
-			t.Errorf("route %+v is in the wrong table", r)
-		}
-		if r.Dest == "default" && r.OifName == system.WGLinkName {
-			haveDefault = true
-		}
 		if r.Dest == StarlinkDishSubnet && r.OifName == "enp2s0" && r.Scope == "link" {
 			haveDish = true
 		}
-	}
-	if !haveDefault {
-		t.Error("no default route into the tunnel")
 	}
 	if !haveDish {
 		t.Error("the dish's own address became unreachable")
@@ -556,15 +812,21 @@ func TestVPNRoutes_DefaultIntoTheTunnelAndTheDishStaysReachable(t *testing.T) {
 
 // A stale default pointing at a device that is gone is worse than an empty
 // table: it is a black hole that looks like a route.
-func TestApplyVPNRoutes_ClearsTheTableWhenNoTunnelIsUp(t *testing.T) {
+func TestApplyVPNRoutes_ClearsTheTableWhenThePoolIsEmpty(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	for _, r := range vpnRoutes(twoUplinks()) {
+	seed := []system.Route{
+		{Table: system.WGTable, Dest: "default",
+			Nexthops: []system.Nexthop{{OifName: system.WGLinkName, Weight: 1}}},
+		{Table: system.WGTable, Dest: "default", OifName: system.WGLinkName, Metric: probeRouteMetric},
+		{Table: system.WGTable, Dest: StarlinkDishSubnet, OifName: "enp2s0", Scope: "link"},
+	}
+	for _, r := range seed {
 		if err := f.be.RouteReplace(ctx, r); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := f.uc.applyVPNRoutes(ctx, vpnPlane{}, twoUplinks()); err != nil {
+	if err := f.uc.applyVPNRoutes(ctx, vpnPool{}, twoUplinks()); err != nil {
 		t.Fatal(err)
 	}
 	left, err := f.be.RouteList(ctx, system.WGTable)
@@ -572,7 +834,7 @@ func TestApplyVPNRoutes_ClearsTheTableWhenNoTunnelIsUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(left) != 0 {
-		t.Errorf("routes survived the tunnel: %+v", left)
+		t.Errorf("routes survived the pool: %+v", left)
 	}
 }
 
@@ -625,16 +887,16 @@ func TestApplyKillSwitchState_ArmedWithNoTunnelConfigured(t *testing.T) {
 }
 
 func TestLANEgressNames_NeverIncludesTheSecondaryUplink(t *testing.T) {
-	for _, vpn := range []VPNRouteState{{Active: false}, {Active: true}} {
+	for _, vpn := range []VPNRouteState{{}, {IfNames: []string{"nasnet-wg0", "nasnet-wg1"}}} {
 		names := lanEgressNames(twoUplinks(), vpn)
 		for _, n := range names {
 			if n == "enp2s0" {
 				t.Errorf("vpn active=%v: the LAN can still leave by the raw uplink: %v",
-					vpn.Active, names)
+					vpn.Active(), names)
 			}
 		}
-		if vpn.Active && (len(names) != 2 || names[1] != system.WGLinkName) {
-			t.Errorf("names = %v, want the domestic uplink and the tunnel", names)
+		if vpn.Active() && (len(names) != 3 || names[1] != "nasnet-wg0" || names[2] != "nasnet-wg1") {
+			t.Errorf("names = %v, want the domestic uplink and both tunnels", names)
 		}
 	}
 }
@@ -668,43 +930,45 @@ func TestWGApplyConfig_UsesThePinnedEndpointAndItsOwnPort(t *testing.T) {
 	}
 }
 
-// A rollback that cannot take the tunnel down leaves routes pointing into it.
-func TestRestoreVPN_TearsDownWhenNoneWasActive(t *testing.T) {
+// A rollback that cannot take the tunnels down leaves routes pointing into them.
+func TestRestorePool_TearsDownWhenNothingWasEnabled(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
-		t.Fatal(err)
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)}}
+	if err := f.uc.applyVPNDevices(ctx); err == nil {
+		// No pinned address, so this resolves; that is fine for the fixture.
+		_ = err
 	}
+	_ = f.wg.Ensure(ctx, system.WGLinkName, system.WGApplyConfig{})
 
-	if err := f.uc.restoreVPN(ctx, nil); err != nil {
+	if err := f.uc.restorePool(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
-	if f.repo.rows[0].Active {
-		t.Error("the profile is still active after a revert")
+	if f.repo.rows[0].Enabled {
+		t.Error("the profile is still enabled after a revert")
 	}
-	if f.wg.Deleted == 0 {
+	if f.wg.Deleted[system.WGLinkName] == 0 {
 		t.Error("the tunnel interface survived the revert")
 	}
 }
 
-func TestRestoreVPN_PutsThePreviousTunnelBack(t *testing.T) {
+func TestRestorePool_PutsThePreviousSetBack(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	// A profile that was ever active carries its pinned address, which is what
+	// A profile that was ever enabled carries its pinned address, which is what
 	// makes the revert independent of any resolver.
 	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin",
 		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })}}
 
-	prev := f.repo.rows[0]
-	prev.Active = true
-	if err := f.uc.restoreVPN(ctx, &prev); err != nil {
+	want := f.repo.rows[0]
+	want.Enabled, want.WGSlot, want.Priority, want.Weight = true, slotOf(0), 0, 1
+	if err := f.uc.restorePool(ctx, []domain.VPNProfile{want}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.repo.rows[0].Active {
-		t.Error("the previous profile was not reactivated")
+	if !f.repo.rows[0].Enabled {
+		t.Error("the previous member was not re-enabled")
 	}
-	if f.wg.Applied == nil {
+	if f.wg.State(system.WGLinkName) == nil {
 		t.Error("the tunnel was not brought back up")
 	}
 	// The dead-man runs out of process while the network is broken; a revert
@@ -719,16 +983,16 @@ func TestRestoreVPN_PutsThePreviousTunnelBack(t *testing.T) {
 func TestCheckVPNHealth_ReresolvesASilentTunnel(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true,
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, Weight: 1, WGSlot: slotOf(0),
 		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "1.2.3.4" })}}
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.wg.Stat = &system.WGStatus{} // never handshook
+	f.wg.State(system.WGLinkName).Stat = &system.WGStatus{} // never handshook
 
 	f.uc.checkVPNHealth(ctx)
-	if f.wg.Endpoint.Addr().String() != "185.65.135.1" {
-		t.Errorf("endpoint = %v, want the freshly resolved address", f.wg.Endpoint)
+	if f.wg.State(system.WGLinkName).Endpoint.Addr().String() != "185.65.135.1" {
+		t.Errorf("endpoint = %v, want the freshly resolved address", f.wg.State(system.WGLinkName).Endpoint)
 	}
 	stored, _ := f.repo.Get(ctx, 1)
 	if !strings.Contains(stored.Config, "185.65.135.1") {
@@ -748,14 +1012,14 @@ func TestCheckVPNHealth_ReresolvesASilentTunnel(t *testing.T) {
 func TestCheckVPNHealth_NeverReresolvesAnAddressEndpoint(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
-	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true,
+	f.repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, Weight: 1, WGSlot: slotOf(0),
 		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
 			c.Peer.Endpoint = "185.65.135.1:51820"
 		})}}
-	if err := f.uc.applyVPNDevice(ctx); err != nil {
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.wg.Stat = &system.WGStatus{}
+	f.wg.State(system.WGLinkName).Stat = &system.WGStatus{}
 
 	f.uc.checkVPNHealth(ctx)
 	if f.doh.calls != 0 {

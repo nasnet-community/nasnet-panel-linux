@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -73,6 +74,10 @@ func (u *networkUsecase) ensureHealthMaps() {
 		u.degradedNow = map[string]bool{}
 		u.lastEffective = map[string]bool{}
 	}
+	if u.tunnelWasUp == nil {
+		u.tunnelWasUp = map[string]bool{}
+		u.tunnelLastResolve = map[string]time.Time{}
+	}
 }
 
 func (u *networkUsecase) targetProber() TargetProber {
@@ -115,12 +120,20 @@ func (u *networkUsecase) effectiveChanged(ifName string, now bool) bool {
 	return !seen || was != now
 }
 
-func (u *networkUsecase) vpnConnectedNow(ctx context.Context) bool {
-	if !u.vpnPlaneNow(ctx).Active() {
-		return false
+// poolConnectedNow: one member with a fresh handshake makes failover viable.
+func (u *networkUsecase) poolConnectedNow(ctx context.Context) bool {
+	for _, t := range u.vpnPoolNow(ctx).Tunnels {
+		if st, err := u.wg().Status(ctx, t.IfName); err == nil && st.Connected() {
+			return true
+		}
 	}
-	st, err := u.wg().Status(ctx)
-	return err == nil && st.Connected()
+	return false
+}
+
+func (u *networkUsecase) currentPoolNexthops() []system.Nexthop {
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	return append([]system.Nexthop(nil), u.poolNH...)
 }
 
 // One route op per uplink per tick. A kernel refusal bubbles up so the caller
@@ -146,8 +159,17 @@ func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw stri
 			u.emit(events.EventWANFailoverRestored, map[string]any{"if_name": up.IfName})
 		}
 	case routeFailover:
+		nh := u.currentPoolNexthops()
+		if len(nh) == 0 {
+			// First tick after boot: the pool loop hasn't published a set yet.
+			nh = poolNexthops(u.poolMembers(u.vpnPoolNow(ctx)))
+		}
+		if len(nh) == 0 {
+			// The VPNUp gate should prevent this; never install an empty default.
+			return nil
+		}
 		if err := u.Backend.RouteReplace(ctx, system.Route{
-			Table: up.Table, Dest: "default", OifName: system.WGLinkName,
+			Table: up.Table, Dest: "default", Nexthops: nh,
 		}); err != nil {
 			return err
 		}
@@ -160,7 +182,7 @@ func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw stri
 		if !wasFailover {
 			u.setFailoverActive(true)
 			u.emit(events.EventWANFailover, map[string]any{
-				"if_name": up.IfName, "to": system.WGLinkName})
+				"if_name": up.IfName, "to": "pool"})
 		}
 	case routeWithdraw:
 		_ = u.Backend.RouteDel(ctx, system.Route{Table: up.Table, Dest: "default"})
@@ -249,22 +271,107 @@ func (u *networkUsecase) tickCount(ifName string) int {
 	return u.bootTicks[ifName]
 }
 
-// Foreign group mark, so the socket walks the same path real traffic takes.
-func (u *networkUsecase) probeTunnel(ctx context.Context, cfg HealthConfig) {
-	if !u.vpnPlaneNow(ctx).Active() || len(cfg.TargetsForeign) == 0 {
-		// Tunnel gone: drop the readings or the card freezes.
-		u.healthMu.Lock()
-		u.ensureHealthMaps()
-		delete(u.ladders, system.WGLinkName)
-		delete(u.rings, system.WGLinkName)
-		u.healthMu.Unlock()
-		return
+// Foreign group mark, so each socket walks the same path real traffic takes.
+func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
+	pool := u.vpnPoolNow(ctx)
+	want := map[string]bool{}
+	for _, t := range pool.Tunnels {
+		want[t.IfName] = true
 	}
-	results := probeAll(ctx, u.targetProber(), system.WGLinkName,
-		netmark.GroupMark(netmark.GroupForeign), cfg.TargetsForeign)
-	u.ring(system.WGLinkName).push(tickSample(time.Now(), results))
+	// Members gone: drop the readings or their cards freeze.
 	u.healthMu.Lock()
 	u.ensureHealthMaps()
-	u.ladders[system.WGLinkName] = uplinkLadder{Results: results}
+	for name := range u.ladders {
+		if system.IsWGLink(name) && !want[name] {
+			delete(u.ladders, name)
+			delete(u.rings, name)
+			delete(u.inetStates, name)
+			delete(u.degradedNow, name)
+		}
+	}
 	u.healthMu.Unlock()
+	if !pool.Active() || len(cfg.TargetsForeign) == 0 {
+		return
+	}
+
+	for _, t := range pool.Tunnels {
+		results := probeAll(ctx, u.targetProber(), t.IfName,
+			netmark.GroupMark(netmark.GroupForeign), cfg.TargetsForeign)
+		answered := anyUp(results)
+		up, _ := u.inetState(t.IfName).observe(answered, defaultInternetLimits(), time.Now())
+		u.ring(t.IfName).push(tickSample(time.Now(), results))
+
+		samples := u.ring(t.IfName).snapshot()
+		loss, rtt := lossPct(samples, 20), medianRTT(samples, 20)
+		limit := cfg.DegradedRTTms[domain.SlotSecondary]
+		degraded := len(samples) >= 20 && (loss >= cfg.DegradedLossPct || (limit > 0 && rtt > limit))
+
+		inet := "down"
+		if up {
+			inet = "up"
+		}
+		u.healthMu.Lock()
+		u.ensureHealthMaps()
+		wasDegraded := u.degradedNow[t.IfName]
+		u.degradedNow[t.IfName] = degraded
+		u.ladders[t.IfName] = uplinkLadder{
+			Internet: inet,
+			Degraded: degraded,
+			Verdict:  tunnelVerdict(answered, up, degraded),
+			Results:  results,
+		}
+		u.healthMu.Unlock()
+		if degraded != wasDegraded {
+			u.emit(events.EventVPNDegraded, map[string]any{
+				"profile_id": t.Profile.ID, "name": t.Profile.Name, "entered": degraded,
+				"loss_pct": loss, "median_rtt_ms": rtt,
+			})
+		}
+	}
+	_ = u.applyPoolRoutes(ctx)
+}
+
+// applyPoolRoutes rewrites the pool defaults from current dampers and roles,
+// mirrors them into the domestic table while failover holds, and reports
+// membership changes.
+func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
+	pool := u.vpnPoolNow(ctx)
+	uplinks, err := u.uplinks(ctx)
+	if err != nil {
+		return err
+	}
+	if err := u.applyVPNRoutes(ctx, pool, uplinks); err != nil {
+		return err
+	}
+	nh := poolNexthops(u.poolMembers(pool))
+	var key strings.Builder
+	for _, n := range nh {
+		fmt.Fprintf(&key, "%s/%d ", n.OifName, n.Weight)
+	}
+	u.healthMu.Lock()
+	u.ensureHealthMaps()
+	changed := key.String() != u.lastPoolKey && u.lastPoolKey != ""
+	u.lastPoolKey = key.String()
+	u.poolNH = append([]system.Nexthop(nil), nh...)
+	failover := u.failoverActive
+	u.healthMu.Unlock()
+
+	// The failover route is a mirror; a pool reshuffle has to reach it too.
+	if failover && len(nh) > 0 {
+		for _, up := range uplinks {
+			if up.Slot == domain.SlotDomestic {
+				_ = u.Backend.RouteReplace(ctx, system.Route{
+					Table: up.Table, Dest: "default", Nexthops: nh,
+				})
+			}
+		}
+	}
+	if changed {
+		names := make([]string, 0, len(nh))
+		for _, n := range nh {
+			names = append(names, n.OifName)
+		}
+		u.emit(events.EventVPNPoolChanged, map[string]any{"active": names})
+	}
+	return nil
 }

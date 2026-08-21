@@ -18,9 +18,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
-// The tunnel's transport rides the secondary uplink's pin, which already has a
-// lookup and a blackhole of its own at pref 52/53. That is what keeps WireGuard
-// handshakes off the domestic line when the dish is down.
+// Every tunnel's transport rides the secondary uplink's pin, which already has
+// a lookup and a blackhole of its own at pref 52/53. That is what keeps
+// WireGuard handshakes off the domestic line when the dish is down.
 var vpnTransportMark = netmark.PinMark(uplinkIndexFor(domain.SlotSecondary))
 
 // StarlinkDishSubnet is the dish's own management address space, reachable
@@ -33,10 +33,13 @@ const reresolveInterval = 60 * time.Second
 
 // VPNProfileView is one stored profile with its payload decoded.
 type VPNProfileView struct {
-	ID     uint   `json:"id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Active bool   `json:"active"`
+	ID       uint   `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Enabled  bool   `json:"enabled"`
+	Priority int    `json:"priority"`
+	Weight   int    `json:"weight"`
+	WGSlot   *int   `json:"wg_slot"`
 	// Config carries the private key as stored. Anyone reading this already
 	// holds an admin session, which is the whole panel.
 	Config    domain.WireGuardConfig `json:"config"`
@@ -47,10 +50,13 @@ type VPNProfileView struct {
 	Unreadable string `json:"unreadable,omitempty"`
 }
 
-// VPNStatusView is the live tunnel, or the reason there isn't one.
-type VPNStatusView struct {
-	ActiveProfileID  *uint  `json:"active_profile_id"`
-	Name             string `json:"name,omitempty"`
+// TunnelStatusView is one pool member's live state.
+type TunnelStatusView struct {
+	ProfileID        uint   `json:"profile_id"`
+	Name             string `json:"name"`
+	IfName           string `json:"if_name"`
+	Priority         int    `json:"priority"`
+	Weight           int    `json:"weight"`
 	Connected        bool   `json:"connected"`
 	HandshakeAgeSecs *int64 `json:"handshake_age_seconds"`
 	RxBytes          int64  `json:"rx_bytes"`
@@ -59,7 +65,14 @@ type VPNStatusView struct {
 	MTU              int    `json:"mtu"`
 	KeepaliveSecs    int    `json:"keepalive_seconds"`
 	LastError        string `json:"last_error,omitempty"`
-	// SecondaryUplinkUp separates "the dish is down" from "the tunnel is down",
+	// InPool says whether this member is in the nexthop set right now.
+	InPool bool `json:"in_pool"`
+}
+
+// VPNPoolStatusView is the pool, or the reason there isn't one.
+type VPNPoolStatusView struct {
+	Tunnels []TunnelStatusView `json:"tunnels"`
+	// SecondaryUplinkUp separates "the dish is down" from "the pool is down",
 	// which need different things done about them.
 	SecondaryUplinkUp bool `json:"secondary_uplink_up"`
 	// KillSwitch is always true. Reported so the UI can state it rather than
@@ -77,30 +90,51 @@ type CreateVPNProfileRequest struct {
 	Config *domain.WireGuardConfig `json:"config"`
 }
 
-// vpnPlane is the tunnel as the rest of the reconcile needs to see it.
-type vpnPlane struct {
+// tunnel is one enabled profile as the datapath sees it.
+type tunnel struct {
 	Profile *domain.VPNProfile
 	Config  *domain.WireGuardConfig
+	IfName  string
 }
 
-func (p vpnPlane) Active() bool { return p.Profile != nil && p.Config != nil }
+type vpnPool struct{ Tunnels []tunnel }
 
-// vpnPlaneNow reads the active profile. Every failure answers "no tunnel": the
-// wrong answer sends foreign traffic out the raw uplink, so it fails towards
-// the blackhole rather than towards the leak.
-func (u *networkUsecase) vpnPlaneNow(ctx context.Context) vpnPlane {
+func (p vpnPool) Active() bool { return len(p.Tunnels) > 0 }
+
+func (p vpnPool) IfNames() []string {
+	out := make([]string, 0, len(p.Tunnels))
+	for _, t := range p.Tunnels {
+		out = append(out, t.IfName)
+	}
+	return out
+}
+
+// vpnPoolNow reads the enabled set. Every failure answers "not in the pool":
+// the wrong answer sends foreign traffic out the raw uplink, so it fails
+// towards the blackhole rather than towards the leak.
+func (u *networkUsecase) vpnPoolNow(ctx context.Context) vpnPool {
 	if u.VPNRepo == nil {
-		return vpnPlane{}
+		return vpnPool{}
 	}
-	p, err := u.VPNRepo.Active(ctx)
-	if err != nil || p == nil {
-		return vpnPlane{}
-	}
-	cfg, err := decodeWGConfig(p)
+	rows, err := u.VPNRepo.Enabled(ctx)
 	if err != nil {
-		return vpnPlane{}
+		return vpnPool{}
 	}
-	return vpnPlane{Profile: p, Config: cfg}
+	var pool vpnPool
+	for i := range rows {
+		p := &rows[i]
+		if p.WGSlot == nil {
+			continue
+		}
+		cfg, err := decodeWGConfig(p)
+		if err != nil {
+			continue
+		}
+		pool.Tunnels = append(pool.Tunnels, tunnel{
+			Profile: p, Config: cfg, IfName: system.WGLinkNameFor(*p.WGSlot),
+		})
+	}
+	return pool
 }
 
 func decodeWGConfig(p *domain.VPNProfile) (*domain.WireGuardConfig, error) {
@@ -142,7 +176,8 @@ func (u *networkUsecase) ListVPNProfiles(ctx context.Context) ([]VPNProfileView,
 			// One bad row must not hide the rest.
 			r := rows[i]
 			out = append(out, VPNProfileView{
-				ID: r.ID, Name: r.Name, Type: r.Type, Active: r.Active,
+				ID: r.ID, Name: r.Name, Type: r.Type, Enabled: r.Enabled,
+				Priority: r.Priority, Weight: r.Weight, WGSlot: r.WGSlot,
 				CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 				Unreadable: err.Error(),
 			})
@@ -159,7 +194,8 @@ func profileView(p *domain.VPNProfile) (*VPNProfileView, error) {
 		return nil, err
 	}
 	v := &VPNProfileView{
-		ID: p.ID, Name: p.Name, Type: p.Type, Active: p.Active,
+		ID: p.ID, Name: p.Name, Type: p.Type, Enabled: p.Enabled,
+		Priority: p.Priority, Weight: p.Weight, WGSlot: p.WGSlot,
 		Config: *cfg, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 	}
 	// Derived, never stored: the operator pastes a private key and needs the
@@ -208,7 +244,7 @@ func (u *networkUsecase) CreateVPNProfile(ctx context.Context, req CreateVPNProf
 	if err != nil {
 		return nil, err
 	}
-	p := &domain.VPNProfile{Name: name, Type: domain.VPNTypeWireGuard, Config: string(blob)}
+	p := &domain.VPNProfile{Name: name, Type: domain.VPNTypeWireGuard, Config: string(blob), Weight: 1}
 	if err := u.VPNRepo.Create(ctx, p); err != nil {
 		return nil, err
 	}
@@ -223,9 +259,9 @@ func (u *networkUsecase) UpdateVPNProfile(ctx context.Context, id uint, req Crea
 	if err != nil {
 		return nil, err
 	}
-	// Editing the running tunnel is a routing change, so it goes through the
-	// same activate pipeline rather than mutating under a live device.
-	if stored.Active {
+	// Editing a pool member is a routing change, so it goes through the same
+	// enable pipeline rather than mutating under a live device.
+	if stored.Enabled {
 		return nil, fmt.Errorf("%w: turn this VPN off before editing it", ErrValidationFailed)
 	}
 
@@ -284,23 +320,26 @@ func vpnConfigVerdicts(cfg *domain.WireGuardConfig) []domain.Verdict {
 		vs = append(vs, domain.Verdict{
 			Rule:  "V32",
 			Level: domain.LevelWarn,
-			Message: fmt.Sprintf("This VPN only carries %s. Everything else bound for the "+
-				"secondary uplink will be dropped, because that uplink never carries "+
-				"traffic in the clear.", strings.Join(cfg.Peer.AllowedIPs, ", ")),
+			Message: fmt.Sprintf("This VPN only carries %s. It cannot join the pool: "+
+				"a member has to carry everything (0.0.0.0/0).",
+				strings.Join(cfg.Peer.AllowedIPs, ", ")),
 		})
 	}
 	return vs
 }
 
-// ---------------------------------------------------------------- activation
+// ---------------------------------------------------------------- pool membership
 
-func (u *networkUsecase) ActivateVPN(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error) {
+func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error) {
 	if u.VPNRepo == nil {
 		return nil, nil, errors.New("no VPN storage configured")
 	}
 	profile, err := u.VPNRepo.Get(ctx, id)
 	if err != nil {
 		return nil, nil, err
+	}
+	if profile.Enabled {
+		return []domain.Verdict{}, nil, nil
 	}
 	cfg, err := decodeWGConfig(profile)
 	if err != nil {
@@ -310,7 +349,39 @@ func (u *networkUsecase) ActivateVPN(ctx context.Context, id uint) ([]domain.Ver
 		return nil, nil, fmt.Errorf("%w: %v", ErrValidationFailed, err)
 	}
 
-	verdicts := vpnConfigVerdicts(cfg)
+	verdicts := []domain.Verdict{}
+	enabled, err := u.VPNRepo.Enabled(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Members carry the default route; anything narrower silently blackholes
+	// most of the LAN's foreign traffic.
+	if !domain.CoversDefaultRoute(cfg.Peer.AllowedIPs) {
+		verdicts = append(verdicts, domain.Verdict{Rule: "V32", Level: domain.LevelReject,
+			Message: fmt.Sprintf("This VPN only carries %s. A pool member has to carry "+
+				"everything (0.0.0.0/0).", strings.Join(cfg.Peer.AllowedIPs, ", "))})
+	}
+	if len(enabled) >= domain.MaxEnabledProfiles {
+		verdicts = append(verdicts, domain.Verdict{Rule: "V37", Level: domain.LevelReject,
+			Message: "All 8 tunnel slots are in use. Turn one off first."})
+	}
+	for i := range enabled {
+		other, err := decodeWGConfig(&enabled[i])
+		if err != nil {
+			continue
+		}
+		if cfg.ListenPort != 0 && cfg.ListenPort == other.ListenPort {
+			verdicts = append(verdicts, domain.Verdict{Rule: "V35", Level: domain.LevelReject,
+				Message: fmt.Sprintf("%q already listens on port %d.", enabled[i].Name, cfg.ListenPort)})
+		}
+		if cfg.Address == other.Address {
+			verdicts = append(verdicts, domain.Verdict{Rule: "V36", Level: domain.LevelReject,
+				Message: fmt.Sprintf("%q already uses the tunnel address %s.", enabled[i].Name, cfg.Address)})
+		}
+	}
+	if domain.Rejected(verdicts) {
+		return verdicts, nil, nil
+	}
 
 	uplinks, err := u.uplinks(ctx)
 	if err != nil {
@@ -319,27 +390,21 @@ func (u *networkUsecase) ActivateVPN(ctx context.Context, id uint) ([]domain.Ver
 	if !hasSlot(uplinks, domain.SlotSecondary) {
 		// Provisioning before the dish arrives is a real workflow, and the kill
 		// switch already covers every state in between.
-		verdicts = append(verdicts, domain.Verdict{
-			Rule:  "V33",
-			Level: domain.LevelWarn,
+		verdicts = append(verdicts, domain.Verdict{Rule: "V33", Level: domain.LevelWarn,
 			Message: "No secondary uplink is assigned yet, so the tunnel has nothing to " +
-				"run over. It will connect on its own once one appears.",
-		})
+				"run over. It will connect on its own once one appears."})
 	}
 
 	// Resolve now, so the tunnel can come up later without a resolver — the
-	// foreign one is about to live inside it.
+	// foreign one lives inside the pool.
 	host, err := domain.ParseWGEndpoint(cfg.Peer.Endpoint)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrValidationFailed, err)
 	}
 	addr, err := u.doh().Resolve(ctx, host)
 	if err != nil {
-		verdicts = append(verdicts, domain.Verdict{
-			Rule:    "V34",
-			Level:   domain.LevelReject,
-			Message: fmt.Sprintf("The endpoint %q could not be resolved: %v", host, err),
-		})
+		verdicts = append(verdicts, domain.Verdict{Rule: "V34", Level: domain.LevelReject,
+			Message: fmt.Sprintf("The endpoint %q could not be resolved: %v", host, err)})
 		return verdicts, nil, nil
 	}
 	cfg.PinnedEndpointIP = addr.String()
@@ -350,42 +415,34 @@ func (u *networkUsecase) ActivateVPN(ctx context.Context, id uint) ([]domain.Ver
 	}
 	profile.Config = string(blob)
 
-	previous, err := u.VPNRepo.Active(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	var plan system.Plan
 	plan.Ops = append(plan.Ops,
 		system.Op{
-			Desc: fmt.Sprintf("send all secondary-uplink traffic through %q", profile.Name),
+			Desc: fmt.Sprintf("add %q to the VPN pool", profile.Name),
 			Do: func(ctx context.Context) error {
 				if err := u.VPNRepo.Update(ctx, profile); err != nil {
 					return err
 				}
-				return u.VPNRepo.SetActive(ctx, profile.ID)
+				return u.VPNRepo.SetEnabled(ctx, profile.ID, true)
 			},
 			Undo: func(ctx context.Context) error {
-				if previous == nil {
-					return u.VPNRepo.ClearActive(ctx)
-				}
-				return u.VPNRepo.SetActive(ctx, previous.ID)
+				return u.VPNRepo.SetEnabled(ctx, profile.ID, false)
 			},
 		},
 		system.Op{
-			Desc: "bring the tunnel interface up and configure its peer",
-			Do:   func(ctx context.Context) error { return u.applyVPNDevice(ctx) },
-			Undo: func(ctx context.Context) error { return u.applyVPNDevice(ctx) },
+			Desc: "bring the pool's tunnel interfaces up",
+			Do:   func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
+			Undo: func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
 		},
 		system.Op{
-			// The secondary uplink's own resolver line and the tunnel's table
-			// name live in rendered files, so they have to be rewritten here or
-			// resolved keeps querying out the raw uplink.
+			// The tunnels' resolver lines and table names live in rendered files,
+			// so they have to be rewritten here or resolved keeps querying out
+			// the raw uplink.
 			Desc: "render the uplink units and the routing table names",
 			Do:   func(ctx context.Context) error { return u.renderAll(ctx) },
 		},
 		system.Op{
-			Desc: "route the foreign group into the tunnel and arm the kill switch",
+			Desc: "route the foreign group into the pool and arm the kill switch",
 			Do:   func(ctx context.Context) error { return u.Reconcile(ctx) },
 		},
 	)
@@ -397,39 +454,36 @@ func (u *networkUsecase) ActivateVPN(ctx context.Context, id uint) ([]domain.Ver
 	return verdicts, view, nil
 }
 
-func (u *networkUsecase) DeactivateVPN(ctx context.Context) ([]domain.Verdict, *ApplyView, error) {
+func (u *networkUsecase) DisableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error) {
 	if u.VPNRepo == nil {
 		return nil, nil, errors.New("no VPN storage configured")
 	}
-	previous, err := u.VPNRepo.Active(ctx)
+	profile, err := u.VPNRepo.Get(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
-	if previous == nil {
+	if !profile.Enabled {
 		return []domain.Verdict{}, nil, nil
 	}
 
 	var plan system.Plan
 	plan.Ops = append(plan.Ops,
 		system.Op{
-			Desc: "stop sending secondary-uplink traffic through the VPN",
-			Do:   func(ctx context.Context) error { return u.VPNRepo.ClearActive(ctx) },
-			Undo: func(ctx context.Context) error { return u.VPNRepo.SetActive(ctx, previous.ID) },
+			Desc: fmt.Sprintf("remove %q from the VPN pool", profile.Name),
+			Do:   func(ctx context.Context) error { return u.VPNRepo.SetEnabled(ctx, profile.ID, false) },
+			Undo: func(ctx context.Context) error { return u.VPNRepo.SetEnabled(ctx, profile.ID, true) },
 		},
 		system.Op{
-			Desc: "take the tunnel interface down",
-			Do:   func(ctx context.Context) error { return u.applyVPNDevice(ctx) },
-			Undo: func(ctx context.Context) error { return u.applyVPNDevice(ctx) },
+			Desc: "take the member's tunnel interface down",
+			Do:   func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
+			Undo: func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
 		},
 		system.Op{
-			// The secondary uplink's own resolver line and the tunnel's table
-			// name live in rendered files, so they have to be rewritten here or
-			// resolved keeps querying out the raw uplink.
 			Desc: "render the uplink units and the routing table names",
 			Do:   func(ctx context.Context) error { return u.renderAll(ctx) },
 		},
 		system.Op{
-			Desc: "leave the foreign group with nowhere to go, so nothing leaves in the clear",
+			Desc: "reroute the pool, or blackhole the foreign group if it is now empty",
 			Do:   func(ctx context.Context) error { return u.Reconcile(ctx) },
 		},
 	)
@@ -439,6 +493,21 @@ func (u *networkUsecase) DeactivateVPN(ctx context.Context) ([]domain.Verdict, *
 		return nil, nil, err
 	}
 	return []domain.Verdict{}, view, nil
+}
+
+// SetVPNProfileRole is instant: redistribution can't strand the box, so it
+// skips the dead-man.
+func (u *networkUsecase) SetVPNProfileRole(ctx context.Context, id uint, priority, weight int) error {
+	if u.VPNRepo == nil {
+		return errors.New("no VPN storage configured")
+	}
+	if err := domain.ValidatePoolRole(priority, weight); err != nil {
+		return fmt.Errorf("%w: %v", ErrValidationFailed, err)
+	}
+	if err := u.VPNRepo.SetRole(ctx, id, priority, weight); err != nil {
+		return err
+	}
+	return u.applyPoolRoutes(ctx)
 }
 
 func (u *networkUsecase) runVPNPlan(ctx context.Context, plan system.Plan) (*ApplyView, error) {
@@ -457,34 +526,49 @@ func (u *networkUsecase) runVPNPlan(ctx context.Context, plan system.Plan) (*App
 	return view, nil
 }
 
-// applyVPNDevice makes the tunnel interface match the stored state: present and
-// configured when a profile is active, gone when none is. Idempotent, so boot,
-// apply and undo all use the same path.
-func (u *networkUsecase) applyVPNDevice(ctx context.Context) error {
-	plane := u.vpnPlaneNow(ctx)
-	if !plane.Active() {
-		return u.wg().Delete(ctx)
+// applyVPNDevices makes the tunnel links match the stored pool: one per
+// enabled profile, none else. Idempotent, so boot, apply and undo all use it.
+func (u *networkUsecase) applyVPNDevices(ctx context.Context) error {
+	pool := u.vpnPoolNow(ctx)
+	want := map[string]bool{}
+	for _, t := range pool.Tunnels {
+		want[t.IfName] = true
 	}
-	// A profile restored from an older snapshot can carry a hostname with no
-	// pinned address. Resolve it here rather than fail: this runs at boot, and
-	// a tunnel that will not come up takes all foreign traffic with it.
-	if err := u.ensurePinnedEndpoint(ctx, plane); err != nil {
-		return err
+	// Orphans first: a disabled profile's link must not keep answering.
+	if have, err := u.wg().List(ctx); err == nil {
+		for _, name := range have {
+			if !want[name] {
+				if err := u.wg().Delete(ctx, name); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	apply, err := wgApplyConfig(plane.Config)
-	if err != nil {
-		return err
+	for _, t := range pool.Tunnels {
+		// A profile restored from an older snapshot can carry a hostname with
+		// no pinned address. Resolve here rather than fail: this runs at boot,
+		// and a member that will not come up drags the whole tier's odds down.
+		if err := u.ensurePinnedEndpoint(ctx, t); err != nil {
+			return err
+		}
+		apply, err := wgApplyConfig(t.Config)
+		if err != nil {
+			return err
+		}
+		if err := u.wg().Ensure(ctx, t.IfName, apply); err != nil {
+			return err
+		}
 	}
-	return u.wg().Ensure(ctx, apply)
+	return nil
 }
 
 // ensurePinnedEndpoint fills in a missing pin. Does nothing in the normal case,
-// where activation pinned the address already.
-func (u *networkUsecase) ensurePinnedEndpoint(ctx context.Context, plane vpnPlane) error {
-	if plane.Config.PinnedEndpointIP != "" {
+// where the enable pinned the address already.
+func (u *networkUsecase) ensurePinnedEndpoint(ctx context.Context, t tunnel) error {
+	if t.Config.PinnedEndpointIP != "" {
 		return nil
 	}
-	host, err := domain.ParseWGEndpoint(plane.Config.Peer.Endpoint)
+	host, err := domain.ParseWGEndpoint(t.Config.Peer.Endpoint)
 	if err != nil {
 		return err
 	}
@@ -495,10 +579,10 @@ func (u *networkUsecase) ensurePinnedEndpoint(ctx context.Context, plane vpnPlan
 	if err != nil {
 		return fmt.Errorf("resolve the endpoint %q: %w", host, err)
 	}
-	plane.Config.PinnedEndpointIP = addr.String()
-	if blob, err := json.Marshal(plane.Config); err == nil {
-		plane.Profile.Config = string(blob)
-		_ = u.VPNRepo.Update(ctx, plane.Profile)
+	t.Config.PinnedEndpointIP = addr.String()
+	if blob, err := json.Marshal(t.Config); err == nil {
+		t.Profile.Config = string(blob)
+		_ = u.VPNRepo.Update(ctx, t.Profile)
 	}
 	return nil
 }
@@ -563,62 +647,122 @@ func wgApplyConfig(cfg *domain.WireGuardConfig) (system.WGApplyConfig, error) {
 	return out, nil
 }
 
-// vpnForeignDNS is where the LAN's foreign lookups go. Inside the tunnel while
-// one is up, and nowhere at all when none is: a resolver reachable in the clear
-// would be both a leak and something the kill switch drops anyway.
-func vpnForeignDNS(plane vpnPlane) ForeignDNS {
-	if !plane.Active() {
-		return ForeignDNS{}
-	}
-	server := DefaultForeignDNS
-	// The provider put their own resolver in the config because it is the one
-	// guaranteed reachable and unfiltered inside their tunnel.
-	if plane.Config.DNS != "" {
-		server = plane.Config.DNS
-	}
-	return ForeignDNS{IfName: system.WGLinkName, Server: server}
-}
-
 // ---------------------------------------------------------------- kernel state
 
-// vpnRoutes is what table 203 holds while a tunnel is up.
-func vpnRoutes(uplinks []Uplink) []system.Route {
-	routes := []system.Route{
-		{Table: system.WGTable, Dest: "default", OifName: system.WGLinkName},
-	}
-	// The dish's own management address stays reachable, which is the one thing
-	// on the raw uplink worth keeping.
-	for _, u := range uplinks {
-		if u.Slot == domain.SlotSecondary {
-			routes = append(routes, system.Route{
-				Table: system.WGTable, Dest: StarlinkDishSubnet,
-				OifName: u.IfName, Scope: "link",
-			})
-		}
-	}
-	return routes
+// poolMember is what the nexthop choice needs to know about one tunnel.
+type poolMember struct {
+	IfName   string
+	Slot     int
+	Priority int
+	Weight   int
+	Healthy  bool
 }
 
-// applyVPNRoutes makes table 203 match the tunnel's state. Everything in it is
-// removed when no profile is active, so a stale default cannot outlive the
-// device it points at.
-func (u *networkUsecase) applyVPNRoutes(ctx context.Context, plane vpnPlane, uplinks []Uplink) error {
-	if !plane.Active() {
+// poolNexthops picks the active tier: the best priority holding a healthy
+// member, ejecting its dead siblings. A pool with no healthy member anywhere
+// keeps its best tier routed anyway — a dead tunnel beats a blackhole, and
+// the probes need the path to see the recovery.
+func poolNexthops(members []poolMember) []system.Nexthop {
+	if len(members) == 0 {
+		return nil
+	}
+	best, anyHealthy := 0, false
+	for _, m := range members {
+		if m.Healthy && (!anyHealthy || m.Priority < best) {
+			best, anyHealthy = m.Priority, true
+		}
+	}
+	if !anyHealthy {
+		best = members[0].Priority
+		for _, m := range members {
+			if m.Priority < best {
+				best = m.Priority
+			}
+		}
+	}
+	var out []system.Nexthop
+	for _, m := range members {
+		if m.Priority != best || (anyHealthy && !m.Healthy) {
+			continue
+		}
+		out = append(out, system.Nexthop{OifName: m.IfName, Weight: m.Weight})
+	}
+	return out
+}
+
+// poolMembers pairs the pool with what the dampers currently believe. A member
+// with no damper yet is healthy: the damper itself starts optimistic.
+func (u *networkUsecase) poolMembers(pool vpnPool) []poolMember {
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	u.ensureHealthMaps()
+	out := make([]poolMember, 0, len(pool.Tunnels))
+	for _, t := range pool.Tunnels {
+		healthy := true
+		if s, ok := u.inetStates[t.IfName]; ok {
+			healthy = !s.down
+		}
+		out = append(out, poolMember{
+			IfName: t.IfName, Slot: *t.Profile.WGSlot,
+			Priority: t.Profile.Priority, Weight: t.Profile.Weight, Healthy: healthy,
+		})
+	}
+	return out
+}
+
+// applyVPNRoutes makes table 203 match the pool. Everything in it is removed
+// when the pool is empty, so a stale default cannot outlive its device.
+func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplinks []Uplink) error {
+	if !pool.Active() {
 		have, err := u.Backend.RouteList(ctx, system.WGTable)
 		if err != nil {
 			// An empty table is not an error, so this read really failed.
-			return fmt.Errorf("read the tunnel's routing table: %w", err)
+			return fmt.Errorf("read the pool's routing table: %w", err)
 		}
 		for _, r := range have {
 			if err := u.Backend.RouteDel(ctx, r); err != nil {
-				return fmt.Errorf("clear the tunnel's routing table: %w", err)
+				return fmt.Errorf("clear the pool's routing table: %w", err)
 			}
 		}
 		return nil
 	}
-	for _, r := range vpnRoutes(uplinks) {
+
+	members := u.poolMembers(pool)
+	routes := []system.Route{{
+		Table: system.WGTable, Dest: "default", Nexthops: poolNexthops(members),
+	}}
+	// One escape hatch per member: a probe bound to an ejected tunnel still
+	// needs a route out of it, or the recovery is unobservable.
+	valid := map[int]bool{}
+	for _, m := range members {
+		valid[probeRouteMetric+m.Slot] = true
+		routes = append(routes, system.Route{
+			Table: system.WGTable, Dest: "default", OifName: m.IfName,
+			Metric: probeRouteMetric + m.Slot,
+		})
+	}
+	// The dish's own management address stays reachable, which is the one thing
+	// on the raw uplink worth keeping.
+	for _, up := range uplinks {
+		if up.Slot == domain.SlotSecondary {
+			routes = append(routes, system.Route{
+				Table: system.WGTable, Dest: StarlinkDishSubnet,
+				OifName: up.IfName, Scope: "link",
+			})
+		}
+	}
+	for _, r := range routes {
 		if err := u.Backend.RouteReplace(ctx, r); err != nil {
-			return fmt.Errorf("route %s into the tunnel: %w", r.Dest, err)
+			return fmt.Errorf("route %s into the pool: %w", r.Dest, err)
+		}
+	}
+	// A slot freed by a disable leaves its escape hatch behind; sweep it.
+	if have, err := u.Backend.RouteList(ctx, system.WGTable); err == nil {
+		for _, r := range have {
+			if r.Dest == "default" && r.Metric >= probeRouteMetric &&
+				r.Metric < probeRouteMetric+system.MaxWGSlots && !valid[r.Metric] {
+				_ = u.Backend.RouteDel(ctx, r)
+			}
 		}
 	}
 	return nil
@@ -627,7 +771,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, plane vpnPlane, upl
 // ApplyKillSwitchState installs the chains that stop anything leaving the
 // secondary uplink in the clear.
 //
-// Rendered whenever a secondary uplink exists, with or without a tunnel, and
+// Rendered whenever a secondary uplink exists, with or without a pool, and
 // deliberately independent of the input firewall: that one is a setting the
 // operator chooses, this one is not.
 func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink, gateway string, probeIPs []string) error {
@@ -684,50 +828,58 @@ func secondaryGateway(uplinks []Uplink, rows []domain.NetworkInterface) string {
 
 // ---------------------------------------------------------------- status
 
-func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNStatusView, error) {
-	out := &VPNStatusView{KillSwitch: true}
+func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, error) {
+	out := &VPNPoolStatusView{Tunnels: []TunnelStatusView{}, KillSwitch: true}
 
 	uplinks, err := u.uplinks(ctx)
 	if err == nil {
 		out.SecondaryUplinkUp = uplinkHealthy(uplinks, u.healthyKeys(ctx), domain.SlotSecondary)
 	}
 
-	plane := u.vpnPlaneNow(ctx)
-	if !plane.Active() {
-		return out, nil
+	pool := u.vpnPoolNow(ctx)
+	inPool := map[string]bool{}
+	for _, n := range u.currentPoolNexthops() {
+		inPool[n.OifName] = true
 	}
-	id := plane.Profile.ID
-	out.ActiveProfileID, out.Name = &id, plane.Profile.Name
-	out.MTU, out.KeepaliveSecs = plane.Config.MTU, plane.Config.Peer.PersistentKeepalive
-	if out.MTU == 0 {
-		out.MTU = domain.DefaultWGMTU
-	}
-	if out.KeepaliveSecs == 0 {
-		out.KeepaliveSecs = domain.DefaultWGKeepalive
-	}
-	out.Endpoint = plane.Config.Peer.Endpoint
-	if plane.Config.PinnedEndpointIP != "" {
-		out.Endpoint = plane.Config.PinnedEndpointIP
-	}
-
-	st, err := u.wg().Status(ctx)
-	if err != nil {
-		if !errors.Is(err, system.ErrNoWGDevice) {
-			out.LastError = err.Error()
-		} else {
-			out.LastError = "The tunnel interface is not present."
+	for _, t := range pool.Tunnels {
+		tv := TunnelStatusView{
+			ProfileID: t.Profile.ID, Name: t.Profile.Name, IfName: t.IfName,
+			Priority: t.Profile.Priority, Weight: t.Profile.Weight,
+			MTU: t.Config.MTU, KeepaliveSecs: t.Config.Peer.PersistentKeepalive,
+			InPool: inPool[t.IfName],
 		}
-		return out, nil
+		if tv.MTU == 0 {
+			tv.MTU = domain.DefaultWGMTU
+		}
+		if tv.KeepaliveSecs == 0 {
+			tv.KeepaliveSecs = domain.DefaultWGKeepalive
+		}
+		tv.Endpoint = t.Config.Peer.Endpoint
+		if t.Config.PinnedEndpointIP != "" {
+			tv.Endpoint = t.Config.PinnedEndpointIP
+		}
+
+		st, err := u.wg().Status(ctx, t.IfName)
+		if err != nil {
+			if !errors.Is(err, system.ErrNoWGDevice) {
+				tv.LastError = err.Error()
+			} else {
+				tv.LastError = "The tunnel interface is not present."
+			}
+			out.Tunnels = append(out.Tunnels, tv)
+			continue
+		}
+		tv.RxBytes, tv.TxBytes = st.RxBytes, st.TxBytes
+		if st.Endpoint != "" {
+			tv.Endpoint = st.Endpoint
+		}
+		if !st.LastHandshake.IsZero() {
+			age := int64(time.Since(st.LastHandshake).Seconds())
+			tv.HandshakeAgeSecs = &age
+		}
+		tv.Connected = st.Connected()
+		out.Tunnels = append(out.Tunnels, tv)
 	}
-	out.RxBytes, out.TxBytes = st.RxBytes, st.TxBytes
-	if st.Endpoint != "" {
-		out.Endpoint = st.Endpoint
-	}
-	if !st.LastHandshake.IsZero() {
-		age := int64(time.Since(st.LastHandshake).Seconds())
-		out.HandshakeAgeSecs = &age
-	}
-	out.Connected = st.Connected()
 	return out, nil
 }
 
@@ -767,106 +919,139 @@ func uplinkHealthy(uplinks []Uplink, healthy map[string]bool, slot domain.Uplink
 
 // ---------------------------------------------------------------- health loop
 
-// checkVPNHealth runs on the health tick. It reports state changes and, when a
-// hostname endpoint has gone quiet, looks it up again — providers move them.
+// checkVPNHealth runs on the health tick. It reports per-member state changes
+// and, when a hostname endpoint has gone quiet, looks it up again — providers
+// move them.
 func (u *networkUsecase) checkVPNHealth(ctx context.Context) {
-	plane := u.vpnPlaneNow(ctx)
-	if !plane.Active() {
-		if u.vpnWasUp {
-			u.vpnWasUp = false
-			u.emit(events.EventVPNDown, map[string]any{"reason": "no active profile"})
+	pool := u.vpnPoolNow(ctx)
+	present := map[string]bool{}
+	for _, t := range pool.Tunnels {
+		present[t.IfName] = true
+	}
+	u.healthMu.Lock()
+	u.ensureHealthMaps()
+	var gone []string
+	for name := range u.tunnelWasUp {
+		if !present[name] {
+			gone = append(gone, name)
+			delete(u.tunnelWasUp, name)
+			delete(u.tunnelLastResolve, name)
 		}
-		return
+	}
+	u.healthMu.Unlock()
+	for range gone {
+		u.emit(events.EventVPNDown, map[string]any{"reason": "removed from the pool"})
 	}
 
-	st, err := u.wg().Status(ctx)
-	up := err == nil && st.Connected()
-	if up != u.vpnWasUp {
-		u.vpnWasUp = up
-		if up {
-			u.emit(events.EventVPNUp, map[string]any{"profile": plane.Profile.Name})
-		} else {
-			u.emit(events.EventVPNDown, map[string]any{"profile": plane.Profile.Name})
+	for _, t := range pool.Tunnels {
+		st, err := u.wg().Status(ctx, t.IfName)
+		up := err == nil && st.Connected()
+		u.healthMu.Lock()
+		was := u.tunnelWasUp[t.IfName]
+		u.tunnelWasUp[t.IfName] = up
+		u.healthMu.Unlock()
+		if up != was {
+			ev := events.EventVPNDown
+			if up {
+				ev = events.EventVPNUp
+			}
+			u.emit(ev, map[string]any{"profile_id": t.Profile.ID, "name": t.Profile.Name})
+		}
+		if !up {
+			u.reresolveEndpoint(ctx, t)
 		}
 	}
-	if up {
-		return
-	}
-	u.reresolveEndpoint(ctx, plane)
 }
 
 // reresolveEndpoint looks the endpoint up again after a silence. Only for
 // hostname endpoints: an address cannot have moved.
-func (u *networkUsecase) reresolveEndpoint(ctx context.Context, plane vpnPlane) {
-	host, err := domain.ParseWGEndpoint(plane.Config.Peer.Endpoint)
+func (u *networkUsecase) reresolveEndpoint(ctx context.Context, t tunnel) {
+	host, err := domain.ParseWGEndpoint(t.Config.Peer.Endpoint)
 	if err != nil {
 		return
 	}
 	if _, isAddr := netip.ParseAddr(host); isAddr == nil {
 		return
 	}
-	if time.Since(u.vpnLastResolve) < reresolveInterval {
+	u.healthMu.Lock()
+	u.ensureHealthMaps()
+	last := u.tunnelLastResolve[t.IfName]
+	if time.Since(last) < reresolveInterval {
+		u.healthMu.Unlock()
 		return
 	}
-	u.vpnLastResolve = time.Now()
+	u.tunnelLastResolve[t.IfName] = time.Now()
+	u.healthMu.Unlock()
 
 	addr, err := u.doh().Resolve(ctx, host)
-	if err != nil || addr.String() == plane.Config.PinnedEndpointIP {
+	if err != nil || addr.String() == t.Config.PinnedEndpointIP {
 		return
 	}
 
-	port := plane.Config.Peer.Endpoint[strings.LastIndex(plane.Config.Peer.Endpoint, ":")+1:]
+	port := t.Config.Peer.Endpoint[strings.LastIndex(t.Config.Peer.Endpoint, ":")+1:]
 	ep, err := netip.ParseAddrPort(addr.String() + ":" + port)
 	if err != nil {
 		return
 	}
-	if err := u.wg().UpdateEndpoint(ctx, ep); err != nil {
+	if err := u.wg().UpdateEndpoint(ctx, t.IfName, ep); err != nil {
 		return
 	}
-	plane.Config.PinnedEndpointIP = addr.String()
-	if blob, err := json.Marshal(plane.Config); err == nil {
-		plane.Profile.Config = string(blob)
-		_ = u.VPNRepo.Update(ctx, plane.Profile)
+	t.Config.PinnedEndpointIP = addr.String()
+	if blob, err := json.Marshal(t.Config); err == nil {
+		t.Profile.Config = string(blob)
+		_ = u.VPNRepo.Update(ctx, t.Profile)
 	}
 }
 
-// restoreVPN is the rollback hook. A nil profile means none was active, which
-// has to take the device down: leaving it up would keep routes pointing into a
-// tunnel the restored rules no longer know about.
-func (u *networkUsecase) restoreVPN(ctx context.Context, p *domain.VPNProfile) error {
+// restorePool is the rollback hook. An empty set is a real value: it disables
+// everything and tears the devices down, because leaving them up would keep
+// routes pointing into tunnels the restored rules no longer know about.
+func (u *networkUsecase) restorePool(ctx context.Context, want []domain.VPNProfile) error {
 	if u.VPNRepo == nil {
 		return nil
 	}
-	return NewVPNRestorer(u.VPNRepo, u.wg())(ctx, p)
+	return NewVPNPoolRestorer(u.VPNRepo, u.wg())(ctx, want)
 }
 
-// NewVPNRestorer builds the same hook for a caller that cannot construct the
-// whole usecase — the dead-man runs in its own process, on purpose, because a
-// bad network apply is most likely to break the panel itself.
-func NewVPNRestorer(repo repository.VPNRepository, wg system.WGDevice) func(context.Context, *domain.VPNProfile) error {
-	return func(ctx context.Context, p *domain.VPNProfile) error {
-		if p == nil {
-			if err := repo.ClearActive(ctx); err != nil {
+// NewVPNPoolRestorer builds the same hook for a caller that cannot construct
+// the whole usecase — the dead-man runs in its own process, on purpose, because
+// a bad network apply is most likely to break the panel itself.
+func NewVPNPoolRestorer(repo repository.VPNRepository, wg system.WGDevice) func(context.Context, []domain.VPNProfile) error {
+	return func(ctx context.Context, want []domain.VPNProfile) error {
+		if err := repo.SetPool(ctx, want); err != nil {
+			return err
+		}
+		keep := map[string]bool{}
+		for i := range want {
+			p := &want[i]
+			if p.WGSlot == nil {
+				continue
+			}
+			name := system.WGLinkNameFor(*p.WGSlot)
+			keep[name] = true
+			cfg, err := decodeWGConfig(p)
+			if err != nil {
 				return err
 			}
-			return wg.Delete(ctx)
+			// No resolution here: a revert must not depend on a resolver that
+			// may only exist inside a tunnel being restored.
+			apply, err := wgApplyConfig(cfg)
+			if err != nil {
+				return err
+			}
+			if err := wg.Ensure(ctx, name, apply); err != nil {
+				return err
+			}
 		}
-		if err := repo.Update(ctx, p); err != nil {
-			return err
+		if have, err := wg.List(ctx); err == nil {
+			for _, name := range have {
+				if !keep[name] {
+					if err := wg.Delete(ctx, name); err != nil {
+						return err
+					}
+				}
+			}
 		}
-		if err := repo.SetActive(ctx, p.ID); err != nil {
-			return err
-		}
-		cfg, err := decodeWGConfig(p)
-		if err != nil {
-			return err
-		}
-		// No resolution here: a revert must not depend on a resolver that may
-		// only exist inside the tunnel being restored.
-		apply, err := wgApplyConfig(cfg)
-		if err != nil {
-			return err
-		}
-		return wg.Ensure(ctx, apply)
+		return nil
 	}
 }

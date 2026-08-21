@@ -100,3 +100,23 @@ func TestRule_Equal(t *testing.T) {
 		t.Error("a blackhole and a table lookup at the same pref compared equal")
 	}
 }
+
+func TestFakeBackend_MultipathRouteRoundTrips(t *testing.T) {
+	f := NewFakeBackend()
+	ctx := context.Background()
+	r := Route{Table: 203, Dest: "default", Nexthops: []Nexthop{
+		{OifName: "nasnet-wg0", Weight: 3}, {OifName: "nasnet-wg1", Weight: 1},
+	}}
+	if err := f.RouteReplace(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	// Same (dest, metric) key: a rewrite swaps the set, never stacks a second default.
+	r2 := Route{Table: 203, Dest: "default", Nexthops: []Nexthop{{OifName: "nasnet-wg1", Weight: 1}}}
+	if err := f.RouteReplace(ctx, r2); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := f.RouteList(ctx, 203)
+	if len(got) != 1 || !got[0].NexthopsEqual(r2) {
+		t.Fatalf("routes = %+v", got)
+	}
+}

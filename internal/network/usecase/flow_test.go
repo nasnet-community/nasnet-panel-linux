@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,15 +85,17 @@ func newFlowFixture(t *testing.T, o flowOpts) *networkUsecase {
 	repo := &fakeVPNRepo{}
 	wg := &system.FakeWGDevice{}
 	if o.vpnActive {
-		repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Active: true, Config: wgConfigJSON(t, nil)}}
-		wg.Applied = &system.WGApplyConfig{}
+		slot := 0
+		repo.rows = []domain.VPNProfile{{ID: 1, Name: "berlin", Enabled: true, Weight: 1,
+			WGSlot: &slot, Config: wgConfigJSON(t, nil)}}
+		_ = wg.Ensure(context.Background(), system.WGLinkName, system.WGApplyConfig{})
 		if o.wgFresh {
-			wg.Stat = &system.WGStatus{
+			wg.State(system.WGLinkName).Stat = &system.WGStatus{
 				LastHandshake: time.Now().Add(-10 * time.Second), RxBytes: 4096, TxBytes: 8192,
 				Endpoint: "1.2.3.4:51820", PublicKey: tPub,
 			}
 		} else {
-			wg.Stat = &system.WGStatus{Endpoint: "1.2.3.4:51820", PublicKey: tPub}
+			wg.State(system.WGLinkName).Stat = &system.WGStatus{Endpoint: "1.2.3.4:51820", PublicKey: tPub}
 		}
 	}
 
@@ -266,5 +269,61 @@ func TestFlowGraphGhostsMissingUplinks(t *testing.T) {
 		if n := nodeByID(t, view, id); n.Status != "ghost" {
 			t.Errorf("%s status %q, want ghost", id, n.Status)
 		}
+	}
+}
+
+// The pool node names every member; table 203 shows the weighted nexthops.
+func TestFlowGraphPoolNodeListsEveryMember(t *testing.T) {
+	u := newFlowFixture(t, flowOpts{vpnActive: true, wgFresh: true})
+	repo := u.VPNRepo.(*fakeVPNRepo)
+	slot := 1
+	repo.rows = append(repo.rows, domain.VPNProfile{
+		ID: 2, Name: "vienna", Enabled: true, Priority: 0, Weight: 1, WGSlot: &slot,
+		Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.Address = "10.66.1.2/32" }),
+	})
+	wg := u.WG.(*system.FakeWGDevice)
+	_ = wg.Ensure(t.Context(), "nasnet-wg1", system.WGApplyConfig{})
+	wg.State("nasnet-wg1").Stat = &system.WGStatus{
+		LastHandshake: time.Now().Add(-5 * time.Second), RxBytes: 1, TxBytes: 2,
+	}
+	be := u.Backend.(*system.FakeBackend)
+	_ = be.RouteReplace(t.Context(), system.Route{
+		Table: system.WGTable, Dest: "default", Nexthops: []system.Nexthop{
+			{OifName: system.WGLinkName, Weight: 3}, {OifName: "nasnet-wg1", Weight: 1},
+		},
+	})
+
+	view, err := u.FlowGraph(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "wg")
+	if n.Label != "VPN pool" || n.Sublabel != "2 tunnels" {
+		t.Fatalf("node = %q / %q", n.Label, n.Sublabel)
+	}
+	var sections []string
+	for _, d := range n.Detail {
+		sections = append(sections, d.Title)
+	}
+	joined := strings.Join(sections, " | ")
+	if !strings.Contains(joined, "nasnet-wg0 — berlin") || !strings.Contains(joined, "nasnet-wg1 — vienna") {
+		t.Fatalf("member sections missing: %v", sections)
+	}
+	// Both members' traffic lands in one counter for the shared edge.
+	if view.Counters["wg"].RxBytes != 4097 {
+		t.Errorf("wg counter = %+v, want the members summed", view.Counters["wg"])
+	}
+	t203 := nodeByID(t, view, "table-203")
+	var routeLine string
+	for _, d := range t203.Detail {
+		for _, l := range d.Lines {
+			if strings.Contains(l, "nexthop") {
+				routeLine = l
+			}
+		}
+	}
+	if !strings.Contains(routeLine, "nexthop nasnet-wg0 weight 3") ||
+		!strings.Contains(routeLine, "nexthop nasnet-wg1 weight 1") {
+		t.Errorf("table 203 route line = %q", routeLine)
 	}
 }

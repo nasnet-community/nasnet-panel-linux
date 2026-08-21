@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
 import { HealthStrip } from "@/components/router/health-strip"
-import type { RouterHealth, UplinkHealth } from "@/lib/types/health"
+import type { RouterHealth, TunnelHealth, UplinkHealth } from "@/lib/types/health"
 
 const mutate = vi.fn()
 
@@ -89,7 +89,58 @@ describe("HealthStrip", () => {
         mockQuery.data = health({ uplinks: [uplink({})] })
         render(<HealthStrip />)
         fireEvent.click(screen.getByRole("button", { name: /force down/i }))
-        expect(mutate).toHaveBeenCalledWith({ ifName: "eth0", state: "down" })
+        expect(mutate).toHaveBeenCalledWith(
+            { ifName: "eth0", state: "down" },
+            expect.anything(),
+        )
+    })
+
+    it("aggregates the pool into one card with a dot per member", () => {
+        const member = (over: Partial<TunnelHealth>): TunnelHealth => ({
+            profile_id: 1,
+            name: "frankfurt",
+            if_name: "nasnet-wg0",
+            priority: 0,
+            weight: 3,
+            in_pool: true,
+            verdict: "up",
+            degraded: false,
+            loss_pct: 2,
+            median_rtt_ms: 80,
+            targets: [],
+            history: [],
+            ...over,
+        })
+        mockQuery.data = health({
+            vpn: {
+                present: true,
+                active_tier: 0,
+                loss_pct: 2,
+                median_rtt_ms: 80,
+                pool_history: [
+                    { unix: 1, ok_ratio: 1, rtt_ms: 80 },
+                    { unix: 2, ok_ratio: 1, rtt_ms: 82 },
+                ],
+                tunnels: [
+                    member({}),
+                    member({
+                        profile_id: 2,
+                        name: "vienna",
+                        if_name: "nasnet-wg1",
+                        in_pool: false,
+                        verdict: "no-internet",
+                    }),
+                ],
+            },
+        })
+        render(<HealthStrip />)
+        expect(screen.getByText("VPN pool")).toBeInTheDocument()
+        // One member was ejected, so the badge counts instead of claiming green.
+        expect(document.querySelector('[data-pool-state="1 of 2"]')).not.toBeNull()
+        expect(document.querySelectorAll("[data-member]").length).toBe(2)
+        expect(
+            document.querySelector('[data-member="nasnet-wg1"]')?.getAttribute("title"),
+        ).toContain("out of the pool")
     })
 
     it("stays quiet on loading and error", () => {

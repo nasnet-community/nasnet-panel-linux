@@ -104,23 +104,53 @@ func (h *Handler) GenerateVPNKeypair(c *gin.Context) {
 	}})
 }
 
-// ActivateVPN and DeactivateVPN move packets, so both ride the two-phase apply
-// and are settled through the existing confirm endpoint.
-func (h *Handler) ActivateVPN(c *gin.Context) {
+// EnableVPNProfile and DisableVPNProfile move packets, so both ride the
+// two-phase apply and are settled through the existing confirm endpoint.
+func (h *Handler) EnableVPNProfile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	verdicts, view, err := h.uc.EnableVPNProfile(c.Request.Context(), uint(id))
+	respondVPNApply(c, verdicts, view, err)
+}
+
+func (h *Handler) DisableVPNProfile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	verdicts, view, err := h.uc.DisableVPNProfile(c.Request.Context(), uint(id))
+	respondVPNApply(c, verdicts, view, err)
+}
+
+// SetVPNProfileRole skips the confirm pipeline: weight and priority only
+// redistribute flows among working tunnels.
+func (h *Handler) SetVPNProfileRole(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
 	var req struct {
-		ProfileID uint `json:"profile_id"`
+		Priority int `json:"priority"`
+		Weight   int `json:"weight"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}
-	verdicts, view, err := h.uc.ActivateVPN(c.Request.Context(), req.ProfileID)
-	respondVPNApply(c, verdicts, view, err)
-}
-
-func (h *Handler) DeactivateVPN(c *gin.Context) {
-	verdicts, view, err := h.uc.DeactivateVPN(c.Request.Context())
-	respondVPNApply(c, verdicts, view, err)
+	if err := h.uc.SetVPNProfileRole(c.Request.Context(), uint(id), req.Priority, req.Weight); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrValidationFailed) || errors.Is(err, domain.ErrProfileNotFound) {
+			code = http.StatusBadRequest
+		}
+		fail(c, code, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 func (h *Handler) VPNStatus(c *gin.Context) {

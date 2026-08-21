@@ -1,9 +1,16 @@
 import { useState } from "react"
+import { toast } from "sonner"
 import { ShieldAlert, TriangleAlert } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { VpnProfiles } from "@/components/network/vpn-profiles"
-import { VpnStatusCard } from "@/components/network/vpn-status-card"
-import { useActivateVPN, useDeactivateVPN, useVPNProfiles, useVPNStatus } from "@/lib/queries/use-network"
+import { VpnPoolCard } from "@/components/network/vpn-pool-card"
+import { VpnPoolTable } from "@/components/network/vpn-pool-table"
+import {
+    useDisableVPNProfile,
+    useEnableVPNProfile,
+    useVPNProfiles,
+    useVPNStatus,
+} from "@/lib/queries/use-network"
+import { useRouterHealth } from "@/lib/queries/use-router-health"
 import { verdictsFromError } from "@/lib/api/network"
 import type { Verdict } from "@/lib/types/network"
 
@@ -16,25 +23,33 @@ interface Props {
 export function VpnTab({ armed, onApplied }: Props) {
     const profiles = useVPNProfiles()
     const status = useVPNStatus()
-    const activate = useActivateVPN()
-    const deactivate = useDeactivateVPN()
+    const health = useRouterHealth()
+    const enable = useEnableVPNProfile()
+    const disable = useDisableVPNProfile()
     const [verdicts, setVerdicts] = useState<Verdict[]>([])
 
-    async function run(fn: () => Promise<{ verdicts?: Verdict[] } | unknown>) {
+    async function run(fn: () => Promise<{ verdicts?: Verdict[] } | unknown>, done: string) {
         setVerdicts([])
         try {
             const res = await fn()
             // Warnings arrive with a 200; the error path never sees them.
             const ok = res as { verdicts?: Verdict[] } | undefined
             setVerdicts(ok?.verdicts ?? [])
+            toast.success(done)
             onApplied()
         } catch (err) {
             setVerdicts(verdictsFromError(err))
         }
     }
 
+    function name(id: number): string {
+        return profiles.data?.find((p) => p.id === id)?.name ?? "The VPN"
+    }
+
     const st = status.data
-    const on = st?.active_profile_id != null
+    const tunnels = st?.tunnels ?? []
+    const on = tunnels.length > 0
+    const connected = tunnels.some((t) => t.connected)
 
     return (
         <div className="space-y-4">
@@ -49,12 +64,13 @@ export function VpnTab({ armed, onApplied }: Props) {
                     </AlertDescription>
                 </Alert>
             ) : (
-                !st?.connected && (
+                !connected && (
                     <Alert variant="warning">
                         <TriangleAlert className="h-4 w-4" />
                         <AlertDescription>
-                            The tunnel is not answering, so traffic bound for the secondary uplink
-                            is being dropped. It resumes on its own when the tunnel comes back.
+                            None of the pool&apos;s tunnels are answering, so traffic bound for the
+                            secondary uplink is being dropped. It resumes on its own when one comes
+                            back.
                         </AlertDescription>
                     </Alert>
                 )
@@ -79,15 +95,21 @@ export function VpnTab({ armed, onApplied }: Props) {
                 </Alert>
             ))}
 
-            <VpnStatusCard status={st} loading={status.isLoading} />
+            <VpnPoolCard status={st} loading={status.isLoading} />
 
-            <VpnProfiles
+            <VpnPoolTable
                 profiles={profiles.data}
                 loading={profiles.isLoading}
+                tunnels={tunnels}
+                health={health.data?.vpn?.tunnels ?? []}
                 armed={armed}
-                busy={activate.isPending || deactivate.isPending}
-                onActivate={(id) => void run(() => activate.mutateAsync(id))}
-                onDeactivate={() => void run(() => deactivate.mutateAsync())}
+                busy={enable.isPending || disable.isPending}
+                onEnable={(id) =>
+                    void run(() => enable.mutateAsync(id), `${name(id)} added to the pool`)
+                }
+                onDisable={(id) =>
+                    void run(() => disable.mutateAsync(id), `${name(id)} removed from the pool`)
+                }
             />
         </div>
     )

@@ -254,6 +254,9 @@ func RenderSysctl(uplinkNames []string, forwarding bool) string {
 	b.WriteString("# Without it our ICMP frag-needed has no route and PMTU black-holes.\n")
 	b.WriteString("net.ipv4.fwmark_reflect = 1\n")
 
+	b.WriteString("\n# L4 hash keeps a flow on one VPN pool member instead of per-packet spray.\n")
+	b.WriteString("net.ipv4.fib_multipath_hash_policy = 1\n")
+
 	b.WriteString("\n# ARP hardening. Deliberately not the route-lookup variant: RouteTable=\n")
 	b.WriteString("# moves each uplink's connected route out of main, so it would only\n")
 	b.WriteString("# resolve by accident.\n")

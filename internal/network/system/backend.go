@@ -26,6 +26,13 @@ func (r Rule) Equal(o Rule) bool {
 		r.SuppressPrefixLen == o.SuppressPrefixLen && r.SuppressSet == o.SuppressSet
 }
 
+// Nexthop is one leg of a multipath route. Device-only, because WireGuard
+// links are point-to-point and have no gateway address.
+type Nexthop struct {
+	OifName string
+	Weight  int
+}
+
 // Route is one route in one table. Dest "default" -> 0.0.0.0/0.
 type Route struct {
 	Table   int
@@ -34,6 +41,20 @@ type Route struct {
 	OifName string
 	Scope   string // "" | "link"
 	Metric  int
+	// Nexthops non-empty makes this multipath; Gateway/OifName are ignored then.
+	Nexthops []Nexthop
+}
+
+func (r Route) NexthopsEqual(o Route) bool {
+	if len(r.Nexthops) != len(o.Nexthops) {
+		return false
+	}
+	for i := range r.Nexthops {
+		if r.Nexthops[i] != o.Nexthops[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Addr is one address on one interface, in CIDR form.

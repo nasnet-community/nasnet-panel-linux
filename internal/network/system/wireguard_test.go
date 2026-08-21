@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ func TestFakeWGDevice_AbsentUntilEnsured(t *testing.T) {
 	ctx := context.Background()
 	f := &FakeWGDevice{}
 
-	if _, err := f.Status(ctx); err != ErrNoWGDevice {
+	if _, err := f.Status(ctx, WGLinkName); err != ErrNoWGDevice {
 		t.Fatalf("err = %v, want ErrNoWGDevice", err)
 	}
 
@@ -40,31 +41,56 @@ func TestFakeWGDevice_AbsentUntilEnsured(t *testing.T) {
 		Address:      netip.MustParsePrefix("10.66.0.2/32"),
 		FirewallMark: 0x02000000,
 	}
-	if err := f.Ensure(ctx, cfg); err != nil {
+	if err := f.Ensure(ctx, WGLinkName, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if f.Applied == nil || f.Applied.FirewallMark != 0x02000000 {
-		t.Fatalf("applied = %+v", f.Applied)
+	st := f.State(WGLinkName)
+	if st == nil || st.Applied == nil || st.Applied.FirewallMark != 0x02000000 {
+		t.Fatalf("applied = %+v", st)
 	}
-	if _, err := f.Status(ctx); err != nil {
+	if _, err := f.Status(ctx, WGLinkName); err != nil {
 		t.Fatalf("status after ensure: %v", err)
 	}
 
-	if err := f.UpdateEndpoint(ctx, netip.MustParseAddrPort("1.2.3.4:51820")); err != nil {
+	if err := f.UpdateEndpoint(ctx, WGLinkName, netip.MustParseAddrPort("1.2.3.4:51820")); err != nil {
 		t.Fatal(err)
 	}
-	if f.Endpoint.String() != "1.2.3.4:51820" {
-		t.Errorf("endpoint = %v", f.Endpoint)
+	if f.State(WGLinkName).Endpoint.String() != "1.2.3.4:51820" {
+		t.Errorf("endpoint = %v", f.State(WGLinkName).Endpoint)
 	}
 
-	if err := f.Delete(ctx); err != nil {
+	if err := f.Delete(ctx, WGLinkName); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.Status(ctx); err != ErrNoWGDevice {
+	if _, err := f.Status(ctx, WGLinkName); err != ErrNoWGDevice {
 		t.Errorf("the device survived deletion: %v", err)
 	}
 	// Deleting twice is what a rollback does after a failed apply.
-	if err := f.Delete(ctx); err != nil {
+	if err := f.Delete(ctx, WGLinkName); err != nil {
 		t.Errorf("second delete: %v", err)
+	}
+}
+
+func TestFakeWGDevice_TracksDevicesByName(t *testing.T) {
+	f := &FakeWGDevice{}
+	ctx := context.Background()
+	if err := f.Ensure(ctx, "nasnet-wg0", WGApplyConfig{MTU: 1420}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Ensure(ctx, "nasnet-wg1", WGApplyConfig{MTU: 1300}); err != nil {
+		t.Fatal(err)
+	}
+	names, _ := f.List(ctx)
+	if len(names) != 2 {
+		t.Fatalf("List = %v", names)
+	}
+	if _, err := f.Status(ctx, "nasnet-wg2"); !errors.Is(err, ErrNoWGDevice) {
+		t.Fatalf("err = %v, want ErrNoWGDevice", err)
+	}
+	if err := f.Delete(ctx, "nasnet-wg0"); err != nil {
+		t.Fatal(err)
+	}
+	if names, _ = f.List(ctx); len(names) != 1 || names[0] != "nasnet-wg1" {
+		t.Fatalf("List after delete = %v", names)
 	}
 }

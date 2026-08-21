@@ -11,9 +11,9 @@ import type {
     PortForward,
     Verdict,
     VerdictLevel,
+    VPNPoolStatus,
     VPNProfile,
     VPNProfileInput,
-    VPNStatus,
     WireGuardConfig,
 } from "@/lib/types/network"
 import type { RouterHealth } from "@/lib/types/health"
@@ -215,14 +215,22 @@ export async function generateVPNKeypair(): Promise<
 }
 
 /** Rewrites routes and the firewall, so it arms the dead-man. */
-export async function activateVPN(profileId: number): Promise<ApiResponse<NetworkApply>> {
-    return api.post<NetworkApply>("/api/v1/network/vpn/activate", { profile_id: profileId })
+export async function enableVPNProfile(id: number): Promise<ApiResponse<NetworkApply>> {
+    return api.post<NetworkApply>(`/api/v1/network/vpn/profiles/${id}/enable`)
 }
 
-export async function deactivateVPN(): Promise<ApiResponse<NetworkApply>> {
-    return api.post<NetworkApply>("/api/v1/network/vpn/deactivate")
+export async function disableVPNProfile(id: number): Promise<ApiResponse<NetworkApply>> {
+    return api.post<NetworkApply>(`/api/v1/network/vpn/profiles/${id}/disable`)
 }
 
-export async function getVPNStatus(): Promise<ApiResponse<VPNStatus>> {
-    return api.get<VPNStatus>("/api/v1/network/vpn/status")
+/** Tier and weight only redistribute flows, so no dead-man rides along. */
+export async function setVPNProfileRole(
+    id: number,
+    role: { priority: number; weight: number },
+): Promise<ApiResponse<null>> {
+    return api.patch<null>(`/api/v1/network/vpn/profiles/${id}/role`, role)
+}
+
+export async function getVPNStatus(): Promise<ApiResponse<VPNPoolStatus>> {
+    return api.get<VPNPoolStatus>("/api/v1/network/vpn/status")
 }

@@ -142,6 +142,20 @@ func (b *netlinkBackend) toNetlinkRoute(r Route) (*netlink.Route, error) {
 	if r.Scope == "link" {
 		nr.Scope = netlink.SCOPE_LINK
 	}
+	for _, nh := range r.Nexthops {
+		link, err := netlink.LinkByName(nh.OifName)
+		if err != nil {
+			return nil, fmt.Errorf("nexthop link %q: %w", nh.OifName, err)
+		}
+		w := nh.Weight
+		if w < 1 {
+			w = 1
+		}
+		// The kernel stores weight as hops+1.
+		nr.MultiPath = append(nr.MultiPath, &netlink.NexthopInfo{
+			LinkIndex: link.Attrs().Index, Hops: w - 1,
+		})
+	}
 	return nr, nil
 }
 
@@ -194,6 +208,13 @@ func (b *netlinkBackend) RouteList(_ context.Context, table int) ([]Route, error
 		}
 		if nr.Scope == netlink.SCOPE_LINK {
 			r.Scope = "link"
+		}
+		for _, nh := range nr.MultiPath {
+			hop := Nexthop{Weight: nh.Hops + 1}
+			if l, err := netlink.LinkByIndex(nh.LinkIndex); err == nil {
+				hop.OifName = l.Attrs().Name
+			}
+			r.Nexthops = append(r.Nexthops, hop)
 		}
 		out = append(out, r)
 	}

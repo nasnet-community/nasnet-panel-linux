@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link } from "react-router"
 import { Info, Network, RefreshCw, TriangleAlert, Waypoints } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -22,9 +22,11 @@ import {
 } from "@/components/network/interface-table"
 import {
     useApplyNetworkChange,
+    useLAN,
     useNetworkInterfaces,
     useNetworkState,
     usePlanNetworkChange,
+    usePortForwards,
 } from "@/lib/queries/use-network"
 import { remainingSeconds } from "@/lib/api/network"
 import { uncoveredWarnings } from "@/lib/network-labels"
@@ -47,6 +49,8 @@ const NETWORK_EVENTS = new Set([
     "wan.lease_warning",
     "vpn.up",
     "vpn.down",
+    "vpn.degraded",
+    "vpn.pool_changed",
     "wan.applied",
 ])
 
@@ -70,6 +74,15 @@ function useFreshness(updatedAt: number | undefined) {
     return label
 }
 
+/** A live figure or state dot next to a tab label, so closed tabs still tell. */
+function TabMeta({ children }: { children: ReactNode }) {
+    return (
+        <span className="text-text-tertiary group-data-[state=active]:text-text-secondary text-xs tabular-nums transition-colors">
+            {children}
+        </span>
+    )
+}
+
 function PageSkeleton() {
     return (
         <div className="space-y-6">
@@ -90,6 +103,9 @@ export default function NetworkPage() {
     const interfaces = useNetworkInterfaces()
     const plan = usePlanNetworkChange()
     const apply = useApplyNetworkChange()
+    // Fetched here so the tab labels can carry live meta; the tabs share the cache.
+    const lan = useLAN()
+    const forwards = usePortForwards()
 
     const [dialogOpen, setDialogOpen] = useState(false)
     const [pending, setPending] = useState<AssignRoleRequest | null>(null)
@@ -154,8 +170,7 @@ export default function NetworkPage() {
                 <div className="max-w-2xl">
                     <h1 className="text-3xl font-semibold">Router</h1>
                     <p className="text-text-secondary text-base">
-                        Assign each port a role. Every change is reviewed first, then held behind a
-                        90-second confirmation that reverts itself if you lose access.
+                        Changes preview first and revert if you lose access.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -229,12 +244,41 @@ export default function NetworkPage() {
             {/* First thing an operator checks; lives above the tabs. */}
             {!setupPending && uplinkCount > 0 && <HealthStrip />}
 
-            <Tabs defaultValue="ports" className="space-y-4">
-                <TabsList>
-                    <TabsTrigger value="ports">Ports</TabsTrigger>
-                    <TabsTrigger value="lan">Local network</TabsTrigger>
-                    <TabsTrigger value="vpn">VPN</TabsTrigger>
-                    <TabsTrigger value="forwards">Port forwards</TabsTrigger>
+            <Tabs defaultValue="ports" className="space-y-6">
+                <TabsList variant="line">
+                    <TabsTrigger value="ports">
+                        Ports
+                        {/* Same filter as the table, so the count matches what opens. */}
+                        <TabMeta>{rows.filter((r) => r.assignable).length}</TabMeta>
+                    </TabsTrigger>
+                    <TabsTrigger value="lan">
+                        Local network
+                        {lan.data && !lan.data.enabled && (
+                            <TabMeta>
+                                <span className="text-status-warning">off</span>
+                            </TabMeta>
+                        )}
+                    </TabsTrigger>
+                    <TabsTrigger value="vpn">
+                        VPN
+                        {state.data?.vpn.active && (
+                            <span
+                                aria-hidden
+                                className={cn(
+                                    "size-1.5 rounded-full",
+                                    state.data.vpn.connected
+                                        ? "bg-status-success"
+                                        : "bg-status-danger",
+                                )}
+                            />
+                        )}
+                    </TabsTrigger>
+                    <TabsTrigger value="forwards">
+                        Port forwards
+                        {(forwards.data?.length ?? 0) > 0 && (
+                            <TabMeta>{forwards.data!.length}</TabMeta>
+                        )}
+                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="ports" className="mt-0 space-y-6">
