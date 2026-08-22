@@ -347,3 +347,32 @@ func TestVPNRepository_UpdateWritesNameAndConfig(t *testing.T) {
 		t.Error("update enabled the profile")
 	}
 }
+
+// Only one row can hold slot 0. Two active rows used to fail the whole
+// migration, and the retry failed identically on every boot after it.
+func TestMigration_SurvivesTwoActiveRows(t *testing.T) {
+	ctx := context.Background()
+	db := newVPNDB(t)
+	r := NewVPNRepository(db)
+	for _, name := range []string{"a", "b"} {
+		if err := r.Create(ctx, makeProfile(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Exec(`UPDATE vpn_profiles SET active = true`)
+
+	if err := EnsureVPNPoolMigration(db); err != nil {
+		t.Fatalf("migration failed on two active rows: %v", err)
+	}
+	rows, _ := r.Enabled(ctx)
+	if len(rows) != 1 || rows[0].WGSlot == nil || *rows[0].WGSlot != 0 {
+		t.Fatalf("enabled rows = %+v, want exactly one on slot 0", rows)
+	}
+	// Nothing is left active, so a second run cannot re-enable anything.
+	if err := EnsureVPNPoolMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := r.Enabled(ctx); len(again) != 1 {
+		t.Fatalf("second run changed the pool: %+v", again)
+	}
+}
