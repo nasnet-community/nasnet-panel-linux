@@ -1035,3 +1035,27 @@ func hasVerdict(vs []domain.Verdict, rule string) bool {
 	}
 	return false
 }
+
+// Same inner IP is a collision whatever the mask says; comparing the raw CIDR
+// strings let /24 slip past the /32 already in the pool.
+func TestEnableVPNProfile_RejectsTheSameAddressUnderADifferentMask(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+			Config: wgConfigJSON(t, nil)},
+		{ID: 2, Name: "wider", Weight: 1, Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) {
+			c.Address = "10.66.0.2/24"
+		})},
+	}
+	verdicts, view, err := f.uc.EnableVPNProfile(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !domain.Rejected(verdicts) || !hasVerdict(verdicts, "V36") {
+		t.Fatalf("verdicts = %+v, want a V36 reject", verdicts)
+	}
+	if view != nil {
+		t.Error("applied despite the reject")
+	}
+}
