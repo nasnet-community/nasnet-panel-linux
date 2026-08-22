@@ -143,6 +143,71 @@ describe("HealthStrip", () => {
         ).toContain("out of the pool")
     })
 
+    it("refuses to call a routed but silent pool online", () => {
+        // The best tier's last member is never ejected, so in_pool stays true
+        // while it answers nothing.
+        mockQuery.data = health({
+            vpn: {
+                present: true,
+                active_tier: 0,
+                loss_pct: 100,
+                median_rtt_ms: 0,
+                pool_history: [],
+                tunnels: [
+                    {
+                        profile_id: 1,
+                        name: "frankfurt",
+                        if_name: "nasnet-wg0",
+                        priority: 0,
+                        weight: 1,
+                        in_pool: true,
+                        verdict: "no-internet",
+                        degraded: true,
+                        loss_pct: 100,
+                        median_rtt_ms: 0,
+                        targets: [],
+                        history: [],
+                    },
+                ],
+            },
+        })
+        render(<HealthStrip />)
+        expect(document.querySelector('[data-pool-state="down"]')).not.toBeNull()
+        expect(
+            document.querySelector('[data-member="nasnet-wg0"]')?.className,
+        ).toContain("bg-status-danger")
+    })
+
+    it("says waiting while no tunnel has answered yet", () => {
+        mockQuery.data = health({
+            vpn: {
+                present: true,
+                active_tier: 0,
+                loss_pct: 0,
+                median_rtt_ms: 0,
+                pool_history: [],
+                tunnels: [
+                    {
+                        profile_id: 1,
+                        name: "frankfurt",
+                        if_name: "nasnet-wg0",
+                        priority: 0,
+                        weight: 1,
+                        in_pool: true,
+                        verdict: "",
+                        degraded: false,
+                        loss_pct: 0,
+                        median_rtt_ms: 0,
+                        targets: [],
+                        history: [],
+                    },
+                ],
+            },
+        })
+        render(<HealthStrip />)
+        expect(document.querySelector('[data-pool-state="waiting"]')).not.toBeNull()
+    })
+
     it("stays quiet on loading and error", () => {
         mockQuery = { isLoading: true, isError: false }
         const { unmount } = render(<HealthStrip />)

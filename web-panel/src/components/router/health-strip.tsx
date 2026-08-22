@@ -194,26 +194,32 @@ function UplinkCard({ up }: { up: UplinkHealth }) {
     )
 }
 
+// in_pool is not health: the best tier's last member stays routed even after it
+// stops answering, so the verdict decides the colour.
+function answering(t: TunnelHealth): boolean {
+    return t.verdict === "up" || t.verdict === "degraded"
+}
+
 // One dot per member, so a flap is visible without eight sibling cards.
 function memberDotTone(t: TunnelHealth): string {
     // No verdict yet: the damper is warming up, which is not a claim either way.
     if (t.verdict === "") return "bg-status-neutral"
-    if (t.in_pool) {
-        return t.degraded ? "bg-status-warning" : "bg-status-success"
-    }
-    // Out of the set: a healthy standby tier is idle, everything else is down.
-    return t.verdict === "up" ? "bg-surface-3" : "bg-status-danger"
+    if (!answering(t)) return "bg-status-danger"
+    if (t.in_pool) return t.degraded ? "bg-status-warning" : "bg-status-success"
+    // Answering but out of the set: a standby tier, idle on purpose.
+    return "bg-surface-3"
 }
 
 function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
     const total = vpn.tunnels.length
-    const carrying = vpn.tunnels.filter((t) => t.in_pool).length
-    const badge =
-        carrying === 0
-            ? { tone: TONE_DOWN, label: "down" }
-            : carrying < total
-              ? { tone: TONE_WARN, label: `${carrying} of ${total}` }
-              : { tone: TONE_OK, label: "online" }
+    const carrying = vpn.tunnels.filter((t) => t.in_pool && answering(t)).length
+    const badge = vpn.tunnels.every((t) => t.verdict === "")
+        ? { tone: TONE_MUTED, label: "waiting" }
+        : carrying === 0
+          ? { tone: TONE_DOWN, label: "down" }
+          : carrying < total
+            ? { tone: TONE_WARN, label: `${carrying} of ${total}` }
+            : { tone: TONE_OK, label: "online" }
     return (
         <div
             data-uplink="vpn"
@@ -241,7 +247,7 @@ function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
                     <span
                         key={t.if_name}
                         data-member={t.if_name}
-                        title={`${t.name} — ${t.verdict || "waiting"}${t.in_pool ? "" : t.verdict === "up" ? " (standby)" : " (out of the pool)"}`}
+                        title={`${t.name} — ${t.verdict || "waiting"}${t.in_pool ? "" : answering(t) ? " (standby)" : " (out of the pool)"}`}
                         className={cn("h-2.5 w-2.5 rounded-full", memberDotTone(t))}
                     />
                 ))}
