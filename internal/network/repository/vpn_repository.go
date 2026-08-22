@@ -43,19 +43,33 @@ func NewVPNRepository(db *gorm.DB) VPNRepository {
 // EnsureVPNPoolMigration retires the single-active model. Idempotent: the
 // active flag is cleared as it converts, so a later disable sticks.
 func EnsureVPNPoolMigration(db *gorm.DB) error {
-	if err := db.Exec(`DROP INDEX IF EXISTS ux_vpn_profile_active`).Error; err != nil {
-		return err
-	}
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS ux_vpn_wg_slot
-		  ON vpn_profiles (wg_slot)
-		  WHERE wg_slot IS NOT NULL AND deleted_at IS NULL`).Error; err != nil {
-		return err
-	}
-	return db.Exec(`
-		UPDATE vpn_profiles SET enabled = true, wg_slot = 0, weight = 1,
-		  priority = 0, active = false
-		WHERE active AND deleted_at IS NULL`).Error
+	// One transaction: the slot index and the rows it constrains must not be
+	// able to land apart, or a boot that half-ran leaves the tunnel off and
+	// retries the same failing update forever.
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`DROP INDEX IF EXISTS ux_vpn_profile_active`).Error; err != nil {
+			return err
+		}
+		// Only one row can take slot 0, so convert the newest and leave the
+		// rest disabled rather than failing the whole migration.
+		if err := tx.Exec(`
+			UPDATE vpn_profiles SET enabled = true, wg_slot = 0, weight = 1,
+			  priority = 0, active = false
+			WHERE id = (SELECT id FROM vpn_profiles
+			            WHERE active AND deleted_at IS NULL
+			            ORDER BY id DESC LIMIT 1)`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`
+			UPDATE vpn_profiles SET active = false
+			WHERE active AND deleted_at IS NULL`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS ux_vpn_wg_slot
+			  ON vpn_profiles (wg_slot)
+			  WHERE wg_slot IS NOT NULL AND deleted_at IS NULL`).Error
+	})
 }
 
 func (r *vpnRepository) List(ctx context.Context) ([]domain.VPNProfile, error) {
