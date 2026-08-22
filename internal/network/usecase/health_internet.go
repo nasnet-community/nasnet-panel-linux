@@ -17,15 +17,28 @@ func defaultInternetLimits() internetLimits {
 	return internetLimits{FailsToDown: 5, SuccsToUp: 12, Dwell: 120 * time.Second}
 }
 
+// observe runs on the health tick, snapshot on whichever goroutine asks.
 type internetState struct {
+	mu         sync.Mutex
 	down       bool
+	everUp     bool
 	fails      int
 	successes  int
 	lastDownAt time.Time
 }
 
+// everUp separates "never answered" from "missed this tick".
+func (s *internetState) snapshot() (down, everUp bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.down, s.everUp
+}
+
 func (s *internetState) observe(ok bool, lim internetLimits, now time.Time) (bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if ok {
+		s.everUp = true
 		s.fails = 0
 		s.successes++
 		if s.down && s.successes >= lim.SuccsToUp &&

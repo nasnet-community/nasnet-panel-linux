@@ -700,7 +700,8 @@ func (u *networkUsecase) poolMembers(pool vpnPool) []poolMember {
 	for _, t := range pool.Tunnels {
 		healthy := true
 		if s, ok := u.inetStates[t.IfName]; ok {
-			healthy = !s.down
+			down, _ := s.snapshot()
+			healthy = !down
 		}
 		out = append(out, poolMember{
 			IfName: t.IfName, Slot: *t.Profile.WGSlot,
