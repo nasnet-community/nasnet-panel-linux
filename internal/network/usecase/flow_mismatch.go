@@ -104,7 +104,7 @@ func routeMismatches(in flowMismatchInput) []FlowMismatch {
 	if !in.vpn.Active() {
 		return out
 	}
-	if err := in.routeErrs[system.WGTable]; err == nil && !hasDefault(in.routes[system.WGTable]) {
+	if err := in.routeErrs[system.WGTable]; err == nil && !hasPoolDefault(in.routes[system.WGTable]) {
 		out = append(out, FlowMismatch{
 			NodeID: "table-203", Rule: "route-missing", Severity: "error",
 			Message:  "The pool's default route is missing from table 203.",
