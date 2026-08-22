@@ -203,3 +203,17 @@ func TestMismatchDNSMasqDown(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 }
+
+// The escape hatches are defaults too, so leaving only them behind used to read
+// as a healthy table while every weight and tier had silently vanished.
+func TestMismatchEscapeHatchesAloneAreNotTheDefault(t *testing.T) {
+	u, in := newMismatchFixture(t, mismatchOpts{vpnActive: true})
+	in.routes[system.WGTable] = []system.Route{
+		{Table: system.WGTable, Dest: "default", OifName: system.WGLinkName,
+			Metric: probeRouteMetric},
+	}
+	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "route-missing")
+	if m.NodeID != "table-203" {
+		t.Fatalf("%+v", m)
+	}
+}

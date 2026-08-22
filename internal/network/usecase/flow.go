@@ -323,11 +323,15 @@ func tableNode(st flowState, table int, name, sublabel string) FlowNode {
 		n.Hint = "No VPN is active — nothing routes here."
 		return withDetail(n, section("routes", routeLines(routes)))
 	}
-	if hasDefault(routes) {
+	present, want := hasDefault(routes), "No default route in this table."
+	if table == system.WGTable {
+		present, want = hasPoolDefault(routes), "No weighted default across the pool members."
+	}
+	if present {
 		n.Status = "ok"
 	} else {
 		n.Status = "down"
-		n.Hint = "No default route in this table."
+		n.Hint = want
 	}
 	return withDetail(n, section("routes", routeLines(routes)))
 }
@@ -650,6 +654,17 @@ func routeLines(routes []system.Route) []string {
 func hasDefault(routes []system.Route) bool {
 	for _, r := range routes {
 		if r.Dest == "default" {
+			return true
+		}
+	}
+	return false
+}
+
+// The pool's escape hatches are defaults too, so hasDefault would report the
+// weighted one present when only they survive. Metric zero is the real thing.
+func hasPoolDefault(routes []system.Route) bool {
+	for _, r := range routes {
+		if r.Dest == "default" && r.Metric == 0 {
 			return true
 		}
 	}
