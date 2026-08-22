@@ -117,7 +117,9 @@ func (f *poolProbeFixture) pastTheDwell(ifName string) {
 	f.uc.healthMu.Lock()
 	defer f.uc.healthMu.Unlock()
 	if s, ok := f.uc.inetStates[ifName]; ok {
+		s.mu.Lock()
 		s.lastDownAt = time.Now().Add(-3 * time.Minute)
+		s.mu.Unlock()
 	}
 }
 
