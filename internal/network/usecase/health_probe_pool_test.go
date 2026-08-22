@@ -123,6 +123,12 @@ func (f *poolProbeFixture) pastTheDwell(ifName string) {
 	}
 }
 
+func (f *poolProbeFixture) verdict(ifName string) string {
+	f.uc.healthMu.Lock()
+	defer f.uc.healthMu.Unlock()
+	return f.uc.ladders[ifName].Verdict
+}
+
 func TestProbePool_DeadMemberLeavesTheNexthopsAndComesBack(t *testing.T) {
 	f := newPoolProbeFixture(t, 2)
 	ctx := context.Background()
@@ -221,5 +227,31 @@ func TestProbePool_DropsReadingsForMembersThatLeft(t *testing.T) {
 	f.uc.healthMu.Unlock()
 	if hasLadder || hasState {
 		t.Error("a disabled member's readings survived")
+	}
+}
+
+// The damper starts optimistic, so a tunnel that has never replied must not
+// claim "up" — but one lost tick on a long-up tunnel is not a warm-up either.
+func TestProbePool_VerdictWaitsForEvidenceThenHoldsIt(t *testing.T) {
+	f := newPoolProbeFixture(t, 1)
+	ctx := context.Background()
+
+	f.prober.set("nasnet-wg0", false)
+	f.tickPool(ctx)
+	if got := f.verdict("nasnet-wg0"); got != "" {
+		t.Fatalf("verdict before any reply = %q, want the warm-up sentinel", got)
+	}
+
+	f.prober.set("nasnet-wg0", true)
+	f.tickPool(ctx)
+	if got := f.verdict("nasnet-wg0"); got != "up" {
+		t.Fatalf("verdict after a reply = %q, want up", got)
+	}
+
+	// One miss: well short of FailsToDown, so the damper still says up.
+	f.prober.set("nasnet-wg0", false)
+	f.tickPool(ctx)
+	if got := f.verdict("nasnet-wg0"); got != "up" {
+		t.Fatalf("verdict after one lost tick = %q, want up", got)
 	}
 }
