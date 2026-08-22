@@ -54,9 +54,6 @@ export function LanTab({ state, armed, onApplied }: Props) {
     const [verdicts, setVerdicts] = useState<Verdict[]>([])
     const [settingsOpen, setSettingsOpen] = useState(false)
 
-    if (lan.isLoading || !lan.data) {
-        return <Skeleton className="h-96 w-full" />
-    }
     if (lan.isError) {
         return (
             <Alert variant="warning">
@@ -66,6 +63,9 @@ export function LanTab({ state, armed, onApplied }: Props) {
                 </AlertDescription>
             </Alert>
         )
+    }
+    if (lan.isLoading || !lan.data) {
+        return <Skeleton className="h-96 w-full" />
     }
 
     const stored = lan.data
@@ -118,7 +118,11 @@ export function LanTab({ state, armed, onApplied }: Props) {
             toast.success("LAN settings applied")
             onApplied()
         } catch (err) {
-            setVerdicts(verdictsFromError(err))
+            const vs = verdictsFromError(err)
+            setVerdicts(vs)
+            if (vs.length === 0) {
+                toast.error(err instanceof Error ? err.message : "The LAN settings did not apply")
+            }
         }
     }
 

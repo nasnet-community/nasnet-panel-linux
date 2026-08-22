@@ -38,7 +38,12 @@ export function VpnTab({ armed, onApplied }: Props) {
             toast.success(done)
             onApplied()
         } catch (err) {
-            setVerdicts(verdictsFromError(err))
+            // Verdicts render as alerts; anything else would vanish silently.
+            const vs = verdictsFromError(err)
+            setVerdicts(vs)
+            if (vs.length === 0) {
+                toast.error(err instanceof Error ? err.message : "The change did not apply")
+            }
         }
     }
 
@@ -48,6 +53,8 @@ export function VpnTab({ armed, onApplied }: Props) {
 
     const st = status.data
     const tunnels = st?.tunnels ?? []
+    // Unread status is not an empty pool: claiming either way would be a guess.
+    const known = !status.isLoading && !status.isError && !!st
     const on = tunnels.length > 0
     const connected = tunnels.some((t) => t.connected)
 
@@ -55,7 +62,7 @@ export function VpnTab({ armed, onApplied }: Props) {
         <div className="space-y-4">
             {/* The kill switch is not a setting, so it is stated rather than
                 offered — and what it is doing right now differs by state. */}
-            {!on ? (
+            {known && !on ? (
                 <Alert variant="warning">
                     <ShieldAlert className="h-4 w-4" />
                     <AlertDescription>
@@ -64,6 +71,7 @@ export function VpnTab({ armed, onApplied }: Props) {
                     </AlertDescription>
                 </Alert>
             ) : (
+                known &&
                 !connected && (
                     <Alert variant="warning">
                         <TriangleAlert className="h-4 w-4" />
@@ -74,6 +82,15 @@ export function VpnTab({ armed, onApplied }: Props) {
                         </AlertDescription>
                     </Alert>
                 )
+            )}
+
+            {profiles.isError && (
+                <Alert variant="warning">
+                    <TriangleAlert className="h-4 w-4" />
+                    <AlertDescription>
+                        The VPN profiles could not be read. {profiles.error?.message}
+                    </AlertDescription>
+                </Alert>
             )}
 
             {status.isError && (
