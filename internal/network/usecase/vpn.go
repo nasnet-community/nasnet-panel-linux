@@ -330,6 +330,16 @@ func vpnConfigVerdicts(cfg *domain.WireGuardConfig) []domain.Verdict {
 
 // ---------------------------------------------------------------- pool membership
 
+// Same inner IP is a collision whatever the mask says, so compare addresses.
+func sameTunnelIP(a, b string) bool {
+	pa, errA := netip.ParsePrefix(a)
+	pb, errB := netip.ParsePrefix(b)
+	if errA != nil || errB != nil {
+		return a == b
+	}
+	return pa.Addr() == pb.Addr()
+}
+
 func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error) {
 	if u.VPNRepo == nil {
 		return nil, nil, errors.New("no VPN storage configured")
@@ -374,7 +384,7 @@ func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domai
 			verdicts = append(verdicts, domain.Verdict{Rule: "V35", Level: domain.LevelReject,
 				Message: fmt.Sprintf("%q already listens on port %d.", enabled[i].Name, cfg.ListenPort)})
 		}
-		if cfg.Address == other.Address {
+		if sameTunnelIP(cfg.Address, other.Address) {
 			verdicts = append(verdicts, domain.Verdict{Rule: "V36", Level: domain.LevelReject,
 				Message: fmt.Sprintf("%q already uses the tunnel address %s.", enabled[i].Name, cfg.Address)})
 		}
