@@ -127,32 +127,41 @@ func medianRTT(samples []HealthSample, n int) int {
 	return rtts[len(rtts)/2]
 }
 
-// mergeHistories averages tail-aligned samples; members tick together, so
-// index alignment from the end is honest enough for a sparkline.
+// mergeHistories averages tail-aligned samples over the longest member, so a
+// tunnel that joined a minute ago cannot cut the pool's hour down to its own.
 func mergeHistories(hs [][]HealthSample) []HealthSample {
-	if len(hs) == 0 {
-		return nil
-	}
-	n := len(hs[0])
-	for _, h := range hs[1:] {
-		if len(h) < n {
+	n := 0
+	for _, h := range hs {
+		if len(h) > n {
 			n = len(h)
 		}
 	}
+	if n == 0 {
+		return nil
+	}
 	out := make([]HealthSample, n)
 	for i := 0; i < n; i++ {
+		fromTail := n - i
 		var okSum float64
-		var rttSum, rttN int
+		var okN, rttSum, rttN int
 		for _, h := range hs {
-			s := h[len(h)-n+i]
+			if len(h) < fromTail {
+				continue
+			}
+			s := h[len(h)-fromTail]
 			okSum += s.OKRatio
+			okN++
 			if s.RTTms > 0 {
 				rttSum += s.RTTms
 				rttN++
 			}
-			out[i].Unix = s.Unix
+			if s.Unix > out[i].Unix {
+				out[i].Unix = s.Unix
+			}
 		}
-		out[i].OKRatio = okSum / float64(len(hs))
+		if okN > 0 {
+			out[i].OKRatio = okSum / float64(okN)
+		}
 		if rttN > 0 {
 			out[i].RTTms = rttSum / rttN
 		}
