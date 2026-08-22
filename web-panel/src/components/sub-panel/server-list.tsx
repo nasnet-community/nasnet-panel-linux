@@ -38,7 +38,7 @@ function cleanServerName(server: SubPanelServer): string {
     const head = (server.name || "").split("|")[0]
     return (
         head
-            .replace(/^[\s\u{1F1E6}-\u{1F1FF}‍️\p{Extended_Pictographic}]+/u, "")
+            .replace(/^(?:[\s\u{1F1E6}-\u{1F1FF}\p{Extended_Pictographic}]|\u{200D}|\u{FE0F})+/u, "")
             .replace(/[\s|\-–—]+$/u, "")
             .trim() || server.address
     )
