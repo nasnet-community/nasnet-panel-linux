@@ -1059,3 +1059,20 @@ func TestEnableVPNProfile_RejectsTheSameAddressUnderADifferentMask(t *testing.T)
 		t.Error("applied despite the reject")
 	}
 }
+
+// Nothing reinstalls the oif rules on a tier edit, so the pool's order — which
+// decides their prefs — must not depend on the tier.
+func TestPoolOrderFollowsTheSlotNotTheTier(t *testing.T) {
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "frankfurt", Enabled: true, Weight: 1, Priority: 3, WGSlot: slotOf(0),
+			Config: wgConfigJSON(t, nil)},
+		{ID: 2, Name: "vienna", Enabled: true, Weight: 1, Priority: 0, WGSlot: slotOf(1),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.Address = "10.66.1.2/32" })},
+	}
+	got := f.uc.vpnPoolNow(context.Background()).IfNames()
+	want := []string{"nasnet-wg0", "nasnet-wg1"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("IfNames = %v, want %v — slot order, whatever the tiers say", got, want)
+	}
+}

@@ -193,7 +193,9 @@ type networkUsecase struct {
 
 	// The geoip sets are thousands of prefixes; compiling them on every
 	// reconcile tick would be waste.
-	setsMu    sync.Mutex
+	setsMu sync.Mutex
+	// Serialises the two-phase applies; the dead-man marker holds one at a time.
+	planMu    sync.Mutex
 	lanSets   []nft.Set
 	nftSetOK  bool
 	setsBuilt bool
@@ -206,8 +208,9 @@ type networkUsecase struct {
 	tunnelWasUp       map[string]bool
 	tunnelLastResolve map[string]time.Time
 	// lastPoolKey detects nexthop-set changes; poolNH is the set as applied.
-	lastPoolKey string
-	poolNH      []system.Nexthop
+	lastPoolKey  string
+	poolKeyKnown bool
+	poolNH       []system.Nexthop
 
 	// resolverStatus is a seam: off systemd the real probe always answers
 	// "running", which leaves the flow page's check untestable.
@@ -256,9 +259,9 @@ func (u *networkUsecase) vpnRouteState(ctx context.Context) VPNRouteState {
 
 func NewNetworkUsecase(d Deps) NetworkUsecase {
 	u := &networkUsecase{
-		Deps:          d,
-		health:        NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
-		dnsmasq:       system.NewDNSMasq(),
+		Deps:              d,
+		health:            NewHealthMonitor(d.Backend, NewKernelProbe(), DefaultDamping()),
+		dnsmasq:           system.NewDNSMasq(),
 		healthCfg:         DefaultHealthConfig(),
 		inetStates:        map[string]*internetState{},
 		bootTicks:         map[string]int{},
@@ -338,7 +341,18 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list groups: %w", err)
 	}
-	// Devices first: the rules below look up a table whose routes name links.
+	rows, err := u.IfRepo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list interfaces: %w", err)
+	}
+	// The kill switch goes on before anything that can fail. One member with an
+	// endpoint that will not resolve used to abort the whole reconcile ahead of
+	// this line, and the secondary uplink spent that time carrying in the clear.
+	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows),
+		u.healthConfigSnapshot().probeExemptIPs()); err != nil {
+		return err
+	}
+	// Devices next: the rules below look up a table whose routes name links.
 	if err := u.applyVPNDevices(ctx); err != nil {
 		return fmt.Errorf("apply the tunnels: %w", err)
 	}
@@ -349,14 +363,6 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 		return err
 	}
 	if err := ApplyNftState(ctx, u.Nft, uplinks); err != nil {
-		return err
-	}
-	rows, err := u.IfRepo.List(ctx)
-	if err != nil {
-		return fmt.Errorf("list interfaces: %w", err)
-	}
-	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows),
-		u.healthConfigSnapshot().probeExemptIPs()); err != nil {
 		return err
 	}
 

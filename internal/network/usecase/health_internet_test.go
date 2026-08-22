@@ -110,3 +110,17 @@ func TestMergeHistoriesKeepsTheLongestMember(t *testing.T) {
 		t.Errorf("tail unix = %d, want 60", got[59].Unix)
 	}
 }
+
+// The pool sparkline's type says array. A nil marshals to null and the whole
+// router page goes down with it.
+func TestMergeHistoriesNeverReturnsNil(t *testing.T) {
+	for _, in := range [][][]HealthSample{
+		{{}},
+		{{}, {}},
+		{},
+	} {
+		if got := mergeHistories(in); got == nil {
+			t.Errorf("mergeHistories(%v) = nil, want an empty slice", in)
+		}
+	}
+}
