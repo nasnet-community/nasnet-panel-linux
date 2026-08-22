@@ -247,7 +247,8 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                         title="Copy subscription link"
                                         onClick={async () => {
                                             const ok = await copyToClipboard(data.subscription_url)
-                                            ok ? toast.success("Subscription URL copied") : toast.error("Couldn’t copy — long-press to copy manually")
+                                            if (ok) toast.success("Subscription URL copied")
+                                            else toast.error("Couldn’t copy — long-press to copy manually")
                                         }}
                                         className="grid place-items-center size-11 -mr-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                     >
@@ -316,7 +317,8 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                             onClick={async () => {
                                                                 const allIPs = data.online_ips!.join("\n")
                                                                 const ok = await copyToClipboard(allIPs)
-                                                                ok ? toast.success(`Copied ${data.online_ips!.length} IPs`) : toast.error("Couldn’t copy")
+                                                                if (ok) toast.success(`Copied ${data.online_ips!.length} IPs`)
+                                                                else toast.error("Couldn’t copy")
                                                             }}
                                                         >
                                                             <Copy className="w-3 h-3" />
@@ -332,7 +334,8 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                             className="w-full flex items-center justify-between min-h-11 px-2 rounded-md hover:bg-muted/50 active:bg-muted/70 transition-colors cursor-pointer text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
                                                             onClick={async () => {
                                                                 const ok = await copyToClipboard(ip)
-                                                                ok ? toast.success(`Copied ${ip}`) : toast.error("Couldn’t copy")
+                                                                if (ok) toast.success(`Copied ${ip}`)
+                                                                else toast.error("Couldn’t copy")
                                                             }}
                                                         >
                                                             <div className="flex items-center gap-2 min-w-0">
