@@ -151,13 +151,14 @@ func routeStateFor(in routeInputs) routeState {
 	return routeUp
 }
 
-// The pool ladder has one rung. answered is this tick's evidence: the damper
-// starts optimistic, so without it a tunnel that never replied reads "up".
-func tunnelVerdict(answered, up, degraded bool) string {
+// The pool ladder has one rung. everAnswered is the evidence: the damper starts
+// optimistic, so without it a tunnel that never replied reads "up". Ever, not
+// this tick — one lost probe on a long-up tunnel is not a warm-up.
+func tunnelVerdict(everAnswered, up, degraded bool) string {
 	switch {
 	case !up:
 		return "no-internet"
-	case !answered:
+	case !everAnswered:
 		return "" // warm-up, not a claim
 	case degraded:
 		return "degraded"

@@ -298,7 +298,9 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 		results := probeAll(ctx, u.targetProber(), t.IfName,
 			netmark.GroupMark(netmark.GroupForeign), cfg.TargetsForeign)
 		answered := anyUp(results)
-		up, _ := u.inetState(t.IfName).observe(answered, defaultInternetLimits(), time.Now())
+		state := u.inetState(t.IfName)
+		up, _ := state.observe(answered, defaultInternetLimits(), time.Now())
+		_, everAnswered := state.snapshot()
 		u.ring(t.IfName).push(tickSample(time.Now(), results))
 
 		samples := u.ring(t.IfName).snapshot()
@@ -317,7 +319,7 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 		u.ladders[t.IfName] = uplinkLadder{
 			Internet: inet,
 			Degraded: degraded,
-			Verdict:  tunnelVerdict(answered, up, degraded),
+			Verdict:  tunnelVerdict(everAnswered, up, degraded),
 			Results:  results,
 		}
 		u.healthMu.Unlock()
