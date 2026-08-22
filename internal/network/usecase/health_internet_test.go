@@ -81,3 +81,32 @@ func TestLossAndMedian(t *testing.T) {
 		t.Fatal("no samples must read as 0 loss, not 100")
 	}
 }
+
+// A tunnel enabled a minute ago used to cut the pool's whole sparkline down to
+// its own twelve samples.
+func TestMergeHistoriesKeepsTheLongestMember(t *testing.T) {
+	old := make([]HealthSample, 60)
+	for i := range old {
+		old[i] = HealthSample{Unix: int64(i + 1), OKRatio: 1, RTTms: 100}
+	}
+	fresh := []HealthSample{
+		{Unix: 59, OKRatio: 0, RTTms: 0},
+		{Unix: 60, OKRatio: 0, RTTms: 0},
+	}
+
+	got := mergeHistories([][]HealthSample{old, fresh})
+	if len(got) != 60 {
+		t.Fatalf("len = %d, want the longer member's 60", len(got))
+	}
+	// The old member alone covers the head, so its ratio survives untouched.
+	if got[0].OKRatio != 1 || got[0].Unix != 1 {
+		t.Errorf("head = %+v, want the old member's sample", got[0])
+	}
+	// Both cover the tail, so it averages.
+	if got[59].OKRatio != 0.5 {
+		t.Errorf("tail ok_ratio = %v, want 0.5", got[59].OKRatio)
+	}
+	if got[59].Unix != 60 {
+		t.Errorf("tail unix = %d, want 60", got[59].Unix)
+	}
+}
