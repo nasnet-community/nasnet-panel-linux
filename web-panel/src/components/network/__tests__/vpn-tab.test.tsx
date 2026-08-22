@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import "@testing-library/jest-dom/vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -14,6 +14,15 @@ const getVPNStatus = vi.fn()
 const getRouterHealth = vi.fn()
 const deleteVPNProfile = vi.fn()
 const setVPNProfileRole = vi.fn()
+const toastError = vi.fn()
+const toastSuccess = vi.fn()
+vi.mock("sonner", () => ({
+    toast: {
+        error: (m: string) => toastError(m),
+        success: (m: string) => toastSuccess(m),
+    },
+}))
+
 const enableVPNProfile = vi.fn()
 const disableVPNProfile = vi.fn()
 
@@ -154,7 +163,7 @@ describe("VpnTab", () => {
             poolStatus([tunnel()]),
             health([tunnelHealth()]),
         )
-        expect(await screen.findByText("1 of 1 tunnel carrying traffic")).toBeInTheDocument()
+        expect(await screen.findByText("1 of 1 carrying in tier 0")).toBeInTheDocument()
         expect(screen.getAllByText("frankfurt").length).toBeGreaterThan(0)
     })
 
@@ -198,10 +207,26 @@ describe("VpnTab", () => {
                 profile({ enabled: true, wg_slot: 0, weight: 3 }),
                 profile({ id: 2, name: "berlin", enabled: true, wg_slot: 1, priority: 1 }),
             ],
-            poolStatus([tunnel({ weight: 3 }), tunnel({ profile_id: 2, name: "berlin", in_pool: false })]),
+            poolStatus([
+                tunnel({ weight: 3 }),
+                tunnel({
+                    profile_id: 2,
+                    name: "berlin",
+                    if_name: "nasnet-wg1",
+                    priority: 1,
+                    in_pool: false,
+                }),
+            ]),
             health([
                 tunnelHealth({ weight: 3 }),
-                tunnelHealth({ profile_id: 2, name: "berlin", in_pool: false, verdict: "up" }),
+                tunnelHealth({
+                    profile_id: 2,
+                    name: "berlin",
+                    if_name: "nasnet-wg1",
+                    priority: 1,
+                    in_pool: false,
+                    verdict: "up",
+                }),
             ]),
         )
         expect(await screen.findByText("online · standby")).toBeInTheDocument()
@@ -217,8 +242,8 @@ describe("VpnTab", () => {
             health([tunnelHealth({ weight: 3 })]),
         )
         await screen.findByText("VPN pool")
-        await userEvent.click(screen.getByLabelText("Change weight"))
-        const input = screen.getByLabelText("weight")
+        await userEvent.click(screen.getByLabelText("Change frankfurt weight"))
+        const input = screen.getByLabelText("frankfurt weight")
         await userEvent.clear(input)
         await userEvent.type(input, "5{Enter}")
         expect(setVPNProfileRole).toHaveBeenCalledWith(1, { priority: 0, weight: 5 })
@@ -234,6 +259,30 @@ describe("VpnTab", () => {
         )
         await userEvent.click(await screen.findByLabelText("Turn frankfurt off"))
         expect(await screen.findByText(/This is the last tunnel/)).toBeInTheDocument()
+    })
+
+    // A rejected enable used to close the dialog and say nothing at all.
+    it("says so when a change is refused", async () => {
+        enableVPNProfile.mockRejectedValue(new Error("wg0 refused to come up"))
+        renderIt([profile({ wg_slot: null })], poolStatus([]))
+        await userEvent.click(await screen.findByLabelText("Turn frankfurt on"))
+        await userEvent.click(await screen.findByRole("button", { name: /turn it on/i }))
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith("wg0 refused to come up"))
+    })
+
+    // Number("") is 0, and 0 is a valid tier: clearing the box must not promote
+    // the tunnel to the top of the ladder.
+    it("refuses a blank tier instead of reading it as tier 0", async () => {
+        renderIt(
+            [profile({ enabled: true, wg_slot: 0, priority: 3 })],
+            poolStatus([tunnel({ priority: 3 })]),
+            health([tunnelHealth({ priority: 3 })]),
+        )
+        await userEvent.click(await screen.findByLabelText("Change frankfurt tier"))
+        await userEvent.clear(screen.getByLabelText("frankfurt tier"))
+        await userEvent.click(screen.getByLabelText("Save frankfurt tier"))
+        expect(setVPNProfileRole).not.toHaveBeenCalled()
+        expect(toastError).toHaveBeenCalled()
     })
 
     it("separates a dead uplink from a dead pool", async () => {

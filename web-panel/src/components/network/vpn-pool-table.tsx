@@ -74,6 +74,7 @@ function HealthChip({ h }: { h: TunnelHealth | undefined }) {
 
 /** Pencil → number → check, the lan-devices pattern. Commits on Enter too. */
 function RoleCell({
+    owner,
     value,
     min,
     max,
@@ -81,6 +82,7 @@ function RoleCell({
     disabled,
     onCommit,
 }: {
+    owner: string
     value: number
     min: number
     max: number
@@ -99,7 +101,7 @@ function RoleCell({
                     size="icon"
                     variant="ghost"
                     className="h-6 w-6"
-                    aria-label={`Change ${label}`}
+                    aria-label={`Change ${owner} ${label}`}
                     disabled={disabled}
                     onClick={() => {
                         setDraft(String(value))
@@ -113,9 +115,12 @@ function RoleCell({
     }
 
     function commit() {
-        const n = Number(draft)
+        // Number("") is 0, which for tier is a valid value — clearing the field
+        // would silently promote the tunnel to the top of the ladder.
+        const raw = draft.trim()
+        const n = Number(raw)
         setEditing(false)
-        if (!Number.isInteger(n) || n < min || n > max) {
+        if (raw === "" || !Number.isInteger(n) || n < min || n > max) {
             toast.error(`${label} must be between ${min} and ${max}`)
             return
         }
@@ -137,16 +142,16 @@ function RoleCell({
                 }}
                 // On a number field this sizes the wrapper, stepper included.
                 className="h-7 w-20 text-sm"
-                aria-label={label}
+                aria-label={`${owner} ${label}`}
             />
-            <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`Save ${label}`} onClick={commit}>
+            <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`Save ${owner} ${label}`} onClick={commit}>
                 <Check className="h-3 w-3" />
             </Button>
             <Button
                 size="icon"
                 variant="ghost"
                 className="h-6 w-6"
-                aria-label="Cancel"
+                aria-label={`Cancel ${owner} ${label}`}
                 onClick={() => setEditing(false)}
             >
                 <X className="h-3 w-3" />
@@ -291,6 +296,12 @@ export function VpnPoolTable({
                                                 <p className="text-status-warning max-w-56 truncate text-xs">
                                                     Stored config cannot be read — {p.unreadable}
                                                 </p>
+                                            ) : st?.last_error ? (
+                                                // Why it will not come up; nothing else on the page says.
+                                                <p className="text-status-warning max-w-56 truncate text-xs"
+                                                   title={st.last_error}>
+                                                    {st.last_error}
+                                                </p>
                                             ) : (
                                                 <p className="text-text-tertiary max-w-56 truncate font-mono text-xs">
                                                     {p.config.peer.endpoint}
@@ -315,6 +326,7 @@ export function VpnPoolTable({
                                                 min={0}
                                                 max={7}
                                                 label="tier"
+                                                owner={p.name}
                                                 disabled={!p.enabled || role.isPending}
                                                 onCommit={(n) => commitRole(p, n, p.weight)}
                                             />
@@ -325,6 +337,7 @@ export function VpnPoolTable({
                                                 min={1}
                                                 max={100}
                                                 label="weight"
+                                                owner={p.name}
                                                 disabled={!p.enabled || role.isPending}
                                                 onCommit={(n) => commitRole(p, p.priority, n)}
                                             />

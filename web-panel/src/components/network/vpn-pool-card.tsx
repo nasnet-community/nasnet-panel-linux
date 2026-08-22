@@ -76,12 +76,16 @@ export function VpnPoolCard({ status, loading }: Props) {
     const healthById = new Map((pool?.tunnels ?? []).map((t) => [t.profile_id, t]))
     const members: Member[] = status.tunnels.map((t) => ({ ...t, health: healthById.get(t.profile_id) }))
 
-    const total = members.length
-    const carrying = members.filter((m) => m.in_pool).length
     const connected = members.some((m) => m.connected)
-
     const tiers = [...new Set(members.map((m) => m.priority))].sort((a, b) => a - b)
     const activeTier = tiers.find((p) => members.some((m) => m.priority === p && m.in_pool))
+
+    // Count inside the active tier only. Standby tiers are idle by design, so
+    // counting them as missing would leave a healthy ladder permanently amber.
+    const active = members.filter((m) => m.priority === activeTier)
+    const total = members.length
+    const carrying = active.filter((m) => m.in_pool && usable(m)).length
+    const whole = total > 0 && carrying === active.length
 
     return (
         <Card>
@@ -94,16 +98,18 @@ export function VpnPoolCard({ status, loading }: Props) {
                                 "h-2 w-2 shrink-0 rounded-full",
                                 total === 0
                                     ? "bg-muted-foreground/40"
-                                    : connected && carrying === total
-                                      ? "bg-emerald-500"
-                                      : connected
-                                        ? "bg-status-warning"
-                                        : "bg-status-danger",
+                                    : carrying === 0
+                                      ? "bg-status-danger"
+                                      : connected && whole
+                                        ? "bg-emerald-500"
+                                        : "bg-status-warning",
                             )}
                         />
                         {total === 0
                             ? "No VPN in the pool"
-                            : `${carrying} of ${total} ${total === 1 ? "tunnel" : "tunnels"} carrying traffic`}
+                            : carrying === 0
+                              ? "No tunnel is carrying traffic"
+                              : `${carrying} of ${active.length} carrying in tier ${activeTier}`}
                     </CardTitle>
                     {pool?.present && total > 0 && (
                         <span className="text-text-secondary text-sm tabular-nums">

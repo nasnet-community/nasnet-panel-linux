@@ -85,7 +85,7 @@ function Ladder({ carrier, gateway, internet }: { carrier: string; gateway: stri
 
 // Median RTT, last 15 minutes.
 function Sparkline({ history }: { history: HealthSample[] }) {
-    const samples = history.slice(-180)
+    const samples = (history ?? []).slice(-180)
     if (samples.length < 2) return null
     const max = Math.max(...samples.map((s) => s.rtt_ms), 1)
     const w = 112
@@ -212,13 +212,16 @@ function memberDotTone(t: TunnelHealth): string {
 
 function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
     const total = vpn.tunnels.length
-    const carrying = vpn.tunnels.filter((t) => t.in_pool && answering(t)).length
+    // Only the active tier counts. A standby tier is idle on purpose, so
+    // counting it as missing would hold a healthy ladder at amber forever.
+    const active = vpn.tunnels.filter((t) => t.priority === vpn.active_tier)
+    const carrying = active.filter((t) => t.in_pool && answering(t)).length
     const badge = vpn.tunnels.every((t) => t.verdict === "")
         ? { tone: TONE_MUTED, label: "waiting" }
         : carrying === 0
           ? { tone: TONE_DOWN, label: "down" }
-          : carrying < total
-            ? { tone: TONE_WARN, label: `${carrying} of ${total}` }
+          : carrying < active.length
+            ? { tone: TONE_WARN, label: `${carrying} of ${active.length}` }
             : { tone: TONE_OK, label: "online" }
     return (
         <div
@@ -229,7 +232,7 @@ function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
                 <div>
                     <p className="font-mono text-base font-medium">VPN pool</p>
                     <p className="text-text-tertiary text-xs">
-                        {total === 1 ? "1 tunnel" : `${total} tunnels`} · probed through each
+                        {total === 1 ? "1 tunnel" : `${total} tunnels`} · tier {vpn.active_tier} carrying
                     </p>
                 </div>
                 <span
