@@ -725,12 +725,14 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 				return fmt.Errorf("clear the pool's routing table: %w", err)
 			}
 		}
+		u.publishPoolNH(nil)
 		return nil
 	}
 
 	members := u.poolMembers(pool)
+	nh := poolNexthops(members)
 	routes := []system.Route{{
-		Table: system.WGTable, Dest: "default", Nexthops: poolNexthops(members),
+		Table: system.WGTable, Dest: "default", Nexthops: nh,
 	}}
 	// One escape hatch per member: a probe bound to an ejected tunnel still
 	// needs a route out of it, or the recovery is unobservable.
@@ -766,6 +768,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 			}
 		}
 	}
+	u.publishPoolNH(nh)
 	return nil
 }
 

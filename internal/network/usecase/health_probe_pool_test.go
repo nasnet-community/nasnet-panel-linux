@@ -255,3 +255,29 @@ func TestProbePool_VerdictWaitsForEvidenceThenHoldsIt(t *testing.T) {
 		t.Fatalf("verdict after one lost tick = %q, want up", got)
 	}
 }
+
+// Enabling a profile writes the routes outside the probe loop, and the VPN tab
+// reads the published set straight away to fill in "carrying traffic".
+func TestApplyVPNRoutes_PublishesWhatItWrote(t *testing.T) {
+	f := newPoolProbeFixture(t, 2)
+	ctx := context.Background()
+
+	if nh := f.uc.currentPoolNexthops(); len(nh) != 0 {
+		t.Fatalf("published a set before writing one: %v", nh)
+	}
+	if err := f.uc.applyVPNRoutes(ctx, f.uc.vpnPoolNow(ctx), nil); err != nil {
+		t.Fatal(err)
+	}
+	if nh := f.uc.currentPoolNexthops(); len(nh) != 2 {
+		t.Fatalf("published %v, want both members", nh)
+	}
+
+	// Last profile off: the set has to empty with the table, or failover aims
+	// at a link that no longer exists.
+	if err := f.uc.applyVPNRoutes(ctx, vpnPool{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if nh := f.uc.currentPoolNexthops(); len(nh) != 0 {
+		t.Fatalf("stale set survived an empty pool: %v", nh)
+	}
+}

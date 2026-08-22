@@ -136,6 +136,30 @@ func (u *networkUsecase) currentPoolNexthops() []system.Nexthop {
 	return append([]system.Nexthop(nil), u.poolNH...)
 }
 
+// publishPoolNH records the set table 203's default now holds and announces a
+// move. Every writer of that route calls it, or a reader gets a stale set.
+func (u *networkUsecase) publishPoolNH(nh []system.Nexthop) {
+	var key strings.Builder
+	for _, n := range nh {
+		fmt.Fprintf(&key, "%s/%d ", n.OifName, n.Weight)
+	}
+	u.healthMu.Lock()
+	u.ensureHealthMaps()
+	// An empty previous key is boot, not a change.
+	changed := key.String() != u.lastPoolKey && u.lastPoolKey != ""
+	u.lastPoolKey = key.String()
+	u.poolNH = append([]system.Nexthop(nil), nh...)
+	u.healthMu.Unlock()
+
+	if changed {
+		names := make([]string, 0, len(nh))
+		for _, n := range nh {
+			names = append(names, n.OifName)
+		}
+		u.emit(events.EventVPNPoolChanged, map[string]any{"active": names})
+	}
+}
+
 // One route op per uplink per tick. A kernel refusal bubbles up so the caller
 // can't record a recovery that never happened.
 func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw string, st routeState) error {
@@ -333,9 +357,8 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 	_ = u.applyPoolRoutes(ctx)
 }
 
-// applyPoolRoutes rewrites the pool defaults from current dampers and roles,
-// mirrors them into the domestic table while failover holds, and reports
-// membership changes.
+// applyPoolRoutes rewrites the pool defaults from current dampers and roles and
+// mirrors them into the domestic table while failover holds.
 func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
 	pool := u.vpnPoolNow(ctx)
 	uplinks, err := u.uplinks(ctx)
@@ -345,16 +368,8 @@ func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
 	if err := u.applyVPNRoutes(ctx, pool, uplinks); err != nil {
 		return err
 	}
-	nh := poolNexthops(u.poolMembers(pool))
-	var key strings.Builder
-	for _, n := range nh {
-		fmt.Fprintf(&key, "%s/%d ", n.OifName, n.Weight)
-	}
+	nh := u.currentPoolNexthops()
 	u.healthMu.Lock()
-	u.ensureHealthMaps()
-	changed := key.String() != u.lastPoolKey && u.lastPoolKey != ""
-	u.lastPoolKey = key.String()
-	u.poolNH = append([]system.Nexthop(nil), nh...)
 	failover := u.failoverActive
 	u.healthMu.Unlock()
 
@@ -367,13 +382,6 @@ func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
 				})
 			}
 		}
-	}
-	if changed {
-		names := make([]string, 0, len(nh))
-		for _, n := range nh {
-			names = append(names, n.OifName)
-		}
-		u.emit(events.EventVPNPoolChanged, map[string]any{"active": names})
 	}
 	return nil
 }
