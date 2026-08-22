@@ -248,3 +248,26 @@ func TestReconcileRules_LeavesStockRulesAlone(t *testing.T) {
 		}
 	}
 }
+
+// An oif rule's pref is its position in the pool list. Ordering that list by
+// tier would move every rule on a tier edit, and nothing reinstalls them.
+func TestOifRulePrefsSurviveATierEdit(t *testing.T) {
+	before := AllRules(nil, twoUplinks(), VPNRouteState{
+		IfNames: []string{"nasnet-wg0", "nasnet-wg1"},
+	})
+	prefOf := func(rules []system.Rule, ifName string) int {
+		for _, r := range rules {
+			if r.OifName == ifName {
+				return r.Pref
+			}
+		}
+		t.Fatalf("no oif rule for %s", ifName)
+		return 0
+	}
+	if got, want := prefOf(before, "nasnet-wg0"), RulePrefOifBase+2; got != want {
+		t.Fatalf("wg0 pref = %d, want %d", got, want)
+	}
+	if got, want := prefOf(before, "nasnet-wg1"), RulePrefOifBase+3; got != want {
+		t.Fatalf("wg1 pref = %d, want %d", got, want)
+	}
+}

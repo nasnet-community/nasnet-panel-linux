@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -279,5 +280,67 @@ func TestApplyVPNRoutes_PublishesWhatItWrote(t *testing.T) {
 	}
 	if nh := f.uc.currentPoolNexthops(); len(nh) != 0 {
 		t.Fatalf("stale set survived an empty pool: %v", nh)
+	}
+}
+
+// A busy database looks exactly like an empty pool. Acting on that answer tore
+// down every tunnel and dropped every damper.
+func TestUnreadablePoolDestroysNothing(t *testing.T) {
+	f := newPoolProbeFixture(t, 2)
+	ctx := context.Background()
+
+	f.prober.set("nasnet-wg0", true)
+	f.prober.set("nasnet-wg1", true)
+	f.tickPool(ctx)
+	if nh := f.poolDefault(t); len(nh) != 2 {
+		t.Fatalf("setup: nexthops = %v", nh)
+	}
+
+	repo := f.uc.VPNRepo.(*fakeVPNRepo)
+	repo.err = errors.New("database is locked")
+
+	if err := f.uc.applyVPNDevices(ctx); err == nil {
+		t.Error("applyVPNDevices swallowed the read failure")
+	}
+	if got := f.uc.wg().(*system.FakeWGDevice).Deleted; len(got) != 0 {
+		t.Errorf("tore down %v on an unreadable pool", got)
+	}
+	if err := f.uc.applyPoolRoutes(ctx); err == nil {
+		t.Error("applyPoolRoutes swallowed the read failure")
+	}
+	if nh := f.poolDefault(t); len(nh) != 2 {
+		t.Errorf("cleared the pool's default on an unreadable pool: %v", nh)
+	}
+
+	f.tickPool(ctx)
+	f.uc.healthMu.Lock()
+	dampers := len(f.uc.inetStates)
+	f.uc.healthMu.Unlock()
+	if dampers != 2 {
+		t.Errorf("dampers = %d, want both kept", dampers)
+	}
+}
+
+// Emptying the pool leaves the same blank key boot has, so the flag has to
+// track "published once", not the key itself.
+func TestPoolRefillAfterEmptyStillAnnouncesItself(t *testing.T) {
+	f := newPoolProbeFixture(t, 1)
+	ctx := context.Background()
+
+	if err := f.uc.applyVPNRoutes(ctx, f.uc.vpnPoolNow(ctx), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.uc.applyVPNRoutes(ctx, vpnPool{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.seen = nil
+	f.mu.Unlock()
+
+	if err := f.uc.applyVPNRoutes(ctx, f.uc.vpnPoolNow(ctx), nil); err != nil {
+		t.Fatal(err)
+	}
+	if !f.sawEvent(events.EventVPNPoolChanged) {
+		t.Fatal("refilling an emptied pool announced nothing")
 	}
 }

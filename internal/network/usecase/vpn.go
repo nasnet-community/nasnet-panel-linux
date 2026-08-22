@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,13 +113,22 @@ func (p vpnPool) IfNames() []string {
 // vpnPoolNow reads the enabled set. Every failure answers "not in the pool":
 // the wrong answer sends foreign traffic out the raw uplink, so it fails
 // towards the blackhole rather than towards the leak.
+//
+// Callers that DELETE on the strength of the answer want vpnPoolRead instead —
+// an unreadable pool looks identical to an empty one, and tearing every tunnel
+// down because sqlite was busy is not failing safe.
 func (u *networkUsecase) vpnPoolNow(ctx context.Context) vpnPool {
+	pool, _ := u.vpnPoolRead(ctx)
+	return pool
+}
+
+func (u *networkUsecase) vpnPoolRead(ctx context.Context) (vpnPool, error) {
 	if u.VPNRepo == nil {
-		return vpnPool{}
+		return vpnPool{}, nil
 	}
 	rows, err := u.VPNRepo.Enabled(ctx)
 	if err != nil {
-		return vpnPool{}
+		return vpnPool{}, fmt.Errorf("read the enabled profiles: %w", err)
 	}
 	var pool vpnPool
 	for i := range rows {
@@ -134,7 +144,13 @@ func (u *networkUsecase) vpnPoolNow(ctx context.Context) vpnPool {
 			Profile: p, Config: cfg, IfName: system.WGLinkNameFor(*p.WGSlot),
 		})
 	}
-	return pool
+	// Slot order, not tier order: an oif rule's pref is its position in this
+	// list, so sorting by priority would move the rules every time someone
+	// edits a tier — without anything reinstalling them.
+	sort.Slice(pool.Tunnels, func(i, j int) bool {
+		return *pool.Tunnels[i].Profile.WGSlot < *pool.Tunnels[j].Profile.WGSlot
+	})
+	return pool, nil
 }
 
 func decodeWGConfig(p *domain.VPNProfile) (*domain.WireGuardConfig, error) {
@@ -435,14 +451,10 @@ func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domai
 				}
 				return u.VPNRepo.SetEnabled(ctx, profile.ID, true)
 			},
-			Undo: func(ctx context.Context) error {
-				return u.VPNRepo.SetEnabled(ctx, profile.ID, false)
-			},
 		},
 		system.Op{
 			Desc: "bring the pool's tunnel interfaces up",
 			Do:   func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
-			Undo: func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
 		},
 		system.Op{
 			// The tunnels' resolver lines and table names live in rendered files,
@@ -481,12 +493,10 @@ func (u *networkUsecase) DisableVPNProfile(ctx context.Context, id uint) ([]doma
 		system.Op{
 			Desc: fmt.Sprintf("remove %q from the VPN pool", profile.Name),
 			Do:   func(ctx context.Context) error { return u.VPNRepo.SetEnabled(ctx, profile.ID, false) },
-			Undo: func(ctx context.Context) error { return u.VPNRepo.SetEnabled(ctx, profile.ID, true) },
 		},
 		system.Op{
 			Desc: "take the member's tunnel interface down",
 			Do:   func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
-			Undo: func(ctx context.Context) error { return u.applyVPNDevices(ctx) },
 		},
 		system.Op{
 			Desc: "render the uplink units and the routing table names",
@@ -521,6 +531,10 @@ func (u *networkUsecase) SetVPNProfileRole(ctx context.Context, id uint, priorit
 }
 
 func (u *networkUsecase) runVPNPlan(ctx context.Context, plan system.Plan) (*ApplyView, error) {
+	// One at a time: the applier checks for an armed change and then writes the
+	// marker, so two plans racing leave the first one armed but unconfirmable.
+	u.planMu.Lock()
+	defer u.planMu.Unlock()
 	rec, err := u.applier.Apply(ctx, plan, !system.TakeoverDone(u.Paths))
 	if err != nil {
 		return nil, err
@@ -539,7 +553,10 @@ func (u *networkUsecase) runVPNPlan(ctx context.Context, plan system.Plan) (*App
 // applyVPNDevices makes the tunnel links match the stored pool: one per
 // enabled profile, none else. Idempotent, so boot, apply and undo all use it.
 func (u *networkUsecase) applyVPNDevices(ctx context.Context) error {
-	pool := u.vpnPoolNow(ctx)
+	pool, err := u.vpnPoolRead(ctx)
+	if err != nil {
+		return err
+	}
 	want := map[string]bool{}
 	for _, t := range pool.Tunnels {
 		want[t.IfName] = true
@@ -554,22 +571,27 @@ func (u *networkUsecase) applyVPNDevices(ctx context.Context) error {
 			}
 		}
 	}
+	// Per member, not all-or-nothing: this runs inside Reconcile at boot, and
+	// one tunnel that will not come up must not cost the box its rules, its
+	// nft state and its LAN.
+	var errs []error
 	for _, t := range pool.Tunnels {
 		// A profile restored from an older snapshot can carry a hostname with
-		// no pinned address. Resolve here rather than fail: this runs at boot,
-		// and a member that will not come up drags the whole tier's odds down.
+		// no pinned address, so resolve it here.
 		if err := u.ensurePinnedEndpoint(ctx, t); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		apply, err := wgApplyConfig(t.Config)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+			continue
 		}
 		if err := u.wg().Ensure(ctx, t.IfName, apply); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // ensurePinnedEndpoint fills in a missing pin. Does nothing in the normal case,
@@ -764,9 +786,12 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 			})
 		}
 	}
+	// Same again: a member whose link vanished must not stop the others being
+	// routed, nor skip the sweep and the publish below.
+	var errs []error
 	for _, r := range routes {
 		if err := u.Backend.RouteReplace(ctx, r); err != nil {
-			return fmt.Errorf("route %s into the pool: %w", r.Dest, err)
+			errs = append(errs, fmt.Errorf("route %s into the pool: %w", r.Dest, err))
 		}
 	}
 	// A slot freed by a disable leaves its escape hatch behind; sweep it.
@@ -779,7 +804,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 		}
 	}
 	u.publishPoolNH(nh)
-	return nil
+	return errors.Join(errs...)
 }
 
 // ApplyKillSwitchState installs the chains that stop anything leaving the
@@ -1037,35 +1062,45 @@ func NewVPNPoolRestorer(repo repository.VPNRepository, wg system.WGDevice) func(
 		}
 		keep := map[string]bool{}
 		for i := range want {
+			if want[i].WGSlot != nil {
+				keep[system.WGLinkNameFor(*want[i].WGSlot)] = true
+			}
+		}
+		// Orphans first, same as applyVPNDevices: a link the restored rules no
+		// longer name must not outlive them because a later Ensure failed.
+		var errs []error
+		if have, err := wg.List(ctx); err == nil {
+			for _, name := range have {
+				if !keep[name] {
+					if err := wg.Delete(ctx, name); err != nil {
+						errs = append(errs, err)
+					}
+				}
+			}
+		} else {
+			errs = append(errs, err)
+		}
+		for i := range want {
 			p := &want[i]
 			if p.WGSlot == nil {
 				continue
 			}
-			name := system.WGLinkNameFor(*p.WGSlot)
-			keep[name] = true
 			cfg, err := decodeWGConfig(p)
 			if err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
 			// No resolution here: a revert must not depend on a resolver that
 			// may only exist inside a tunnel being restored.
 			apply, err := wgApplyConfig(cfg)
 			if err != nil {
-				return err
+				errs = append(errs, err)
+				continue
 			}
-			if err := wg.Ensure(ctx, name, apply); err != nil {
-				return err
-			}
-		}
-		if have, err := wg.List(ctx); err == nil {
-			for _, name := range have {
-				if !keep[name] {
-					if err := wg.Delete(ctx, name); err != nil {
-						return err
-					}
-				}
+			if err := wg.Ensure(ctx, system.WGLinkNameFor(*p.WGSlot), apply); err != nil {
+				errs = append(errs, err)
 			}
 		}
-		return nil
+		return errors.Join(errs...)
 	}
 }

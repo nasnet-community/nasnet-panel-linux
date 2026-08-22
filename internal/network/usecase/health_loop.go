@@ -145,9 +145,10 @@ func (u *networkUsecase) publishPoolNH(nh []system.Nexthop) {
 	}
 	u.healthMu.Lock()
 	u.ensureHealthMaps()
-	// An empty previous key is boot, not a change.
-	changed := key.String() != u.lastPoolKey && u.lastPoolKey != ""
-	u.lastPoolKey = key.String()
+	// Boot is not a change — but neither is an emptied pool a boot, so the flag
+	// tracks it rather than the key, which is "" in both cases.
+	changed := u.poolKeyKnown && key.String() != u.lastPoolKey
+	u.lastPoolKey, u.poolKeyKnown = key.String(), true
 	u.poolNH = append([]system.Nexthop(nil), nh...)
 	u.healthMu.Unlock()
 
@@ -297,7 +298,12 @@ func (u *networkUsecase) tickCount(ifName string) int {
 
 // Foreign group mark, so each socket walks the same path real traffic takes.
 func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
-	pool := u.vpnPoolNow(ctx)
+	// A failed read is not an empty pool: pruning on one would drop every
+	// damper and re-admit tunnels the ladder had already ejected.
+	pool, err := u.vpnPoolRead(ctx)
+	if err != nil {
+		return
+	}
 	want := map[string]bool{}
 	for _, t := range pool.Tunnels {
 		want[t.IfName] = true
@@ -360,7 +366,11 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 // applyPoolRoutes rewrites the pool defaults from current dampers and roles and
 // mirrors them into the domestic table while failover holds.
 func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
-	pool := u.vpnPoolNow(ctx)
+	// Same reason as probePool: an unreadable pool must not clear table 203.
+	pool, err := u.vpnPoolRead(ctx)
+	if err != nil {
+		return err
+	}
 	uplinks, err := u.uplinks(ctx)
 	if err != nil {
 		return err

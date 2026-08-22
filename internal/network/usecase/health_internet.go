@@ -136,9 +136,7 @@ func mergeHistories(hs [][]HealthSample) []HealthSample {
 			n = len(h)
 		}
 	}
-	if n == 0 {
-		return nil
-	}
+	// Never nil: the pool sparkline's type says array, and null crashes it.
 	out := make([]HealthSample, n)
 	for i := 0; i < n; i++ {
 		fromTail := n - i
