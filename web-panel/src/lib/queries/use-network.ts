@@ -20,6 +20,7 @@ import {
     planNetworkChange,
     rollbackNetworkApply,
     setDeviceLabel,
+    setInterfaceLabel,
     setVPNProfileRole,
     setVPNProfileTransport,
     updateLAN,
@@ -157,6 +158,23 @@ export function useLANDevices(enabled = true) {
         refetchIntervalInBackground: false,
         staleTime: 5 * 1000,
         retry: false,
+    })
+}
+
+export function useSetInterfaceLabel() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({ key, label }: { key: string; label: string }) => {
+            const res = await setInterfaceLabel(key, label)
+            if (!res.success) throw new Error(res.error || "Failed to save the name")
+            return res.data
+        },
+        onSuccess: () => {
+            // The name shows on the ports table, the health cards and the pool's via column.
+            void qc.invalidateQueries({ queryKey: queryKeys.networkInterfaces() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkState() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
+        },
     })
 }
 

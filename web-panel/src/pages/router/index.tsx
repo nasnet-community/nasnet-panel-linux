@@ -3,7 +3,6 @@ import { Link } from "react-router"
 import { Info, Network, RefreshCw, TriangleAlert, Waypoints } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -14,7 +13,6 @@ import { VpnTab } from "@/pages/router/vpn-tab"
 import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
-import { RoleBays } from "@/components/network/role-bays"
 import {
     buildAssignRequest,
     InterfaceTable,
@@ -29,7 +27,7 @@ import {
     usePortForwards,
 } from "@/lib/queries/use-network"
 import { remainingSeconds } from "@/lib/api/network"
-import { uncoveredWarnings } from "@/lib/network-labels"
+import { missingRoleHint, uncoveredWarnings } from "@/lib/network-labels"
 import { queryKeys } from "@/lib/queries/keys"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
@@ -164,6 +162,7 @@ export default function NetworkPage() {
     const armed =
         !!state.data?.pending_plan_id && remainingSeconds(state.data.confirm_deadline_unix) > 0
     const warnings = uncoveredWarnings(state.data?.warnings)
+    const roleHint = missingRoleHint(rows)
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
@@ -243,7 +242,7 @@ export default function NetworkPage() {
             ))}
 
             {/* First thing an operator checks; lives above the tabs. */}
-            {!setupPending && uplinkCount > 0 && <HealthStrip />}
+            {!setupPending && uplinkCount > 0 && <HealthStrip interfaces={rows} />}
 
             <Tabs defaultValue="ports" className="space-y-6">
                 <TabsList variant="line">
@@ -282,33 +281,19 @@ export default function NetworkPage() {
                     </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="ports" className="mt-0 space-y-6">
-                    <section className="space-y-3">
-                        <div className="flex items-baseline justify-between gap-4">
-                            <h2 className="text-base font-medium">Roles</h2>
-                            <p className="text-text-tertiary text-sm">
-                                Dashed bays are unassigned
-                            </p>
-                        </div>
-                        <RoleBays interfaces={rows} state={state.data} />
-                    </section>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Ports</CardTitle>
-                            <CardDescription>
-                                Picking a role opens a review step (nothing changes until you apply)
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <InterfaceTable
-                                interfaces={rows}
-                                onAssign={onAssign}
-                                disabled={apply.isPending || armed}
-                                uplinks={state.data?.uplinks}
-                            />
-                        </CardContent>
-                    </Card>
+                {/* The tab is already called Ports, and every uplink describes
+                    itself on its own health card, so the table stands alone. */}
+                <TabsContent value="ports" className="mt-0 space-y-3">
+                    <p className="text-text-tertiary text-sm">
+                        Picking a role opens a review step — nothing changes until you apply.
+                    </p>
+                    <InterfaceTable
+                        interfaces={rows}
+                        onAssign={onAssign}
+                        disabled={apply.isPending || armed}
+                        uplinks={state.data?.uplinks}
+                    />
+                    {roleHint && <p className="text-text-tertiary text-sm">{roleHint}</p>}
                 </TabsContent>
 
                 <TabsContent value="lan" className="mt-0">

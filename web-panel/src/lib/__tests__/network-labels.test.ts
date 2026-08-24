@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
-    ROLE_BAYS,
     attachmentLabel,
-    bayHolder,
     groupAddresses,
     linkLabel,
     linkTone,
+    missingRoleHint,
     roleLabel,
     uncoveredWarnings,
 } from "@/lib/network-labels"
@@ -95,21 +94,21 @@ describe("link state", () => {
     })
 })
 
-describe("bayHolder", () => {
-    const bays = Object.fromEntries(ROLE_BAYS.map((b) => [`${b.role}:${b.slot}`, b]))
-    const rows = [
-        iface({ id: 1, key: "k1", if_name: "eth0", role: "wan", slot: "domestic" }),
-        iface({ id: 2, key: "k2", if_name: "eth1", role: "lan" }),
-    ]
-
-    it("matches an uplink on its slot, not just the role", () => {
-        expect(bayHolder(rows, bays["wan:domestic"])?.if_name).toBe("eth0")
-        expect(bayHolder(rows, bays["wan:secondary"])).toBeNull()
+// The empty bays' one real job was telling a novice which role still matters.
+describe("missingRoleHint", () => {
+    it("asks for a LAN port while none is assigned", () => {
+        const hint = missingRoleHint([iface({ role: "wan", slot: "domestic" })])
+        expect(hint).toMatch(/LAN/)
+        expect(hint).toMatch(/switch or access point/i)
     })
 
-    it("matches slotless roles on the role alone", () => {
-        expect(bayHolder(rows, bays["lan:"])?.if_name).toBe("eth1")
-        expect(bayHolder(rows, bays["mgmt:"])).toBeNull()
+    it("goes quiet once a port holds the LAN", () => {
+        expect(missingRoleHint([iface({ id: 2, key: "k2", role: "lan" })])).toBeNull()
+    })
+
+    // Management is optional, so nagging about it would be noise on a working router.
+    it("says nothing about the optional management port", () => {
+        expect(missingRoleHint([iface({ role: "lan" })])).toBeNull()
     })
 })
 

@@ -17,6 +17,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { PortName } from "@/components/network/port-name"
 import { cn } from "@/lib/utils"
 import { attachmentLabel, groupAddresses, linkLabel, linkTone } from "@/lib/network-labels"
 import type {
@@ -167,7 +168,7 @@ function Identity({ iface }: { iface: NetworkInterfaceView }) {
                 )}
                 {notes.length > 0 && <Caveats notes={notes} />}
             </div>
-            {iface.label && <p className="text-text-secondary text-xs">{iface.label}</p>}
+            <PortName iface={iface} />
             {!iface.present && (
                 <p className="text-text-tertiary text-xs">Role is kept for when it returns.</p>
             )}

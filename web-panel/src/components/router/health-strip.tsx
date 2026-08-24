@@ -1,5 +1,8 @@
 import { toast } from "sonner"
+import { CopyableText } from "@/components/ui/copyable-text"
+import { PortName } from "@/components/network/port-name"
 import { cn } from "@/lib/utils"
+import { groupAddresses } from "@/lib/network-labels"
 import { useRouterHealth, useSetUplinkForce } from "@/lib/queries/use-router-health"
 import type {
     HealthSample,
@@ -8,6 +11,7 @@ import type {
     UplinkVerdict,
     VPNPoolHealth,
 } from "@/lib/types/health"
+import type { NetworkInterfaceView } from "@/lib/types/network"
 
 // Closed over UplinkVerdict so a new verdict is a compile error.
 // Severities match linkTone.
@@ -172,18 +176,32 @@ function StatsRow({ loss, rtt, history }: { loss: number; rtt: number; history: 
     )
 }
 
-function UplinkCard({ up }: { up: UplinkHealth }) {
+// The card is the uplink's own card: health, name, address and the rename in one
+// place, so no summary below the tabs has to repeat any of it.
+function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceView }) {
+    const kind = up.slot === "domestic" ? "domestic WAN" : "secondary WAN"
+    const { primary } = groupAddresses(iface?.addrs)
     return (
         <div
             data-uplink={up.if_name}
             className="bg-surface-2 border-border flex flex-col gap-3 rounded-lg border p-4"
         >
             <div className="flex items-start justify-between gap-2">
-                <div>
-                    <p className="font-mono text-base font-medium">{up.if_name}</p>
+                <div className="min-w-0">
+                    {iface ? (
+                        <PortName iface={iface} variant="title" />
+                    ) : (
+                        <p className="font-mono text-base font-medium">{up.if_name}</p>
+                    )}
                     <p className="text-text-tertiary text-xs">
-                        {up.slot === "domestic" ? "domestic WAN" : "secondary WAN"}
+                        {/* The name already is the interface name when unnamed. */}
+                        {iface?.label ? `${up.if_name} · ${kind}` : kind}
                     </p>
+                    {primary ? (
+                        <CopyableText text={primary} className="mt-1 font-mono text-xs" />
+                    ) : (
+                        <p className="text-text-tertiary mt-1 text-xs">no address</p>
+                    )}
                 </div>
                 <VerdictBadge verdict={up.verdict} />
             </div>
@@ -263,8 +281,9 @@ function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
 }
 
 // Reads the same loop the failover acts on: what you see is what it decided from.
-export function HealthStrip() {
+export function HealthStrip({ interfaces = [] }: { interfaces?: NetworkInterfaceView[] }) {
     const health = useRouterHealth()
+    const byIfName = new Map(interfaces.map((i) => [i.if_name, i]))
 
     if (health.isLoading) {
         return <div className="bg-surface-2 h-32 animate-pulse rounded-lg" aria-hidden />
@@ -293,7 +312,7 @@ export function HealthStrip() {
             )}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {uplinks.map((up) => (
-                    <UplinkCard key={up.if_name} up={up} />
+                    <UplinkCard key={up.if_name} up={up} iface={byIfName.get(up.if_name)} />
                 ))}
                 {vpn?.present && <PoolCard vpn={vpn} />}
             </div>
