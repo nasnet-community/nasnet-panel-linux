@@ -100,6 +100,7 @@ type NetworkUsecase interface {
 	RefreshDomesticRanges(ctx context.Context) error
 	SetLabel(ctx context.Context, key, label string) error
 	IngressUplinkIfName() string
+	RouterWANs(ctx context.Context) []RouterWANView
 
 	GetLAN(ctx context.Context) (*LANView, error)
 	UpdateLAN(ctx context.Context, cfg domain.LANConfig) ([]domain.Verdict, *ApplyView, error)

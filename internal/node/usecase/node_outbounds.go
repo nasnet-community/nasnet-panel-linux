@@ -157,12 +157,12 @@ func (u *nodeUsecase) ListOutbounds(ctx context.Context, nodeID uint) ([]*domain
 	if !u.routerMode {
 		return stored, nil
 	}
-	return append(managedOutbounds(nodeID), stored...), nil
+	return append(managedOutbounds(nodeID, u.currentRouterWANs(ctx)), stored...), nil
 }
 
 // From the builder's own definition, so the list can't drift from the config.
-func managedOutbounds(nodeID uint) []*domain.Outbound {
-	gen := xray.RouterOutbounds()
+func managedOutbounds(nodeID uint, vias []xray.RouterWAN) []*domain.Outbound {
+	gen := xray.RouterOutbounds(vias)
 	out := make([]*domain.Outbound, 0, len(gen))
 	for _, g := range gen {
 		out = append(out, &domain.Outbound{

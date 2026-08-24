@@ -48,6 +48,18 @@ func (u *nodeUsecase) SetWGPeerSource(s WGPeerSource) { u.wgPeerSource = s }
 // SetRouterMode mirrors cfg.Router.Enabled into generated xray configs
 func (u *nodeUsecase) SetRouterMode(enabled bool) { u.routerMode = enabled }
 
+func (u *nodeUsecase) SetRouterWANSource(fn func(context.Context) []xray.RouterWAN) {
+	u.routerWANs = fn
+}
+
+// currentRouterWANs is nil-safe: unwired means no per-WAN outbounds, never a panic.
+func (u *nodeUsecase) currentRouterWANs(ctx context.Context) []xray.RouterWAN {
+	if u.routerWANs == nil || !u.routerMode {
+		return nil
+	}
+	return u.routerWANs(ctx)
+}
+
 // ingressUplinkIfName is the uplink terminating client connections
 func (u *nodeUsecase) ingressUplinkIfName() string {
 	if u.ingressUplinkFn == nil {
@@ -623,6 +635,7 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
 		WithRouterMode(u.routerMode).
+		WithRouterWANs(u.currentRouterWANs(ctx)).
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).

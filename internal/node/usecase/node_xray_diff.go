@@ -237,6 +237,7 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 
 	configJSON, err := xray.NewFullConfigBuilder(node).
 		WithRouterMode(u.routerMode).
+		WithRouterWANs(u.currentRouterWANs(ctx)).
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).

@@ -360,6 +360,17 @@ func runServe(cmd *cobra.Command, args []string) {
 	if networkUC != nil {
 		// Shaping follows the uplink clients arrive on.
 		uc.Node.SetIngressUplinkSource(networkUC.IngressUplinkIfName)
+		// Read per config build, so the outbounds follow role changes.
+		uc.Node.SetRouterWANSource(func(ctx context.Context) []xray.RouterWAN {
+			views := networkUC.RouterWANs(ctx)
+			wans := make([]xray.RouterWAN, 0, len(views))
+			for _, v := range views {
+				wans = append(wans, xray.RouterWAN{
+					Slot: v.Slot, UplinkIndex: v.UplinkIndex, Label: v.Label,
+				})
+			}
+			return wans
+		})
 	}
 	log.Info("In-process node agent started (single-binary mode)")
 

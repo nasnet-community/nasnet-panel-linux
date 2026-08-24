@@ -195,7 +195,7 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 func (u *networkUsecase) flowNodes(ctx context.Context, st flowState) []FlowNode {
 	return []FlowNode{
 		u.lanNode(ctx, st),
-		u.xrayNode(ctx),
+		u.xrayNode(ctx, st),
 		routerNode(st),
 		u.markNode(st, netmark.GroupDomestic),
 		u.markNode(st, netmark.GroupForeign),
@@ -254,11 +254,18 @@ func (u *networkUsecase) lanNode(ctx context.Context, st flowState) FlowNode {
 	return withDetail(n, section("Bridge", detail))
 }
 
-func (u *networkUsecase) xrayNode(ctx context.Context) FlowNode {
+func (u *networkUsecase) xrayNode(ctx context.Context, st flowState) FlowNode {
 	n := FlowNode{ID: "src-xray", Kind: "source", Label: "xray clients"}
 	outbounds := []string{
 		"direct-foreign  → mark " + netmark.Hex(netmark.GroupMark(netmark.GroupForeign)),
 		"direct-domestic → mark " + netmark.Hex(netmark.GroupMark(netmark.GroupDomestic)),
+	}
+	// Only emitted when there is more than one secondary to choose between.
+	if len(st.secondaries) >= 2 {
+		for _, s := range st.secondaries {
+			outbounds = append(outbounds, fmt.Sprintf("direct-foreign-%s → mark %s", s.Slot,
+				netmark.Hex(netmark.GroupMark(netmark.GroupForeignVia(s.UplinkIndex)))))
+		}
 	}
 	if u.Inbounds == nil {
 		n.Status = "ghost"

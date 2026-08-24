@@ -14,6 +14,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 )
 
 // ============================================================
@@ -420,6 +421,8 @@ func (m *mockNodeUsecase) SetXrayDeps(interface {
 func (m *mockNodeUsecase) SetHTTPClientFactory(*httpclient.Factory) {}
 func (m *mockNodeUsecase) SetWGPeerSource(nodeUC.WGPeerSource)      {}
 func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
+func (m *mockNodeUsecase) SetRouterWANSource(func(context.Context) []xray.RouterWAN) {
+}
 func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)     {}
 func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)    {}
 

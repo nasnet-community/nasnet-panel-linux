@@ -567,9 +567,13 @@ export function RoutingRuleDialog({
                                 <SelectContent>
                                     <SelectItem value="__none">Select outbound</SelectItem>
                                     {outbounds.map((o) => (
-                                        <SelectItem key={o.id} value={o.tag}>
+                                        // Managed rows have no id of their own, so the tag is the key.
+                                        <SelectItem key={o.managed ? `managed:${o.tag}` : o.id} value={o.tag}>
                                             <span className="font-mono">{o.tag}</span>
-                                            <span className="text-muted-foreground"> ({o.protocol})</span>
+                                            <span className="text-muted-foreground">
+                                                {" "}
+                                                ({o.managed && o.remark ? o.remark : o.protocol})
+                                            </span>
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

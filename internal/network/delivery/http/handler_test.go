@@ -256,6 +256,8 @@ func (s *stubUsecase) Groups(context.Context) ([]domain.WANGroup, error) {
 func (s *stubUsecase) SetLabel(context.Context, string, string) error { return nil }
 func (s *stubUsecase) IngressUplinkIfName() string                    { return "enp1s0" }
 
+func (s *stubUsecase) RouterWANs(context.Context) []usecase.RouterWANView { return nil }
+
 func newRouter(t *testing.T, uc usecase.NetworkUsecase, routerMode bool) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

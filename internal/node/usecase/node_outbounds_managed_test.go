@@ -14,7 +14,7 @@ import (
 // somebody looking for outbounds that were never rows. These are the two that
 // decide which uplink traffic leaves by, so they are the worst ones to hide.
 func TestManagedOutbounds_MatchWhatTheBuilderEmits(t *testing.T) {
-	got := managedOutbounds(7)
+	got := managedOutbounds(7, nil)
 
 	// Build a real router-mode config and compare tag for tag, mark for mark.
 	blob, err := xray.NewFullConfigBuilder(&domain.Node{}).WithRouterMode(true).Build()
@@ -65,7 +65,7 @@ func TestManagedOutbounds_MatchWhatTheBuilderEmits(t *testing.T) {
 // They are not rows, and the UI has to know that or it offers an edit that the
 // next config build silently throws away.
 func TestManagedOutbounds_AreFlaggedAndHaveNoRow(t *testing.T) {
-	for _, o := range managedOutbounds(7) {
+	for _, o := range managedOutbounds(7, nil) {
 		if !o.Managed {
 			t.Errorf("%s is not flagged as managed", o.Tag)
 		}
@@ -87,9 +87,37 @@ func TestManagedOutbounds_OnlyInRouterMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, g := range xray.RouterOutbounds() {
+	for _, g := range xray.RouterOutbounds(nil) {
 		if strings.Contains(blob, g.Tag) {
 			t.Errorf("%s emitted with router mode off", g.Tag)
+		}
+	}
+}
+
+// The list and the config have to agree on the per-WAN outbounds too, or the
+// panel hides the very ones that pick the WAN.
+func TestManagedOutbounds_ViasMatchTheBuilder(t *testing.T) {
+	vias := []xray.RouterWAN{
+		{Slot: "secondary", UplinkIndex: 2, Label: "Starlink"},
+		{Slot: "secondary2", UplinkIndex: 3, Label: "Secondary 2"},
+	}
+	got := managedOutbounds(7, vias)
+
+	wantTags := map[string]bool{
+		xray.TagDirectForeign:                  true,
+		xray.TagDirectDomestic:                 true,
+		xray.TagDirectForeignVia("secondary"):  true,
+		xray.TagDirectForeignVia("secondary2"): true,
+	}
+	if len(got) != len(wantTags) {
+		t.Fatalf("got %d managed outbounds, want %d", len(got), len(wantTags))
+	}
+	for _, o := range got {
+		if !wantTags[o.Tag] {
+			t.Errorf("unexpected managed outbound %q", o.Tag)
+		}
+		if !o.Managed || o.SockoptSettings == nil || o.SockoptSettings.Mark == 0 {
+			t.Errorf("%q is missing its managed flag or its mark: %+v", o.Tag, o)
 		}
 	}
 }
