@@ -5,6 +5,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -64,11 +65,15 @@ func (u *networkUsecase) FlowConns(ctx context.Context) (*FlowConnsView, error) 
 			Device:  deviceOf[f.SrcIP],
 			TxBytes: f.OrigBytes, RxBytes: f.ReplyBytes,
 		}
-		switch netmark.Group(f.Mark) {
+		switch g := netmark.Group(f.Mark); g {
 		case netmark.GroupDomestic:
 			c.Group = "domestic"
 		case netmark.GroupForeign:
 			c.Group = "foreign"
+		default:
+			if netmark.IsGroupForeignVia(g) {
+				c.Group = fmt.Sprintf("foreign via wan %d", netmark.GroupViaUplink(g))
+			}
 		}
 		view.Flows = append(view.Flows, c)
 	}

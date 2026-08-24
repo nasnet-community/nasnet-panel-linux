@@ -280,11 +280,15 @@ func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNod
 	mark uint32, route *system.Route, matched *system.Rule) {
 
 	nodes := []string{startNode}
-	switch netmark.Group(mark) {
+	switch g := netmark.Group(mark); g {
 	case netmark.GroupDomestic:
 		nodes = append(nodes, "mark-domestic")
 	case netmark.GroupForeign:
 		nodes = append(nodes, "mark-foreign")
+	default:
+		if netmark.IsGroupForeignVia(g) {
+			nodes = append(nodes, "mark-foreign")
+		}
 	}
 
 	if route == nil {

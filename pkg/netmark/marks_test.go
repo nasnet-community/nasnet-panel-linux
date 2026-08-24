@@ -107,6 +107,44 @@ func TestHex(t *testing.T) {
 	}
 }
 
+// A via mark selects a slice of the pool, so it has to stay inside the group
+// field — anything spilling into the pin field would hit the raw uplink.
+func TestGroupForeignVia_RoundTrip(t *testing.T) {
+	for _, i := range []uint32{2, 3, 4, 5} {
+		g := GroupForeignVia(i)
+		if !IsGroupForeignVia(g) {
+			t.Errorf("GroupForeignVia(%d)=0x%x does not classify as via", i, g)
+		}
+		if got := GroupViaUplink(g); got != i {
+			t.Errorf("GroupViaUplink(0x%x) = %d, want %d", g, got, i)
+		}
+		mark := GroupMark(g)
+		if mark&^MaskGroup != 0 {
+			t.Errorf("via mark 0x%x leaks outside the group field", mark)
+		}
+		if Group(mark) != g {
+			t.Errorf("Group(GroupMark(0x%x)) = 0x%x", g, Group(mark))
+		}
+	}
+}
+
+func TestGroupForeignVia_DisjointFromPlainGroups(t *testing.T) {
+	for _, i := range []uint32{2, 3, 4, 5} {
+		if g := GroupForeignVia(i); g == GroupDomestic || g == GroupForeign {
+			t.Errorf("via group 0x%x collides with a plain group", g)
+		}
+	}
+	if IsGroupForeignVia(GroupDomestic) || IsGroupForeignVia(GroupForeign) {
+		t.Error("plain groups must not classify as via")
+	}
+	if IsGroupForeignVia(0x10) {
+		t.Error("bare 0x10 names no uplink; it must not classify as via")
+	}
+	if GroupViaUplink(GroupForeign) != 0 {
+		t.Error("a non-via group has no via uplink")
+	}
+}
+
 func TestProbePinStaysInsidePinField(t *testing.T) {
 	m := PinMark(PinProbe)
 	if m&^MaskPin != 0 {

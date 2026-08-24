@@ -7,6 +7,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
@@ -218,5 +219,23 @@ func TestMismatchEscapeHatchesAloneAreNotTheDefault(t *testing.T) {
 	m := mismatchByRule(t, u.flowMismatches(t.Context(), in), "route-missing")
 	if m.NodeID != "table-203" {
 		t.Fatalf("%+v", m)
+	}
+}
+
+// Via rules are wanted rules: live ones must not be flagged, and their
+// findings have to land on a node the graph actually draws.
+func TestFlowMismatch_ViaRulesAreExpected(t *testing.T) {
+	r := system.Rule{Pref: RulePrefViaBase, FwMark: netmark.GroupMark(netmark.GroupForeignVia(2)),
+		FwMask: netmark.MaskGroup, Table: 207}
+	if got := nodeForRulePref(r); got != "mark-foreign" {
+		t.Errorf("via lookup classifies to %q, want mark-foreign", got)
+	}
+	b := system.Rule{Pref: 239, FwMark: netmark.GroupMark(netmark.GroupForeignVia(5)),
+		FwMask: netmark.MaskGroup, Blackhole: true}
+	if got := nodeForRulePref(b); got != "mark-foreign" {
+		t.Errorf("via terminator classifies to %q, want mark-foreign", got)
+	}
+	if !isVPNViaTable(207) || !isVPNViaTable(210) || isVPNViaTable(206) || isVPNViaTable(211) {
+		t.Error("isVPNViaTable bounds are wrong")
 	}
 }

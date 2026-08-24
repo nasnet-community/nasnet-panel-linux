@@ -774,6 +774,9 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 	var files []system.UplinkFile
 	// Named even with no tunnel up: "empty" beats "no such table".
 	tables := map[int]string{system.WGTable: system.WGTableName}
+	for _, slot := range domain.SecondarySlots() {
+		tables[vpnViaTableFor(uplinkIndexFor(slot))] = system.WGTableName + "-" + string(slot)
+	}
 	var uplinkNames []string
 	// Written once and frozen, so it survives the prune while the role exists.
 	mgmtFile := ""

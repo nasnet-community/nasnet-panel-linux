@@ -132,6 +132,10 @@ func (u *networkUsecase) applyTransportAssignments(ctx context.Context) error {
 			})
 		}
 	}
+	// The deal moved, so the slices move with it.
+	if err := u.applyViaRoutes(ctx, pool, uplinks); err != nil {
+		errs = append(errs, err)
+	}
 	return errors.Join(errs...)
 }
 

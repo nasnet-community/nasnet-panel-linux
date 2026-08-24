@@ -243,6 +243,49 @@ func GroupRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) [
 	return rules
 }
 
+// Ten preferences per secondary slot, in slot order, between the group block
+// and the fallback.
+const (
+	RulePrefViaBase   = 200
+	rulePrefViaStride = 10
+)
+
+// vpnViaTableFor is the pool-slice table for one secondary: only the tunnels
+// whose transport rides that WAN. 203 stays the whole pool. Secondaries only
+// (2-5 → 207-210); index 1 would collide with a raw uplink table.
+func vpnViaTableFor(uplinkIndex uint32) int { return 205 + int(uplinkIndex) }
+
+// ViaRules picks one WAN's slice of the pool. Same shape as the foreign group:
+// a lookup when there is something to look up, a terminator always — a stale
+// via mark after a role change must die here rather than walk on to the
+// fallback and out the domestic line.
+func ViaRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
+	assigned := map[uint32]bool{}
+	for _, up := range uplinks {
+		if up.Slot.IsSecondary() {
+			assigned[up.UplinkIndex] = true
+		}
+	}
+
+	var rules []system.Rule
+	for _, slot := range domain.SecondarySlots() {
+		idx := uplinkIndexFor(slot)
+		mark := netmark.GroupMark(netmark.GroupForeignVia(idx))
+		base := RulePrefViaBase + rulePrefViaStride*int(idx-2)
+		if vpn.Active() && assigned[idx] {
+			rules = append(rules, system.Rule{
+				Pref: base, FwMark: mark, FwMask: netmark.MaskGroup,
+				Table: vpnViaTableFor(idx),
+			})
+		}
+		rules = append(rules, system.Rule{
+			Pref: base + rulePrefViaStride - 1, FwMark: mark,
+			FwMask: netmark.MaskGroup, Blackhole: true,
+		})
+	}
+	return rules
+}
+
 // AllRules: oif, suppressor, pins, groups, unmarked fallback.
 func AllRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 	base := BaseRules(uplinks, vpn)
@@ -260,6 +303,7 @@ func AllRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []s
 	out := append([]system.Rule(nil), head...)
 	out = append(out, PinRules(uplinks)...)
 	out = append(out, GroupRules(groups, uplinks, vpn)...)
+	out = append(out, ViaRules(uplinks, vpn)...)
 	return append(out, tail...)
 }
 
