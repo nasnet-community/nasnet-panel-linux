@@ -222,6 +222,21 @@ func ourPref(pref int) bool {
 	return false
 }
 
+// The via tables are slices of the pool, so they belong to its node.
+func isVPNViaTable(table int) bool {
+	return table >= vpnViaTableFor(2) && table <= vpnViaTableFor(5)
+}
+
+// Every secondary shares the one node the graph draws for them.
+func isSecondaryTable(table int) bool {
+	for _, s := range domain.SecondarySlots() {
+		if tableFor(s) == table {
+			return true
+		}
+	}
+	return false
+}
+
 // nodeForRulePref pins a policy-rule finding to the node whose stage it serves.
 func nodeForRulePref(r system.Rule) string {
 	switch {
@@ -229,16 +244,19 @@ func nodeForRulePref(r system.Rule) string {
 		return "mark-domestic"
 	case r.Pref >= 150 && r.Pref <= 199:
 		return "mark-foreign"
+	case r.Pref >= RulePrefViaBase && r.Pref < RulePrefViaBase+4*rulePrefViaStride:
+		// Foreign selection, refined; same node in the graph.
+		return "mark-foreign"
 	case r.Pref >= RulePrefPinBase && r.Pref < 110:
 		if r.Table == 201 {
 			return "uplink-domestic"
 		}
 		return "uplink-secondary"
-	case r.Table == system.WGTable:
+	case r.Table == system.WGTable, isVPNViaTable(r.Table):
 		return "table-203"
 	case r.Table == 201:
 		return "table-201"
-	case r.Table == 202:
+	case isSecondaryTable(r.Table):
 		return "table-202"
 	default:
 		return "src-router"

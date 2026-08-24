@@ -837,7 +837,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 			}
 		}
 		u.publishPoolNH(nil)
-		return nil
+		return u.applyViaRoutes(ctx, pool, uplinks)
 	}
 
 	members := u.poolMembers(pool)
@@ -882,7 +882,62 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 			}
 		}
 	}
+	if err := u.applyViaRoutes(ctx, pool, uplinks); err != nil {
+		errs = append(errs, err)
+	}
 	u.publishPoolNH(nh)
+	return errors.Join(errs...)
+}
+
+// applyViaRoutes makes tables 207-210 each hold one WAN's slice of the pool:
+// the tunnels whose transport rides it, best tier only, same ejection as 203.
+// An empty slice empties its table and the via blackhole rule takes over —
+// never the whole pool, never the raw uplink.
+func (u *networkUsecase) applyViaRoutes(ctx context.Context, pool vpnPool, uplinks []Uplink) error {
+	byWAN := map[string][]poolMember{}
+	if pool.Active() {
+		members := u.poolMembers(pool)
+		u.healthMu.Lock()
+		for _, m := range members {
+			if wan := u.lastTransport[m.IfName]; wan != "" {
+				byWAN[wan] = append(byWAN[wan], m)
+			}
+		}
+		u.healthMu.Unlock()
+	}
+
+	secByIdx := map[uint32]Uplink{}
+	for _, up := range secondariesOf(uplinks) {
+		secByIdx[up.UplinkIndex] = up
+	}
+
+	var errs []error
+	for _, slot := range domain.SecondarySlots() {
+		idx := uplinkIndexFor(slot)
+		table := vpnViaTableFor(idx)
+		var nh []system.Nexthop
+		if up, ok := secByIdx[idx]; ok {
+			nh = poolNexthops(byWAN[up.IfName])
+		}
+		if len(nh) > 0 {
+			if err := u.Backend.RouteReplace(ctx, system.Route{
+				Table: table, Dest: "default", Nexthops: nh,
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("route the %s slice: %w", slot, err))
+			}
+			continue
+		}
+		have, err := u.Backend.RouteList(ctx, table)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read the %s slice: %w", slot, err))
+			continue
+		}
+		for _, r := range have {
+			if err := u.Backend.RouteDel(ctx, r); err != nil {
+				errs = append(errs, fmt.Errorf("clear the %s slice: %w", slot, err))
+			}
+		}
+	}
 	return errors.Join(errs...)
 }
 

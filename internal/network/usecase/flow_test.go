@@ -327,3 +327,34 @@ func TestFlowGraphPoolNodeListsEveryMember(t *testing.T) {
 		t.Errorf("table 203 route line = %q", routeLine)
 	}
 }
+
+// A second secondary must not vanish from the page whose job is "what is my
+// network", and its table must not be filed under the router itself.
+func TestFlowGraphNamesEverySecondary(t *testing.T) {
+	f := newVPNFixture(t)
+	seedSecondaries(t, f, "dish0", "lte0")
+	seedEnabledTunnels(t, f, 2)
+
+	view, err := f.uc.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-secondary")
+	joined := n.Sublabel
+	for _, d := range n.Detail {
+		joined += " " + strings.Join(d.Lines, " ")
+	}
+	for _, want := range []string{"dish0", "lte0"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("the secondary node never mentions %s: %q", want, joined)
+		}
+	}
+}
+
+func TestSecondaryTablesBelongToTheUplinkNotTheRouter(t *testing.T) {
+	for _, table := range []int{202, 204, 205, 206} {
+		if got := nodeForRulePref(system.Rule{Pref: 32000, Table: table}); got == "src-router" {
+			t.Fatalf("table %d filed under the router", table)
+		}
+	}
+}

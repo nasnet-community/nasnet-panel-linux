@@ -1090,3 +1090,101 @@ func TestPoolOrderFollowsTheSlotNotTheTier(t *testing.T) {
 		t.Fatalf("IfNames = %v, want %v — slot order, whatever the tiers say", got, want)
 	}
 }
+
+// Each via table holds exactly the tunnels dealt onto its WAN.
+func TestApplyViaRoutes_SplitsThePoolByTransport(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })},
+		{ID: 2, Name: "b", Enabled: true, Weight: 1, WGSlot: slotOf(1),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.2" })},
+	}
+	uplinks := viaTestUplinks()
+	pool := f.uc.vpnPoolNow(ctx)
+	if len(pool.Tunnels) != 2 {
+		t.Fatalf("fixture pool = %+v", pool.Tunnels)
+	}
+	f.uc.rememberTransport(map[string]Uplink{
+		pool.Tunnels[0].IfName: uplinks[1],
+		pool.Tunnels[1].IfName: uplinks[2],
+	})
+
+	if err := f.uc.applyViaRoutes(ctx, pool, uplinks); err != nil {
+		t.Fatal(err)
+	}
+
+	oneDefaultVia := func(table int, wantOif string) {
+		t.Helper()
+		routes, _ := f.be.RouteList(ctx, table)
+		var defaults int
+		for _, r := range routes {
+			if r.Dest != "default" {
+				continue
+			}
+			defaults++
+			if len(r.Nexthops) != 1 || r.Nexthops[0].OifName != wantOif {
+				t.Errorf("table %d default = %+v, want via %s", table, r, wantOif)
+			}
+		}
+		if defaults != 1 {
+			t.Errorf("table %d has %d defaults, want 1", table, defaults)
+		}
+	}
+	oneDefaultVia(207, pool.Tunnels[0].IfName)
+	oneDefaultVia(209, pool.Tunnels[1].IfName)
+
+	// Unassigned slots hold nothing; their blackhole rule does the talking.
+	for _, table := range []int{208, 210} {
+		if routes, _ := f.be.RouteList(ctx, table); len(routes) != 0 {
+			t.Errorf("table %d = %+v, want empty", table, routes)
+		}
+	}
+}
+
+// A rehomed tunnel must leave its old slice, or "via secondary" silently means
+// a different WAN.
+func TestApplyViaRoutes_RehomeMovesTheSlice(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.repo.rows = []domain.VPNProfile{
+		{ID: 1, Name: "a", Enabled: true, Weight: 1, WGSlot: slotOf(0),
+			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.PinnedEndpointIP = "185.65.135.1" })},
+	}
+	uplinks := viaTestUplinks()
+	pool := f.uc.vpnPoolNow(ctx)
+
+	f.uc.rememberTransport(map[string]Uplink{pool.Tunnels[0].IfName: uplinks[1]})
+	if err := f.uc.applyViaRoutes(ctx, pool, uplinks); err != nil {
+		t.Fatal(err)
+	}
+	f.uc.rememberTransport(map[string]Uplink{pool.Tunnels[0].IfName: uplinks[2]})
+	if err := f.uc.applyViaRoutes(ctx, pool, uplinks); err != nil {
+		t.Fatal(err)
+	}
+
+	if routes, _ := f.be.RouteList(ctx, 207); len(routes) != 0 {
+		t.Errorf("old slice still routed: %+v", routes)
+	}
+	routes, _ := f.be.RouteList(ctx, 209)
+	if len(routes) != 1 || routes[0].Dest != "default" {
+		t.Errorf("new slice = %+v, want one default", routes)
+	}
+}
+
+// No pool means no slices anywhere, same as table 203.
+func TestApplyViaRoutes_EmptyPoolClearsEverySlice(t *testing.T) {
+	ctx := context.Background()
+	f := newVPNFixture(t)
+	f.uc.rememberTransport(map[string]Uplink{})
+	_ = f.be.RouteReplace(ctx, system.Route{Table: 207, Dest: "default",
+		Nexthops: []system.Nexthop{{OifName: "nasnet-wg0", Weight: 1}}})
+
+	if err := f.uc.applyViaRoutes(ctx, vpnPool{}, viaTestUplinks()); err != nil {
+		t.Fatal(err)
+	}
+	if routes, _ := f.be.RouteList(ctx, 207); len(routes) != 0 {
+		t.Errorf("stale slice survived: %+v", routes)
+	}
+}

@@ -6,6 +6,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -74,14 +75,16 @@ type flowState struct {
 	uplinks   []Uplink
 	domestic  *Uplink
 	secondary *Uplink
-	healthy   map[string]bool
-	routes    map[int][]system.Route
-	routeErrs map[int]error
-	wgStatus  map[string]*system.WGStatus
-	wgLinks   []string
-	nftText   string
-	nftObj    *system.NftObjects
-	dnsUp     bool
+	// Every secondary, in slot order. secondary is the first of these.
+	secondaries []Uplink
+	healthy     map[string]bool
+	routes      map[int][]system.Route
+	routeErrs   map[int]error
+	wgStatus    map[string]*system.WGStatus
+	wgLinks     []string
+	nftText     string
+	nftObj      *system.NftObjects
+	dnsUp       bool
 }
 
 func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
@@ -104,15 +107,30 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 		switch uplinks[i].Slot {
 		case domain.SlotDomestic:
 			st.domestic = &uplinks[i]
-		case domain.SlotSecondary:
-			st.secondary = &uplinks[i]
+		default:
+			if uplinks[i].Slot.IsSecondary() {
+				st.secondaries = append(st.secondaries, uplinks[i])
+			}
 		}
+	}
+	sort.Slice(st.secondaries, func(a, b int) bool {
+		return st.secondaries[a].UplinkIndex < st.secondaries[b].UplinkIndex
+	})
+	if len(st.secondaries) > 0 {
+		st.secondary = &st.secondaries[0]
 	}
 
 	// Live reads. Each may fail without killing the page: a broken read IS a
 	// finding, so it lands in Mismatches rather than a 500.
 	liveRules, rulesErr := u.Backend.RuleList(ctx)
-	for _, t := range []int{201, 202, system.WGTable} {
+	tables := []int{201, 202, system.WGTable}
+	for _, s := range st.secondaries {
+		if s.Table != 202 {
+			tables = append(tables, s.Table)
+		}
+		tables = append(tables, vpnViaTableFor(s.UplinkIndex))
+	}
+	for _, t := range tables {
 		rs, rerr := u.Backend.RouteList(ctx, t)
 		if rerr != nil {
 			st.routeErrs[t] = rerr
@@ -488,6 +506,15 @@ func (u *networkUsecase) uplinkNode(st flowState, slot domain.UplinkSlot) FlowNo
 		"interface: " + up.IfName,
 		fmt.Sprintf("table: %d", up.Table),
 		fmt.Sprintf("pin mark: %s", netmark.Hex(netmark.PinMark(up.UplinkIndex))),
+	}
+	// One node stands for every secondary, so name the rest here rather than
+	// letting the page imply this box has one.
+	for _, s := range st.secondaries {
+		if s.IfName == up.IfName {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("also: %s, table %d, pin mark %s",
+			s.IfName, s.Table, netmark.Hex(netmark.PinMark(s.UplinkIndex))))
 	}
 	var health []string
 	for _, r := range l.Results {
