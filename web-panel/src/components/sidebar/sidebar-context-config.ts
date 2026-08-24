@@ -19,7 +19,7 @@ export interface ContextConfig {
 /**
  * Route-prefix → panel config. Order does not matter; matching is
  * longest-prefix to handle nested/overlapping prefixes cleanly.
- * Routes absent from this list render no panel.
+ * A route absent from this list falls back to FALLBACK_CONFIG_ID.
  */
 export const CONTEXT_CONFIGS: ContextConfig[] = [
     {
@@ -59,7 +59,11 @@ function pathMatchesPrefix(pathname: string, prefix: string): boolean {
     return pathname.startsWith(prefix + "/")
 }
 
-export function getContextConfig(pathname: string): ContextConfig | null {
+/** Claims every route with no panel of its own. System status is true on any
+ *  page, and a panel that comes and goes moves the nav under it. */
+const FALLBACK_CONFIG_ID: ContextConfigId = "system"
+
+export function getContextConfig(pathname: string): ContextConfig {
     let best: { config: ContextConfig; length: number } | null = null
     for (const config of CONTEXT_CONFIGS) {
         for (const prefix of config.prefixes) {
@@ -70,5 +74,7 @@ export function getContextConfig(pathname: string): ContextConfig | null {
             }
         }
     }
-    return best?.config ?? null
+    if (best) return best.config
+    // Non-null: the id is a literal from the list above.
+    return CONTEXT_CONFIGS.find((c) => c.id === FALLBACK_CONFIG_ID)!
 }

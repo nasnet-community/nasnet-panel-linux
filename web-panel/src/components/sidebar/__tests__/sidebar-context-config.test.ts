@@ -16,16 +16,34 @@ describe("getContextConfig", () => {
         expect(getContextConfig("/domains/new")?.id).toBe("certs")
     })
 
-    it("returns null for routes with no panel", () => {
-        expect(getContextConfig("/settings")).toBeNull()
-        expect(getContextConfig("/settings/general")).toBeNull()
-        expect(getContextConfig("/audit")).toBeNull()
-        expect(getContextConfig("/backup")).toBeNull()
+    // A route without its own panel used to render none, and the nav jumped by
+    // the card's whole height on the way in and out. System status is true
+    // everywhere, so it stands in.
+    it("falls back to system status rather than nothing", () => {
+        for (const path of [
+            "/settings",
+            "/settings/general",
+            "/audit",
+            "/backup",
+            "/router",
+            "/router/flow",
+            "/xray-binaries",
+            "/chats",
+        ]) {
+            expect(getContextConfig(path)?.id).toBe("system")
+        }
     })
 
-    it("returns null for unknown routes", () => {
-        expect(getContextConfig("/unknown")).toBeNull()
-        expect(getContextConfig("/")).toBeNull()
+    it("falls back for unknown routes too", () => {
+        expect(getContextConfig("/unknown")?.id).toBe("system")
+        expect(getContextConfig("/")?.id).toBe("system")
+    })
+
+    // Every route resolves, so the panel can never be absent.
+    it("never returns null", () => {
+        for (const path of ["/", "/dashboard", "/nope", "/router/flow/deep/nested"]) {
+            expect(getContextConfig(path)).not.toBeNull()
+        }
     })
 
     it("prefers the longest matching prefix", () => {
