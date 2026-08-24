@@ -66,6 +66,11 @@ export async function getLANDevices(): Promise<ApiResponse<LANDeviceList>> {
     return api.get<LANDeviceList>("/api/v1/network/lan/devices")
 }
 
+/** An empty label removes the name. Ports are keyed the same way devices are. */
+export async function setInterfaceLabel(key: string, label: string): Promise<ApiResponse<null>> {
+    return api.put<null>(`/api/v1/network/interfaces/${encodeURIComponent(key)}`, { label })
+}
+
 /** An empty label removes the name. The MAC goes in the path, like an interface key. */
 export async function setDeviceLabel(mac: string, label: string): Promise<ApiResponse<null>> {
     return api.put<null>(`/api/v1/network/lan/devices/${encodeURIComponent(mac)}/label`, { label })

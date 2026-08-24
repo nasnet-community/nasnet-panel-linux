@@ -98,58 +98,17 @@ export function linkLabel(iface: NetworkInterfaceView, uplink?: UplinkView): str
     return iface.carrier ? "up" : iface.oper_state || "down"
 }
 
-export interface RoleBay {
-    role: InterfaceRole
-    slot: UplinkSlot
-    label: string
-    /** Why an operator would fill this bay, shown while it is empty. */
-    hint: string
-    /** Only the two uplinks get a hue — they carry the failover semantics. */
-    accent: "domestic" | "secondary" | "none"
+export function isSecondarySlot(slot: UplinkSlot): boolean {
+    return slot.startsWith("secondary")
 }
 
-/** The router's role slots, in the order traffic flows through them. lan_member
- *  is deliberately absent: it joins the LAN bay rather than owning one. */
-export const ROLE_BAYS: RoleBay[] = [
-    {
-        role: "wan",
-        slot: "domestic",
-        label: "Domestic ISP",
-        hint: "Assign the port your ISP plugs into. WireGuard and hysteria2 inbounds arrive here.",
-        accent: "domestic",
-    },
-    {
-        role: "wan",
-        slot: "secondary",
-        label: "Secondary uplink",
-        hint: "Assign a second uplink to get failover and split routing.",
-        accent: "secondary",
-    },
-    {
-        role: "lan",
-        slot: "",
-        label: "LAN",
-        hint: "Assign the port your switch or access point plugs into.",
-        accent: "none",
-    },
-    {
-        role: "mgmt",
-        slot: "",
-        label: "Management",
-        hint: "Optional. Keeps one port reachable if routing breaks.",
-        accent: "none",
-    },
-]
-
-export function bayHolder(
-    interfaces: NetworkInterfaceView[],
-    bay: RoleBay,
-): NetworkInterfaceView | null {
-    return (
-        interfaces.find(
-            (i) => i.role === bay.role && (bay.role !== "wan" || i.slot === bay.slot),
-        ) ?? null
-    )
+/** The one role a router is broken without. Management is optional, so it gets
+ *  no nag — the role picker explains it where the choice is made. */
+export function missingRoleHint(interfaces: NetworkInterfaceView[]): string | null {
+    if (interfaces.some((i) => i.role === "lan")) return null
+    // The bridge and its DHCP run whether or not a port holds the role; what is
+    // missing is somewhere to plug in.
+    return "No LAN port yet — nothing can plug in. Give the port your switch or access point uses the LAN role."
 }
 
 /** Warnings the page already states from structured fields. The backend emits
