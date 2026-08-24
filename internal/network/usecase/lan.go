@@ -88,7 +88,7 @@ func BuildDomesticSetsFrom(nftSetSupported bool, fetchedV4 []string) ([]nft.Set,
 func lanEgressNames(uplinks []Uplink, vpn VPNRouteState) []string {
 	out := make([]string, 0, len(uplinks)+len(vpn.IfNames))
 	for _, u := range uplinks {
-		if u.Slot == domain.SlotSecondary {
+		if u.Slot.IsSecondary() {
 			continue
 		}
 		out = append(out, u.IfName)

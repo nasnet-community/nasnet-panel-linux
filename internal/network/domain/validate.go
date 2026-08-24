@@ -256,8 +256,8 @@ func Validate(in ValidationInput) []Verdict {
 
 	// V20 the slot picks the routing table and the unit filename
 	if in.Req.Role == RoleWAN {
-		if in.Req.Slot != SlotDomestic && in.Req.Slot != SlotSecondary {
-			reject("V20", "%s must be assigned to the domestic or the secondary slot", target.IfName)
+		if in.Req.Slot != SlotDomestic && !in.Req.Slot.IsSecondary() {
+			reject("V20", "%s must be assigned to the domestic slot or a secondary slot", target.IfName)
 			return vs
 		}
 	} else if in.Req.Slot != SlotNone {

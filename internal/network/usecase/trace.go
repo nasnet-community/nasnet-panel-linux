@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
@@ -334,7 +333,8 @@ func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNod
 	v.PathEdges = edgesFor(nodes)
 }
 
-// isSecondaryIf says whether a route leaves by the secondary uplink.
+// isSecondaryIf says whether a route leaves by a secondary uplink, i.e. one the
+// kill switch guards.
 func (u *networkUsecase) isSecondaryIf(ctx context.Context, route *system.Route) bool {
 	if route == nil || route.OifName == "" {
 		return false
@@ -345,7 +345,7 @@ func (u *networkUsecase) isSecondaryIf(ctx context.Context, route *system.Route)
 	}
 	for _, up := range ups {
 		if up.IfName == route.OifName {
-			return up.Slot == domain.SlotSecondary
+			return up.Slot.IsSecondary()
 		}
 	}
 	return false

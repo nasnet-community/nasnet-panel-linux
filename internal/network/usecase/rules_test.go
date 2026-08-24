@@ -7,6 +7,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
 
 func twoUplinks() []Uplink {
@@ -43,21 +44,21 @@ func TestBaseRules_OifRulesPerUplink(t *testing.T) {
 	}
 }
 
-// pref 30 is load-bearing: without it a marked packet bound for the LAN or an
-// uplink subnet finds nothing in its group table and dies in a blackhole.
+// The suppressor is load-bearing: without it a marked packet bound for the LAN
+// or an uplink subnet finds nothing in its group table and dies in a blackhole.
 func TestBaseRules_MainSuppressorConsultsMainButRefusesADefault(t *testing.T) {
-	r := find(BaseRules(twoUplinks(), VPNRouteState{}), 30)
+	r := find(BaseRules(twoUplinks(), VPNRouteState{}), RulePrefMainSuppress)
 	if r == nil {
-		t.Fatal("no pref 30 rule")
+		t.Fatalf("no pref %d rule", RulePrefMainSuppress)
 	}
 	if !r.SuppressSet || r.SuppressPrefixLen != 0 {
-		t.Errorf("pref 30 = %+v, want suppress_prefixlength 0", r)
+		t.Errorf("suppressor = %+v, want suppress_prefixlength 0", r)
 	}
 	if r.Table != 254 {
-		t.Errorf("pref 30 table = %d, want 254 (main)", r.Table)
+		t.Errorf("suppressor table = %d, want 254 (main)", r.Table)
 	}
 	if r.Blackhole {
-		t.Error("pref 30 must be a lookup, not a blackhole")
+		t.Error("the suppressor must be a lookup, not a blackhole")
 	}
 }
 
@@ -151,8 +152,8 @@ func TestBaseRules_SingleUplinkStillGetsAFallback(t *testing.T) {
 
 func TestBaseRules_NoUplinksEmitsOnlyTheSuppressorAndTerminator(t *testing.T) {
 	rs := BaseRules(nil, VPNRouteState{})
-	if find(rs, 30) == nil {
-		t.Error("pref 30 must exist regardless")
+	if find(rs, RulePrefMainSuppress) == nil {
+		t.Error("the suppressor must exist regardless")
 	}
 	if find(rs, 32002) == nil {
 		t.Error("the terminator must exist regardless")
@@ -269,5 +270,69 @@ func TestOifRulePrefsSurviveATierEdit(t *testing.T) {
 	}
 	if got, want := prefOf(before, "nasnet-wg1"), RulePrefOifBase+3; got != want {
 		t.Fatalf("wg1 pref = %d, want %d", got, want)
+	}
+}
+
+func TestSlotIdentitiesForEverySecondary(t *testing.T) {
+	wantTable := map[domain.UplinkSlot]int{
+		domain.SlotDomestic: 201, domain.SlotSecondary: 202,
+		domain.SlotSecondary2: 204, domain.SlotSecondary3: 205, domain.SlotSecondary4: 206,
+	}
+	wantIndex := map[domain.UplinkSlot]uint32{
+		domain.SlotDomestic: 1, domain.SlotSecondary: 2,
+		domain.SlotSecondary2: 3, domain.SlotSecondary3: 4, domain.SlotSecondary4: 5,
+	}
+	for slot, table := range wantTable {
+		if got := tableFor(slot); got != table {
+			t.Fatalf("tableFor(%q) = %d, want %d", slot, got, table)
+		}
+		if got := uplinkIndexFor(slot); got != wantIndex[slot] {
+			t.Fatalf("uplinkIndexFor(%q) = %d, want %d", slot, got, wantIndex[slot])
+		}
+	}
+	for _, s := range domain.SecondarySlots() {
+		if groupIndexFor(s) != netmark.GroupForeign {
+			t.Fatalf("%q must belong to the foreign group", s)
+		}
+	}
+}
+
+func TestOifWindowHoldsFiveUplinksAndEightTunnels(t *testing.T) {
+	var ups []Uplink
+	slots := append([]domain.UplinkSlot{domain.SlotDomestic}, domain.SecondarySlots()...)
+	for i, s := range slots {
+		ups = append(ups, Uplink{IfName: fmt.Sprintf("wan%d", i), Table: tableFor(s),
+			UplinkIndex: uplinkIndexFor(s), Slot: s, GroupIndex: groupIndexFor(s)})
+	}
+	vpn := VPNRouteState{IfNames: []string{
+		"nasnet-wg0", "nasnet-wg1", "nasnet-wg2", "nasnet-wg3",
+		"nasnet-wg4", "nasnet-wg5", "nasnet-wg6", "nasnet-wg7"}}
+	rules := BaseRules(ups, vpn)
+	oif := 0
+	for _, r := range rules {
+		if r.OifName != "" {
+			oif++
+		}
+		if r.SuppressSet && r.Pref != RulePrefMainSuppress {
+			t.Fatalf("suppressor at %d, want %d", r.Pref, RulePrefMainSuppress)
+		}
+	}
+	if oif != 13 {
+		t.Fatalf("13 oif rules must fit, got %d", oif)
+	}
+}
+
+func TestFallbackNeverWalksAnySecondary(t *testing.T) {
+	var ups []Uplink
+	for _, s := range append([]domain.UplinkSlot{domain.SlotDomestic}, domain.SecondarySlots()...) {
+		ups = append(ups, Uplink{IfName: string(s), Table: tableFor(s),
+			UplinkIndex: uplinkIndexFor(s), Slot: s})
+	}
+	for _, table := range fallbackTables(ups, VPNRouteState{}) {
+		for _, s := range domain.SecondarySlots() {
+			if table == tableFor(s) {
+				t.Fatalf("fallback reached secondary table %d - that is the leak", table)
+			}
+		}
 	}
 }

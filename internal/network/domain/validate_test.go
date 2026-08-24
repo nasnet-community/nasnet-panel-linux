@@ -370,3 +370,31 @@ func TestValidate_V3AllowsAForeignBridge(t *testing.T) {
 		t.Errorf("an unmanaged bridge was rejected: %+v", r)
 	}
 }
+
+func TestSecondarySlotsAreOrderedAndSecondary(t *testing.T) {
+	slots := SecondarySlots()
+	want := []UplinkSlot{SlotSecondary, SlotSecondary2, SlotSecondary3, SlotSecondary4}
+	if len(slots) != len(want) {
+		t.Fatalf("got %d slots, want %d", len(slots), len(want))
+	}
+	for i := range want {
+		if slots[i] != want[i] {
+			t.Fatalf("slot %d = %q, want %q", i, slots[i], want[i])
+		}
+		if !slots[i].IsSecondary() {
+			t.Fatalf("%q must report IsSecondary", slots[i])
+		}
+	}
+	if SlotDomestic.IsSecondary() || SlotNone.IsSecondary() {
+		t.Fatal("domestic and none are not secondaries")
+	}
+}
+
+func TestValidate_V20_AcceptsEverySecondarySlot(t *testing.T) {
+	for _, slot := range SecondarySlots() {
+		vs := Validate(in(ChangeRequest{InterfaceID: 1, Role: RoleWAN, Slot: slot}))
+		if Rejected(vs) {
+			t.Errorf("%s slot rejected: %+v", slot, vs)
+		}
+	}
+}

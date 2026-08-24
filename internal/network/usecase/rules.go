@@ -15,8 +15,9 @@ const (
 	// A socket bound to an interface gets that interface's table
 	RulePrefOifBase = 20
 
-	// Specific routes still resolve from main, a default is refused.
-	RulePrefMainSuppress = 30
+	// Specific routes still resolve from main, a default is refused. At 45 so
+	// five uplinks and eight tunnels all fit an oif rule under it.
+	RulePrefMainSuppress = 45
 
 	// Unmarked traffic
 	RulePrefFallbackBase = 32000
@@ -114,7 +115,7 @@ func fallbackTables(uplinks []Uplink, vpn VPNRouteState) []int {
 	}
 	rest := make([]Uplink, 0, len(uplinks))
 	for _, u := range uplinks {
-		if u.Slot == domain.SlotSecondary {
+		if u.Slot.IsSecondary() {
 			continue
 		}
 		rest = append(rest, u)
@@ -262,13 +263,20 @@ func AllRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []s
 	return append(out, tail...)
 }
 
-// Fixed table numbers, so a snapshot from one build restores under another
+// Fixed table numbers, so a snapshot from one build restores under another.
+// 203 is the pool's, so the extra secondaries skip it.
 func tableFor(slot domain.UplinkSlot) int {
 	switch slot {
 	case domain.SlotDomestic:
 		return 201
 	case domain.SlotSecondary:
 		return 202
+	case domain.SlotSecondary2:
+		return 204
+	case domain.SlotSecondary3:
+		return 205
+	case domain.SlotSecondary4:
+		return 206
 	}
 	return 0
 }
@@ -279,15 +287,21 @@ func uplinkIndexFor(slot domain.UplinkSlot) uint32 {
 		return 1
 	case domain.SlotSecondary:
 		return 2
+	case domain.SlotSecondary2:
+		return 3
+	case domain.SlotSecondary3:
+		return 4
+	case domain.SlotSecondary4:
+		return 5
 	}
 	return 0
 }
 
 func groupIndexFor(slot domain.UplinkSlot) uint32 {
-	switch slot {
-	case domain.SlotDomestic:
+	if slot == domain.SlotDomestic {
 		return netmark.GroupDomestic
-	case domain.SlotSecondary:
+	}
+	if slot.IsSecondary() {
 		return netmark.GroupForeign
 	}
 	return 0
