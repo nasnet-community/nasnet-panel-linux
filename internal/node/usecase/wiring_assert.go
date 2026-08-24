@@ -16,8 +16,9 @@ import (
 //
 // It type-asserts to the concrete type so it can inspect unexported fields;
 // test doubles that are not *nodeUsecase are treated as externally wired and
-// pass. Optional deps (xrayDeps, httpClientFactory, ingressUplinkFn — the last
-// only meaningful in router mode) are intentionally excluded.
+// pass. Optional deps (xrayDeps, httpClientFactory, ingressUplinkFn and
+// routerWANs — the last two only meaningful in router mode) are intentionally
+// excluded.
 func AssertWired(uc NodeUsecase) error {
 	u, ok := uc.(*nodeUsecase)
 	if !ok {

@@ -124,3 +124,46 @@ func TestBuildOutbounds_RouterModeCoexistsWithTierOutbounds(t *testing.T) {
 		t.Error("the plain direct outbound disappeared")
 	}
 }
+
+func twoVias() []RouterWAN {
+	return []RouterWAN{
+		{Slot: "secondary", UplinkIndex: 2, Label: "Starlink"},
+		{Slot: "secondary2", UplinkIndex: 3, Label: "Secondary 2"},
+	}
+}
+
+func TestBuildOutbounds_OneViaOutboundPerSecondary(t *testing.T) {
+	outs := routerBuilder(t, true).WithRouterWANs(twoVias()).buildOutbounds()
+
+	for _, v := range twoVias() {
+		out := findOutbound(outs, TagDirectForeignVia(v.Slot))
+		if out == nil {
+			t.Fatalf("no outbound for slot %s: tags %v", v.Slot, outboundTags(outs))
+		}
+		want := netmark.GroupMark(netmark.GroupForeignVia(v.UplinkIndex))
+		if got := sockoptMark(t, out); got != want {
+			t.Errorf("%s mark = 0x%x, want 0x%x", v.Slot, got, want)
+		}
+	}
+	// The default exit stays the whole pool.
+	if tags := outboundTags(outs); tags[0] != TagDirectForeign {
+		t.Errorf("first outbound is %q, want %q", tags[0], TagDirectForeign)
+	}
+}
+
+// One secondary needs no selector: direct-foreign already is that WAN.
+func TestBuildOutbounds_OneSecondaryEmitsNoViaOutbound(t *testing.T) {
+	outs := routerBuilder(t, true).WithRouterWANs(twoVias()[:1]).buildOutbounds()
+	if findOutbound(outs, TagDirectForeignVia("secondary")) != nil {
+		t.Errorf("via outbound emitted for a lone secondary: %v", outboundTags(outs))
+	}
+}
+
+func TestBuildOutbounds_NonRouterModeIgnoresVias(t *testing.T) {
+	outs := routerBuilder(t, false).WithRouterWANs(twoVias()).buildOutbounds()
+	for _, v := range twoVias() {
+		if findOutbound(outs, TagDirectForeignVia(v.Slot)) != nil {
+			t.Error("via outbound emitted outside router mode")
+		}
+	}
+}

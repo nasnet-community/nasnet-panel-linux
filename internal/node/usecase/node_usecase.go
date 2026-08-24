@@ -17,6 +17,7 @@ import (
 	sniUC "github.com/nasnet-community/nasnet-panel-linux/internal/sni/usecase"
 	subRepo "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
@@ -232,6 +233,7 @@ type NodeUsecase interface {
 	SetAuditUsecase(a auditDomain.AuditLogUsecase)
 	SetWGPeerSource(s WGPeerSource)
 	SetRouterMode(enabled bool)
+	SetRouterWANSource(fn func(context.Context) []xray.RouterWAN)
 	SetIngressUplinkSource(fn func() string)
 
 	// Node Nuke / Wipe
@@ -390,6 +392,9 @@ type nodeUsecase struct {
 
 	// Emits the per group direct outbounds
 	routerMode bool
+
+	// Names the secondaries the per-WAN outbounds cover
+	routerWANs func(context.Context) []xray.RouterWAN
 
 	// Resolves the shaped interface
 	ingressUplinkFn func() string

@@ -18,6 +18,10 @@ const (
 	TagDirectDomestic = "direct-domestic"
 )
 
+// TagDirectForeignVia pins foreign traffic to one secondary's slice of the
+// pool. Keyed by slot, not interface, so a rule survives a device swap.
+func TagDirectForeignVia(slot string) string { return TagDirectForeign + "-" + slot }
+
 // RouterOutbound is one router mode generates on every build. Never stored, so
 // nothing in the UI can edit split routing away.
 type RouterOutbound struct {
@@ -28,10 +32,18 @@ type RouterOutbound struct {
 	Remark string
 }
 
+// RouterWAN is one assigned secondary as the outbounds need it.
+type RouterWAN struct {
+	Slot        string // "secondary".."secondary4", stable, goes in the tag
+	UplinkIndex uint32
+	Label       string // the operator's name for it, goes in the remark
+}
+
 // RouterOutbounds returns them in emit order. xray falls back to the first
-// outbound when no rule matches, so foreign leads.
-func RouterOutbounds() []RouterOutbound {
-	return []RouterOutbound{
+// outbound when no rule matches, so foreign leads. The per-WAN ones only exist
+// when there is a choice to make — with one secondary, foreign already is it.
+func RouterOutbounds(vias []RouterWAN) []RouterOutbound {
+	out := []RouterOutbound{
 		{
 			Tag: TagDirectForeign, Protocol: "freedom",
 			Mark:   netmark.GroupMark(netmark.GroupForeign),
@@ -43,6 +55,17 @@ func RouterOutbounds() []RouterOutbound {
 			Remark: "Domestic traffic (router mode)",
 		},
 	}
+	if len(vias) < 2 {
+		return out
+	}
+	for _, v := range vias {
+		out = append(out, RouterOutbound{
+			Tag: TagDirectForeignVia(v.Slot), Protocol: "freedom",
+			Mark:   netmark.GroupMark(netmark.GroupForeignVia(v.UplinkIndex)),
+			Remark: "Foreign via " + v.Label + " (router mode)",
+		})
+	}
+	return out
 }
 
 // OrderedConfig represents the Xray config with fields in the desired JSON output order.
@@ -76,6 +99,7 @@ type FullConfigBuilder struct {
 	reverseProxies []*nodeDomain.ReverseProxy
 	balancing      []*nodeDomain.BalancingRule
 	routerMode     bool
+	routerWANs     []RouterWAN
 }
 
 // NewFullConfigBuilder creates a new config builder
@@ -113,6 +137,11 @@ func NewFullConfigBuilder(node *nodeDomain.Node) *FullConfigBuilder {
 // WithRouterMode emits the per group direct outbounds
 func (b *FullConfigBuilder) WithRouterMode(enabled bool) *FullConfigBuilder {
 	b.routerMode = enabled
+	return b
+}
+
+func (b *FullConfigBuilder) WithRouterWANs(vias []RouterWAN) *FullConfigBuilder {
+	b.routerWANs = vias
 	return b
 }
 
@@ -1102,7 +1131,7 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 			"protocol": "freedom",
 			"settings": map[string]interface{}{},
 		}
-		for _, g := range RouterOutbounds() {
+		for _, g := range RouterOutbounds(b.routerWANs) {
 			outbounds = append(outbounds, b.cloneOutboundWithMark(plainDirect, g.Tag, g.Mark))
 			existingTags[g.Tag] = true
 		}
