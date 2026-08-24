@@ -29,11 +29,8 @@ func DefaultHealthConfig() HealthConfig {
 			{Address: "8.8.8.8:443", Proto: "tcp"},
 		},
 		DegradedLossPct: 25,
-		DegradedRTTms: map[domain.UplinkSlot]int{
-			domain.SlotDomestic: 300,
-			// Starlink's RTT floor is high.
-			domain.SlotSecondary: 800,
-		},
+		// Starlink's RTT floor is high, and every secondary may be a dish.
+		DegradedRTTms: degradedRTTDefaults(),
 		FailoverToVPN: true,
 	}
 }
@@ -111,7 +108,9 @@ func ParseHealthConfig(get func(string) (string, error)) HealthConfig {
 	}
 	if v, err := get("router_degraded_rtt_ms_foreign"); err == nil {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.DegradedRTTms[domain.SlotSecondary] = n
+			for _, s := range domain.SecondarySlots() {
+				cfg.DegradedRTTms[s] = n
+			}
 		}
 	}
 	if v, err := get("router_failover_domestic_to_vpn"); err == nil && v != "" {
@@ -198,4 +197,12 @@ func verdictFor(force string, carrier, gwKnown, gatewayUp, inetUp, inetKnown, de
 	default:
 		return "up"
 	}
+}
+
+func degradedRTTDefaults() map[domain.UplinkSlot]int {
+	out := map[domain.UplinkSlot]int{domain.SlotDomestic: 300}
+	for _, s := range domain.SecondarySlots() {
+		out[s] = 800
+	}
+	return out
 }

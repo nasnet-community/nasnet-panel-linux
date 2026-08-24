@@ -55,7 +55,24 @@ const (
 	SlotNone      UplinkSlot = ""
 	SlotDomestic  UplinkSlot = "domestic"
 	SlotSecondary UplinkSlot = "secondary" // Starlink
+	// More transport legs for the pool to spread over.
+	SlotSecondary2 UplinkSlot = "secondary2"
+	SlotSecondary3 UplinkSlot = "secondary3"
+	SlotSecondary4 UplinkSlot = "secondary4"
 )
+
+func (s UplinkSlot) IsSecondary() bool {
+	switch s {
+	case SlotSecondary, SlotSecondary2, SlotSecondary3, SlotSecondary4:
+		return true
+	}
+	return false
+}
+
+// SecondarySlots is the deal order.
+func SecondarySlots() []UplinkSlot {
+	return []UplinkSlot{SlotSecondary, SlotSecondary2, SlotSecondary3, SlotSecondary4}
+}
 
 // AddressMethod is how an uplink gets its address.
 type AddressMethod string

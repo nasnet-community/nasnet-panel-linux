@@ -184,7 +184,8 @@ func TestAllRules_NoPreferenceCollisions(t *testing.T) {
 		}
 		seen[r.Pref] = true
 	}
-	for _, pref := range []int{20, 21, 30, 50, 51, 52, 53, 110, 149, 150, 199, 32000, 32001, 32002} {
+	for _, pref := range []int{20, 21, RulePrefMainSuppress, 50, 51, 52, 53, 110, 149, 150, 199,
+		32000, 32001, 32002} {
 		if !seen[pref] {
 			t.Errorf("pref %d missing from the complete rule set", pref)
 		}
