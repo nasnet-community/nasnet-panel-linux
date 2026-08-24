@@ -158,7 +158,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'wan.up', 'wan.down', 'wan.failover', 'wan.failover_lost',
             'wan.failover_restored', 'wan.degraded', 'wan.force_state',
             'wan.applied', 'wan.apply_rolled_back', 'wan.lease_warning',
-            'vpn.up', 'vpn.down', 'vpn.degraded', 'vpn.pool_changed',
+            'vpn.up', 'vpn.down', 'vpn.degraded', 'vpn.pool_changed', 'vpn.tunnel_rehomed',
         ]
 
         eventTypes.forEach((eventType) => {

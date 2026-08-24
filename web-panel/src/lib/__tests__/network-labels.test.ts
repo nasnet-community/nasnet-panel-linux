@@ -53,7 +53,8 @@ describe("attachmentLabel", () => {
 describe("roleLabel", () => {
     it("names the uplink by its slot", () => {
         expect(roleLabel("wan", "domestic")).toBe("Domestic ISP")
-        expect(roleLabel("wan", "secondary")).toBe("Secondary uplink")
+        expect(roleLabel("wan", "secondary")).toBe("Secondary 1")
+        expect(roleLabel("wan", "secondary4")).toBe("Secondary 4")
     })
 
     it("uses the role for everything slotless", () => {

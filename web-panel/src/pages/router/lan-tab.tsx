@@ -38,10 +38,17 @@ type Draft = Pick<
     "enabled" | "cidr" | "dhcp_range_low" | "dhcp_range_high" | "lease_hours" | "input_firewall"
 >
 
-function uplinkLabel(state: NetworkState | undefined, slot: "domestic" | "secondary"): string {
-    const u = state?.uplinks?.find((x) => x.slot === slot)
-    if (!u) return slot === "domestic" ? "the domestic uplink" : "the secondary uplink"
-    return u.label || u.if_name
+// The foreign side can be several uplinks now, so name the first and count.
+function uplinkLabel(state: NetworkState | undefined, want: "domestic" | "secondary"): string {
+    const all = state?.uplinks ?? []
+    const matches =
+        want === "domestic"
+            ? all.filter((x) => x.slot === "domestic")
+            : all.filter((x) => x.slot.startsWith("secondary"))
+    const u = matches[0]
+    if (!u) return want === "domestic" ? "the domestic uplink" : "the secondary uplink"
+    const name = u.label || u.if_name
+    return matches.length > 1 ? `${name} and ${matches.length - 1} more` : name
 }
 
 export function LanTab({ state, armed, onApplied }: Props) {

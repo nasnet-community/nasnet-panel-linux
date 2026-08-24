@@ -34,14 +34,31 @@ export interface RoleChoice {
     label: string
     role: InterfaceRole
     slot: UplinkSlot
+    /** Shown under the label, for roles whose name does not explain them. */
+    note?: string
 }
 
 export const ROLE_CHOICES: RoleChoice[] = [
     { value: "unassigned", label: "Unassigned", role: "unassigned", slot: "" },
     { value: "wan:domestic", label: "Domestic ISP", role: "wan", slot: "domestic" },
-    { value: "wan:secondary", label: "Secondary uplink (Starlink)", role: "wan", slot: "secondary" },
-    { value: "lan", label: "LAN", role: "lan", slot: "" },
-    { value: "lan_member", label: "LAN member", role: "lan_member", slot: "" },
+    { value: "wan:secondary", label: "Secondary 1", role: "wan", slot: "secondary" },
+    { value: "wan:secondary2", label: "Secondary 2", role: "wan", slot: "secondary2" },
+    { value: "wan:secondary3", label: "Secondary 3", role: "wan", slot: "secondary3" },
+    { value: "wan:secondary4", label: "Secondary 4", role: "wan", slot: "secondary4" },
+    {
+        value: "lan",
+        label: "LAN",
+        role: "lan",
+        slot: "",
+        note: "The port your switch or access point plugs into. Only one.",
+    },
+    {
+        value: "lan_member",
+        label: "LAN member",
+        role: "lan_member",
+        slot: "",
+        note: "Another socket on that same network, instead of a switch.",
+    },
     { value: "mgmt", label: "Management", role: "mgmt", slot: "" },
 ]
 
@@ -269,7 +286,12 @@ function RoleSelect({ iface, interfaces, onAssign, disabled }: RoleSelectProps) 
                     const holder = c.slot ? slotHolder(interfaces, c.slot, iface.key) : null
                     return (
                         <SelectItem key={c.value} value={c.value} disabled={!!holder}>
-                            {holder ? `${c.label} — held by ${holder}` : c.label}
+                            <span className="flex flex-col items-start">
+                                <span>{holder ? `${c.label} — held by ${holder}` : c.label}</span>
+                                {c.note && (
+                                    <span className="text-text-tertiary text-xs">{c.note}</span>
+                                )}
+                            </span>
                         </SelectItem>
                     )
                 })}

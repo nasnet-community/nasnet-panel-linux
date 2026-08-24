@@ -1,5 +1,7 @@
 // Mirrors HealthView and friends in internal/network/usecase/health_view.go.
 
+import type { UplinkSlot } from "@/lib/types/network"
+
 export interface TargetStatus {
     address: string
     proto: "tcp" | "dns"
@@ -25,7 +27,7 @@ export type UplinkVerdict =
     | ""
 
 export interface UplinkHealth {
-    slot: "domestic" | "secondary"
+    slot: UplinkSlot
     if_name: string
     carrier: string
     gateway: string
