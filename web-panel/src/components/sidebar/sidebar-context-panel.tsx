@@ -16,17 +16,17 @@ import {
     type ContextStatus,
 } from "./sidebar-context-config"
 
-// Per-context persisted expand state. Each route remembers its own collapse
-// decision across sessions; default is collapsed so first-time users get the
-// terse "chart-only" view and opt in to details.
-const EXPANDED_STORAGE_PREFIX = "sidebar-ctx-expanded:"
-function useExpandedState(contextId: string): [boolean, () => void] {
-    const key = EXPANDED_STORAGE_PREFIX + contextId
+// One persisted expand state for the panel, not one per route: a per-route
+// preference made the card change height as you navigated, which moves the nav
+// underneath it. Default is collapsed, so first-time users get the terse
+// "chart-only" view and opt in to details.
+const EXPANDED_STORAGE_KEY = "sidebar-ctx-expanded"
+function useExpandedState(): [boolean, () => void] {
+    const key = EXPANDED_STORAGE_KEY
     const [expanded, setExpanded] = useState<boolean>(() => {
         if (typeof window === "undefined") return false
         return window.localStorage.getItem(key) === "true"
     })
-    // Re-read on route change so each route uses its own stored preference.
     useEffect(() => {
         if (typeof window === "undefined") return
         setExpanded(window.localStorage.getItem(key) === "true")
@@ -91,7 +91,7 @@ interface PanelData {
 
 const EMPTY_PLACEHOLDER = "—"
 
-function useResolvedPanelData(config: ContextConfig | null): PanelData | null {
+function useResolvedPanelData(config: ContextConfig): PanelData {
     // All hooks run unconditionally; consumers pick the right fields below.
     const c = useChartPalette()
     const COLORS = {
@@ -109,8 +109,6 @@ function useResolvedPanelData(config: ContextConfig | null): PanelData | null {
     const onlineHistory = useOnlineUsersHistory(15)
     const subCounts = useSubscriptionCounts()
     const expiring7d = useSubsExpiringWithin(7)
-
-    if (!config) return null
 
     const dash = dashboard.data
     const agg = aggregate.data
@@ -369,13 +367,10 @@ export interface SidebarContextPanelProps {
 export function SidebarContextPanel({ collapsed }: SidebarContextPanelProps) {
     const location = useLocation()
     const pathname = location.pathname
+    // Always a config, so the panel is always present and the nav never moves.
     const config = getContextConfig(pathname)
-    // Hook must run unconditionally; safe default id keeps the storage key
-    // consistent even when config is briefly null (between route changes).
-    const [expanded, toggleExpanded] = useExpandedState(config?.id ?? "unknown")
+    const [expanded, toggleExpanded] = useExpandedState()
     const data = useResolvedPanelData(config)
-
-    if (!config || !data) return null
 
     if (collapsed) {
         return (
@@ -466,7 +461,11 @@ function PanelBody({ config, data, expanded, forceExpanded, onToggle }: PanelBod
                 onToggle={onToggle}
             />
             {data.hero && <HeroRow hero={data.hero} loading={data.loading} />}
-            {data.sparkline && <SparklineRow data={data.sparkline} />}
+            {data.sparkline ? (
+                <SparklineRow data={data.sparkline} />
+            ) : (
+                <div className="h-8 mt-2 mb-2" />
+            )}
             {/* Collapsible region: grid-rows animation from 0fr → 1fr gives
                 auto-height transitions without measuring the content. */}
             <div

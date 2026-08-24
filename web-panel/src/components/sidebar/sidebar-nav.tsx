@@ -55,15 +55,10 @@ export function SidebarNav({ sections, collapsed, onNavClick, getBadge }: Sideba
     }
 
     const isChildActive = (item: NavItem) =>
-        item.children?.some(
-            (child) => pathname === child.href || pathname.startsWith(`${child.href}/`),
-        ) ?? false
+        item.children?.some((child) => isOn(pathname, child.href)) ?? false
 
     const isParentExpanded = (item: NavItem) =>
-        expandedParents.has(item.href) ||
-        pathname === item.href ||
-        pathname.startsWith(`${item.href}/`) ||
-        isChildActive(item)
+        expandedParents.has(item.href) || isOn(pathname, item.href) || isChildActive(item)
 
     return (
         <nav className={cn("flex-1 min-h-0 overflow-y-auto py-3", collapsed ? "px-1.5" : "px-3")}>
@@ -116,8 +111,15 @@ interface NavRowProps {
     badge: number
 }
 
+/** Most specific wins: a child's route belongs to the child, not to the parent
+ *  that contains it, or two rows claim to be the current page at once. */
+function isOn(pathname: string, href: string): boolean {
+    return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge }: NavRowProps) {
-    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
+    const childOwns = item.children?.some((c) => isOn(pathname, c.href)) ?? false
+    const isActive = isOn(pathname, item.href) && !childOwns
     const hasChildren = !!item.children && item.children.length > 0 && !collapsed
     const showBadge = badge > 0
 
@@ -196,8 +198,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                     )}
                 >
                     {item.children!.map((child) => {
-                        const childActive =
-                            pathname === child.href || pathname.startsWith(`${child.href}/`)
+                        const childActive = isOn(pathname, child.href)
                         return (
                             <Link
                                 key={child.href}
