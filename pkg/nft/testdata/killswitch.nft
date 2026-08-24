@@ -27,28 +27,28 @@ table inet nasnet {
 	chain killswitch_out {
 		type filter hook output priority filter + 10; policy accept;
 
-		# Nothing this box originates may leave the secondary uplink in the
-		# clear. Everything accepted below is either the tunnel's own crypto
+		# Nothing this box originates may leave a secondary uplink in the
+		# clear. Everything accepted below is either a tunnel's own crypto
 		# or link-scoped, so none of it can carry payload to the internet.
-		oifname != "enp2s0" accept
+		oifname != { "enp2s0" } accept
 
 		# Replies to flows that arrived here — an inbound VPN user over the
 		# dish. An outbound flow's first packet never leaves, so it can
 		# never become established through this.
 		ct state established,related accept
 
-		# The tunnel's own transport. This is the whole point.
-		meta mark and 0xf000000 == 0x2000000 meta l4proto udp accept
+		# Each leg's own transport, and only its own. This is the point.
+		oifname "enp2s0" meta mark and 0xf000000 == 0x2000000 meta l4proto udp accept
 
 		# Resolving the endpoint hostname needs a resolver, and the only
 		# one reachable before the tunnel is up is out here. Fixed
 		# addresses over DoH: an editable list would be an editable hole.
-		meta mark and 0xf000000 == 0x2000000 tcp dport 443 ip daddr @doh_bootstrap accept
+		oifname "enp2s0" meta mark and 0xf000000 == 0x2000000 tcp dport 443 ip daddr @doh_bootstrap accept
 
-		# Link-scoped only: a lease, the gateway the health probe pings,
+		# Link-scoped only: a lease, each gateway the health probe pings,
 		# and the dish's own management address.
 		udp sport 68 udp dport 67 accept
-		ip daddr 100.64.0.1 accept
+		oifname "enp2s0" ip daddr 100.64.0.1 accept
 		ip daddr 192.168.100.0/24 accept
 		drop
 	}
@@ -57,8 +57,8 @@ table inet nasnet {
 		type filter hook forward priority filter + 10; policy accept;
 
 		# The same rule for traffic passing through: a LAN host must not
-		# reach the internet over the raw uplink either.
-		oifname != "enp2s0" accept
+		# reach the internet over a raw uplink either.
+		oifname != { "enp2s0" } accept
 		ct state established,related accept
 		ip daddr 192.168.100.0/24 accept
 		drop

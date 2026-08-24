@@ -226,6 +226,8 @@ type networkUsecase struct {
 	degradedNow    map[string]bool
 	lastEffective  map[string]bool
 	failoverActive bool
+	// lastTransport is the deal as applied, so a tick only re-marks what moved.
+	lastTransport map[string]string
 }
 
 func (u *networkUsecase) dnsmasqStatus(ctx context.Context) system.DNSMasqStatus {
@@ -348,7 +350,7 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	// The kill switch goes on before anything that can fail. One member with an
 	// endpoint that will not resolve used to abort the whole reconcile ahead of
 	// this line, and the secondary uplink spent that time carrying in the clear.
-	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows),
+	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateways(uplinks, rows),
 		u.healthConfigSnapshot().probeExemptIPs()); err != nil {
 		return err
 	}
@@ -999,9 +1001,19 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 			}
 			if gw != "" && gw != learnedByIf[up.IfName] {
 				_ = u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw)
-				// The kill switch names this gateway; the probe has to get past it.
-				if up.Slot == domain.SlotSecondary {
-					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gw,
+				learnedByIf[up.IfName] = gw
+				// The kill switch names this gateway; the probe has to get past
+				// it. Re-arm every leg, or the others lose their exemption.
+				if up.Slot.IsSecondary() {
+					gws := map[string]string{}
+					for _, s := range secondariesOf(uplinks) {
+						if g := gwByIf[s.IfName]; g != "" {
+							gws[s.IfName] = g
+						} else {
+							gws[s.IfName] = learnedByIf[s.IfName]
+						}
+					}
+					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gws,
 						u.healthConfigSnapshot().probeExemptIPs())
 				}
 			}
@@ -1019,8 +1031,8 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 		cfg := u.healthConfigSnapshot()
 		targets := cfg.targetsFor(up.Slot)
 		var mark uint32
-		if up.Slot == domain.SlotSecondary {
-			// Only the secondary leg meets the kill switch.
+		if up.Slot.IsSecondary() {
+			// Only a secondary leg meets the kill switch.
 			mark = netmark.PinMark(netmark.PinProbe)
 		}
 		results := probeAll(ctx, u.targetProber(), up.IfName, mark, targets)
@@ -1053,6 +1065,10 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 				"gateway": gatewayUp, "internet": inetUp})
 		}
 	}
+
+	// After the uplink dampers, before the tunnels are probed: a moved tunnel
+	// gets its new mark and this tick already measures it there.
+	_ = u.applyTransportAssignments(ctx)
 
 	u.probePool(ctx, u.healthConfigSnapshot())
 

@@ -841,7 +841,8 @@ func TestApplyVPNRoutes_ClearsTheTableWhenThePoolIsEmpty(t *testing.T) {
 func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	ctx := context.Background()
 	m := nft.NewManager(&nft.FakeApplier{})
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), "100.64.0.1",
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks(),
+		map[string]string{"enp2s0": "100.64.0.1"},
 		DefaultHealthConfig().probeExemptIPs()); err != nil {
 		t.Fatal(err)
 	}
@@ -849,11 +850,14 @@ func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	if k == nil {
 		t.Fatal("no kill switch")
 	}
-	if k.SecondaryIfName != "enp2s0" || k.GatewayIP != "100.64.0.1" {
-		t.Errorf("kill switch = %+v", k)
+	if len(k.Legs) != 1 {
+		t.Fatalf("%d legs, want one for the only secondary", len(k.Legs))
 	}
-	if k.MarkValue != netmark.PinMark(2) || k.MarkMask != netmark.MaskPin {
-		t.Errorf("mark = 0x%08x/0x%08x, want the secondary pin", k.MarkValue, k.MarkMask)
+	if k.Legs[0].IfName != "enp2s0" || k.Legs[0].GatewayIP != "100.64.0.1" {
+		t.Errorf("kill switch = %+v", k.Legs[0])
+	}
+	if k.Legs[0].PinValue != netmark.PinMark(2) || k.MarkMask != netmark.MaskPin {
+		t.Errorf("mark = 0x%08x/0x%08x, want the secondary pin", k.Legs[0].PinValue, k.MarkMask)
 	}
 	if len(k.BootstrapIPs) == 0 {
 		t.Error("no bootstrap addresses, so an endpoint hostname could never resolve")
@@ -870,7 +874,7 @@ func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 func TestApplyKillSwitchState_ArmedWithNoTunnelConfigured(t *testing.T) {
 	ctx := context.Background()
 	m := nft.NewManager(&nft.FakeApplier{})
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), "", nil); err != nil {
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks(), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if m.Snapshot().KillSwitch == nil {
@@ -878,7 +882,7 @@ func TestApplyKillSwitchState_ArmedWithNoTunnelConfigured(t *testing.T) {
 	}
 
 	// With no secondary uplink there is nothing to guard.
-	if err := ApplyKillSwitchState(ctx, m, twoUplinks()[:1], "", nil); err != nil {
+	if err := ApplyKillSwitchState(ctx, m, twoUplinks()[:1], nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if m.Snapshot().KillSwitch != nil {
@@ -912,7 +916,7 @@ func TestWGApplyConfig_UsesThePinnedEndpointAndItsOwnPort(t *testing.T) {
 		PinnedEndpointIP: "185.65.135.1",
 		DNS:              "10.64.0.1",
 	}
-	got, err := wgApplyConfig(cfg)
+	got, err := wgApplyConfig(cfg, netmark.PinMark(2))
 	if err != nil {
 		t.Fatal(err)
 	}

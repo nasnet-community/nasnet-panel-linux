@@ -19,12 +19,12 @@ func killSwitchRuleset() Ruleset {
 			UplinkNames: []string{"enp1s0", "nasnet-wg0"},
 		},
 		KillSwitch: &KillSwitch{
-			SecondaryIfName: "enp2s0",
-			GatewayIP:       "100.64.0.1",
-			DishSubnet:      "192.168.100.0/24",
-			MarkMask:        netmark.MaskPin,
-			MarkValue:       netmark.PinMark(2),
-			BootstrapIPs:    []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"},
+			Legs: []KillSwitchLeg{
+				{IfName: "enp2s0", GatewayIP: "100.64.0.1", PinValue: netmark.PinMark(2)},
+			},
+			DishSubnet:   "192.168.100.0/24",
+			MarkMask:     netmark.MaskPin,
+			BootstrapIPs: []string{"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"},
 		},
 	}
 }
@@ -78,12 +78,12 @@ func TestRender_KillSwitchExemptsOnlyTheAllowlist(t *testing.T) {
 
 	mask, value := netmark.Hex(netmark.MaskPin), netmark.Hex(netmark.PinMark(2))
 	want := []string{
-		`oifname != "enp2s0" accept`,
+		`oifname != { "enp2s0" } accept`,
 		`ct state established,related accept`,
-		`meta mark and ` + mask + ` == ` + value + ` meta l4proto udp accept`,
-		`meta mark and ` + mask + ` == ` + value + ` tcp dport 443 ip daddr @doh_bootstrap accept`,
+		`oifname "enp2s0" meta mark and ` + mask + ` == ` + value + ` meta l4proto udp accept`,
+		`oifname "enp2s0" meta mark and ` + mask + ` == ` + value + ` tcp dport 443 ip daddr @doh_bootstrap accept`,
 		`udp sport 68 udp dport 67 accept`,
-		`ip daddr 100.64.0.1 accept`,
+		`oifname "enp2s0" ip daddr 100.64.0.1 accept`,
 		`ip daddr 192.168.100.0/24 accept`,
 		`drop`,
 	}
@@ -96,7 +96,7 @@ func TestRender_KillSwitchExemptsOnlyTheAllowlist(t *testing.T) {
 // empty address would abort the whole transaction.
 func TestRender_KillSwitchWithoutAGateway(t *testing.T) {
 	rs := killSwitchRuleset()
-	rs.KillSwitch.GatewayIP = ""
+	rs.KillSwitch.Legs[0].GatewayIP = ""
 	body := chainBody(t, rs.Render(), "killswitch_out")
 
 	if strings.Contains(body, "ip daddr  accept") {
@@ -113,8 +113,7 @@ func TestRender_KillSwitchWithoutAGateway(t *testing.T) {
 // the uplink still has to keep its lease and answer the health probe.
 func TestRender_KillSwitchWithoutATunnel(t *testing.T) {
 	rs := Ruleset{KillSwitch: &KillSwitch{
-		SecondaryIfName: "enp2s0",
-		GatewayIP:       "100.64.0.1",
+		Legs: []KillSwitchLeg{{IfName: "enp2s0", GatewayIP: "100.64.0.1"}},
 	}}
 	body := chainBody(t, rs.Render(), "killswitch_out")
 
@@ -125,10 +124,10 @@ func TestRender_KillSwitchWithoutATunnel(t *testing.T) {
 		t.Error("a bootstrap exemption with no bootstrap addresses")
 	}
 	want := []string{
-		`oifname != "enp2s0" accept`,
+		`oifname != { "enp2s0" } accept`,
 		`ct state established,related accept`,
 		`udp sport 68 udp dport 67 accept`,
-		`ip daddr 100.64.0.1 accept`,
+		`oifname "enp2s0" ip daddr 100.64.0.1 accept`,
 		`drop`,
 	}
 	if got := meaningfulLines(body); !equalLines(got, want) {
@@ -162,7 +161,7 @@ func TestRender_KillSwitchNeverWritesAMark(t *testing.T) {
 }
 
 func TestRuleset_KillSwitchAloneIsNotZero(t *testing.T) {
-	rs := Ruleset{KillSwitch: &KillSwitch{SecondaryIfName: "enp2s0"}}
+	rs := Ruleset{KillSwitch: &KillSwitch{Legs: []KillSwitchLeg{{IfName: "enp2s0"}}}}
 	if rs.IsZero() {
 		t.Error("a ruleset carrying a kill switch reported itself empty, so it would be torn down")
 	}
@@ -211,11 +210,10 @@ func equalLines(a, b []string) bool {
 
 func TestKillSwitchProbeExemption(t *testing.T) {
 	r := Ruleset{KillSwitch: &KillSwitch{
-		SecondaryIfName: "enp0s3",
-		MarkMask:        netmark.MaskPin,
-		MarkValue:       netmark.PinMark(2),
-		ProbeMark:       netmark.PinMark(netmark.PinProbe),
-		ProbeIPs:        []string{"1.1.1.1", "8.8.8.8"},
+		Legs:      []KillSwitchLeg{{IfName: "enp0s3", PinValue: netmark.PinMark(2)}},
+		MarkMask:  netmark.MaskPin,
+		ProbeMark: netmark.PinMark(netmark.PinProbe),
+		ProbeIPs:  []string{"1.1.1.1", "8.8.8.8"},
 	}}
 	out := r.Render()
 	for _, want := range []string{
@@ -230,8 +228,55 @@ func TestKillSwitchProbeExemption(t *testing.T) {
 }
 
 func TestKillSwitchNoProbeIPsRendersNoProbeRule(t *testing.T) {
-	r := Ruleset{KillSwitch: &KillSwitch{SecondaryIfName: "enp0s3"}}
+	r := Ruleset{KillSwitch: &KillSwitch{Legs: []KillSwitchLeg{{IfName: "enp0s3"}}}}
 	if out := r.Render(); strings.Contains(out, "probe_v4") {
 		t.Fatalf("probe set rendered with no IPs:\n%s", out)
+	}
+}
+
+func TestKillSwitchRendersOneLegPerSecondary(t *testing.T) {
+	r := Ruleset{KillSwitch: &KillSwitch{
+		Legs: []KillSwitchLeg{
+			{IfName: "dish0", GatewayIP: "100.64.0.1", PinValue: netmark.PinMark(2)},
+			{IfName: "lte0", GatewayIP: "10.0.0.1", PinValue: netmark.PinMark(3)},
+		},
+		DishSubnet: "192.168.100.0/24",
+		MarkMask:   netmark.MaskPin,
+	}}
+	out := r.Render()
+
+	for _, want := range []string{
+		`oifname != { "dish0", "lte0" } accept`,
+		`oifname "dish0" meta mark and 0xf000000 == 0x2000000 meta l4proto udp accept`,
+		`oifname "lte0" meta mark and 0xf000000 == 0x3000000 meta l4proto udp accept`,
+		`oifname "dish0" ip daddr 100.64.0.1 accept`,
+		`oifname "lte0" ip daddr 10.0.0.1 accept`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// Strict per-leg: dish0's mark must never be accepted out lte0.
+	if strings.Contains(out, `oifname "lte0" meta mark and 0xf000000 == 0x2000000`) {
+		t.Fatal("a tunnel pinned to one wan leaked out another")
+	}
+}
+
+// A single-secondary box must keep exactly the protection it has today.
+func TestKillSwitchOneLegMatchesStageOneShape(t *testing.T) {
+	r := Ruleset{KillSwitch: &KillSwitch{
+		Legs:       []KillSwitchLeg{{IfName: "dish0", GatewayIP: "100.64.0.1", PinValue: netmark.PinMark(2)}},
+		DishSubnet: "192.168.100.0/24", MarkMask: netmark.MaskPin,
+	}}
+	out := r.Render()
+	for _, want := range []string{
+		`oifname != { "dish0" } accept`,
+		"udp sport 68 udp dport 67 accept",
+		"ip daddr 192.168.100.0/24 accept",
+		"chain killswitch_fwd",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q", want)
+		}
 	}
 }

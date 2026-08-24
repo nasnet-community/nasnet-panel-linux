@@ -62,7 +62,10 @@ func newMismatchFixture(t *testing.T, o mismatchOpts) (*networkUsecase, flowMism
 	// The desired nft state has to be real too, or every chain reads as missing.
 	if err := u.Nft.Update(t.Context(), func(rs *nft.Ruleset) {
 		rs.Connmark, rs.Counters = true, true
-		rs.KillSwitch = &nft.KillSwitch{SecondaryIfName: "eth1", MarkMask: 0xf000000, MarkValue: 0x2000000}
+		rs.KillSwitch = &nft.KillSwitch{
+			Legs:     []nft.KillSwitchLeg{{IfName: "eth1", PinValue: 0x2000000}},
+			MarkMask: 0xf000000,
+		}
 	}); err != nil {
 		t.Fatal(err)
 	}
