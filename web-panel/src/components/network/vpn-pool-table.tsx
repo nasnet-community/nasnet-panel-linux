@@ -7,6 +7,12 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+} from "@/components/ui/select"
+import {
     Table,
     TableBody,
     TableCell,
@@ -16,10 +22,10 @@ import {
 } from "@/components/ui/table"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { VpnAddDialog } from "@/components/network/vpn-add-dialog"
-import { useDeleteVPNProfile, useSetVPNRole } from "@/lib/queries/use-network"
+import { useDeleteVPNProfile, useSetVPNRole, useSetVPNTransport } from "@/lib/queries/use-network"
 import { formatBytes, handshakeShort } from "@/lib/vpn-labels"
 import { cn } from "@/lib/utils"
-import type { TunnelStatus, VPNProfile } from "@/lib/types/network"
+import type { TunnelStatus, TunnelVia, VPNProfile, VPNUplink } from "@/lib/types/network"
 import type { TunnelHealth, TunnelVerdict } from "@/lib/types/health"
 import { toast } from "sonner"
 
@@ -28,6 +34,8 @@ interface Props {
     loading: boolean
     tunnels: TunnelStatus[]
     health: TunnelHealth[]
+    /** The secondary uplinks the pool can ride. */
+    uplinks: VPNUplink[]
     /** A change is already waiting to be kept, so a second one must wait. */
     armed: boolean
     busy: boolean
@@ -95,7 +103,7 @@ function RoleCell({
 
     if (!editing) {
         return (
-            <div className="flex w-36 items-center gap-1">
+            <div className="flex w-full items-center gap-1">
                 <span className="tabular-nums">{value}</span>
                 <Button
                     size="icon"
@@ -128,7 +136,7 @@ function RoleCell({
     }
 
     return (
-        <div className="flex w-36 items-center gap-1">
+        <div className="flex w-full items-center gap-1">
             <Input
                 autoFocus
                 type="number"
@@ -141,7 +149,7 @@ function RoleCell({
                     if (e.key === "Escape") setEditing(false)
                 }}
                 // On a number field this sizes the wrapper, stepper included.
-                className="h-7 w-20 text-sm"
+                className="h-7 w-16 text-sm"
                 aria-label={`${owner} ${label}`}
             />
             <Button size="icon" variant="ghost" className="h-6 w-6" aria-label={`Save ${owner} ${label}`} onClick={commit}>
@@ -160,11 +168,67 @@ function RoleCell({
     )
 }
 
+/** Dimmed reads "the pool chose this"; solid reads "you did". */
+function ViaCell({
+    owner,
+    via,
+    uplinks,
+    disabled,
+    onPin,
+}: {
+    owner: string
+    via: TunnelVia | undefined
+    uplinks: VPNUplink[]
+    disabled: boolean
+    onPin: (uplinkKey: string) => void
+}) {
+    // One destination is not a choice, so it reads rather than offers.
+    const text = via ? (
+        <span className={cn("truncate", !via.pinned && "text-text-tertiary")}>
+            {via.pinned ? via.label : `auto · ${via.label}`}
+        </span>
+    ) : (
+        <span className="text-text-tertiary">—</span>
+    )
+    // One destination is not a choice, so it reads rather than offers.
+    if (uplinks.length < 2) {
+        return <span className="text-sm">{text}</span>
+    }
+    return (
+        <Select
+            value={via?.pinned ? via.key : "auto"}
+            onValueChange={(v) => onPin(v === "auto" ? "" : v)}
+            disabled={disabled}
+        >
+            <SelectTrigger
+                aria-label={`Change ${owner} uplink`}
+                className={cn(
+                    "h-7 w-full justify-start gap-1 rounded border-0 px-1 text-sm shadow-none",
+                    // shadcn paints the trigger in dark mode; the other cells are bare.
+                    "bg-transparent dark:bg-transparent hover:bg-surface-3 dark:hover:bg-surface-3",
+                    "focus-visible:ring-1",
+                )}
+            >
+                {text}
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="auto">Automatic</SelectItem>
+                {uplinks.map((u) => (
+                    <SelectItem key={u.key} value={u.key}>
+                        {u.label}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
+
 export function VpnPoolTable({
     profiles,
     loading,
     tunnels,
     health,
+    uplinks,
     armed,
     busy,
     onEnable,
@@ -172,6 +236,7 @@ export function VpnPoolTable({
 }: Props) {
     const del = useDeleteVPNProfile()
     const role = useSetVPNRole()
+    const transport = useSetVPNTransport()
     const confirm = useConfirm()
     const [adding, setAdding] = useState(false)
     const [editing, setEditing] = useState<VPNProfile | null>(null)
@@ -240,6 +305,21 @@ export function VpnPoolTable({
         )
     }
 
+    function commitTransport(p: VPNProfile, uplinkKey: string) {
+        const label = uplinks.find((u) => u.key === uplinkKey)?.label
+        transport.mutate(
+            { id: p.id, uplinkKey },
+            {
+                onSuccess: () =>
+                    toast.success(
+                        label ? `${p.name} pinned to ${label}` : `${p.name} set to automatic`,
+                    ),
+                onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : "Failed to change the uplink"),
+            },
+        )
+    }
+
     return (
         <Card>
             <CardHeader className="pb-4">
@@ -271,8 +351,9 @@ export function VpnPoolTable({
                             <TableRow>
                                 <TableHead>Tunnel</TableHead>
                                 <TableHead>On</TableHead>
-                                <TableHead className="w-36">Tier</TableHead>
-                                <TableHead className="w-36">Weight</TableHead>
+                                <TableHead className="w-32">Tier</TableHead>
+                                <TableHead className="w-32">Weight</TableHead>
+                                <TableHead className="w-36">Via</TableHead>
                                 <TableHead>Health</TableHead>
                                 <TableHead>Handshake</TableHead>
                                 <TableHead>Traffic</TableHead>
@@ -341,6 +422,19 @@ export function VpnPoolTable({
                                                 disabled={!p.enabled || role.isPending}
                                                 onCommit={(n) => commitRole(p, p.priority, n)}
                                             />
+                                        </TableCell>
+                                        <TableCell>
+                                            {p.enabled ? (
+                                                <ViaCell
+                                                    owner={p.name}
+                                                    via={st?.via}
+                                                    uplinks={uplinks}
+                                                    disabled={transport.isPending}
+                                                    onPin={(key) => commitTransport(p, key)}
+                                                />
+                                            ) : (
+                                                <span className="text-sm">—</span>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             {p.enabled ? (

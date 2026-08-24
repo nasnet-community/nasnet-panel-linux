@@ -23,6 +23,8 @@ type VPNRepository interface {
 	// SetEnabled allocates or frees the interface slot with the flag.
 	SetEnabled(ctx context.Context, id uint, on bool) error
 	SetRole(ctx context.Context, id uint, priority, weight int) error
+	// SetTransport pins a profile to one uplink key, or clears the pin.
+	SetTransport(ctx context.Context, id uint, uplinkKey string) error
 	// SetPool is the rollback path: the enabled set becomes exactly want.
 	SetPool(ctx context.Context, want []domain.VPNProfile) error
 
@@ -179,6 +181,15 @@ func (r *vpnRepository) SetRole(ctx context.Context, id uint, priority, weight i
 	}
 	res := r.db.WithContext(ctx).Model(&domain.VPNProfile{}).Where("id = ?", id).
 		Updates(map[string]any{"priority": priority, "weight": weight})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return domain.ErrProfileNotFound
+	}
+	return res.Error
+}
+
+func (r *vpnRepository) SetTransport(ctx context.Context, id uint, uplinkKey string) error {
+	res := r.db.WithContext(ctx).Model(&domain.VPNProfile{}).Where("id = ?", id).
+		Update("transport_uplink", uplinkKey)
 	if res.Error == nil && res.RowsAffected == 0 {
 		return domain.ErrProfileNotFound
 	}

@@ -47,6 +47,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.POST("/vpn/profiles/:id/enable", h.EnableVPNProfile)
 		n.POST("/vpn/profiles/:id/disable", h.DisableVPNProfile)
 		n.PATCH("/vpn/profiles/:id/role", h.SetVPNProfileRole)
+		n.PATCH("/vpn/profiles/:id/transport", h.SetVPNProfileTransport)
 		n.GET("/vpn/status", h.VPNStatus)
 
 		// The probe ladder. Assembly only — never dials.

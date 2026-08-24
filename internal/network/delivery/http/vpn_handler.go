@@ -153,6 +153,32 @@ func (h *Handler) SetVPNProfileRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// SetVPNProfileTransport skips the confirm pipeline too: a mis-pin costs one
+// tunnel, and the rest of the pool keeps carrying.
+func (h *Handler) SetVPNProfileTransport(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	var req struct {
+		UplinkKey string `json:"uplink_key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.uc.SetVPNProfileTransport(c.Request.Context(), uint(id), req.UplinkKey); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrValidationFailed) || errors.Is(err, domain.ErrProfileNotFound) {
+			code = http.StatusBadRequest
+		}
+		fail(c, code, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 func (h *Handler) VPNStatus(c *gin.Context) {
 	st, err := h.uc.VPNStatus(c.Request.Context())
 	if err != nil {

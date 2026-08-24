@@ -120,6 +120,7 @@ type NetworkUsecase interface {
 	EnableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
 	DisableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
 	SetVPNProfileRole(ctx context.Context, id uint, priority, weight int) error
+	SetVPNProfileTransport(ctx context.Context, id uint, uplinkKey string) error
 	VPNStatus(ctx context.Context) (*VPNPoolStatusView, error)
 
 	// The flow page. All read-only: nothing here touches a packet.

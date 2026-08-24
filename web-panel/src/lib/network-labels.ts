@@ -40,7 +40,10 @@ export const ROLE_LABELS: Record<InterfaceRole, string> = {
 
 const SLOT_LABELS: Record<Exclude<UplinkSlot, "">, string> = {
     domestic: "Domestic ISP",
-    secondary: "Secondary uplink",
+    secondary: "Secondary 1",
+    secondary2: "Secondary 2",
+    secondary3: "Secondary 3",
+    secondary4: "Secondary 4",
 }
 
 export function roleLabel(role: InterfaceRole, slot: UplinkSlot): string {

@@ -6,7 +6,7 @@ import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { VpnTab } from "@/pages/router/vpn-tab"
 import { detectFormat, formatBytes, handshakeLabel, handshakeShort } from "@/lib/vpn-labels"
-import type { TunnelStatus, VPNPoolStatus, VPNProfile } from "@/lib/types/network"
+import type { TunnelStatus, VPNPoolStatus, VPNProfile, VPNUplink } from "@/lib/types/network"
 import type { RouterHealth, TunnelHealth } from "@/lib/types/health"
 
 const getVPNProfiles = vi.fn()
@@ -14,6 +14,7 @@ const getVPNStatus = vi.fn()
 const getRouterHealth = vi.fn()
 const deleteVPNProfile = vi.fn()
 const setVPNProfileRole = vi.fn()
+const setVPNProfileTransport = vi.fn()
 const toastError = vi.fn()
 const toastSuccess = vi.fn()
 vi.mock("sonner", () => ({
@@ -35,6 +36,7 @@ vi.mock("@/lib/api/network", async (importOriginal) => {
         getRouterHealth: (...a: unknown[]) => getRouterHealth(...a),
         deleteVPNProfile: (...a: unknown[]) => deleteVPNProfile(...a),
         setVPNProfileRole: (...a: unknown[]) => setVPNProfileRole(...a),
+        setVPNProfileTransport: (...a: unknown[]) => setVPNProfileTransport(...a),
         enableVPNProfile: (...a: unknown[]) => enableVPNProfile(...a),
         disableVPNProfile: (...a: unknown[]) => disableVPNProfile(...a),
         createVPNProfile: vi.fn(),
@@ -88,8 +90,12 @@ function tunnel(over: Partial<TunnelStatus> = {}): TunnelStatus {
     }
 }
 
+function wan(over: Partial<VPNUplink> = {}): VPNUplink {
+    return { slot: "secondary", if_name: "dish0", label: "Dish", key: "k-dish0", up: true, ...over }
+}
+
 function poolStatus(tunnels: TunnelStatus[], over: Partial<VPNPoolStatus> = {}): VPNPoolStatus {
-    return { tunnels, secondary_uplink_up: true, kill_switch: true, ...over }
+    return { tunnels, uplinks: [wan()], kill_switch: true, ...over }
 }
 
 function tunnelHealth(over: Partial<TunnelHealth> = {}): TunnelHealth {
@@ -151,6 +157,7 @@ describe("VpnTab", () => {
         getRouterHealth.mockReset()
         deleteVPNProfile.mockReset()
         setVPNProfileRole.mockReset()
+        setVPNProfileTransport.mockReset()
         enableVPNProfile.mockReset()
         disableVPNProfile.mockReset()
     })
@@ -288,7 +295,7 @@ describe("VpnTab", () => {
     it("separates a dead uplink from a dead pool", async () => {
         renderIt(
             [profile({ enabled: true, wg_slot: 0 })],
-            poolStatus([tunnel({ connected: false })], { secondary_uplink_up: false }),
+            poolStatus([tunnel({ connected: false })], { uplinks: [wan({ up: false })] }),
         )
         expect(await screen.findByText(/secondary uplink is down/)).toBeInTheDocument()
     })
@@ -331,5 +338,68 @@ describe("formatBytes", () => {
         expect(formatBytes(2048)).toBe("2.0 KB")
         expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB")
         expect(formatBytes(50 * 1024 * 1024 * 1024)).toBe("50 GB")
+    })
+})
+
+describe("the via column", () => {
+    beforeEach(() => {
+        getVPNProfiles.mockReset()
+        getVPNStatus.mockReset()
+        getRouterHealth.mockReset()
+        setVPNProfileTransport.mockReset()
+    })
+
+    const twoWans = [
+        wan(),
+        wan({ slot: "secondary2", if_name: "lte0", label: "LTE", key: "k-lte0" }),
+    ]
+
+    it("dims a ride the pool chose and leaves a pin solid", async () => {
+        renderIt(
+            [
+                profile({ id: 1, name: "a", enabled: true, wg_slot: 0 }),
+                profile({ id: 2, name: "b", enabled: true, wg_slot: 1, transport_uplink: "k-lte0" }),
+            ],
+            poolStatus(
+                [
+                    tunnel({ profile_id: 1, name: "a", via: { if_name: "dish0", label: "Dish", key: "k-dish0", pinned: false } }),
+                    tunnel({ profile_id: 2, name: "b", if_name: "nasnet-wg1", via: { if_name: "lte0", label: "LTE", key: "k-lte0", pinned: true } }),
+                ],
+                { uplinks: twoWans },
+            ),
+        )
+        const auto = await screen.findByText("auto · Dish")
+        expect(auto.className).toContain("text-text-tertiary")
+        expect(screen.getByText("LTE").className).not.toContain("text-text-tertiary")
+    })
+
+    it("pins through the dropdown, named per row", async () => {
+        setVPNProfileTransport.mockResolvedValue({ success: true, data: null })
+        renderIt(
+            [profile({ id: 1, name: "a", enabled: true, wg_slot: 0 })],
+            poolStatus(
+                [tunnel({ profile_id: 1, name: "a", via: { if_name: "dish0", label: "Dish", key: "k-dish0", pinned: false } })],
+                { uplinks: twoWans },
+            ),
+        )
+        await userEvent.click(await screen.findByLabelText("Change a uplink"))
+        await userEvent.click(await screen.findByRole("option", { name: "LTE" }))
+        await waitFor(() => expect(setVPNProfileTransport).toHaveBeenCalledWith(1, "k-lte0"))
+    })
+
+    it("offers Automatic first, and it clears the pin", async () => {
+        setVPNProfileTransport.mockResolvedValue({ success: true, data: null })
+        renderIt(
+            [profile({ id: 1, name: "a", enabled: true, wg_slot: 0, transport_uplink: "k-lte0" })],
+            poolStatus(
+                [tunnel({ profile_id: 1, name: "a", via: { if_name: "lte0", label: "LTE", key: "k-lte0", pinned: true } })],
+                { uplinks: twoWans },
+            ),
+        )
+        await userEvent.click(await screen.findByLabelText("Change a uplink"))
+        const options = await screen.findAllByRole("option")
+        expect(options[0]).toHaveTextContent("Automatic")
+        await userEvent.click(options[0])
+        await waitFor(() => expect(setVPNProfileTransport).toHaveBeenCalledWith(1, ""))
     })
 })

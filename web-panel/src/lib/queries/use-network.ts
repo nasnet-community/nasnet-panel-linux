@@ -21,6 +21,7 @@ import {
     rollbackNetworkApply,
     setDeviceLabel,
     setVPNProfileRole,
+    setVPNProfileTransport,
     updateLAN,
     updateVPNProfile,
     updatePortForward,
@@ -324,6 +325,23 @@ export function useDisableVPNProfile() {
         },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+/** Same blast radius as a role edit: one tunnel re-handshakes, nothing else. */
+export function useSetVPNTransport() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({ id, uplinkKey }: { id: number; uplinkKey: string }) => {
+            const res = await setVPNProfileTransport(id, uplinkKey)
+            if (!res.success) throw new Error(res.error || "Failed to change the tunnel's uplink")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkHealth() })
         },
     })
 }

@@ -1,5 +1,11 @@
 export type InterfaceRole = "unassigned" | "wan" | "lan" | "lan_member" | "mgmt"
-export type UplinkSlot = "" | "domestic" | "secondary"
+export type UplinkSlot =
+    | ""
+    | "domestic"
+    | "secondary"
+    | "secondary2"
+    | "secondary3"
+    | "secondary4"
 export type VerdictLevel = "reject" | "confirm" | "warn"
 
 export interface Verdict {
@@ -175,6 +181,8 @@ export interface VPNProfile {
     weight: number
     /** Names the interface (nasnet-wg{slot}). Null while disabled. */
     wg_slot: number | null
+    /** Interface key of the pinned WAN. Empty rides the pool's deal. */
+    transport_uplink?: string
     config: WireGuardConfig
     /** Derived from the private key, for pasting into your own server. */
     public_key: string
@@ -202,11 +210,30 @@ export interface TunnelStatus {
     last_error?: string
     /** In the nexthop set right now, i.e. actually carrying traffic. */
     in_pool: boolean
+    /** The WAN this tunnel's transport rides. */
+    via?: TunnelVia
+}
+
+export interface TunnelVia {
+    if_name: string
+    label: string
+    key: string
+    /** An operator chose this WAN; otherwise the pool dealt it. */
+    pinned: boolean
+}
+
+/** One secondary uplink the pool can ride. */
+export interface VPNUplink {
+    slot: UplinkSlot
+    if_name: string
+    label: string
+    key: string
+    up: boolean
 }
 
 export interface VPNPoolStatus {
     tunnels: TunnelStatus[]
-    secondary_uplink_up: boolean
+    uplinks: VPNUplink[]
     /** Always true. Stated, never offered. */
     kill_switch: boolean
 }

@@ -2,10 +2,14 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
@@ -260,8 +264,66 @@ func TestRehomerIsQuietWhenNothingChanged(t *testing.T) {
 	}
 }
 
+func TestVPNStatusJSONCarriesUplinksAndVia(t *testing.T) {
+	f := newVPNFixture(t)
+	seedSecondaries(t, f, "dish0", "lte0")
+	seedEnabledTunnels(t, f, 2)
+	f.repo.rows[1].TransportUplink = "k-lte0" // pin the second tunnel
 
+	st, err := f.uc.VPNStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(blob)
+	if strings.Contains(s, "secondary_uplink_up") {
+		t.Fatal("the single bool must be gone, not deprecated")
+	}
+	if !strings.Contains(s, `"uplinks":[`) {
+		t.Fatalf("status must list the WANs: %s", s)
+	}
+	var via *TunnelVia
+	for _, tv := range st.Tunnels {
+		if tv.IfName == "nasnet-wg1" {
+			via = tv.Via
+		}
+	}
+	if via == nil || !via.Pinned || via.IfName != "lte0" {
+		t.Fatalf("wg1 via = %+v, want pinned lte0", via)
+	}
+	if len(st.Uplinks) != 2 {
+		t.Fatalf("%d uplinks listed, want 2", len(st.Uplinks))
+	}
+}
 
+func TestSetTransportRejectsANonSecondaryKey(t *testing.T) {
+	f := newVPNFixture(t)
+	seedSecondaries(t, f, "dish0", "lte0")
+	seedEnabledTunnels(t, f, 1)
+	err := f.uc.SetVPNProfileTransport(context.Background(), 1, "k-eth0")
+	if !errors.Is(err, ErrValidationFailed) {
+		t.Fatalf("a pin to the domestic uplink must be refused, got %v", err)
+	}
+}
+
+func TestSetTransportRemarksTheTunnelImmediately(t *testing.T) {
+	f := newVPNFixture(t)
+	seedSecondaries(t, f, "dish0", "lte0")
+	seedEnabledTunnels(t, f, 1) // auto: rides dish0
+	ctx := context.Background()
+	if err := f.uc.applyVPNDevices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.uc.SetVPNProfileTransport(ctx, 1, "k-lte0"); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.wg.State("nasnet-wg0").Applied.FirewallMark; got != netmark.PinMark(3) {
+		t.Fatalf("mark %#x after the pin, want lte0's", got)
+	}
+}
 
 // LAN goes through the pool or nowhere. A secondary that is not slot one is
 // still a raw uplink, and masquerading LAN out of it is the leak.

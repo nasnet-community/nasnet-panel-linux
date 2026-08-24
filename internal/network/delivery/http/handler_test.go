@@ -48,6 +48,10 @@ type stubUsecase struct {
 	vpnRolePrio   int
 	vpnRoleWeight int
 	vpnRoleErr    error
+
+	vpnTransportID  uint
+	vpnTransportKey string
+	vpnTransportErr error
 	vpnStatus     *usecase.VPNPoolStatusView
 
 	flowView   *usecase.FlowView
@@ -134,6 +138,11 @@ func (s *stubUsecase) DisableVPNProfile(_ context.Context, id uint) ([]domain.Ve
 func (s *stubUsecase) SetVPNProfileRole(_ context.Context, id uint, priority, weight int) error {
 	s.vpnRoleID, s.vpnRolePrio, s.vpnRoleWeight = id, priority, weight
 	return s.vpnRoleErr
+}
+
+func (s *stubUsecase) SetVPNProfileTransport(_ context.Context, id uint, uplinkKey string) error {
+	s.vpnTransportID, s.vpnTransportKey = id, uplinkKey
+	return s.vpnTransportErr
 }
 
 func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNPoolStatusView, error) {
