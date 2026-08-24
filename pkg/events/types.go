@@ -80,6 +80,9 @@ const (
 	// Per-member quality edge and nexthop-set rewrites.
 	EventVPNDegraded    EventType = "vpn.degraded"
 	EventVPNPoolChanged EventType = "vpn.pool_changed"
+	// A tunnel's transport moved to another WAN. The box did it, not the
+	// operator, so it lands in the feed and nowhere noisier.
+	EventVPNTunnelRehomed EventType = "vpn.tunnel_rehomed"
 )
 
 // IsNetworkEvent is the recorder filter for the flow page's timeline.

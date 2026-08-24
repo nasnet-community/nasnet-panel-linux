@@ -50,7 +50,7 @@ func (u *networkUsecase) SetHealthConfig(cfg HealthConfig) {
 	ctx := context.Background()
 	if uplinks, err := u.uplinks(ctx); err == nil && u.IfRepo != nil {
 		rows, _ := u.IfRepo.GetByRole(ctx, domain.RoleWAN)
-		_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateway(uplinks, rows),
+		_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateways(uplinks, rows),
 			cfg.probeExemptIPs())
 	}
 }

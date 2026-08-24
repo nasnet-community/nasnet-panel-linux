@@ -10,9 +10,9 @@ func countersRuleset() Ruleset {
 		Counters: true,
 		Connmark: true,
 		KillSwitch: &KillSwitch{
-			SecondaryIfName: "eth1", GatewayIP: "100.64.0.1",
-			DishSubnet: "192.168.100.0/24",
-			MarkMask:   0xf000000, MarkValue: 0x2000000,
+			Legs:         []KillSwitchLeg{{IfName: "eth1", GatewayIP: "100.64.0.1", PinValue: 0x2000000}},
+			DishSubnet:   "192.168.100.0/24",
+			MarkMask:     0xf000000,
 			BootstrapIPs: []string{"1.1.1.1"},
 		},
 	}

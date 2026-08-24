@@ -193,6 +193,7 @@ type FakeWGDevice struct {
 	mu      sync.Mutex
 	Devices map[string]*FakeWGState
 	Deleted map[string]int
+	ensures int
 
 	EnsureErr   error
 	StatusErr   error
@@ -226,7 +227,16 @@ func (f *FakeWGDevice) Ensure(_ context.Context, ifName string, cfg WGApplyConfi
 	if st.Stat == nil {
 		st.Stat = &WGStatus{}
 	}
+	f.ensures++
 	return nil
+}
+
+// EnsureCalls counts configuration writes, so a test can prove a tunnel was
+// left alone rather than needlessly re-handshaked.
+func (f *FakeWGDevice) EnsureCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ensures
 }
 
 func (f *FakeWGDevice) UpdateEndpoint(_ context.Context, ifName string, ep netip.AddrPort) error {

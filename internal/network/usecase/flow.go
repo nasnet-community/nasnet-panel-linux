@@ -386,9 +386,14 @@ func (u *networkUsecase) wgNode(st flowState) FlowNode {
 		details = append(details, section(t.IfName+" — "+t.Profile.Name, lines))
 	}
 	n.Status = worst
-	details = append(details, section("pool", []string{
-		fmt.Sprintf("transport mark: %s (pinned to the secondary uplink)", netmark.Hex(vpnTransportMark)),
-	}))
+	deal := assignTransport(st.pool, secondariesOf(st.uplinks), u.healthySecondaries(st.uplinks))
+	var marks []string
+	for _, t := range st.pool.Tunnels {
+		wan := deal[t.IfName]
+		marks = append(marks, fmt.Sprintf("%s rides %s, mark %s",
+			t.IfName, wan.IfName, netmark.Hex(transportMark(wan))))
+	}
+	details = append(details, section("pool", marks))
 	return withDetail(n, details...)
 }
 
@@ -576,7 +581,7 @@ func flowEdges(vpn VPNRouteState, st flowState) []FlowEdge {
 		{ID: "e-203-wg", From: "table-203", To: "wg", Kind: "data",
 			Status: vpnStatus, CounterKey: "nft:foreign"},
 		{ID: "e-wg-202", From: "wg", To: "table-202", Kind: "transport", Status: vpnStatus,
-			Label: "encrypted · pin " + netmark.Hex(vpnTransportMark), CounterKey: "wg"},
+			Label: "encrypted", CounterKey: "wg"},
 		{ID: "e-202-upsec", From: "table-202", To: "uplink-secondary", Kind: "transport", Status: vpnStatus},
 		{ID: "e-updom-world", From: "uplink-domestic", To: "world-domestic", Kind: "data", Status: "ok"},
 		{ID: "e-upsec-world", From: "uplink-secondary", To: "world-foreign", Kind: "data", Status: vpnStatus},

@@ -19,10 +19,19 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
-// Every tunnel's transport rides the secondary uplink's pin, which already has
-// a lookup and a blackhole of its own at pref 52/53. That is what keeps
-// WireGuard handshakes off the domestic line when the dish is down.
-var vpnTransportMark = netmark.PinMark(uplinkIndexFor(domain.SlotSecondary))
+// transportMark is the pin of the WAN this tunnel rides. Every uplink already
+// has a lookup and a blackhole in the pin block, so the mark alone steers the
+// handshake and nothing falls through to another WAN.
+//
+// No WAN dealt means none is assigned yet. Slot one's pin is still the answer:
+// an unmarked handshake would take the domestic line, which is the leak this
+// mark exists to stop.
+func transportMark(up Uplink) uint32 {
+	if up.UplinkIndex == 0 {
+		return netmark.PinMark(uplinkIndexFor(domain.SlotSecondary))
+	}
+	return netmark.PinMark(up.UplinkIndex)
+}
 
 // StarlinkDishSubnet is the dish's own management address space, reachable
 // through the kill switch because it is link-scoped and carries no payload.
@@ -168,11 +177,28 @@ func (u *networkUsecase) wg() system.WGDevice {
 	return system.NewWGDevice()
 }
 
-func (u *networkUsecase) doh() dohboot.Resolver {
+func (u *networkUsecase) doh(ctx context.Context) dohboot.Resolver {
 	if u.DoH != nil {
 		return u.DoH
 	}
-	return dohboot.New(vpnTransportMark)
+	return dohboot.New(u.bootstrapMark(ctx))
+}
+
+// bootstrapMark is the first secondary's pin. Endpoint lookups happen before
+// any tunnel is up, and that leg is the one the kill switch exempts for them.
+func (u *networkUsecase) bootstrapMark(ctx context.Context) uint32 {
+	if uplinks, err := u.uplinks(ctx); err == nil {
+		best := Uplink{}
+		for _, up := range secondariesOf(uplinks) {
+			if best.UplinkIndex == 0 || up.UplinkIndex < best.UplinkIndex {
+				best = up
+			}
+		}
+		if best.UplinkIndex != 0 {
+			return transportMark(best)
+		}
+	}
+	return netmark.PinMark(uplinkIndexFor(domain.SlotSecondary))
 }
 
 // ---------------------------------------------------------------- CRUD
@@ -413,7 +439,7 @@ func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domai
 	if err != nil {
 		return nil, nil, err
 	}
-	if !hasSlot(uplinks, domain.SlotSecondary) {
+	if len(secondariesOf(uplinks)) == 0 {
 		// Provisioning before the dish arrives is a real workflow, and the kill
 		// switch already covers every state in between.
 		verdicts = append(verdicts, domain.Verdict{Rule: "V33", Level: domain.LevelWarn,
@@ -427,7 +453,7 @@ func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domai
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrValidationFailed, err)
 	}
-	addr, err := u.doh().Resolve(ctx, host)
+	addr, err := u.doh(ctx).Resolve(ctx, host)
 	if err != nil {
 		verdicts = append(verdicts, domain.Verdict{Rule: "V34", Level: domain.LevelReject,
 			Message: fmt.Sprintf("The endpoint %q could not be resolved: %v", host, err)})
@@ -557,6 +583,12 @@ func (u *networkUsecase) applyVPNDevices(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	uplinks, err := u.uplinks(ctx)
+	if err != nil {
+		return err
+	}
+	deal := assignTransport(pool, secondariesOf(uplinks), u.healthySecondaries(uplinks))
+	u.rememberTransport(deal)
 	want := map[string]bool{}
 	for _, t := range pool.Tunnels {
 		want[t.IfName] = true
@@ -582,7 +614,7 @@ func (u *networkUsecase) applyVPNDevices(ctx context.Context) error {
 			errs = append(errs, err)
 			continue
 		}
-		apply, err := wgApplyConfig(t.Config)
+		apply, err := wgApplyConfig(t.Config, transportMark(deal[t.IfName]))
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -607,7 +639,7 @@ func (u *networkUsecase) ensurePinnedEndpoint(ctx context.Context, t tunnel) err
 	if _, isAddr := netip.ParseAddr(host); isAddr == nil {
 		return nil // already an address; nothing to pin
 	}
-	addr, err := u.doh().Resolve(ctx, host)
+	addr, err := u.doh(ctx).Resolve(ctx, host)
 	if err != nil {
 		return fmt.Errorf("resolve the endpoint %q: %w", host, err)
 	}
@@ -621,7 +653,7 @@ func (u *networkUsecase) ensurePinnedEndpoint(ctx context.Context, t tunnel) err
 
 // wgApplyConfig turns the stored profile into what the kernel needs, filling in
 // the defaults a config is allowed to leave out.
-func wgApplyConfig(cfg *domain.WireGuardConfig) (system.WGApplyConfig, error) {
+func wgApplyConfig(cfg *domain.WireGuardConfig, mark uint32) (system.WGApplyConfig, error) {
 	host, err := domain.ParseWGEndpoint(cfg.Peer.Endpoint)
 	if err != nil {
 		return system.WGApplyConfig{}, err
@@ -651,7 +683,7 @@ func wgApplyConfig(cfg *domain.WireGuardConfig) (system.WGApplyConfig, error) {
 		Address:       address,
 		MTU:           cfg.MTU,
 		ListenPort:    cfg.ListenPort,
-		FirewallMark:  vpnTransportMark,
+		FirewallMark:  mark,
 	}
 	if out.MTU == 0 {
 		out.MTU = domain.DefaultWGMTU
@@ -813,56 +845,61 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 // Rendered whenever a secondary uplink exists, with or without a pool, and
 // deliberately independent of the input firewall: that one is a setting the
 // operator chooses, this one is not.
-func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink, gateway string, probeIPs []string) error {
+func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink,
+	gateways map[string]string, probeIPs []string) error {
 	if m == nil {
 		return nil
 	}
-	var secondary string
-	for _, up := range uplinks {
-		if up.Slot == domain.SlotSecondary {
-			secondary = up.IfName
-		}
-	}
+	legs := killSwitchLegs(uplinks, gateways)
 	return m.Update(ctx, func(rs *nft.Ruleset) {
-		if secondary == "" {
+		if len(legs) == 0 {
 			rs.KillSwitch = nil
 			return
 		}
 		rs.KillSwitch = &nft.KillSwitch{
-			SecondaryIfName: secondary,
-			GatewayIP:       gateway,
-			DishSubnet:      StarlinkDishSubnet,
-			MarkMask:        netmark.MaskPin,
-			MarkValue:       vpnTransportMark,
-			BootstrapIPs:    dohboot.BootstrapIPs(),
-			ProbeMark:       netmark.PinMark(netmark.PinProbe),
-			ProbeIPs:        probeIPs,
+			Legs:         legs,
+			DishSubnet:   StarlinkDishSubnet,
+			MarkMask:     netmark.MaskPin,
+			BootstrapIPs: dohboot.BootstrapIPs(),
+			ProbeMark:    netmark.PinMark(netmark.PinProbe),
+			ProbeIPs:     probeIPs,
 		}
 	})
 }
 
-// secondaryGateway is the address the health probe has to reach, which is the
-// one exemption that cannot be written until DHCP has answered.
-func secondaryGateway(uplinks []Uplink, rows []domain.NetworkInterface) string {
-	var key string
-	for _, up := range uplinks {
-		if up.Slot == domain.SlotSecondary {
-			key = up.Key
-		}
+// killSwitchLegs is one leg per secondary, in slot order.
+func killSwitchLegs(uplinks []Uplink, gateways map[string]string) []nft.KillSwitchLeg {
+	ordered := secondariesOf(uplinks)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].UplinkIndex < ordered[j].UplinkIndex })
+	legs := make([]nft.KillSwitchLeg, 0, len(ordered))
+	for _, up := range ordered {
+		legs = append(legs, nft.KillSwitchLeg{
+			IfName: up.IfName, GatewayIP: gateways[up.IfName], PinValue: transportMark(up),
+		})
 	}
-	if key == "" {
-		return ""
-	}
+	return legs
+}
+
+// secondaryGateways is each leg's one exemption that cannot be written until
+// DHCP has answered.
+func secondaryGateways(uplinks []Uplink, rows []domain.NetworkInterface) map[string]string {
+	byKey := map[string]domain.NetworkInterface{}
 	for i := range rows {
-		if rows[i].Key != key {
+		byKey[rows[i].Key] = rows[i]
+	}
+	out := map[string]string{}
+	for _, up := range secondariesOf(uplinks) {
+		r, ok := byKey[up.Key]
+		if !ok {
 			continue
 		}
-		if rows[i].StaticGateway != "" {
-			return rows[i].StaticGateway
+		if r.StaticGateway != "" {
+			out[up.IfName] = r.StaticGateway
+		} else {
+			out[up.IfName] = r.LearnedGateway
 		}
-		return rows[i].LearnedGateway
 	}
-	return ""
+	return out
 }
 
 // ---------------------------------------------------------------- status
@@ -1022,7 +1059,7 @@ func (u *networkUsecase) reresolveEndpoint(ctx context.Context, t tunnel) {
 	u.tunnelLastResolve[t.IfName] = time.Now()
 	u.healthMu.Unlock()
 
-	addr, err := u.doh().Resolve(ctx, host)
+	addr, err := u.doh(ctx).Resolve(ctx, host)
 	if err != nil || addr.String() == t.Config.PinnedEndpointIP {
 		return
 	}
@@ -1091,8 +1128,9 @@ func NewVPNPoolRestorer(repo repository.VPNRepository, wg system.WGDevice) func(
 				continue
 			}
 			// No resolution here: a revert must not depend on a resolver that
-			// may only exist inside a tunnel being restored.
-			apply, err := wgApplyConfig(cfg)
+			// may only exist inside a tunnel being restored. The mark is slot
+			// one's; the panel re-deals on its next health tick.
+			apply, err := wgApplyConfig(cfg, netmark.PinMark(uplinkIndexFor(domain.SlotSecondary)))
 			if err != nil {
 				errs = append(errs, err)
 				continue

@@ -95,7 +95,7 @@ func (u *networkUsecase) traceResolve(ctx context.Context, host string) (string,
 	if net.ParseIP(host) != nil {
 		return host, nil, nil
 	}
-	addr, err := u.doh().Resolve(ctx, host)
+	addr, err := u.doh(ctx).Resolve(ctx, host)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: could not resolve %q: %v", ErrBadTraceInput, host, err)
 	}
