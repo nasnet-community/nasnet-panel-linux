@@ -1,4 +1,5 @@
 import { toast } from "sonner"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { PortName } from "@/components/network/port-name"
 import { cn } from "@/lib/utils"
@@ -114,13 +115,50 @@ function Sparkline({ history }: { history: HealthSample[] }) {
     )
 }
 
-function ForceControl({ ifName, force }: { ifName: string; force: string }) {
+function ForceControl({ ifName, force, slot }: { ifName: string; force: string; slot: string }) {
     const set = useSetUplinkForce()
+    const confirm = useConfirm()
     const states = [
         { state: "" as const, label: "auto" },
         { state: "up" as const, label: "force up" },
         { state: "down" as const, label: "force down" },
     ]
+
+    function apply(state: "" | "up" | "down") {
+        set.mutate(
+            { ifName, state },
+            {
+                onSuccess: () =>
+                    toast.success(
+                        state === "" ? `${ifName} back on auto` : `${ifName} forced ${state}`,
+                    ),
+                onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : "Failed to set the override"),
+            },
+        )
+    }
+
+    // Down is the one override that withdraws routes, so it asks first. Up and
+    // auto only hand the decision back to the prober.
+    async function choose(state: "" | "up" | "down") {
+        if (state !== "down") {
+            apply(state)
+            return
+        }
+        const ok = await confirm({
+            title: `Force ${ifName} down`,
+            description:
+                slot === "domestic"
+                    ? "Its routes are withdrawn until you set it back. This is the uplink " +
+                      "the panel answers on, so you may lose access to this panel and have " +
+                      "to undo it from the console."
+                    : "Its routes are withdrawn until you set it back, and any tunnel riding " +
+                      "it stops until it is re-homed or the uplink returns.",
+            confirmLabel: "Force it down",
+            variant: "warning",
+        })
+        if (ok) apply(state)
+    }
     return (
         <div
             className="divide-border border-border flex w-fit divide-x overflow-hidden rounded-md border"
@@ -132,25 +170,7 @@ function ForceControl({ ifName, force }: { ifName: string; force: string }) {
                     key={s.label}
                     type="button"
                     disabled={set.isPending}
-                    onClick={() =>
-                        set.mutate(
-                            { ifName, state: s.state },
-                            {
-                                onSuccess: () =>
-                                    toast.success(
-                                        s.state === ""
-                                            ? `${ifName} back on auto`
-                                            : `${ifName} forced ${s.state}`,
-                                    ),
-                                onError: (e) =>
-                                    toast.error(
-                                        e instanceof Error
-                                            ? e.message
-                                            : "Failed to set the override",
-                                    ),
-                            },
-                        )
-                    }
+                    onClick={() => void choose(s.state)}
                     className={cn(
                         "px-2.5 py-1 text-xs transition-colors",
                         force === s.state
@@ -207,7 +227,7 @@ function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceV
             </div>
             <Ladder carrier={up.carrier} gateway={up.gateway} internet={up.internet} />
             <StatsRow loss={up.loss_pct} rtt={up.median_rtt_ms} history={up.history} />
-            <ForceControl ifName={up.if_name} force={up.force_state} />
+            <ForceControl ifName={up.if_name} force={up.force_state} slot={up.slot} />
         </div>
     )
 }
