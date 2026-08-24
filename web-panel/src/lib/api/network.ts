@@ -231,6 +231,16 @@ export async function setVPNProfileRole(
     return api.patch<null>(`/api/v1/network/vpn/profiles/${id}/role`, role)
 }
 
+/** Empty uplinkKey clears the pin and hands the tunnel back to the deal. */
+export async function setVPNProfileTransport(
+    id: number,
+    uplinkKey: string,
+): Promise<ApiResponse<null>> {
+    return api.patch<null>(`/api/v1/network/vpn/profiles/${id}/transport`, {
+        uplink_key: uplinkKey,
+    })
+}
+
 export async function getVPNStatus(): Promise<ApiResponse<VPNPoolStatus>> {
     return api.get<VPNPoolStatus>("/api/v1/network/vpn/status")
 }

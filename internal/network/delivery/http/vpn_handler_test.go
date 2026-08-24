@@ -246,3 +246,37 @@ func TestVPNRoutes_RequireRouterMode(t *testing.T) {
 		}
 	}
 }
+
+func TestSetVPNProfileTransport_PassesThePinThrough(t *testing.T) {
+	uc := &stubUsecase{}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/transport",
+		`{"uplink_key":"k-lte0"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if uc.vpnTransportID != 5 || uc.vpnTransportKey != "k-lte0" {
+		t.Errorf("transport call = id %d key %q", uc.vpnTransportID, uc.vpnTransportKey)
+	}
+}
+
+// An empty key is how the UI says "back to automatic", not a bad request.
+func TestSetVPNProfileTransport_EmptyKeyClearsThePin(t *testing.T) {
+	uc := &stubUsecase{}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/transport",
+		`{"uplink_key":""}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if uc.vpnTransportKey != "" {
+		t.Errorf("key = %q, want cleared", uc.vpnTransportKey)
+	}
+}
+
+func TestSetVPNProfileTransport_UnknownUplinkIs400(t *testing.T) {
+	uc := &stubUsecase{vpnTransportErr: usecase.ErrValidationFailed}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/transport",
+		`{"uplink_key":"k-nope"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}

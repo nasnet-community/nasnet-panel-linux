@@ -1,4 +1,4 @@
-import { ShieldCheck, TriangleAlert } from "lucide-react"
+import { TriangleAlert } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -140,18 +140,12 @@ export function VpnPoolCard({ status, loading }: Props) {
                     />
                 ))}
 
-                {total > 0 && !connected && !status.secondary_uplink_up && (
+                {total > 0 && !connected && !status.uplinks.some((u) => u.up) && (
                     <p className="text-muted-foreground flex items-start gap-2 pt-1 text-xs">
                         <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                        The secondary uplink is down, so the tunnels have nothing to run over yet.
+                        Every secondary uplink is down, so the tunnels have nothing to run over yet.
                     </p>
                 )}
-
-                <p className="text-muted-foreground flex items-start gap-2 pt-1 text-xs">
-                    <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    The secondary uplink never carries traffic in the open. If every tunnel stops,
-                    that traffic stops with it rather than falling back.
-                </p>
             </CardContent>
         </Card>
     )

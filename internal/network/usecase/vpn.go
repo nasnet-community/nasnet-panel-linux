@@ -77,14 +77,33 @@ type TunnelStatusView struct {
 	LastError        string `json:"last_error,omitempty"`
 	// InPool says whether this member is in the nexthop set right now.
 	InPool bool `json:"in_pool"`
+	// Via is the WAN this tunnel's transport rides.
+	Via *TunnelVia `json:"via,omitempty"`
+}
+
+// TunnelVia names a tunnel's WAN, and says whether an operator chose it.
+type TunnelVia struct {
+	IfName string `json:"if_name"`
+	Label  string `json:"label"`
+	Key    string `json:"key"`
+	Pinned bool   `json:"pinned"`
+}
+
+// VPNUplinkView is one secondary the pool can ride.
+type VPNUplinkView struct {
+	Slot   string `json:"slot"`
+	IfName string `json:"if_name"`
+	Label  string `json:"label"`
+	Key    string `json:"key"`
+	Up     bool   `json:"up"`
 }
 
 // VPNPoolStatusView is the pool, or the reason there isn't one.
 type VPNPoolStatusView struct {
 	Tunnels []TunnelStatusView `json:"tunnels"`
-	// SecondaryUplinkUp separates "the dish is down" from "the pool is down",
-	// which need different things done about them.
-	SecondaryUplinkUp bool `json:"secondary_uplink_up"`
+	// Uplinks separates "the WANs are down" from "the pool is down", which
+	// need different things done about them.
+	Uplinks []VPNUplinkView `json:"uplinks"`
 	// KillSwitch is always true. Reported so the UI can state it rather than
 	// offer it.
 	KillSwitch bool `json:"kill_switch"`
@@ -556,6 +575,34 @@ func (u *networkUsecase) SetVPNProfileRole(ctx context.Context, id uint, priorit
 	return u.applyPoolRoutes(ctx)
 }
 
+// SetVPNProfileTransport pins a tunnel to one WAN, or clears the pin. Instant
+// like a role edit: a mis-pin kills one tunnel, never the box.
+func (u *networkUsecase) SetVPNProfileTransport(ctx context.Context, id uint, uplinkKey string) error {
+	if u.VPNRepo == nil {
+		return errors.New("no VPN storage configured")
+	}
+	if uplinkKey != "" {
+		uplinks, err := u.uplinks(ctx)
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, up := range secondariesOf(uplinks) {
+			if up.Key == uplinkKey {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("%w: the pin must name a secondary uplink", ErrValidationFailed)
+		}
+	}
+	if err := u.VPNRepo.SetTransport(ctx, id, uplinkKey); err != nil {
+		return err
+	}
+	// The mark changes now, not on the next damper edge.
+	return u.applyTransportAssignments(ctx)
+}
+
 func (u *networkUsecase) runVPNPlan(ctx context.Context, plan system.Plan) (*ApplyView, error) {
 	// One at a time: the applier checks for an armed change and then writes the
 	// marker, so two plans racing leave the first one armed but unconfirmable.
@@ -905,14 +952,26 @@ func secondaryGateways(uplinks []Uplink, rows []domain.NetworkInterface) map[str
 // ---------------------------------------------------------------- status
 
 func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, error) {
-	out := &VPNPoolStatusView{Tunnels: []TunnelStatusView{}, KillSwitch: true}
+	out := &VPNPoolStatusView{
+		Tunnels: []TunnelStatusView{}, Uplinks: []VPNUplinkView{}, KillSwitch: true,
+	}
 
-	uplinks, err := u.uplinks(ctx)
-	if err == nil {
-		out.SecondaryUplinkUp = uplinkHealthy(uplinks, u.healthyKeys(ctx), domain.SlotSecondary)
+	uplinks, _ := u.uplinks(ctx)
+	labels := u.uplinkLabels(ctx)
+	healthy := u.healthyKeys(ctx)
+	secondaries := secondariesOf(uplinks)
+	sort.Slice(secondaries, func(i, j int) bool {
+		return secondaries[i].UplinkIndex < secondaries[j].UplinkIndex
+	})
+	for _, up := range secondaries {
+		out.Uplinks = append(out.Uplinks, VPNUplinkView{
+			Slot: string(up.Slot), IfName: up.IfName, Label: labels[up.IfName],
+			Key: up.Key, Up: healthy[up.Key],
+		})
 	}
 
 	pool := u.vpnPoolNow(ctx)
+	deal := assignTransport(pool, secondaries, u.healthySecondaries(uplinks))
 	inPool := map[string]bool{}
 	for _, n := range u.currentPoolNexthops() {
 		inPool[n.OifName] = true
@@ -923,6 +982,12 @@ func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, err
 			Priority: t.Profile.Priority, Weight: t.Profile.Weight,
 			MTU: t.Config.MTU, KeepaliveSecs: t.Config.Peer.PersistentKeepalive,
 			InPool: inPool[t.IfName],
+		}
+		if wan, ok := deal[t.IfName]; ok {
+			tv.Via = &TunnelVia{
+				IfName: wan.IfName, Label: labels[wan.IfName], Key: wan.Key,
+				Pinned: t.Profile.TransportUplink != "",
+			}
 		}
 		if tv.MTU == 0 {
 			tv.MTU = domain.DefaultWGMTU
@@ -968,6 +1033,26 @@ func hasSlot(uplinks []Uplink, slot domain.UplinkSlot) bool {
 	return false
 }
 
+// uplinkLabels is the operator's name for each WAN, falling back to the kernel's.
+func (u *networkUsecase) uplinkLabels(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	if u.IfRepo == nil {
+		return out
+	}
+	rows, err := u.IfRepo.GetByRole(ctx, domain.RoleWAN)
+	if err != nil {
+		return out
+	}
+	for i := range rows {
+		if rows[i].Label != "" {
+			out[rows[i].IfName] = rows[i].Label
+		} else {
+			out[rows[i].IfName] = rows[i].IfName
+		}
+	}
+	return out
+}
+
 // healthyKeys reads which uplinks the health loop currently believes are up.
 func (u *networkUsecase) healthyKeys(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
@@ -982,15 +1067,6 @@ func (u *networkUsecase) healthyKeys(ctx context.Context) map[string]bool {
 		out[rows[i].Key] = rows[i].Healthy
 	}
 	return out
-}
-
-func uplinkHealthy(uplinks []Uplink, healthy map[string]bool, slot domain.UplinkSlot) bool {
-	for _, u := range uplinks {
-		if u.Slot == slot {
-			return healthy[u.Key]
-		}
-	}
-	return false
 }
 
 // ---------------------------------------------------------------- health loop

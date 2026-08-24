@@ -171,6 +171,16 @@ func (f *fakeVPNRepo) SetRole(_ context.Context, id uint, priority, weight int) 
 	return domain.ErrProfileNotFound
 }
 
+func (f *fakeVPNRepo) SetTransport(_ context.Context, id uint, uplinkKey string) error {
+	for i := range f.rows {
+		if f.rows[i].ID == id {
+			f.rows[i].TransportUplink = uplinkKey
+			return nil
+		}
+	}
+	return domain.ErrProfileNotFound
+}
+
 func (f *fakeVPNRepo) SetPool(_ context.Context, want []domain.VPNProfile) error {
 	for i := range f.rows {
 		f.rows[i].Enabled, f.rows[i].WGSlot = false, nil

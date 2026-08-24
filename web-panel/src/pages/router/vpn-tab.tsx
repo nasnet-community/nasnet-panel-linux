@@ -119,6 +119,7 @@ export function VpnTab({ armed, onApplied }: Props) {
                 loading={profiles.isLoading}
                 tunnels={tunnels}
                 health={health.data?.vpn?.tunnels ?? []}
+                uplinks={st?.uplinks ?? []}
                 armed={armed}
                 busy={enable.isPending || disable.isPending}
                 onEnable={(id) =>

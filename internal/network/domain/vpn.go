@@ -37,7 +37,7 @@ type VPNProfile struct {
 	Weight   int  `gorm:"not null;default:1" json:"weight"`
 	// WGSlot names the interface (nasnet-wg{slot}). Nil while disabled.
 	WGSlot *int `json:"wg_slot"`
-	// TransportUplink is reserved for multi-secondary; empty and unused today.
+	// TransportUplink pins the tunnel to one secondary's key. Empty rides the deal.
 	TransportUplink string `json:"transport_uplink,omitempty"`
 
 	// Config is a marshalled WireGuardConfig. Served decoded, never raw.
