@@ -1079,15 +1079,6 @@ func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, err
 	return out, nil
 }
 
-func hasSlot(uplinks []Uplink, slot domain.UplinkSlot) bool {
-	for _, u := range uplinks {
-		if u.Slot == slot {
-			return true
-		}
-	}
-	return false
-}
-
 // uplinkLabels is the operator's name for each WAN, falling back to the kernel's.
 func (u *networkUsecase) uplinkLabels(ctx context.Context) map[string]string {
 	out := map[string]string{}
