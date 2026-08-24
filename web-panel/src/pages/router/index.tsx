@@ -51,6 +51,7 @@ const NETWORK_EVENTS = new Set([
     "vpn.down",
     "vpn.degraded",
     "vpn.pool_changed",
+    "vpn.tunnel_rehomed",
     "wan.applied",
 ])
 

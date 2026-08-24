@@ -33,6 +33,7 @@ export type EventType =
     | 'vpn.down'
     | 'vpn.degraded'
     | 'vpn.pool_changed'
+    | 'vpn.tunnel_rehomed'
 
 // Event payloads
 export interface NodeStatusPayload {

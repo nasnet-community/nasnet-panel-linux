@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { slotHolder } from "./interface-table"
+import { ROLE_CHOICES, slotHolder } from "./interface-table"
 import type { NetworkInterfaceView } from "@/lib/types/network"
 
 function iface(over: Partial<NetworkInterfaceView>): NetworkInterfaceView {
@@ -51,5 +51,28 @@ describe("slotHolder", () => {
     // Otherwise the row holding a slot cannot keep it.
     it("does not count the interface asking", () => {
         expect(slotHolder(rows, "domestic", "k1")).toBeNull()
+    })
+})
+
+// LAN and LAN member render the same networkd file — both are enslaved to the
+// lan0 bridge with no L3 of their own — so only the picker copy tells them
+// apart. Without it "LAN member" means nothing to a first-time operator.
+describe("the LAN roles explain themselves in the picker", () => {
+    const noteFor = (value: string) => ROLE_CHOICES.find((c) => c.value === value)?.note
+
+    it("says the LAN port is the one you plug into, and that there is one", () => {
+        const note = noteFor("lan")
+        expect(note).toMatch(/plugs into/i)
+        expect(note).toMatch(/only one/i)
+    })
+
+    it("says a member is another socket on the same network", () => {
+        expect(noteFor("lan_member")).toMatch(/same network/i)
+    })
+
+    // The uplink slots are named well enough already; a note there is noise.
+    it("leaves the self-explanatory roles unannotated", () => {
+        expect(noteFor("wan:domestic")).toBeUndefined()
+        expect(noteFor("unassigned")).toBeUndefined()
     })
 })
