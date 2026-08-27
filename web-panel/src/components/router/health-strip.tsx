@@ -2,6 +2,7 @@ import { toast } from "sonner"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { PortName } from "@/components/network/port-name"
+import { RttSparkline } from "@/components/router/rtt-sparkline"
 import { cn } from "@/lib/utils"
 import { groupAddresses } from "@/lib/network-labels"
 import { useRouterHealth, useSetUplinkForce } from "@/lib/queries/use-router-health"
@@ -89,31 +90,6 @@ function Ladder({ carrier, gateway, internet }: { carrier: string; gateway: stri
 }
 
 // Median RTT, last 15 minutes.
-function Sparkline({ history }: { history: HealthSample[] }) {
-    const samples = (history ?? []).slice(-180)
-    if (samples.length < 2) return null
-    const max = Math.max(...samples.map((s) => s.rtt_ms), 1)
-    const w = 112
-    const h = 28
-    const step = w / (samples.length - 1)
-    const pts = samples.map(
-        (s, i) =>
-            [(i * step).toFixed(1), (h - (s.rtt_ms / max) * (h - 3) - 1).toFixed(1)] as const,
-    )
-    const line = pts.map((p) => p.join(",")).join(" ")
-    const area = `0,${h} ${line} ${w},${h}`
-    return (
-        <svg
-            viewBox={`0 0 ${w} ${h}`}
-            className="text-chart-2 h-7 w-28 shrink-0"
-            role="img"
-            aria-label="Round-trip time, last 15 minutes"
-        >
-            <polygon points={area} fill="currentColor" opacity="0.12" />
-            <polyline points={line} fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-    )
-}
 
 function ForceControl({ ifName, force, slot }: { ifName: string; force: string; slot: string }) {
     const set = useSetUplinkForce()
@@ -191,7 +167,7 @@ function StatsRow({ loss, rtt, history }: { loss: number; rtt: number; history: 
             <p className="text-text-secondary text-sm tabular-nums">
                 {loss}% loss · {rtt}ms
             </p>
-            <Sparkline history={history} />
+            <RttSparkline history={history} />
         </div>
     )
 }
@@ -232,46 +208,42 @@ function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceV
     )
 }
 
-// in_pool is not health: the best tier's last member stays routed even after it
-// stops answering, so the verdict decides the colour.
+// in_pool is not health: a dead pool keeps its carrier routed, so the verdict
+// decides the colour.
 function answering(t: TunnelHealth): boolean {
     return t.verdict === "up" || t.verdict === "degraded"
 }
 
-// One dot per member, so a flap is visible without eight sibling cards.
-function memberDotTone(t: TunnelHealth): string {
-    // No verdict yet: the damper is warming up, which is not a claim either way.
-    if (t.verdict === "") return "bg-status-neutral"
-    if (!answering(t)) return "bg-status-danger"
-    if (t.in_pool) return t.degraded ? "bg-status-warning" : "bg-status-success"
-    // Answering but out of the set: a standby tier, idle on purpose.
-    return "bg-surface-3"
-}
 
 function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
     const total = vpn.tunnels.length
-    // Only the active tier counts. A standby tier is idle on purpose, so
-    // counting it as missing would hold a healthy ladder at amber forever.
-    const active = vpn.tunnels.filter((t) => t.priority === vpn.active_tier)
-    const carrying = active.filter((t) => t.in_pool && answering(t)).length
+    // A standby is idle on purpose; only count what the strategy asked to carry.
+    const expected = vpn.strategy === "spread" ? vpn.tunnels : vpn.tunnels.filter((t) => t.in_pool)
+    const carrying = vpn.tunnels.filter((t) => t.in_pool && answering(t)).length
     const badge = vpn.tunnels.every((t) => t.verdict === "")
         ? { tone: TONE_MUTED, label: "waiting" }
         : carrying === 0
           ? { tone: TONE_DOWN, label: "down" }
-          : carrying < active.length
-            ? { tone: TONE_WARN, label: `${carrying} of ${active.length}` }
+          : carrying < expected.length
+            ? { tone: TONE_WARN, label: `${carrying} of ${expected.length}` }
             : { tone: TONE_OK, label: "online" }
+    const carrier = vpn.tunnels.find((t) => t.if_name === vpn.carrier)
+    // One line: the tab owns per-member detail.
+    const summary =
+        carrying === 0
+            ? "nothing carrying"
+            : carrier
+              ? `${carrier.name} carrying`
+              : `${carrying} of ${total} sharing the traffic`
     return (
         <div
             data-uplink="vpn"
             className="bg-surface-2 border-border flex flex-col gap-3 rounded-lg border p-4"
         >
             <div className="flex items-start justify-between gap-2">
-                <div>
-                    <p className="font-mono text-base font-medium">VPN pool</p>
-                    <p className="text-text-tertiary text-xs">
-                        {total === 1 ? "1 tunnel" : `${total} tunnels`} · tier {vpn.active_tier} carrying
-                    </p>
+                <div className="min-w-0">
+                    <p className="font-mono text-base font-medium">VPN</p>
+                    <p className="text-text-tertiary truncate text-xs">{summary}</p>
                 </div>
                 <span
                     data-pool-state={badge.label}
@@ -282,16 +254,6 @@ function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
                 >
                     {badge.label}
                 </span>
-            </div>
-            <div className="flex items-center gap-1.5" aria-label="Pool members">
-                {vpn.tunnels.map((t) => (
-                    <span
-                        key={t.if_name}
-                        data-member={t.if_name}
-                        title={`${t.name} — ${t.verdict || "waiting"}${t.in_pool ? "" : answering(t) ? " (standby)" : " (out of the pool)"}`}
-                        className={cn("h-2.5 w-2.5 rounded-full", memberDotTone(t))}
-                    />
-                ))}
             </div>
             <div className="mt-auto">
                 <StatsRow loss={vpn.loss_pct} rtt={vpn.median_rtt_ms} history={vpn.pool_history} />

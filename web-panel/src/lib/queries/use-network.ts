@@ -21,7 +21,8 @@ import {
     rollbackNetworkApply,
     setDeviceLabel,
     setInterfaceLabel,
-    setVPNProfileRole,
+    setVPNPoolOrder,
+    setVPNPoolStrategy,
     setVPNProfileTransport,
     updateLAN,
     updateVPNProfile,
@@ -29,7 +30,12 @@ import {
     type PortForwardInput,
 } from "@/lib/api/network"
 import { queryKeys } from "@/lib/queries/keys"
-import type { AssignRoleRequest, LANConfig, VPNProfileInput } from "@/lib/types/network"
+import type {
+    AssignRoleRequest,
+    LANConfig,
+    PoolStrategy,
+    VPNProfileInput,
+} from "@/lib/types/network"
 
 /** Router mode off 404s every route; not worth retrying, so the page can hide. */
 export function useNetworkInterfaces(enabled = true) {
@@ -347,6 +353,39 @@ export function useDisableVPNProfile() {
     })
 }
 
+/** Instant: it only moves traffic between tunnels already enabled. */
+export function useSetPoolStrategy() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (strategy: PoolStrategy) => {
+            const res = await setVPNPoolStrategy(strategy)
+            if (!res.success) throw new Error(res.error || "Failed to change how the pool is used")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkHealth() })
+        },
+    })
+}
+
+/** The whole order, first to last. */
+export function useSetPoolOrder() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (ids: number[]) => {
+            const res = await setVPNPoolOrder(ids)
+            if (!res.success) throw new Error(res.error || "Failed to save the order")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkHealth() })
+        },
+    })
+}
+
 /** Same blast radius as a role edit: one tunnel re-handshakes, nothing else. */
 export function useSetVPNTransport() {
     const qc = useQueryClient()
@@ -364,19 +403,3 @@ export function useSetVPNTransport() {
     })
 }
 
-/** Redistribution only; refresh the pool views, not the whole subtree. */
-export function useSetVPNRole() {
-    const qc = useQueryClient()
-    return useMutation({
-        mutationFn: async ({ id, priority, weight }: { id: number; priority: number; weight: number }) => {
-            const res = await setVPNProfileRole(id, { priority, weight })
-            if (!res.success) throw new Error(res.error || "Failed to change the tunnel's role")
-            return res.data
-        },
-        onSuccess: () => {
-            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNProfiles() })
-            void qc.invalidateQueries({ queryKey: queryKeys.networkVPNStatus() })
-            void qc.invalidateQueries({ queryKey: queryKeys.networkHealth() })
-        },
-    })
-}
