@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
+	wgDomain "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/domain"
 	wireguardUC "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/utils"
@@ -31,9 +32,9 @@ func (h *Handler) sendDeviceList(c telebot.Context, sub *domain.Subscription) er
 		return c.Send("Could not load devices.")
 	}
 	servers, _ := h.deviceUC.ListServers(ctx, sub.ID)
-	serverName := make(map[uint]string, len(servers))
+	serverName := make(map[wgEndpointKey]string, len(servers))
 	for _, s := range servers {
-		serverName[s.InboundID] = wgServerLabel(s)
+		serverName[wgEndpointKey{s.InboundID, s.HostID}] = wgServerLabel(s)
 	}
 	multi := len(servers) > 1
 
@@ -47,7 +48,7 @@ func (h *Handler) sendDeviceList(c telebot.Context, sub *domain.Subscription) er
 		for _, d := range devices {
 			fmt.Fprintf(&b, "• %s — `%s` (%s)\n", utils.EscapeMarkdown(d.Label), d.AssignedIP, d.Status)
 			if multi {
-				if name := serverName[d.InboundID]; name != "" {
+				if name := serverName[wgEndpointKey{d.InboundID, wgPeerHostID(d)}]; name != "" {
 					fmt.Fprintf(&b, "   🌍 %s\n", utils.EscapeMarkdown(name))
 				}
 			}
@@ -62,11 +63,12 @@ func (h *Handler) sendDeviceList(c telebot.Context, sub *domain.Subscription) er
 	if multi {
 		rows = append(rows, kb.Row(kb.Data("➕ Add device", "wg_dev_addpick", fmt.Sprintf("%d", sub.ID))))
 	} else {
-		var inboundID uint
+		var inboundID, hostID uint
 		if len(servers) == 1 {
-			inboundID = servers[0].InboundID
+			inboundID, hostID = servers[0].InboundID, servers[0].HostID
 		}
-		rows = append(rows, kb.Row(kb.Data("➕ Add device", "wg_dev_add", fmt.Sprintf("%d", sub.ID), fmt.Sprintf("%d", inboundID))))
+		rows = append(rows, kb.Row(kb.Data("➕ Add device", "wg_dev_add",
+			fmt.Sprintf("%d", sub.ID), fmt.Sprintf("%d", inboundID), fmt.Sprintf("%d", hostID))))
 	}
 	rows = append(rows, kb.Row(kb.Data("« Back", "sub_select", fmt.Sprintf("%d", sub.ID))))
 	kb.Inline(rows...)
@@ -75,11 +77,33 @@ func (h *Handler) sendDeviceList(c telebot.Context, sub *domain.Subscription) er
 	return utils.EditOrSend(c, b.String(), telebot.ModeMarkdown, kb)
 }
 
-func wgServerLabel(s wireguardUC.WGServerOption) string {
-	if s.Country != "" {
-		return fmt.Sprintf("%s (%s)", s.NodeName, s.Country)
+// wgEndpointKey identifies one pickable endpoint — an inbound seen through one
+// of its hosts (host 0 = the inbound's own address).
+type wgEndpointKey struct {
+	InboundID uint
+	HostID    uint
+}
+
+func wgPeerHostID(p *wgDomain.WGPeer) uint {
+	if p.HostID == nil {
+		return 0
 	}
-	return s.NodeName
+	return *p.HostID
+}
+
+func wgServerLabel(s wireguardUC.WGServerOption) string {
+	name := s.NodeName
+	if s.Country != "" {
+		name = fmt.Sprintf("%s (%s)", s.NodeName, s.Country)
+	}
+	// Hosts are separate endpoints on the same node — show what tells them apart.
+	if s.Label != "" {
+		return fmt.Sprintf("%s — %s", name, s.Label)
+	}
+	if s.HostID != 0 && s.Endpoint != "" {
+		return fmt.Sprintf("%s — %s", name, s.Endpoint)
+	}
+	return name
 }
 
 // HandleAddDevicePicker lists the sub's WG servers so the user picks where to
@@ -101,7 +125,7 @@ func (h *Handler) HandleAddDevicePicker(c telebot.Context, subID uint) error {
 	var rows []telebot.Row
 	for _, s := range servers {
 		rows = append(rows, kb.Row(kb.Data("➕ "+wgServerLabel(s), "wg_dev_add",
-			fmt.Sprintf("%d", v.Sub.ID), fmt.Sprintf("%d", s.InboundID))))
+			fmt.Sprintf("%d", v.Sub.ID), fmt.Sprintf("%d", s.InboundID), fmt.Sprintf("%d", s.HostID))))
 	}
 	rows = append(rows, kb.Row(kb.Data("« Back", "sub_devices", fmt.Sprintf("%d", v.Sub.ID))))
 	kb.Inline(rows...)
@@ -110,7 +134,7 @@ func (h *Handler) HandleAddDevicePicker(c telebot.Context, subID uint) error {
 
 // HandleAddDevice provisions a new peer on the chosen WG inbound and delivers
 // its .conf once. inboundID 0 means "first available server".
-func (h *Handler) HandleAddDevice(c telebot.Context, subID, inboundID uint) error {
+func (h *Handler) HandleAddDevice(c telebot.Context, subID, inboundID, hostID uint) error {
 	v, err := h.getVerifiedSubscription(c, subID)
 	if err != nil {
 		return nil
@@ -119,7 +143,10 @@ func (h *Handler) HandleAddDevice(c telebot.Context, subID, inboundID uint) erro
 	ctx, cancel := tgctx.FromTelebot(c)
 	defer cancel()
 
-	dc, err := h.deviceUC.CreateDevice(ctx, v.Sub.ID, inboundID, "")
+	dc, err := h.deviceUC.CreateDevice(ctx, v.Sub.ID, wireguardUC.CreateDeviceInput{
+		InboundID: inboundID,
+		HostID:    hostID,
+	})
 	if err != nil {
 		if errors.Is(err, wireguardUC.ErrDeviceCapReached) {
 			return c.Send("⚠️ Device limit reached for this subscription.")

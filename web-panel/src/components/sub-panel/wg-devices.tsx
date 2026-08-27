@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { QRCodeSVG } from "qrcode.react"
 import { motion } from "framer-motion"
-import { Check, Copy, Download, Plus, RotateCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react"
+import { Check, Copy, Download, Plus, QrCode, RotateCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,10 +23,11 @@ import {
     useAddWgDevice,
     useRemoveWgDevice,
     useRotateWgDevice,
+    useWgDeviceConfig,
     useWgDevices,
     useWgServers,
 } from "@/lib/queries/use-wg-devices"
-import type { WgDevice } from "@/lib/types/sub-panel"
+import type { WgDevice, WgServerOption } from "@/lib/types/sub-panel"
 
 function fmtBytes(n: number): string {
     if (!n || n < 0) return "0 B"
@@ -47,6 +48,21 @@ function flagEmoji(cc: string): string {
     return String.fromCodePoint(0x1f1e6 + (up.charCodeAt(0) - 65)) + String.fromCodePoint(0x1f1e6 + (up.charCodeAt(1) - 65))
 }
 
+/** Endpoints are (inbound, host) pairs — the Select needs one string value. */
+function endpointKey(inboundId: number, hostId?: number | null): string {
+    return `${inboundId}:${hostId ?? 0}`
+}
+
+function serverKey(s: WgServerOption): string {
+    return endpointKey(s.inbound_id, s.host_id)
+}
+
+/** Node name, plus whatever distinguishes this host from the node's others. */
+function serverLabel(s: WgServerOption): string {
+    const detail = s.label || (s.host_id ? s.endpoint : "")
+    return detail ? `${s.node_name} — ${detail}` : s.node_name
+}
+
 function downloadConf(filename: string, text: string) {
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }))
     const a = document.createElement("a")
@@ -56,9 +72,20 @@ function downloadConf(filename: string, text: string) {
     URL.revokeObjectURL(url)
 }
 
-// ConfigReveal shows a freshly created/rotated .conf ONCE — the private key is
-// never stored server-side, so re-showing means regenerating.
-function ConfigReveal({ label, conf, onClose }: { label: string; conf: string; onClose: () => void }) {
+// ConfigReveal shows a device's .conf. `fresh` marks a just-created/rotated
+// config (the previous one, if any, is now dead); a re-download of an existing
+// device changes nothing, so it gets the quieter notice.
+function ConfigReveal({
+    label,
+    conf,
+    fresh,
+    onClose,
+}: {
+    label: string
+    conf: string
+    fresh: boolean
+    onClose: () => void
+}) {
     const [copied, setCopied] = useState(false)
     const copy = async () => {
         const ok = await copyToClipboard(conf)
@@ -74,8 +101,10 @@ function ConfigReveal({ label, conf, onClose }: { label: string; conf: string; o
     return (
         <Card className="border-emerald-500/30 bg-emerald-500/[0.04] py-0 gap-0">
             <CardContent className="flex flex-col items-center gap-3 p-4">
-                <p className="text-center text-xs text-amber-500">
-                    Save this now — it’s shown only once. Re-showing regenerates and invalidates this config.
+                <p className={cn("text-center text-xs", fresh ? "text-amber-500" : "text-muted-foreground")}>
+                    {fresh
+                        ? "Scan or import it into WireGuard. You can open it again later from the device list."
+                        : "Keep it private — anyone with this config can use your device slot."}
                 </p>
                 <div className="rounded-lg bg-white p-3">
                     <QRCodeSVG value={conf} size={200} level="M" bgColor="#ffffff" fgColor="#000000" />
@@ -106,21 +135,23 @@ function AddDeviceSheet({
 }: {
     open: boolean
     onOpenChange: (v: boolean) => void
-    servers: { inbound_id: number; node_name: string; country_code: string }[]
+    servers: WgServerOption[]
     pending: boolean
-    onCreate: (label: string, inboundId?: number) => void
+    onCreate: (label: string, server?: WgServerOption) => void
 }) {
     const multi = servers.length > 1
     const [name, setName] = useState("")
-    const [inboundId, setInboundId] = useState<number | undefined>(undefined)
+    const [selected, setSelected] = useState<string | undefined>(undefined)
 
-    // Reset fields each time the sheet opens; default to the first server.
+    // Reset fields each time the sheet opens; default to the first endpoint.
     useEffect(() => {
         if (open) {
             setName("")
-            setInboundId(servers[0]?.inbound_id)
+            setSelected(servers[0] ? serverKey(servers[0]) : undefined)
         }
     }, [open, servers])
+
+    const selectedServer = servers.find((s) => serverKey(s) === selected) ?? servers[0]
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -128,7 +159,7 @@ function AddDeviceSheet({
                 <SheetHeader className="pb-1">
                     <SheetTitle className="text-[15px]">Add WireGuard device</SheetTitle>
                     <SheetDescription className="text-xs">
-                        A new config is generated and shown once. Name it so you can tell your devices apart.
+                        A new config is generated for this device. Name it so you can tell your devices apart.
                     </SheetDescription>
                 </SheetHeader>
 
@@ -150,28 +181,30 @@ function AddDeviceSheet({
                     {multi && (
                         <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Server</Label>
-                            <Select
-                                value={inboundId != null ? String(inboundId) : undefined}
-                                onValueChange={(v) => setInboundId(Number(v))}
-                            >
+                            <Select value={selected} onValueChange={setSelected}>
                                 <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Choose a server" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {servers.map((s) => (
-                                        <SelectItem key={s.inbound_id} value={String(s.inbound_id)}>
-                                            {flagEmoji(s.country_code)} {s.node_name}
+                                        <SelectItem key={serverKey(s)} value={serverKey(s)}>
+                                            {flagEmoji(s.country_code)} {serverLabel(s)}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {selectedServer?.endpoint && (
+                                <p className="text-[11px] text-muted-foreground font-mono">
+                                    {selectedServer.endpoint}
+                                </p>
+                            )}
                         </div>
                     )}
 
                     <Button
                         className="w-full"
                         disabled={pending || servers.length === 0}
-                        onClick={() => onCreate(name.trim(), inboundId)}
+                        onClick={() => onCreate(name.trim(), selectedServer)}
                     >
                         {pending ? "Creating…" : "Create config"}
                     </Button>
@@ -200,8 +233,9 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
     const add = useAddWgDevice(uuid)
     const rotate = useRotateWgDevice(uuid)
     const remove = useRemoveWgDevice(uuid)
+    const showConfig = useWgDeviceConfig(uuid)
 
-    const [reveal, setReveal] = useState<{ label: string; conf: string } | null>(null)
+    const [reveal, setReveal] = useState<{ label: string; conf: string; fresh: boolean } | null>(null)
     const [sheetOpen, setSheetOpen] = useState(false)
 
     const list = devicesQ.data?.devices ?? []
@@ -209,13 +243,16 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
     const used = devicesQ.data?.used ?? list.length
     const servers = serversQ.data ?? []
     const multi = servers.length > 1
-    const srvName = new Map(servers.map((s) => [s.inbound_id, s.node_name]))
+    // Devices map back to the endpoint they were provisioned for — (inbound, host).
+    const srvByEndpoint = new Map(servers.map((s) => [serverKey(s), s]))
     const full = max > 0 && used >= max
 
-    const onCreate = async (label: string, inboundId?: number) => {
+    const onCreate = async (label: string, server?: WgServerOption) => {
         try {
-            const res = await add.mutateAsync(inboundId ? { inbound_id: inboundId, label } : { label })
-            setReveal({ label: res.device.label || label || "wireguard", conf: res.config })
+            const res = await add.mutateAsync(
+                server ? { inbound_id: server.inbound_id, host_id: server.host_id, label } : { label }
+            )
+            setReveal({ label: res.device.label || label || "wireguard", conf: res.config, fresh: true })
             setSheetOpen(false)
             toast.success("Device added")
         } catch (e) {
@@ -223,6 +260,20 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                 toast.error("Device limit reached")
             } else {
                 toast.error("Could not add device")
+            }
+        }
+    }
+
+    // Re-download: the device keeps working, so no confirm — unlike rotate.
+    const onShow = async (d: WgDevice) => {
+        try {
+            const res = await showConfig.mutateAsync(d.id)
+            setReveal({ label: d.label, conf: res.config, fresh: false })
+        } catch (e) {
+            if (e instanceof ApiError && e.status === 409) {
+                toast.error("This device predates config re-download — regenerate to get a new one")
+            } else {
+                toast.error("Could not load config")
             }
         }
     }
@@ -237,7 +288,7 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
         if (!ok) return
         try {
             const res = await rotate.mutateAsync(d.id)
-            setReveal({ label: d.label, conf: res.config })
+            setReveal({ label: d.label, conf: res.config, fresh: true })
             toast.success("Config regenerated")
         } catch {
             toast.error("Could not regenerate")
@@ -282,7 +333,12 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
 
                 <div className="px-3.5 md:px-4 pb-3.5 md:pb-4 space-y-2.5">
                     {reveal && (
-                        <ConfigReveal label={reveal.label} conf={reveal.conf} onClose={() => setReveal(null)} />
+                        <ConfigReveal
+                            label={reveal.label}
+                            conf={reveal.conf}
+                            fresh={reveal.fresh}
+                            onClose={() => setReveal(null)}
+                        />
                     )}
 
                     {loading ? (
@@ -315,14 +371,32 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                                 <StatusBadge status={d.status} />
                                             </div>
                                             <div className="text-xs text-muted-foreground font-mono">{d.assigned_ip}</div>
-                                            {multi && srvName.get(d.inbound_id) && (
-                                                <div className="text-xs text-muted-foreground">🌍 {srvName.get(d.inbound_id)}</div>
-                                            )}
+                                            {multi &&
+                                                (() => {
+                                                    const s = srvByEndpoint.get(endpointKey(d.inbound_id, d.host_id))
+                                                    if (!s) return null
+                                                    return (
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {flagEmoji(s.country_code)} {serverLabel(s)}
+                                                        </div>
+                                                    )
+                                                })()}
                                             <div className="text-xs text-muted-foreground">
                                                 ↑↓ {fmtBytes((d.up_bytes || 0) + (d.down_bytes || 0))}
                                             </div>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                className="size-11"
+                                                aria-label="Show config"
+                                                title="Show config"
+                                                disabled={showConfig.isPending}
+                                                onClick={() => void onShow(d)}
+                                            >
+                                                <QrCode className="size-4" />
+                                            </Button>
                                             <Button
                                                 variant="outline"
                                                 size="icon"

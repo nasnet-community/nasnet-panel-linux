@@ -14,8 +14,8 @@ type wgRef struct {
 	InboundID uint
 }
 
-// wgEmailKey must match the forked xray-core key in proxy/wireguard/server.go:
-// "wg:" + inboundTag + ":" + tunnelIP.
+// wgEmailKey must match the per-peer email the config builder stamps onto each
+// WireGuard peer ("wg:" + inboundTag + ":" + tunnelIP)
 func wgEmailKey(inboundTag, ip string) string {
 	return "wg:" + inboundTag + ":" + ip
 }

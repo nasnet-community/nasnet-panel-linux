@@ -433,6 +433,9 @@ func (m *mockNodeRepo) ToggleInboundDisabled(_ context.Context, _ uint) error { 
 func (m *mockNodeRepo) GetInboundWithNode(_ context.Context, _ uint) (*nodeDomain.Inbound, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockNodeRepo) GetInboundWithNodeAndHosts(_ context.Context, _ uint) (*nodeDomain.Inbound, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 func (m *mockNodeRepo) GetInboundByTagAndNode(_ context.Context, _ uint, _ string) (*nodeDomain.Inbound, error) {
 	return nil, fmt.Errorf("not implemented")
 }

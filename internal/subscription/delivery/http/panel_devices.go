@@ -80,11 +80,12 @@ func (h *Handler) PanelDevices(c *gin.Context) {
 
 type panelAddDeviceBody struct {
 	InboundID uint   `json:"inbound_id"`
+	HostID    uint   `json:"host_id"`
 	Label     string `json:"label"`
 }
 
-// PanelAddDevice provisions a new peer and returns its .conf — shown ONCE; the
-// private key is never stored server-side. POST .../devices
+// PanelAddDevice provisions a new peer and returns its .conf.
+// POST .../devices
 func (h *Handler) PanelAddDevice(c *gin.Context) {
 	sub, ok := h.authedPanelSub(c)
 	if !ok {
@@ -92,15 +93,47 @@ func (h *Handler) PanelAddDevice(c *gin.Context) {
 	}
 	var body panelAddDeviceBody
 	_ = c.ShouldBindJSON(&body)
-	dc, err := h.deviceUC.CreateDevice(c.Request.Context(), sub.ID, body.InboundID, body.Label)
+	dc, err := h.deviceUC.CreateDevice(c.Request.Context(), sub.ID, wireguardUC.CreateDeviceInput{
+		InboundID: body.InboundID,
+		HostID:    body.HostID,
+		Label:     body.Label,
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, wireguardUC.ErrDeviceCapReached):
 			httputil.Error(c, http.StatusConflict, "device_limit_reached")
 		case errors.Is(err, wireguardUC.ErrNoWGServer):
 			httputil.Error(c, http.StatusBadRequest, "no_wireguard_server")
+		case errors.Is(err, wireguardUC.ErrHostUnavailable):
+			httputil.Error(c, http.StatusBadRequest, "host_unavailable")
 		default:
 			httputil.Error(c, http.StatusBadGateway, "could_not_create_device")
+		}
+		return
+	}
+	httputil.OK(c, gin.H{"device": dc.Peer, "config": dc.Conf})
+}
+
+// PanelDeviceConfig re-serves an existing device's .conf for a user who lost the
+// file. Read-only: the device keeps working, unlike rotate. 409 when the peer
+// predates the stored-private-key column and can only be rotated.
+// GET .../devices/:deviceId/config
+func (h *Handler) PanelDeviceConfig(c *gin.Context) {
+	sub, ok := h.authedPanelSub(c)
+	if !ok {
+		return
+	}
+	deviceID, ok := parsePanelDeviceID(c)
+	if !ok {
+		return
+	}
+	dc, err := h.deviceUC.DeviceConfig(c.Request.Context(), sub.ID, deviceID)
+	if err != nil {
+		switch {
+		case errors.Is(err, wireguardUC.ErrConfigUnavailable):
+			httputil.Error(c, http.StatusConflict, "config_unavailable")
+		default:
+			httputil.Error(c, http.StatusNotFound, "device not found")
 		}
 		return
 	}

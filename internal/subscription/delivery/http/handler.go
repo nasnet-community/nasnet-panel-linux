@@ -186,6 +186,7 @@ func (h *Handler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 		rg.GET("/api/v1/public/sub/:uuid/wg/servers", h.PanelWGServers)
 		rg.GET("/api/v1/public/sub/:uuid/devices", h.PanelDevices)
 		rg.POST("/api/v1/public/sub/:uuid/devices", h.PanelAddDevice)
+		rg.GET("/api/v1/public/sub/:uuid/devices/:deviceId/config", h.PanelDeviceConfig)
 		rg.POST("/api/v1/public/sub/:uuid/devices/:deviceId/rotate", h.PanelRotateDevice)
 		rg.DELETE("/api/v1/public/sub/:uuid/devices/:deviceId", h.PanelRemoveDevice)
 	}

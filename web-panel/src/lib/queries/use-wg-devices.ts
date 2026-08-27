@@ -62,12 +62,22 @@ export function useWgDevices(uuid: string, enabled: boolean) {
 export function useAddWgDevice(uuid: string) {
     const qc = useQueryClient()
     return useMutation({
-        mutationFn: (body: { inbound_id?: number; label?: string }) =>
+        mutationFn: (body: { inbound_id?: number; host_id?: number; label?: string }) =>
             panelRequest<{ device: WgDevice; config: string }>(uuid, "/devices", {
                 method: "POST",
                 body: JSON.stringify(body),
             }),
         onSuccess: () => void qc.invalidateQueries({ queryKey: ["wg-devices", uuid] }),
+    })
+}
+
+// useWgDeviceConfig re-fetches an existing device's .conf on demand (lost the
+// file, new phone). A mutation rather than a query: it's user-triggered and the
+// config shouldn't sit in the query cache.
+export function useWgDeviceConfig(uuid: string) {
+    return useMutation({
+        mutationFn: (deviceId: number) =>
+            panelRequest<{ device: WgDevice; config: string }>(uuid, `/devices/${deviceId}/config`),
     })
 }
 

@@ -18,6 +18,42 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/wgkey"
 )
 
+// wgPeerIndex resolves which WireGuard peer backs a given endpoint (inbound +
+// host). Peers pinned to a host win for that host; an unpinned peer is the
+// fallback everywhere on its inbound, which keeps links working for devices
+// created before hosts were pinnable.
+type wgPeerIndex struct {
+	byEndpoint map[[2]uint]*wgDomain.WGPeer
+	byInbound  map[uint]*wgDomain.WGPeer
+}
+
+func newWGPeerIndex() *wgPeerIndex {
+	return &wgPeerIndex{
+		byEndpoint: map[[2]uint]*wgDomain.WGPeer{},
+		byInbound:  map[uint]*wgDomain.WGPeer{},
+	}
+}
+
+func (idx *wgPeerIndex) add(p *wgDomain.WGPeer) {
+	var hostID uint
+	if p.HostID != nil {
+		hostID = *p.HostID
+	}
+	idx.byEndpoint[[2]uint{p.InboundID, hostID}] = p
+	// Prefer an unpinned peer as the inbound-wide fallback; otherwise any peer,
+	// so an inbound with only host-pinned devices still renders every host.
+	if cur, ok := idx.byInbound[p.InboundID]; !ok || (cur.HostID != nil && hostID == 0) {
+		idx.byInbound[p.InboundID] = p
+	}
+}
+
+func (idx *wgPeerIndex) forEndpoint(inboundID, hostID uint) *wgDomain.WGPeer {
+	if p, ok := idx.byEndpoint[[2]uint{inboundID, hostID}]; ok {
+		return p
+	}
+	return idx.byInbound[inboundID]
+}
+
 // populateWGDetail fills the WG client-link fields from the peer + inbound
 // settings. No peer / no stored private key => fields stay empty, link skipped.
 func populateWGDetail(detail *product.InboundDetail, in *nodeDomain.Inbound, peer *wgDomain.WGPeer) {
@@ -177,14 +213,16 @@ func (u *subscriptionUsecase) GetSubscriptionConfig(ctx context.Context, configI
 		accounts, _ = u.accountManager.ListAccountsBySubscription(ctx, sub.ID)
 	}
 
-	// Pre-fetch active WG peers keyed by inbound for wireguard:// links.
-	// Only peers with a stored private key qualify.
-	wgPeersByInbound := map[uint]*wgDomain.WGPeer{}
+	// Pre-fetch active WG peers for wireguard:// links. Only peers with a stored
+	// private key qualify. Keyed by the endpoint they were provisioned for —
+	// inbound plus pinned host — so a host advertises the device the customer
+	// actually created for it.
+	wgPeers := newWGPeerIndex()
 	if u.wgPeerReader != nil {
 		if peers, err := u.wgPeerReader.ListBySubscription(ctx, sub.ID); err == nil {
 			for _, p := range peers {
 				if p != nil && p.Status == wgDomain.WGPeerStatusActive && p.PrivateKey != "" {
-					wgPeersByInbound[p.InboundID] = p
+					wgPeers.add(p)
 				}
 			}
 		}
@@ -198,16 +236,15 @@ func (u *subscriptionUsecase) GetSubscriptionConfig(ctx context.Context, configI
 			if acc.Inbound == nil || acc.Inbound.IsDisabled || acc.Inbound.Node == nil || !acc.Inbound.Node.IsActive {
 				continue
 			}
-			wgPeer := wgPeersByInbound[acc.Inbound.ID]
 			activeHosts := acc.Inbound.GetActiveHosts()
 			if len(activeHosts) == 0 {
 				detail := u.buildInboundDetail(ctx, acc.Inbound)
-				populateWGDetail(&detail, acc.Inbound, wgPeer)
+				populateWGDetail(&detail, acc.Inbound, wgPeers.forEndpoint(acc.Inbound.ID, 0))
 				inboundDetails = append(inboundDetails, detail)
 			} else {
 				for i := range activeHosts {
 					detail := u.buildInboundDetailFromHost(ctx, acc.Inbound, &activeHosts[i])
-					populateWGDetail(&detail, acc.Inbound, wgPeer)
+					populateWGDetail(&detail, acc.Inbound, wgPeers.forEndpoint(acc.Inbound.ID, activeHosts[i].ID))
 					inboundDetails = append(inboundDetails, detail)
 				}
 			}

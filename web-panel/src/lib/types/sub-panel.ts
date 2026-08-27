@@ -95,15 +95,24 @@ export interface WgDevice {
     status: string
     created_at: string
     inbound_id: number
+    /** Pinned presentation host; absent = the inbound's own address. */
+    host_id?: number | null
     up_bytes: number
     down_bytes: number
     last_seen?: string | null
 }
 
+/** One pickable endpoint: an inbound, optionally seen through one of its hosts. */
 export interface WgServerOption {
     inbound_id: number
+    /** 0 = the inbound's own address:port. */
+    host_id: number
     node_name: string
     country_code: string
+    /** Host remark, template rendered; empty for a direct inbound endpoint. */
+    label: string
+    /** host:port the client will dial. */
+    endpoint: string
 }
 
 export interface WgDevicesResponse {

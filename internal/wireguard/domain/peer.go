@@ -16,6 +16,8 @@ type WGPeer struct {
 	SubscriptionID uint `gorm:"index;not null" json:"subscription_id"`
 	InboundID      uint `gorm:"index;not null;uniqueIndex:idx_wgpeer_inbound_ip" json:"inbound_id"`
 
+	HostID *uint `gorm:"index" json:"host_id,omitempty"`
+
 	Label string `gorm:"size:64" json:"label"`
 
 	PublicKey    string `gorm:"size:64;uniqueIndex;not null" json:"public_key"`

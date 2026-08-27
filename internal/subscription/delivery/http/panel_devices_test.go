@@ -19,6 +19,7 @@ type fakeDeviceUC struct {
 	servers    []wireguardUC.WGServerOption
 	maxDevices int
 	createErr  error
+	configErr  error
 	created    *wireguardUC.DeviceConfig
 }
 
@@ -29,9 +30,15 @@ func (f *fakeDeviceUC) ListDevices(_ context.Context, _ uint) ([]*wgDomain.WGPee
 	return f.devices, nil
 }
 func (f *fakeDeviceUC) MaxDevices(_ context.Context, _ uint) (int, error) { return f.maxDevices, nil }
-func (f *fakeDeviceUC) CreateDevice(_ context.Context, _, _ uint, _ string) (*wireguardUC.DeviceConfig, error) {
+func (f *fakeDeviceUC) CreateDevice(_ context.Context, _ uint, _ wireguardUC.CreateDeviceInput) (*wireguardUC.DeviceConfig, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
+	}
+	return f.created, nil
+}
+func (f *fakeDeviceUC) DeviceConfig(_ context.Context, _, _ uint) (*wireguardUC.DeviceConfig, error) {
+	if f.configErr != nil {
+		return nil, f.configErr
 	}
 	return f.created, nil
 }
