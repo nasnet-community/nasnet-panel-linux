@@ -856,6 +856,7 @@ export function NodeNetworkConfig({
                                                             <HostList
                                                                 inboundId={inbound.id}
                                                                 initialHosts={inbound.hosts}
+                                                                inbound={inbound}
                                                             />
                                                             <InboundAccountsRow
                                                                 accounts={inboundAccounts}
@@ -918,7 +919,7 @@ export function NodeNetworkConfig({
                                                     onDelete={() => handleDeleteInbound(inbound)}
                                                     expandedContent={
                                                         <>
-                                                            <HostList inboundId={inbound.id} initialHosts={inbound.hosts} />
+                                                            <HostList inboundId={inbound.id} initialHosts={inbound.hosts} inbound={inbound} />
                                                             <InboundAccountsRow
                                                                 accounts={inboundAccounts}
                                                                 nodeId={nodeId}

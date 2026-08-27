@@ -55,6 +55,20 @@ func ApplyHostOverrides(detail *InboundDetail, host *nodeDomain.Host) {
 		detail.TLSALPN = strings.Split(host.ALPN, ",")
 	}
 
+	// Reality key material only means anything on a reality link; applying it
+	// elsewhere would put pbk/sid into a TLS config the client then rejects.
+	if effSecurity == "reality" {
+		if host.RealityPublicKey != "" {
+			detail.RealityPublicKey = host.RealityPublicKey
+		}
+		if host.RealityShortID != "" {
+			detail.RealityShortID = host.RealityShortID
+		}
+		if host.RealitySpiderX != "" {
+			detail.RealitySpiderX = host.RealitySpiderX
+		}
+	}
+
 	if host.Host != "" {
 		detail.TransportHost = host.Host
 	}
@@ -66,11 +80,38 @@ func ApplyHostOverrides(detail *InboundDetail, host *nodeDomain.Host) {
 			detail.TransportServiceName = host.Path
 		}
 	}
+	// Explicit gRPC serviceName wins over the Path mirror above.
+	if host.ServiceName != "" {
+		detail.TransportServiceName = host.ServiceName
+	}
 	if host.Mode != "" {
 		detail.TransportMode = host.Mode
 	}
 	if host.HeaderType != "" {
 		detail.TransportHeaderType = host.HeaderType
+	}
+
+	// Protocol-scoped overrides. Gated on the inbound's protocol so a host
+	// reused across inbounds can't inject vless flow into a trojan link.
+	switch strings.ToLower(detail.Protocol) {
+	case "vless":
+		if host.Flow != "" {
+			detail.VLESSFlow = host.Flow
+		}
+		if host.Encryption != "" {
+			detail.VLESSEncryption = host.Encryption
+		}
+	case "vmess":
+		if host.VMessSecurity != "" {
+			detail.VMessSecurity = host.VMessSecurity
+		}
+	case "hysteria2", "hysteria":
+		if host.ObfsPassword != "" {
+			detail.HysteriaObfsPassword = host.ObfsPassword
+		}
+		if host.PortRange != "" {
+			detail.PortRange = host.PortRange
+		}
 	}
 
 	if host.Security != "" {
