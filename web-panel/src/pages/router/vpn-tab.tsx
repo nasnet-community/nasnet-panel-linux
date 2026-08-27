@@ -2,8 +2,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { ShieldAlert, TriangleAlert } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { VpnPoolCard } from "@/components/network/vpn-pool-card"
-import { VpnPoolTable } from "@/components/network/vpn-pool-table"
+import { VpnPool } from "@/components/network/vpn-pool"
 import {
     useDisableVPNProfile,
     useEnableVPNProfile,
@@ -57,6 +56,8 @@ export function VpnTab({ armed, onApplied }: Props) {
     const known = !status.isLoading && !status.isError && !!st
     const on = tunnels.length > 0
     const connected = tunnels.some((t) => t.connected)
+    // A dead uplink and a dead pool look the same from the tunnel's side.
+    const uplinksDown = (st?.uplinks?.length ?? 0) > 0 && !st?.uplinks.some((u) => u.up)
 
     return (
         <div className="space-y-4">
@@ -76,9 +77,12 @@ export function VpnTab({ armed, onApplied }: Props) {
                     <Alert variant="warning">
                         <TriangleAlert className="h-4 w-4" />
                         <AlertDescription>
-                            None of the pool&apos;s tunnels are answering, so traffic bound for the
-                            secondary uplink is being dropped. It resumes on its own when one comes
-                            back.
+                            {uplinksDown
+                                ? "Every secondary uplink is down, so the VPNs have nothing to run over. " +
+                                  "Traffic bound for that uplink is being dropped until one returns."
+                                : "None of the pool's VPNs are answering, so traffic bound for the " +
+                                  "secondary uplink is being dropped. It resumes on its own when one " +
+                                  "comes back."}
                         </AlertDescription>
                     </Alert>
                 )
@@ -112,14 +116,16 @@ export function VpnTab({ armed, onApplied }: Props) {
                 </Alert>
             ))}
 
-            <VpnPoolCard status={st} loading={status.isLoading} />
-
-            <VpnPoolTable
+            <VpnPool
                 profiles={profiles.data}
                 loading={profiles.isLoading}
                 tunnels={tunnels}
                 health={health.data?.vpn?.tunnels ?? []}
+                poolLossPct={health.data?.vpn?.loss_pct}
+                poolRTTms={health.data?.vpn?.median_rtt_ms}
                 uplinks={st?.uplinks ?? []}
+                strategy={st?.strategy ?? "spread"}
+                carrier={st?.carrier}
                 armed={armed}
                 busy={enable.isPending || disable.isPending}
                 onEnable={(id) =>

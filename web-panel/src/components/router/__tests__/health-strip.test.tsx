@@ -212,13 +212,13 @@ describe("HealthStrip", () => {
         )
     })
 
-    it("aggregates the pool into one card with a dot per member", () => {
+    // Per-member detail belongs to the VPN tab now.
+    it("says what the pool is doing in one line and counts an ejected member", () => {
         const member = (over: Partial<TunnelHealth>): TunnelHealth => ({
             profile_id: 1,
             name: "frankfurt",
             if_name: "nasnet-wg0",
-            priority: 0,
-            weight: 3,
+            position: 0,
             in_pool: true,
             verdict: "up",
             degraded: false,
@@ -231,7 +231,7 @@ describe("HealthStrip", () => {
         mockQuery.data = health({
             vpn: {
                 present: true,
-                active_tier: 0,
+                strategy: "spread" as const,
                 loss_pct: 2,
                 median_rtt_ms: 80,
                 pool_history: [
@@ -251,13 +251,12 @@ describe("HealthStrip", () => {
             },
         })
         renderStrip()
-        expect(screen.getByText("VPN pool")).toBeInTheDocument()
+        expect(screen.getByText("VPN")).toBeInTheDocument()
+        expect(screen.getByText("1 of 2 sharing the traffic")).toBeInTheDocument()
         // One member was ejected, so the badge counts instead of claiming green.
         expect(document.querySelector('[data-pool-state="1 of 2"]')).not.toBeNull()
-        expect(document.querySelectorAll("[data-member]").length).toBe(2)
-        expect(
-            document.querySelector('[data-member="nasnet-wg1"]')?.getAttribute("title"),
-        ).toContain("out of the pool")
+        // No per-member dots: the tab owns that, and this card repeated it.
+        expect(document.querySelectorAll("[data-member]").length).toBe(0)
     })
 
     it("refuses to call a routed but silent pool online", () => {
@@ -266,7 +265,7 @@ describe("HealthStrip", () => {
         mockQuery.data = health({
             vpn: {
                 present: true,
-                active_tier: 0,
+                strategy: "spread" as const,
                 loss_pct: 100,
                 median_rtt_ms: 0,
                 pool_history: [],
@@ -275,8 +274,7 @@ describe("HealthStrip", () => {
                         profile_id: 1,
                         name: "frankfurt",
                         if_name: "nasnet-wg0",
-                        priority: 0,
-                        weight: 1,
+                        position: 0,
                         in_pool: true,
                         verdict: "no-internet",
                         degraded: true,
@@ -290,16 +288,14 @@ describe("HealthStrip", () => {
         })
         renderStrip()
         expect(document.querySelector('[data-pool-state="down"]')).not.toBeNull()
-        expect(
-            document.querySelector('[data-member="nasnet-wg0"]')?.className,
-        ).toContain("bg-status-danger")
+        expect(screen.getByText("nothing carrying")).toBeInTheDocument()
     })
 
     it("says waiting while no tunnel has answered yet", () => {
         mockQuery.data = health({
             vpn: {
                 present: true,
-                active_tier: 0,
+                strategy: "spread" as const,
                 loss_pct: 0,
                 median_rtt_ms: 0,
                 pool_history: [],
@@ -308,8 +304,7 @@ describe("HealthStrip", () => {
                         profile_id: 1,
                         name: "frankfurt",
                         if_name: "nasnet-wg0",
-                        priority: 0,
-                        weight: 1,
+                        position: 0,
                         in_pool: true,
                         verdict: "",
                         degraded: false,

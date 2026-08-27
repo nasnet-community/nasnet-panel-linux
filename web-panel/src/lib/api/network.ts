@@ -8,6 +8,7 @@ import type {
     NetworkInterfaceView,
     NetworkPlan,
     NetworkState,
+    PoolStrategy,
     PortForward,
     Verdict,
     VerdictLevel,
@@ -228,14 +229,6 @@ export async function disableVPNProfile(id: number): Promise<ApiResponse<Network
     return api.post<NetworkApply>(`/api/v1/network/vpn/profiles/${id}/disable`)
 }
 
-/** Tier and weight only redistribute flows, so no dead-man rides along. */
-export async function setVPNProfileRole(
-    id: number,
-    role: { priority: number; weight: number },
-): Promise<ApiResponse<null>> {
-    return api.patch<null>(`/api/v1/network/vpn/profiles/${id}/role`, role)
-}
-
 /** Empty uplinkKey clears the pin and hands the tunnel back to the deal. */
 export async function setVPNProfileTransport(
     id: number,
@@ -244,6 +237,16 @@ export async function setVPNProfileTransport(
     return api.patch<null>(`/api/v1/network/vpn/profiles/${id}/transport`, {
         uplink_key: uplinkKey,
     })
+}
+
+/** spread, order or fastest. */
+export async function setVPNPoolStrategy(strategy: PoolStrategy): Promise<ApiResponse<null>> {
+    return api.patch<null>("/api/v1/network/vpn/pool/strategy", { strategy })
+}
+
+/** The whole order, first to last. A partial one is refused. */
+export async function setVPNPoolOrder(ids: number[]): Promise<ApiResponse<null>> {
+    return api.patch<null>("/api/v1/network/vpn/pool/order", { ids })
 }
 
 export async function getVPNStatus(): Promise<ApiResponse<VPNPoolStatus>> {
