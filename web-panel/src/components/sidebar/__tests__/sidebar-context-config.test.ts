@@ -17,8 +17,7 @@ describe("getContextConfig", () => {
     })
 
     // A route without its own panel used to render none, and the nav jumped by
-    // the card's whole height on the way in and out. System status is true
-    // everywhere, so it stands in.
+    // the card's height. System status is true everywhere, so it stands in.
     it("falls back to system status rather than nothing", () => {
         for (const path of [
             "/settings",

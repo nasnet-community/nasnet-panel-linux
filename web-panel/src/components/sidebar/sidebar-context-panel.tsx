@@ -16,10 +16,9 @@ import {
     type ContextStatus,
 } from "./sidebar-context-config"
 
-// One persisted expand state for the panel, not one per route: a per-route
-// preference made the card change height as you navigated, which moves the nav
-// underneath it. Default is collapsed, so first-time users get the terse
-// "chart-only" view and opt in to details.
+// One expand state for the panel, not one per route: per-route changed the
+// card's height as you navigated and moved the nav under it. Collapsed by
+// default, so a first look is the chart and details are opt-in.
 const EXPANDED_STORAGE_KEY = "sidebar-ctx-expanded"
 function useExpandedState(): [boolean, () => void] {
     const key = EXPANDED_STORAGE_KEY

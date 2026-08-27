@@ -250,15 +250,12 @@ const (
 	rulePrefViaStride = 10
 )
 
-// vpnViaTableFor is the pool-slice table for one secondary: only the tunnels
-// whose transport rides that WAN. 203 stays the whole pool. Secondaries only
-// (2-5 → 207-210); index 1 would collide with a raw uplink table.
+// One secondary's slice of the pool; 203 stays the whole of it. Secondaries
+// only (2-5 → 207-210), since index 1 would collide with a raw uplink table.
 func vpnViaTableFor(uplinkIndex uint32) int { return 205 + int(uplinkIndex) }
 
-// ViaRules picks one WAN's slice of the pool. Same shape as the foreign group:
-// a lookup when there is something to look up, a terminator always — a stale
-// via mark after a role change must die here rather than walk on to the
-// fallback and out the domestic line.
+// A lookup when there is something to look up, a terminator always: a stale via
+// mark must die here rather than walk on and out the domestic line.
 func ViaRules(uplinks []Uplink, vpn VPNRouteState) []system.Rule {
 	assigned := map[uint32]bool{}
 	for _, up := range uplinks {
