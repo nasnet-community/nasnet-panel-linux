@@ -196,8 +196,8 @@ export interface TunnelStatus {
     profile_id: number
     name: string
     if_name: string
-    priority: number
-    weight: number
+    /** Where this tunnel sits in the operator's order, first is 0. */
+    position: number
     /** A handshake in the last few minutes. There is no link state to read. */
     connected: boolean
     handshake_age_seconds: number | null
@@ -231,11 +231,17 @@ export interface VPNUplink {
     up: boolean
 }
 
+/** How traffic uses the pool. One choice for the whole pool. */
+export type PoolStrategy = "spread" | "order" | "fastest"
+
 export interface VPNPoolStatus {
     tunnels: TunnelStatus[]
     uplinks: VPNUplink[]
     /** Always true. Stated, never offered. */
     kill_switch: boolean
+    strategy: PoolStrategy
+    /** The tunnel carrying alone, when the strategy runs one at a time. */
+    carrier?: string
 }
 
 export interface VPNProfileInput {

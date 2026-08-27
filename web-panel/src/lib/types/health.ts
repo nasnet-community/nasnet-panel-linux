@@ -1,6 +1,6 @@
 // Mirrors HealthView and friends in internal/network/usecase/health_view.go.
 
-import type { UplinkSlot } from "@/lib/types/network"
+import type { PoolStrategy, UplinkSlot } from "@/lib/types/network"
 
 export interface TargetStatus {
     address: string
@@ -47,8 +47,8 @@ export interface TunnelHealth {
     profile_id: number
     name: string
     if_name: string
-    priority: number
-    weight: number
+    /** The operator's order, first is 0. */
+    position: number
     /** In the nexthop set right now, i.e. actually carrying traffic. */
     in_pool: boolean
     verdict: TunnelVerdict
@@ -61,7 +61,9 @@ export interface TunnelHealth {
 
 export interface VPNPoolHealth {
     present: boolean
-    active_tier: number
+    strategy: PoolStrategy
+    /** The tunnel carrying alone, empty when they all carry. */
+    carrier?: string
     loss_pct: number
     median_rtt_ms: number
     /** Members' samples averaged, for the pool sparkline. */
