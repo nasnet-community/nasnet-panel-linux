@@ -443,6 +443,10 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "router_degraded_rtt_ms_foreign", Value: "800", Type: "int", Category: "router",
 			Label:       "Degraded RTT, foreign (ms)",
 			Description: "Median probe RTT that marks the secondary uplink degraded. Higher floor: satellite latency is normal."},
+		// Empty until the first boot reads the old tiers and writes what they meant.
+		{Key: "router_vpn_pool_strategy", Value: "", Type: "string", Category: "router",
+			Label:       "How traffic uses the VPN pool",
+			Description: "spread (every tunnel carries an equal share), order (the first carries, the rest are backups) or fastest (the lowest-latency tunnel carries)."},
 		{Key: "router_failover_domestic_to_vpn", Value: "true", Type: "bool", Category: "router",
 			Label:       "Failover domestic traffic to the VPN",
 			Description: "When the domestic ISP loses internet, send Iranian-destined traffic through the tunnel until it recovers. Turn off if your domestic services reject foreign IPs."},

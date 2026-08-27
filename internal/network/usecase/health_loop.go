@@ -187,7 +187,8 @@ func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw stri
 		nh := u.currentPoolNexthops()
 		if len(nh) == 0 {
 			// First tick after boot: the pool loop hasn't published a set yet.
-			nh = poolNexthops(u.poolMembers(u.vpnPoolNow(ctx)))
+			nh = poolNexthops(u.poolMembers(u.vpnPoolNow(ctx)),
+				u.poolStrategyNow(), u.poolCarrierNow())
 		}
 		if len(nh) == 0 {
 			// The VPNUp gate should prevent this; never install an empty default.
@@ -360,7 +361,25 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 			})
 		}
 	}
+	// Elect before the routes are written, so this tick carries on the winner.
+	u.announceCarrier(u.electCarrier(u.poolMembers(pool), cfg.PoolStrategy), pool)
 	_ = u.applyPoolRoutes(ctx)
+}
+
+// The box moved the traffic, not the operator, so the feed says why.
+func (u *networkUsecase) announceCarrier(sw *carrierSwitch, pool vpnPool) {
+	if sw == nil {
+		return
+	}
+	names := map[string]string{}
+	for _, t := range pool.Tunnels {
+		names[t.IfName] = t.Profile.Name
+	}
+	u.emit(events.EventVPNCarrierSwitched, map[string]any{
+		"from": names[sw.From], "to": names[sw.To],
+		"from_if_name": sw.From, "to_if_name": sw.To, "reason": sw.Reason,
+		"from_rtt_ms": sw.FromRTT, "to_rtt_ms": sw.ToRTT,
+	})
 }
 
 // applyPoolRoutes rewrites the pool defaults from current dampers and roles and

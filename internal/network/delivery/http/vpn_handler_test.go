@@ -207,7 +207,7 @@ func TestSetVPNProfileRole_BadRangeIs400(t *testing.T) {
 
 func TestVPNStatus_ReturnsTheEnvelope(t *testing.T) {
 	uc := &stubUsecase{vpnStatus: &usecase.VPNPoolStatusView{
-		Tunnels: []usecase.TunnelStatusView{{ProfileID: 1, Name: "berlin", Connected: true, MTU: 1420, InPool: true}},
+		Tunnels:    []usecase.TunnelStatusView{{ProfileID: 1, Name: "berlin", Connected: true, MTU: 1420, InPool: true}},
 		KillSwitch: true,
 	}}
 	w := do(t, newRouter(t, uc, true), "GET", "/api/v1/network/vpn/status", "")
@@ -276,6 +276,48 @@ func TestSetVPNProfileTransport_UnknownUplinkIs400(t *testing.T) {
 	uc := &stubUsecase{vpnTransportErr: usecase.ErrValidationFailed}
 	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/profiles/5/transport",
 		`{"uplink_key":"k-nope"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetPoolStrategy_PassesTheChoiceThrough(t *testing.T) {
+	uc := &stubUsecase{}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/pool/strategy",
+		`{"strategy":"fastest"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if uc.poolStrategy != "fastest" {
+		t.Errorf("usecase got %q", uc.poolStrategy)
+	}
+}
+
+// A strategy the usecase does not know is the caller's mistake, not a fault.
+func TestSetPoolStrategy_RejectionIs400(t *testing.T) {
+	uc := &stubUsecase{poolStrategyErr: usecase.ErrValidationFailed}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/pool/strategy",
+		`{"strategy":"round-robin"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetPoolOrder_PassesTheWholeOrder(t *testing.T) {
+	uc := &stubUsecase{}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/pool/order",
+		`{"ids":[3,1,2]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if len(uc.poolOrder) != 3 || uc.poolOrder[0] != 3 || uc.poolOrder[2] != 2 {
+		t.Errorf("usecase got %v", uc.poolOrder)
+	}
+}
+
+func TestSetPoolOrder_PartialOrderIs400(t *testing.T) {
+	uc := &stubUsecase{poolOrderErr: usecase.ErrValidationFailed}
+	w := do(t, newRouter(t, uc, true), "PATCH", "/api/v1/network/vpn/pool/order", `{"ids":[1]}`)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400: %s", w.Code, w.Body.String())
 	}

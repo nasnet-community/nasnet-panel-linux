@@ -62,11 +62,11 @@ type VPNProfileView struct {
 
 // TunnelStatusView is one pool member's live state.
 type TunnelStatusView struct {
-	ProfileID        uint   `json:"profile_id"`
-	Name             string `json:"name"`
-	IfName           string `json:"if_name"`
-	Priority         int    `json:"priority"`
-	Weight           int    `json:"weight"`
+	ProfileID uint   `json:"profile_id"`
+	Name      string `json:"name"`
+	IfName    string `json:"if_name"`
+	// The operator's order, first is 0. Only the chain acts on it.
+	Position         int    `json:"position"`
 	Connected        bool   `json:"connected"`
 	HandshakeAgeSecs *int64 `json:"handshake_age_seconds"`
 	RxBytes          int64  `json:"rx_bytes"`
@@ -107,6 +107,9 @@ type VPNPoolStatusView struct {
 	// KillSwitch is always true. Reported so the UI can state it rather than
 	// offer it.
 	KillSwitch bool `json:"kill_switch"`
+	// Carrier is empty unless one tunnel carries at a time.
+	Strategy PoolStrategy `json:"strategy"`
+	Carrier  string       `json:"carrier,omitempty"`
 }
 
 // CreateVPNProfileRequest carries either something pasted or a filled-in form.
@@ -494,7 +497,11 @@ func (u *networkUsecase) EnableVPNProfile(ctx context.Context, id uint) ([]domai
 				if err := u.VPNRepo.Update(ctx, profile); err != nil {
 					return err
 				}
-				return u.VPNRepo.SetEnabled(ctx, profile.ID, true)
+				if err := u.VPNRepo.SetEnabled(ctx, profile.ID, true); err != nil {
+					return err
+				}
+				// At position 0 it would take the traffic off the first one.
+				return u.appendToChain(ctx, profile.ID)
 			},
 		},
 		system.Op{
@@ -761,42 +768,20 @@ func wgApplyConfig(cfg *domain.WireGuardConfig, mark uint32) (system.WGApplyConf
 // ---------------------------------------------------------------- kernel state
 
 // poolMember is what the nexthop choice needs to know about one tunnel.
+// Priority is the operator's drag order, and only the failover chain reads it.
 type poolMember struct {
 	IfName   string
 	Slot     int
 	Priority int
-	Weight   int
+	RTTms    int
 	Healthy  bool
 }
 
-// poolNexthops picks the active tier: the best priority holding a healthy
-// member, ejecting its dead siblings. A pool with no healthy member anywhere
-// keeps its best tier routed anyway — a dead tunnel beats a blackhole, and
-// the probes need the path to see the recovery.
-func poolNexthops(members []poolMember) []system.Nexthop {
-	if len(members) == 0 {
-		return nil
-	}
-	best, anyHealthy := 0, false
-	for _, m := range members {
-		if m.Healthy && (!anyHealthy || m.Priority < best) {
-			best, anyHealthy = m.Priority, true
-		}
-	}
-	if !anyHealthy {
-		best = members[0].Priority
-		for _, m := range members {
-			if m.Priority < best {
-				best = m.Priority
-			}
-		}
-	}
+// One weight for everyone: the strategy says who carries, not in what ratio.
+func poolNexthops(members []poolMember, strategy PoolStrategy, carrier string) []system.Nexthop {
 	var out []system.Nexthop
-	for _, m := range members {
-		if m.Priority != best || (anyHealthy && !m.Healthy) {
-			continue
-		}
-		out = append(out, system.Nexthop{OifName: m.IfName, Weight: m.Weight})
+	for _, m := range carriersFor(members, strategy, carrier) {
+		out = append(out, system.Nexthop{OifName: m.IfName, Weight: 1})
 	}
 	return out
 }
@@ -814,9 +799,13 @@ func (u *networkUsecase) poolMembers(pool vpnPool) []poolMember {
 			down, _ := s.snapshot()
 			healthy = !down
 		}
+		rtt := 0
+		if r, ok := u.rings[t.IfName]; ok {
+			rtt = medianRTT(r.snapshot(), 20)
+		}
 		out = append(out, poolMember{
 			IfName: t.IfName, Slot: *t.Profile.WGSlot,
-			Priority: t.Profile.Priority, Weight: t.Profile.Weight, Healthy: healthy,
+			Priority: t.Profile.Priority, RTTms: rtt, Healthy: healthy,
 		})
 	}
 	return out
@@ -841,7 +830,7 @@ func (u *networkUsecase) applyVPNRoutes(ctx context.Context, pool vpnPool, uplin
 	}
 
 	members := u.poolMembers(pool)
-	nh := poolNexthops(members)
+	nh := poolNexthops(members, u.poolStrategyNow(), u.poolCarrierNow())
 	routes := []system.Route{{
 		Table: system.WGTable, Dest: "default", Nexthops: nh,
 	}}
@@ -911,13 +900,16 @@ func (u *networkUsecase) applyViaRoutes(ctx context.Context, pool vpnPool, uplin
 		secByIdx[up.UplinkIndex] = up
 	}
 
+	// A via-marked flow obeys the pool's strategy, not a second policy.
+	strategy, carrier := u.poolStrategyNow(), u.poolCarrierNow()
+
 	var errs []error
 	for _, slot := range domain.SecondarySlots() {
 		idx := uplinkIndexFor(slot)
 		table := vpnViaTableFor(idx)
 		var nh []system.Nexthop
 		if up, ok := secByIdx[idx]; ok {
-			nh = poolNexthops(byWAN[up.IfName])
+			nh = poolNexthops(byWAN[up.IfName], strategy, carrier)
 		}
 		if len(nh) > 0 {
 			if err := u.Backend.RouteReplace(ctx, system.Route{
@@ -1007,8 +999,13 @@ func secondaryGateways(uplinks []Uplink, rows []domain.NetworkInterface) map[str
 // ---------------------------------------------------------------- status
 
 func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, error) {
+	strategy := u.poolStrategyNow()
 	out := &VPNPoolStatusView{
 		Tunnels: []TunnelStatusView{}, Uplinks: []VPNUplinkView{}, KillSwitch: true,
+		Strategy: strategy,
+	}
+	if strategy.SingleCarrier() {
+		out.Carrier = u.poolCarrierNow()
 	}
 
 	uplinks, _ := u.uplinks(ctx)
@@ -1034,8 +1031,8 @@ func (u *networkUsecase) VPNStatus(ctx context.Context) (*VPNPoolStatusView, err
 	for _, t := range pool.Tunnels {
 		tv := TunnelStatusView{
 			ProfileID: t.Profile.ID, Name: t.Profile.Name, IfName: t.IfName,
-			Priority: t.Profile.Priority, Weight: t.Profile.Weight,
-			MTU: t.Config.MTU, KeepaliveSecs: t.Config.Peer.PersistentKeepalive,
+			Position: t.Profile.Priority,
+			MTU:      t.Config.MTU, KeepaliveSecs: t.Config.Peer.PersistentKeepalive,
 			InPool: inPool[t.IfName],
 		}
 		if wan, ok := deal[t.IfName]; ok {

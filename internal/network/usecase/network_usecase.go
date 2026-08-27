@@ -122,6 +122,10 @@ type NetworkUsecase interface {
 	DisableVPNProfile(ctx context.Context, id uint) ([]domain.Verdict, *ApplyView, error)
 	SetVPNProfileRole(ctx context.Context, id uint, priority, weight int) error
 	SetVPNProfileTransport(ctx context.Context, id uint, uplinkKey string) error
+	SetPoolStrategy(ctx context.Context, strategy string) error
+	SetPoolOrder(ctx context.Context, ids []uint) error
+	// MigratePoolStrategy reads an upgraded box's tiers once, at boot.
+	MigratePoolStrategy(ctx context.Context) error
 	VPNStatus(ctx context.Context) (*VPNPoolStatusView, error)
 
 	// The flow page. All read-only: nothing here touches a packet.
@@ -152,6 +156,8 @@ type Deps struct {
 	// VPNRepo holds the profiles. Nil means nothing can be active, so the
 	// foreign group blackholes.
 	VPNRepo repository.VPNRepository
+	// Nil keeps the strategy for this process only.
+	PoolSettings PoolSettings
 	// WG owns the tunnel interface. Nil uses the live kernel; injected in tests.
 	WG system.WGDevice
 	// DoH resolves the endpoint hostname before any tunnel exists. Nil uses the
@@ -230,6 +236,11 @@ type networkUsecase struct {
 	failoverActive bool
 	// lastTransport is the deal as applied, so a tick only re-marks what moved.
 	lastTransport map[string]string
+	// A challenger has to hold fastestHoldTicks, or a blinking probe moves
+	// live traffic.
+	poolCarrier        string
+	poolChallenger     string
+	poolChallengeTicks int
 }
 
 func (u *networkUsecase) dnsmasqStatus(ctx context.Context) system.DNSMasqStatus {

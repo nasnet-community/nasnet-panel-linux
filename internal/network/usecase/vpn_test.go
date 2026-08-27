@@ -158,6 +158,21 @@ func (f *fakeVPNRepo) SetEnabled(_ context.Context, id uint, on bool) error {
 	return domain.ErrProfileNotFound
 }
 
+func (f *fakeVPNRepo) SetOrder(_ context.Context, ids []uint) error {
+	for pos, id := range ids {
+		found := false
+		for i := range f.rows {
+			if f.rows[i].ID == id {
+				f.rows[i].Priority, found = pos, true
+			}
+		}
+		if !found {
+			return domain.ErrProfileNotFound
+		}
+	}
+	return nil
+}
+
 func (f *fakeVPNRepo) SetRole(_ context.Context, id uint, priority, weight int) error {
 	if err := domain.ValidatePoolRole(priority, weight); err != nil {
 		return err
@@ -441,7 +456,7 @@ func TestEnableVPNProfile_SecondMemberJoinsThePool(t *testing.T) {
 		}
 	}
 	if def == nil || len(def.Nexthops) != 2 ||
-		def.Nexthops[0] != (system.Nexthop{OifName: "nasnet-wg0", Weight: 3}) ||
+		def.Nexthops[0] != (system.Nexthop{OifName: "nasnet-wg0", Weight: 1}) ||
 		def.Nexthops[1] != (system.Nexthop{OifName: "nasnet-wg1", Weight: 1}) {
 		t.Fatalf("pool default = %+v", def)
 	}
@@ -558,23 +573,26 @@ func TestDisableVPNProfile_TakesTheMemberDown(t *testing.T) {
 	}
 }
 
+// Scripts still call the role API, and a position it writes must reach the chain.
 func TestSetVPNProfileRole_RewritesTheNexthopsWithoutAPlan(t *testing.T) {
 	ctx := context.Background()
 	f := newVPNFixture(t)
+	f.uc.healthCfg = DefaultHealthConfig()
+	f.uc.healthCfg.PoolStrategy = StrategyOrder
 	f.repo.rows = []domain.VPNProfile{
 		{ID: 1, Name: "a", Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(0), Config: wgConfigJSON(t, nil)},
 		{ID: 2, Name: "b", Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(1),
 			Config: wgConfigJSON(t, func(c *domain.WireGuardConfig) { c.Address = "10.66.1.2/32" })},
 	}
 
-	if err := f.uc.SetVPNProfileRole(ctx, 2, 1, 5); err != nil {
+	if err := f.uc.SetVPNProfileRole(ctx, 1, 1, 1); err != nil {
 		t.Fatal(err)
 	}
 	routes, _ := f.be.RouteList(ctx, system.WGTable)
 	for _, r := range routes {
 		if r.Dest == "default" && r.Metric == 0 {
-			if len(r.Nexthops) != 1 || r.Nexthops[0].OifName != "nasnet-wg0" {
-				t.Fatalf("tier 1 member still in the tier-0 set: %+v", r.Nexthops)
+			if len(r.Nexthops) != 1 || r.Nexthops[0].OifName != "nasnet-wg1" {
+				t.Fatalf("the chain ignored the new position: %+v", r.Nexthops)
 			}
 			return
 		}
@@ -593,39 +611,61 @@ func TestSetVPNProfileRole_RejectsBadRanges(t *testing.T) {
 	}
 }
 
-func TestPoolNexthops_TiersWeightsAndTheLastMemberRule(t *testing.T) {
+func TestPoolNexthops_EachStrategyPicksItsCarriers(t *testing.T) {
+	three := []poolMember{
+		{IfName: "nasnet-wg0", Slot: 0, Priority: 0, RTTms: 300, Healthy: true},
+		{IfName: "nasnet-wg1", Slot: 1, Priority: 1, RTTms: 90, Healthy: true},
+		{IfName: "nasnet-wg2", Slot: 2, Priority: 2, RTTms: 150, Healthy: true},
+	}
+	dead := func(members []poolMember, names ...string) []poolMember {
+		out := append([]poolMember(nil), members...)
+		for i := range out {
+			for _, n := range names {
+				if out[i].IfName == n {
+					out[i].Healthy = false
+				}
+			}
+		}
+		return out
+	}
 	cases := []struct {
-		name    string
-		members []poolMember
-		want    []system.Nexthop
+		name     string
+		members  []poolMember
+		strategy PoolStrategy
+		carrier  string
+		want     []string
 	}{
-		{"weighted tier zero",
-			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 3, Healthy: true},
-				{IfName: "nasnet-wg1", Priority: 0, Weight: 1, Healthy: true},
-				{IfName: "nasnet-wg2", Priority: 1, Weight: 1, Healthy: true}},
-			[]system.Nexthop{{OifName: "nasnet-wg0", Weight: 3}, {OifName: "nasnet-wg1", Weight: 1}}},
-		{"dead member ejected from its tier",
-			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 3, Healthy: false},
-				{IfName: "nasnet-wg1", Priority: 0, Weight: 1, Healthy: true}},
-			[]system.Nexthop{{OifName: "nasnet-wg1", Weight: 1}}},
-		{"tier zero all dead falls to tier one",
-			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 1, Healthy: false},
-				{IfName: "nasnet-wg1", Priority: 1, Weight: 1, Healthy: true}},
-			[]system.Nexthop{{OifName: "nasnet-wg1", Weight: 1}}},
-		{"everything dead keeps the best tier routed",
-			[]poolMember{{IfName: "nasnet-wg0", Priority: 0, Weight: 2, Healthy: false},
-				{IfName: "nasnet-wg1", Priority: 1, Weight: 1, Healthy: false}},
-			[]system.Nexthop{{OifName: "nasnet-wg0", Weight: 2}}},
-		{"empty pool", nil, nil},
+		{"spread runs every healthy tunnel", three, StrategySpread, "",
+			[]string{"nasnet-wg0", "nasnet-wg1", "nasnet-wg2"}},
+		{"spread ejects the dead one", dead(three, "nasnet-wg1"), StrategySpread, "",
+			[]string{"nasnet-wg0", "nasnet-wg2"}},
+		{"spread with nothing healthy still routes", dead(three, "nasnet-wg0", "nasnet-wg1", "nasnet-wg2"),
+			StrategySpread, "", []string{"nasnet-wg0", "nasnet-wg1", "nasnet-wg2"}},
+		{"the chain carries on the first", three, StrategyOrder, "", []string{"nasnet-wg0"}},
+		{"the chain steps past the dead", dead(three, "nasnet-wg0"), StrategyOrder, "",
+			[]string{"nasnet-wg1"}},
+		{"a dead chain keeps its first routed", dead(three, "nasnet-wg0", "nasnet-wg1", "nasnet-wg2"),
+			StrategyOrder, "", []string{"nasnet-wg0"}},
+		{"fastest holds the elected carrier", three, StrategyFastest, "nasnet-wg2",
+			[]string{"nasnet-wg2"}},
+		{"fastest re-elects when the carrier dies", dead(three, "nasnet-wg2"), StrategyFastest,
+			"nasnet-wg2", []string{"nasnet-wg1"}},
+		{"fastest with no election takes the quickest", three, StrategyFastest, "",
+			[]string{"nasnet-wg1"}},
+		{"empty pool", nil, StrategySpread, "", nil},
 	}
 	for _, tc := range cases {
-		got := poolNexthops(tc.members)
+		got := poolNexthops(tc.members, tc.strategy, tc.carrier)
 		if len(got) != len(tc.want) {
 			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
 		}
 		for i := range got {
-			if got[i] != tc.want[i] {
+			if got[i].OifName != tc.want[i] {
 				t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+			}
+			if got[i].Weight != 1 {
+				t.Errorf("%s: %s carries weight %d, want an equal share",
+					tc.name, got[i].OifName, got[i].Weight)
 			}
 		}
 	}
