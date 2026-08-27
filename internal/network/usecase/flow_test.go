@@ -127,12 +127,12 @@ func newFlowFixture(t *testing.T, o flowOpts) *networkUsecase {
 	}
 
 	u := &networkUsecase{Deps: Deps{
-		IfRepo:     &flowIfRepo{stubIfRepo{rows: rows}},
-		GroupRepo:  &stubGroupRepo{groups: flowGroups()},
-		LANRepo:    lanRepo,
-		VPNRepo:    repo,
-		WG:         wg,
-		Nftr:       fnft,
+		IfRepo:    &flowIfRepo{stubIfRepo{rows: rows}},
+		GroupRepo: &stubGroupRepo{groups: flowGroups()},
+		LANRepo:   lanRepo,
+		VPNRepo:   repo,
+		WG:        wg,
+		Nftr:      fnft,
 		Flow: &system.FakeFlowSource{Stats: map[string]system.LinkStat{
 			"eth0":            {RxBytes: 1000, TxBytes: 2000},
 			"eth1":            {RxBytes: 3000, TxBytes: 4000},

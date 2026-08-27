@@ -31,11 +31,11 @@ type UplinkHealthView struct {
 }
 
 type TunnelHealthView struct {
-	ProfileID   uint               `json:"profile_id"`
-	Name        string             `json:"name"`
-	IfName      string             `json:"if_name"`
-	Priority    int                `json:"priority"`
-	Weight      int                `json:"weight"`
+	ProfileID uint   `json:"profile_id"`
+	Name      string `json:"name"`
+	IfName    string `json:"if_name"`
+	// Position is the operator's order, first is 0.
+	Position    int                `json:"position"`
 	InPool      bool               `json:"in_pool"`
 	Verdict     string             `json:"verdict"`
 	Degraded    bool               `json:"degraded"`
@@ -46,8 +46,10 @@ type TunnelHealthView struct {
 }
 
 type VPNPoolHealthView struct {
-	Present     bool               `json:"present"`
-	ActiveTier  int                `json:"active_tier"`
+	Present bool `json:"present"`
+	// Carrier is empty unless one tunnel carries at a time.
+	Strategy    PoolStrategy       `json:"strategy"`
+	Carrier     string             `json:"carrier,omitempty"`
 	LossPct     int                `json:"loss_pct"`
 	MedianRTTms int                `json:"median_rtt_ms"`
 	PoolHistory []HealthSample     `json:"pool_history"`
@@ -117,28 +119,28 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 		for _, n := range u.currentPoolNexthops() {
 			inPool[n.OifName] = true
 		}
-		v := &VPNPoolHealthView{Present: true, ActiveTier: -1, Tunnels: []TunnelHealthView{}}
+		strategy := u.poolStrategyNow()
+		v := &VPNPoolHealthView{
+			Present: true, Strategy: strategy, Tunnels: []TunnelHealthView{},
+		}
+		if strategy.SingleCarrier() {
+			v.Carrier = u.poolCarrierNow()
+		}
 		var histories [][]HealthSample
 		for _, t := range pool.Tunnels {
 			l := ladders[t.IfName]
 			samples := window(u.ring(t.IfName).snapshot(), 180)
 			tv := TunnelHealthView{
 				ProfileID: t.Profile.ID, Name: t.Profile.Name, IfName: t.IfName,
-				Priority: t.Profile.Priority, Weight: t.Profile.Weight,
-				InPool: inPool[t.IfName], Verdict: l.Verdict, Degraded: l.Degraded,
+				Position: t.Profile.Priority,
+				InPool:   inPool[t.IfName], Verdict: l.Verdict, Degraded: l.Degraded,
 				LossPct: lossPct(samples, 20), MedianRTTms: medianRTT(samples, 20),
 				Targets: targetViews(l.Results), History: samples,
 			}
 			if tv.InPool {
 				histories = append(histories, samples)
-				if v.ActiveTier == -1 || t.Profile.Priority < v.ActiveTier {
-					v.ActiveTier = t.Profile.Priority
-				}
 			}
 			v.Tunnels = append(v.Tunnels, tv)
-		}
-		if v.ActiveTier == -1 {
-			v.ActiveTier = 0
 		}
 		v.PoolHistory = mergeHistories(histories)
 		v.LossPct = lossPct(v.PoolHistory, 20)

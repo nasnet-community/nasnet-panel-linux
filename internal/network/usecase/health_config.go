@@ -16,6 +16,8 @@ type HealthConfig struct {
 	DegradedLossPct int
 	DegradedRTTms   map[domain.UplinkSlot]int
 	FailoverToVPN   bool
+	// Settings-backed like the rest, so one reload covers it.
+	PoolStrategy PoolStrategy
 }
 
 func DefaultHealthConfig() HealthConfig {
@@ -32,6 +34,7 @@ func DefaultHealthConfig() HealthConfig {
 		// Starlink's RTT floor is high, and every secondary may be a dish.
 		DegradedRTTms: degradedRTTDefaults(),
 		FailoverToVPN: true,
+		PoolStrategy:  DefaultPoolStrategy,
 	}
 }
 
@@ -115,6 +118,12 @@ func ParseHealthConfig(get func(string) (string, error)) HealthConfig {
 	}
 	if v, err := get("router_failover_domestic_to_vpn"); err == nil && v != "" {
 		cfg.FailoverToVPN = v == "true"
+	}
+	// Empty is the unmigrated box, and a typo is not a fourth strategy.
+	if v, err := get(PoolStrategyKey); err == nil {
+		if s, ok := ParsePoolStrategy(v); ok {
+			cfg.PoolStrategy = s
+		}
 	}
 	return cfg
 }

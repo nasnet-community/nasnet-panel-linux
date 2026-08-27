@@ -347,6 +347,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
 			NetEvents: netEvents, Log: log,
 			PanelPort: cfg.App.Port, NodeRepo: repos.Node, HTTPFactory: httpFactory,
+			PoolSettings: poolSettings{uc: uc.Setting},
 		})
 		if rmErr != nil {
 			log.WithError(rmErr).Fatal("Router mode failed to start")
@@ -831,6 +832,21 @@ type routerModeDeps struct {
 	// HTTPFactory routes the domestic address-list refresh like every other
 	// outbound the panel makes.
 	HTTPFactory *httpclient.Factory
+	// PoolSettings persists how traffic uses the VPN pool.
+	PoolSettings networkUsecase.PoolSettings
+}
+
+// The strategy lives in the settings table with the other router_ keys.
+type poolSettings struct{ uc settingDomain.SettingUsecase }
+
+func (p poolSettings) Get(ctx context.Context, key string) (string, error) {
+	return p.uc.GetByKey(ctx, key)
+}
+
+func (p poolSettings) Set(ctx context.Context, key, value string) error {
+	return p.uc.UpdateMany(ctx, []*settingDomain.Setting{{
+		Key: key, Value: value, Type: "string", Category: "router",
+	}})
 }
 
 // startRouterMode runs preflight, builds the network usecase and reconciles
@@ -866,6 +882,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		PFRepo:       networkRepo.NewPortForwardRepository(deps.DB),
 		DeviceLabels: networkRepo.NewDeviceLabelRepository(deps.DB),
 		VPNRepo:      networkRepo.NewVPNRepository(deps.DB),
+		PoolSettings: deps.PoolSettings,
 		PanelPort:    deps.PanelPort,
 		Backend:      backend,
 		Nft:          deps.NftMgr,
@@ -878,6 +895,12 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),
 	})
+
+	// Before the first reconcile: an upgraded pool has tiers and no strategy.
+	if err := uc.MigratePoolStrategy(ctx); err != nil {
+		deps.Log.WithError(err).WithField("component", "router").
+			Error("Could not read the pool's old tiers; it starts on the default strategy")
+	}
 
 	// Loud, never fatal: the panel is the only tool the operator has to fix
 	// whatever broke the reconcile.

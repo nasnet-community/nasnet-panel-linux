@@ -22,7 +22,10 @@ type VPNRepository interface {
 	Enabled(ctx context.Context) ([]domain.VPNProfile, error)
 	// SetEnabled allocates or frees the interface slot with the flag.
 	SetEnabled(ctx context.Context, id uint, on bool) error
+	// Weight is inert: the strategy says who carries, never in what ratio.
 	SetRole(ctx context.Context, id uint, priority, weight int) error
+	// SetOrder writes the pool's positions, first to last.
+	SetOrder(ctx context.Context, ids []uint) error
 	// SetTransport pins a profile to one uplink key, or clears the pin.
 	SetTransport(ctx context.Context, id uint, uplinkKey string) error
 	// SetPool is the rollback path: the enabled set becomes exactly want.
@@ -185,6 +188,23 @@ func (r *vpnRepository) SetRole(ctx context.Context, id uint, priority, weight i
 		return domain.ErrProfileNotFound
 	}
 	return res.Error
+}
+
+// One transaction: a half-written order leaves two tunnels on one position.
+func (r *vpnRepository) SetOrder(ctx context.Context, ids []uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for pos, id := range ids {
+			res := tx.Model(&domain.VPNProfile{}).Where("id = ?", id).
+				Update("priority", pos)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return domain.ErrProfileNotFound
+			}
+		}
+		return nil
+	})
 }
 
 func (r *vpnRepository) SetTransport(ctx context.Context, id uint, uplinkKey string) error {

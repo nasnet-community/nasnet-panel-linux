@@ -52,7 +52,13 @@ type stubUsecase struct {
 	vpnTransportID  uint
 	vpnTransportKey string
 	vpnTransportErr error
-	vpnStatus     *usecase.VPNPoolStatusView
+
+	poolStrategy    string
+	poolStrategyErr error
+	poolOrder       []uint
+	poolOrderErr    error
+
+	vpnStatus *usecase.VPNPoolStatusView
 
 	flowView   *usecase.FlowView
 	traceView  *usecase.TraceView
@@ -144,6 +150,18 @@ func (s *stubUsecase) SetVPNProfileTransport(_ context.Context, id uint, uplinkK
 	s.vpnTransportID, s.vpnTransportKey = id, uplinkKey
 	return s.vpnTransportErr
 }
+
+func (s *stubUsecase) SetPoolStrategy(_ context.Context, strategy string) error {
+	s.poolStrategy = strategy
+	return s.poolStrategyErr
+}
+
+func (s *stubUsecase) SetPoolOrder(_ context.Context, ids []uint) error {
+	s.poolOrder = ids
+	return s.poolOrderErr
+}
+
+func (s *stubUsecase) MigratePoolStrategy(context.Context) error { return nil }
 
 func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNPoolStatusView, error) {
 	if s.vpnStatus == nil {
