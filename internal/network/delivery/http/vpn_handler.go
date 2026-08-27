@@ -179,6 +179,46 @@ func (h *Handler) SetVPNProfileTransport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// Instant like the pin: it only moves traffic between tunnels already enabled.
+func (h *Handler) SetPoolStrategy(c *gin.Context) {
+	var req struct {
+		Strategy string `json:"strategy"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.uc.SetPoolStrategy(c.Request.Context(), req.Strategy); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrValidationFailed) {
+			code = http.StatusBadRequest
+		}
+		fail(c, code, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// The whole order, first to last. A partial one is not an order.
+func (h *Handler) SetPoolOrder(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.uc.SetPoolOrder(c.Request.Context(), req.IDs); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrValidationFailed) || errors.Is(err, domain.ErrProfileNotFound) {
+			code = http.StatusBadRequest
+		}
+		fail(c, code, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 func (h *Handler) VPNStatus(c *gin.Context) {
 	st, err := h.uc.VPNStatus(c.Request.Context())
 	if err != nil {

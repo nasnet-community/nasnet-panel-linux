@@ -83,6 +83,8 @@ const (
 	// A tunnel's transport moved to another WAN. The box did it, not the
 	// operator, so it lands in the feed and nowhere noisier.
 	EventVPNTunnelRehomed EventType = "vpn.tunnel_rehomed"
+	// Failover, failback, or a faster tunnel winning the election.
+	EventVPNCarrierSwitched EventType = "vpn.carrier_switched"
 )
 
 // IsNetworkEvent is the recorder filter for the flow page's timeline.
