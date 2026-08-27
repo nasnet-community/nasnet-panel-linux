@@ -48,11 +48,14 @@ function SelectTrigger({
   )
 }
 
+// Popper, not Radix's item-aligned default: item-aligned clamps the menu into
+// whatever space is left below, so a select near the page bottom opens as a
+// sliver instead of flipping. align="center" was inert until now.
 function SelectContent({
   className,
   children,
-  position = "item-aligned",
-  align = "center",
+  position = "popper",
+  align = "start",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -73,8 +76,10 @@ function SelectContent({
         <SelectPrimitive.Viewport
           className={cn(
             "p-1",
+            // Width follows the trigger, height must not: shadcn's default
+            // pins it to the trigger and shows one option at a time.
             position === "popper" &&
-              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
+              "w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
           )}
         >
           {children}
