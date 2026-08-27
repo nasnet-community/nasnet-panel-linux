@@ -50,8 +50,10 @@ export function VMessOutboundForm({ settings, onChange }: VMessOutboundFormProps
                             <SelectItem value="auto">Auto</SelectItem>
                             <SelectItem value="aes-128-gcm">AES-128-GCM</SelectItem>
                             <SelectItem value="chacha20-poly1305">ChaCha20-Poly1305</SelectItem>
-                            <SelectItem value="none">None</SelectItem>
-                            <SelectItem value="zero">Zero</SelectItem>
+                            {/* xray-core removed none/zero/plain — they now fall back to
+                                Auto. Kept selectable so stored values still render. */}
+                            <SelectItem value="none">None (ignored — falls back to Auto)</SelectItem>
+                            <SelectItem value="zero">Zero (ignored — falls back to Auto)</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>

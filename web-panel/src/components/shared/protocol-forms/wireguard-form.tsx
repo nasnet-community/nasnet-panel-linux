@@ -93,16 +93,6 @@ export function WireGuardForm({ settings, onChange }: WireGuardFormProps) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                    <Label>Workers</Label>
-                    <Input
-                        type="number"
-                        placeholder="0 (auto)"
-                        value={data.numWorkers || 0}
-                        onChange={(e) => onChange({ ...data, numWorkers: parseInt(e.target.value) || 0 })}
-                    />
-                    <p className="text-xs text-muted-foreground">Number of worker threads (0 = auto)</p>
-                </div>
-                <div className="space-y-2">
                     <Label>Reserved</Label>
                     <Input
                         placeholder="0, 0, 0"

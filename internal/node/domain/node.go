@@ -460,6 +460,8 @@ type TransportSettings struct {
 	UplinkHTTPMethod     string       `json:"uplinkHTTPMethod,omitempty"`
 	SessionPlacement     string       `json:"sessionPlacement,omitempty"`
 	SessionKey           string       `json:"sessionKey,omitempty"`
+	SessionIDTable       string       `json:"sessionIDTable,omitempty"`
+	SessionIDLength      *RangeConfig `json:"sessionIDLength,omitempty"`
 	SeqPlacement         string       `json:"seqPlacement,omitempty"`
 	SeqKey               string       `json:"seqKey,omitempty"`
 	UplinkDataPlacement  string       `json:"uplinkDataPlacement,omitempty"`
@@ -499,10 +501,12 @@ type ShadowsocksSettings struct {
 
 // WireGuardSettings for WireGuard inbound/outbound
 type WireGuardSettings struct {
-	SecretKey      string          `json:"secretKey,omitempty"`      // Server private key
-	MTU            int             `json:"mtu,omitempty"`            // Default 1420
-	Endpoint       []string        `json:"endpoint,omitempty"`       // Local addresses (CIDR)
-	NumWorkers     int             `json:"numWorkers,omitempty"`     // Worker threads
+	SecretKey string   `json:"secretKey,omitempty"` // Server private key
+	MTU       int      `json:"mtu,omitempty"`       // Default 1420
+	Endpoint  []string `json:"endpoint,omitempty"`  // Local addresses (CIDR)
+	// Deprecated: xray-core removed the WireGuard `workers` knob. Kept so
+	// stored settings still deserialize; never emitted into a node config.
+	NumWorkers     int             `json:"numWorkers,omitempty"`
 	Reserved       []int           `json:"reserved,omitempty"`       // Reserved bytes (3 bytes)
 	DomainStrategy string          `json:"domainStrategy,omitempty"` // FORCE_IP, FORCE_IP4, etc.
 	NoKernelTun    bool            `json:"noKernelTun,omitempty"`
@@ -827,6 +831,24 @@ type FreedomSettings struct {
 	Fragment       *FreedomFragment `json:"fragment,omitempty"`
 	Noise          []FreedomNoise   `json:"noise,omitempty"`
 	ProxyProtocol  int              `json:"proxyProtocol,omitempty"` // 0=off, 1=v1, 2=v2
+
+	// FinalRules gate what this outbound is allowed to dial, evaluated after
+	// routing. Replaces the removed `ipsBlocked`. Added in xray-core v26.5.3.
+	FinalRules []FreedomFinalRule `json:"finalRules,omitempty"`
+}
+
+// FreedomFinalRule is one allow/block gate on a Freedom outbound's destination.
+// Action is required and must be "allow" or "block". Matchers left empty match
+// everything, so a bare {"action":"block"} blocks the outbound entirely.
+type FreedomFinalRule struct {
+	Action  string   `json:"action"`
+	Network string   `json:"network,omitempty"` // tcp, udp, or tcp,udp
+	Port    []string `json:"port,omitempty"`    // ports / ranges, e.g. "25", "6881-6889"
+	IP      []string `json:"ip,omitempty"`      // CIDRs or geoip:CC, "!" negates
+
+	// BlockDelay stalls a blocked dial for this many milliseconds instead of
+	// failing immediately, which looks less like a filter to the client.
+	BlockDelay *RangeConfig `json:"blockDelay,omitempty"`
 }
 
 // BlackholeSettings (Block)
@@ -836,17 +858,39 @@ type BlackholeSettings struct {
 
 // DNSOutboundSettings for DNS outbound protocol
 type DNSOutboundSettings struct {
-	Network    string  `json:"network,omitempty"` // tcp, udp
-	Address    string  `json:"address,omitempty"` // DNS server address
-	Port       int     `json:"port,omitempty"`    // DNS server port
-	UserLevel  int     `json:"userLevel,omitempty"`
+	Network   string `json:"network,omitempty"` // tcp, udp
+	Address   string `json:"address,omitempty"` // DNS server address
+	Port      int    `json:"port,omitempty"`    // DNS server port
+	UserLevel int    `json:"userLevel,omitempty"`
+
+	// Rules is xray-core's current DNS policy surface, replacing the legacy
+	// NonIPQuery/BlockTypes pair. The core refuses a config that sets both, so
+	// the builder emits Rules alone whenever it is non-empty.
+	Rules []DNSOutboundRule `json:"rules,omitempty"`
+
+	// Deprecated: superseded by Rules. xray-core still accepts these but logs a
+	// deprecation warning and cannot combine them with Rules.
 	NonIPQuery string  `json:"nonIPQuery,omitempty"` // drop, skip, reject
 	BlockTypes []int32 `json:"blockTypes,omitempty"` // DNS record types to block (e.g. 28 for AAAA)
+}
+
+// DNSOutboundRule is one entry of the DNS outbound's `rules` policy list.
+// Action is required: "direct" forwards the query, "drop" discards it,
+// "return" answers with RCode, "hijack" answers from the local DNS config.
+type DNSOutboundRule struct {
+	Action string   `json:"action"`
+	QType  []int32  `json:"qType,omitempty"`  // record types, e.g. 28 = AAAA
+	Domain []string `json:"domain,omitempty"` // domain matchers
+	RCode  uint32   `json:"rCode,omitempty"`  // only meaningful with "return"
 }
 
 // LoopbackSettings for Loopback outbound protocol
 type LoopbackSettings struct {
 	InboundTag string `json:"inboundTag,omitempty"`
+	// Sniffing lets a loopback outbound re-sniff the traffic it hands back to
+	// the router, so domain rules can match on the second pass. Added in
+	// xray-core v26.6.22.
+	Sniffing *SniffingSettings `json:"sniffing,omitempty"`
 }
 
 // Helper methods for Outbound

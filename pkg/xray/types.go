@@ -94,6 +94,15 @@ type User struct {
 	Flow       string // for VLESS XTLS
 	Encryption string // for VLESS
 	Decryption string // for VLESS
+
+	// WireGuard peers (xray-core >= v26.6.27 exposes a UserManager on the WG
+	// inbound, so a peer can be added/removed without rewriting the config).
+	// PublicKey/PreSharedKey take the usual base64 WireGuard form; AllowedIPs
+	// must be prefixes ("10.8.0.2/32"), since the core parses them as such.
+	PublicKey    string
+	PreSharedKey string
+	AllowedIPs   []string
+	KeepAlive    int
 }
 
 type Protocol string
@@ -104,6 +113,7 @@ const (
 	ProtocolTrojan      Protocol = "trojan"
 	ProtocolShadowsocks Protocol = "shadowsocks"
 	ProtocolHysteria2   Protocol = "hysteria2"
+	ProtocolWireGuard   Protocol = "wireguard"
 )
 
 // UserStats represents traffic statistics for a user
@@ -420,6 +430,12 @@ type RoutingRuleConfig struct {
 	ProcessNames []string          // Process name matching
 	LocalIPs     []string          // Local/bind IP matching
 	LocalPorts   []string          // Local/bind port matching
+	VlessRoutes  []string          // VLESS Reverse Proxy route ports (also Hysteria)
+
+	// Webhook fires on match. Empty URL disables it.
+	WebhookURL           string
+	WebhookDeduplication uint32
+	WebhookHeaders       map[string]string
 
 	ShouldAppend bool // If true, append to rule list (vs prepend)
 }

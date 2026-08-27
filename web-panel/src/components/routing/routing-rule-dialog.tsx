@@ -137,6 +137,7 @@ function splitGeoIPCIDR(items: string[]): { geoip: string[]; ipcidr: string[] } 
 type ConditionKey =
     | "domain" | "ip" | "port" | "network" | "protocol" | "attr"
     | "inbound" | "user" | "srcip" | "srcport" | "proc" | "localip" | "localport"
+    | "vlessroute"
 
 interface ConditionSpec {
     key: ConditionKey
@@ -159,6 +160,7 @@ const CONDITIONS: ConditionSpec[] = [
     { key: "proc", label: "Process name", scope: "source", example: "local process" },
     { key: "localip", label: "Local IP", scope: "source", example: "bind address" },
     { key: "localport", label: "Local port", scope: "source", example: "80, 443" },
+    { key: "vlessroute", label: "VLESS route", scope: "source", example: "443" },
 ]
 
 const CONDITION_LABEL: Record<ConditionKey, string> = CONDITIONS.reduce(
@@ -181,6 +183,7 @@ const CONDITION_FIELDS: Record<ConditionKey, (keyof RoutingRule)[]> = {
     proc: ["process_names"],
     localip: ["local_ips"],
     localport: ["local_ports"],
+    vlessroute: ["vless_routes"],
 }
 
 function conditionHasData(key: ConditionKey, data: Partial<RoutingRule>): boolean {
@@ -242,6 +245,10 @@ const emptyRule: Partial<RoutingRule> = {
     process_names: [],
     local_ips: [],
     local_ports: [],
+    vless_routes: [],
+    webhook_url: "",
+    webhook_deduplication: 0,
+    webhook_headers: {},
 }
 
 export function RoutingRuleDialog({
@@ -292,6 +299,10 @@ export function RoutingRuleDialog({
                 process_names: rule.process_names || [],
                 local_ips: rule.local_ips || [],
                 local_ports: rule.local_ports || [],
+                vless_routes: rule.vless_routes || [],
+                webhook_url: rule.webhook_url || "",
+                webhook_deduplication: rule.webhook_deduplication || 0,
+                webhook_headers: rule.webhook_headers || {},
             }
             setFormData(next)
             setActiveConditions(CONDITIONS.filter(c => conditionHasData(c.key, next)).map(c => c.key))
@@ -326,7 +337,7 @@ export function RoutingRuleDialog({
         if (!v) return
 
         // Field-specific validation
-        if (field === "port_rules" || field === "source_ports" || field === "local_ports") {
+        if (field === "port_rules" || field === "source_ports" || field === "local_ports" || field === "vless_routes") {
             if (!isValidPort(v)) {
                 toast.error(`Invalid port: "${v}" (use 1-65535 or range like 1000-2000)`)
                 return
@@ -868,10 +879,64 @@ export function RoutingRuleDialog({
                                                 <TagList items={formData.local_ports || []} onRemove={(i) => removeFromArray("local_ports", i)} />
                                             </div>
                                         )}
+
+                                        {key === "vlessroute" && (
+                                            <div className="space-y-2">
+                                                <ArrayInput placeholder="443, 8443" onAdd={(v) => addToArray("vless_routes", v)} />
+                                                <TagList items={formData.vless_routes || []} onRemove={(i) => removeFromArray("vless_routes", i)} />
+                                                <p className="text-[11px] text-muted-foreground">
+                                                    Matches the route port a VLESS Reverse Proxy request carries. Hysteria
+                                                    inbounds honor it too.
+                                                </p>
+                                            </div>
+                                        )}
                                     </ConditionCard>
                                 )
                             })}
                         </div>
+                    )}
+                </div>
+
+                {/* ═══ Notify ═══ */}
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 space-y-2.5">
+                    <div>
+                        <p className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70">Notify</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Optional. The node POSTs to this URL every time the rule matches — useful for
+                            abuse alerts. Leave empty to disable.
+                        </p>
+                    </div>
+                    <Input
+                        placeholder="https://hooks.example.com/xray"
+                        value={formData.webhook_url || ""}
+                        onChange={(e) => updateField("webhook_url", e.target.value)}
+                    />
+                    {(formData.webhook_url || "").trim() !== "" && (
+                        <>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Deduplication window (seconds)</Label>
+                                <Input
+                                    type="number"
+                                    min={0}
+                                    placeholder="0"
+                                    value={formData.webhook_deduplication ?? 0}
+                                    onChange={(e) => updateField("webhook_deduplication", parseInt(e.target.value) || 0)}
+                                />
+                                <p className="text-[11px] text-muted-foreground">
+                                    0 posts on every match. A busy rule can be very chatty.
+                                </p>
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Headers</Label>
+                                <AttributeInput
+                                    attributes={formData.webhook_headers || {}}
+                                    onChange={(next) => updateField("webhook_headers", next)}
+                                    hint="Sent with every notification, e.g. an auth token."
+                                    keyPlaceholder="Authorization"
+                                    valuePlaceholder="Bearer …"
+                                />
+                            </div>
+                        </>
                     )}
                 </div>
 
@@ -1038,9 +1103,15 @@ function ConditionMenu({ options, onPick }: { options: ConditionSpec[]; onPick: 
 function AttributeInput({
     attributes,
     onChange,
+    hint = "Match HTTP headers — key is the header name, value a regex.",
+    keyPlaceholder = "Header name",
+    valuePlaceholder = "Regex pattern",
 }: {
     attributes: Record<string, string>
     onChange: (next: Record<string, string>) => void
+    hint?: string
+    keyPlaceholder?: string
+    valuePlaceholder?: string
 }) {
     const [key, setKey] = useState("")
     const [val, setVal] = useState("")
@@ -1056,11 +1127,11 @@ function AttributeInput({
 
     return (
         <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">Match HTTP headers — key is the header name, value a regex.</p>
+            <p className="text-[11px] text-muted-foreground">{hint}</p>
             <div className="flex gap-2">
-                <Input placeholder="Header name" value={key} onChange={(e) => setKey(e.target.value)} className="flex-1" />
+                <Input placeholder={keyPlaceholder} value={key} onChange={(e) => setKey(e.target.value)} className="flex-1" />
                 <Input
-                    placeholder="Regex pattern"
+                    placeholder={valuePlaceholder}
                     value={val}
                     onChange={(e) => setVal(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
@@ -1149,6 +1220,9 @@ function buildXrayFragment(data: Partial<RoutingRule>, targetKind: "outbound" | 
     if (data.source_ips?.length) fragment.source = data.source_ips
     if (data.source_ports?.length) fragment.sourcePort = data.source_ports.join(",")
     if (data.process_names?.length) fragment.process = data.process_names
+    if (data.local_ips?.length) fragment.localIP = data.local_ips
+    if (data.local_ports?.length) fragment.localPort = data.local_ports.join(",")
+    if (data.vless_routes?.length) fragment.vlessRoute = data.vless_routes.join(",")
     if (targetKind === "balancer") fragment.balancerTag = data.balancing_tag || ""
     else fragment.outboundTag = data.outbound_tag || ""
     return JSON.stringify(fragment, null, 2)
