@@ -9,7 +9,7 @@ import {
     HiOutlinePencil,
     HiOutlineTrash,
 } from "react-icons/hi"
-import type { Host } from "@/lib/types"
+import type { Host, Inbound } from "@/lib/types"
 import { listInboundHosts, updateHost, deleteHost } from "@/lib/admin-api"
 import { queryKeys } from "@/lib/queries/keys"
 import { HostSettingsDialog } from "./host-settings-dialog"
@@ -17,9 +17,12 @@ import { HostSettingsDialog } from "./host-settings-dialog"
 interface HostListProps {
     inboundId: number
     initialHosts?: Host[]
+    /** The inbound these hosts belong to — lets the settings dialog show only
+     *  the override fields this protocol/transport actually uses. */
+    inbound?: Inbound
 }
 
-export function HostList({ inboundId, initialHosts }: HostListProps) {
+export function HostList({ inboundId, initialHosts, inbound }: HostListProps) {
     const queryClient = useQueryClient()
     const [hosts, setHosts] = useState<Host[]>(initialHosts || [])
     const [loading, setLoading] = useState(!initialHosts)
@@ -212,6 +215,7 @@ export function HostList({ inboundId, initialHosts }: HostListProps) {
                 onOpenChange={setDialogOpen}
                 host={editingHost}
                 inboundId={inboundId}
+                inbound={inbound}
                 onSuccess={fetchHosts}
             />
         </div>

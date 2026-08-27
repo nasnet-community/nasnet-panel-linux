@@ -217,6 +217,10 @@ func (u *nodeUsecase) BulkUpdateHosts(ctx context.Context, ids []uint, fields ma
 		"address": true, "port": true, "sni": true, "host": true,
 		"path": true, "alpn": true, "fingerprint": true, "security": true,
 		"allow_insecure": true, "priority": true, "is_disabled": true, "tags": true,
+		"reality_public_key": true, "reality_short_id": true, "reality_spider_x": true,
+		"mode": true, "header_type": true, "service_name": true,
+		"flow": true, "encryption": true, "vmess_security": true,
+		"obfs_password": true, "port_range": true,
 	}
 	for k := range fields {
 		if !allowed[k] {

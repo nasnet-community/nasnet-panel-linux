@@ -41,9 +41,26 @@ type Host struct {
 	Security      string `gorm:"size:20" json:"security"` // "", "tls", "reality", "none"
 	AllowInsecure *bool  `json:"allow_insecure"`
 
+	// Reality overrides. A fronting host can point clients at a different
+	// Reality server than the inbound advertises (pbk/sid/spx in the link).
+	// Applied only when the effective security is "reality".
+	RealityPublicKey string `gorm:"size:255" json:"reality_public_key"`
+	RealityShortID   string `gorm:"size:64" json:"reality_short_id"`
+	RealitySpiderX   string `gorm:"size:255" json:"reality_spider_x"`
+
 	// Network-level overrides
-	Mode       string `gorm:"size:30" json:"mode"`        // xhttp/splithttp mode: auto, packet-up, stream-up, stream-one
-	HeaderType string `gorm:"size:20" json:"header_type"` // tcp header type: none, http
+	Mode        string `gorm:"size:30" json:"mode"`          // xhttp/splithttp mode: auto, packet-up, stream-up, stream-one
+	HeaderType  string `gorm:"size:20" json:"header_type"`   // tcp header type: none, http
+	ServiceName string `gorm:"size:255" json:"service_name"` // gRPC serviceName (else Path is mirrored)
+
+	// Protocol-specific overrides. Each is applied only for the matching
+	// protocol, so a host shared across inbounds can't leak vless flow into a
+	// trojan link.
+	Flow          string `gorm:"size:32" json:"flow"`           // VLESS: xtls-rprx-vision
+	Encryption    string `gorm:"size:255" json:"encryption"`    // VLESS: none, mlkem768x25519plus...
+	VMessSecurity string `gorm:"size:32" json:"vmess_security"` // VMess: scy (auto, aes-128-gcm, zero...)
+	ObfsPassword  string `gorm:"size:255" json:"obfs_password"` // Hysteria2: salamander obfs password
+	PortRange     string `gorm:"size:64" json:"port_range"`     // Hysteria2: mport port hopping (e.g. 20000-25000)
 
 	// Fragment settings (anti-censorship)
 	FragmentSettings *HostFragmentSettings `gorm:"serializer:json;type:jsonb" json:"fragment_settings"`
@@ -86,8 +103,17 @@ type HostTemplate struct {
 	Fingerprint      string                `gorm:"size:50" json:"fingerprint"`
 	Security         string                `gorm:"size:20" json:"security"`
 	AllowInsecure    *bool                 `json:"allow_insecure"`
+	RealityPublicKey string                `gorm:"size:255" json:"reality_public_key"`
+	RealityShortID   string                `gorm:"size:64" json:"reality_short_id"`
+	RealitySpiderX   string                `gorm:"size:255" json:"reality_spider_x"`
 	Mode             string                `gorm:"size:30" json:"mode"`
 	HeaderType       string                `gorm:"size:20" json:"header_type"`
+	ServiceName      string                `gorm:"size:255" json:"service_name"`
+	Flow             string                `gorm:"size:32" json:"flow"`
+	Encryption       string                `gorm:"size:255" json:"encryption"`
+	VMessSecurity    string                `gorm:"size:32" json:"vmess_security"`
+	ObfsPassword     string                `gorm:"size:255" json:"obfs_password"`
+	PortRange        string                `gorm:"size:64" json:"port_range"`
 	FragmentSettings *HostFragmentSettings `gorm:"serializer:json;type:jsonb" json:"fragment_settings"`
 	Priority         *int                  `json:"priority"`
 
