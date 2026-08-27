@@ -26,6 +26,12 @@
   *:focus:not(:focus-visible) {
     outline: none;
   }
+  /* The document is the scroller, so a page that fits shows no scrollbar and a
+     page that doesn't takes width away from everything centred on it. Reserve
+     the gutter and the layout stops jumping sideways between the two. */
+  html {
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground;
   }
