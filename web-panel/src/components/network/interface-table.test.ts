@@ -54,8 +54,7 @@ describe("slotHolder", () => {
     })
 })
 
-// LAN and LAN member render the same networkd file — both are enslaved to the
-// lan0 bridge with no L3 of their own — so only the picker copy tells them
+// Both roles render the same networkd file, so only the picker copy tells them
 // apart. Without it "LAN member" means nothing to a first-time operator.
 describe("the LAN roles explain themselves in the picker", () => {
     const noteFor = (value: string) => ROLE_CHOICES.find((c) => c.value === value)?.note

@@ -94,9 +94,8 @@ type KillSwitchLeg struct {
 	PinValue  uint32
 }
 
-// KillSwitch drops everything leaving a secondary uplink in the clear.
-// Rendered whenever one exists, tunnel or not, and unlike the input firewall
-// it is not a setting.
+// Drops everything leaving a secondary uplink in the clear. Rendered whenever
+// one exists, tunnel or not, and unlike the input firewall it is not a setting.
 type KillSwitch struct {
 	Legs []KillSwitchLeg
 	// Keeps the Starlink dish's own API reachable. Empty omits it.

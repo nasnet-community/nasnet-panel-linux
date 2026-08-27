@@ -353,9 +353,8 @@ func TestEverySecondaryHasADegradedRTTLimit(t *testing.T) {
 	}
 }
 
-// Provisioning before the dish arrives warns; a box whose only WAN sits in a
-// later slot is fully set up and must not be told otherwise. This is the
-// predicate the V33 guard runs, not the whole enable pipeline.
+// A box whose only WAN sits in a later slot is set up, not half-provisioned.
+// This is the predicate the V33 guard runs, not the whole enable pipeline.
 func TestASecondaryInAnySlotCountsAsAssigned(t *testing.T) {
 	for _, slot := range domain.SecondarySlots() {
 		ups := []Uplink{

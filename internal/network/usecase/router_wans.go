@@ -14,9 +14,8 @@ type RouterWANView struct {
 	Label       string
 }
 
-// Slot order, named the way the operator named them. A read failure answers
-// "none": the caller only loses its per-WAN outbounds, and the kernel rules
-// fail closed either way.
+// Slot order, under the operator's names. A read failure answers "none": the
+// caller loses its per-WAN outbounds and the kernel rules still fail closed.
 func (u *networkUsecase) RouterWANs(ctx context.Context) []RouterWANView {
 	uplinks, err := u.uplinks(ctx)
 	if err != nil {

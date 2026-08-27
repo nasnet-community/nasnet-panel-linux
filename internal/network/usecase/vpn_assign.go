@@ -8,12 +8,10 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 )
 
-// assignTransport deals the pool across the secondaries. Pure, so the kernel,
-// the UI and the API cannot drift apart on who rides what.
-//
-// A pin rides its WAN even when that WAN is down — one that silently moves is
-// not a pin. With no healthy WAN the deal still names one: a tunnel with no
-// mark has no route out, and its recovery would be unobservable.
+// Deals the pool across the secondaries. Pure, so the kernel, the UI and the
+// API cannot disagree on who rides what. A pin holds even while its WAN is
+// down, and with nothing healthy the deal still names one - an unmarked tunnel
+// has no route out and its recovery would be unobservable.
 func assignTransport(pool vpnPool, secondaries []Uplink, healthyByIf map[string]bool) map[string]Uplink {
 	out := make(map[string]Uplink, len(pool.Tunnels))
 	if len(secondaries) == 0 {
@@ -82,9 +80,8 @@ func (u *networkUsecase) healthySecondaries(uplinks []Uplink) map[string]bool {
 	return out
 }
 
-// applyTransportAssignments re-deals after the dampers move and re-marks only
-// what changed. Ensure is idempotent, so a moved tunnel keeps its device and
-// its escape hatch and merely re-handshakes out the new WAN.
+// Re-deals after the dampers move, re-marking only what changed: Ensure is
+// idempotent, so a moved tunnel just re-handshakes out its new WAN.
 func (u *networkUsecase) applyTransportAssignments(ctx context.Context) error {
 	pool, err := u.vpnPoolRead(ctx)
 	if err != nil || !pool.Active() {
