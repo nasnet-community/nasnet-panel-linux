@@ -36,6 +36,7 @@ type NodeRepository interface {
 
 	// Helper to fetch an inbound with its parent node details (for connection info)
 	GetInboundWithNode(ctx context.Context, id uint) (*domain.Inbound, error)
+	GetInboundWithNodeAndHosts(ctx context.Context, id uint) (*domain.Inbound, error)
 
 	// Discovery-related methods
 	GetInboundByTagAndNode(ctx context.Context, nodeID uint, tag string) (*domain.Inbound, error)
@@ -336,6 +337,16 @@ func (r *nodeRepository) GetInboundWithNode(ctx context.Context, id uint) (*doma
 	var inbound domain.Inbound
 	// Joins/Preload to get the Node details required for dialing
 	if err := r.db.WithContext(ctx).Joins("Node").First(&inbound, id).Error; err != nil {
+		return nil, err
+	}
+	return &inbound, nil
+}
+
+// GetInboundWithNodeAndHosts is GetInboundWithNode plus the presentation hosts,
+// needed wherever a client-facing endpoint is rendered (WireGuard .conf).
+func (r *nodeRepository) GetInboundWithNodeAndHosts(ctx context.Context, id uint) (*domain.Inbound, error) {
+	var inbound domain.Inbound
+	if err := r.db.WithContext(ctx).Joins("Node").Preload("Hosts").First(&inbound, id).Error; err != nil {
 		return nil, err
 	}
 	return &inbound, nil

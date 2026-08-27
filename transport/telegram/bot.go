@@ -953,11 +953,14 @@ func (b *Bot) registerCallbackHandlers() {
 			return nil
 		}
 		sid, _ := strconv.ParseUint(a[0], 10, 32)
-		var iid uint64
+		var iid, hid uint64
 		if len(a) > 1 {
 			iid, _ = strconv.ParseUint(a[1], 10, 32)
 		}
-		return b.subHandler.HandleAddDevice(c, uint(sid), uint(iid))
+		if len(a) > 2 {
+			hid, _ = strconv.ParseUint(a[2], 10, 32)
+		}
+		return b.subHandler.HandleAddDevice(c, uint(sid), uint(iid), uint(hid))
 	})
 	b.bot.Handle(&telebot.InlineButton{Unique: "wg_dev_rotate"}, func(c telebot.Context) error {
 		a := c.Args()
