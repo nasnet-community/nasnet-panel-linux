@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -118,6 +119,49 @@ func validateRoutingRule(rule *domain.RoutingRule) error {
 		}
 	}
 
+	// vlessRoute is a port list in xray-core, same syntax as port/sourcePort.
+	for _, p := range rule.VlessRoutes {
+		if err := validatePortString(p); err != nil {
+			return fmt.Errorf("%w: invalid vless route %q: %v", ErrInvalidRoutingRule, p, err)
+		}
+	}
+
+	if err := validateWebhook(rule); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateWebhook checks the rule's match-notification webhook. xray-core only
+// builds the webhook when a url is present, so headers/deduplication without a
+// url would silently do nothing — reject that rather than store dead config.
+func validateWebhook(rule *domain.RoutingRule) error {
+	rule.WebhookURL = strings.TrimSpace(rule.WebhookURL)
+	if rule.WebhookURL == "" {
+		if rule.WebhookDeduplication > 0 || len(rule.WebhookHeaders) > 0 {
+			return fmt.Errorf("%w: webhook_deduplication/webhook_headers require webhook_url", ErrInvalidRoutingRule)
+		}
+		return nil
+	}
+	if len(rule.WebhookURL) > 500 {
+		return fmt.Errorf("%w: webhook_url must be at most 500 characters", ErrInvalidRoutingRule)
+	}
+	u, err := url.Parse(rule.WebhookURL)
+	if err != nil {
+		return fmt.Errorf("%w: webhook_url is not a valid URL: %v", ErrInvalidRoutingRule, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%w: webhook_url must be http:// or https://", ErrInvalidRoutingRule)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%w: webhook_url is missing a host", ErrInvalidRoutingRule)
+	}
+	for k := range rule.WebhookHeaders {
+		if strings.TrimSpace(k) == "" {
+			return fmt.Errorf("%w: webhook header names must not be empty", ErrInvalidRoutingRule)
+		}
+	}
 	return nil
 }
 
@@ -138,7 +182,8 @@ func ruleHasMatcher(rule *domain.RoutingRule) bool {
 		len(rule.Attributes) > 0,
 		len(rule.ProcessNames) > 0,
 		len(rule.LocalIPs) > 0,
-		len(rule.LocalPorts) > 0:
+		len(rule.LocalPorts) > 0,
+		len(rule.VlessRoutes) > 0:
 		return true
 	}
 	return false

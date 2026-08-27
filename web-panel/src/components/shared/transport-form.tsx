@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { HiOutlinePlus, HiOutlineTrash } from "react-icons/hi"
-import { TransportSettings, RangeConfig, XmuxConfig } from "@/lib/types"
+import { TransportSettings, RangeConfig, XmuxConfig, XHTTP_SESSION_ID_TABLES } from "@/lib/types"
 
 interface TransportFormProps {
     network: string
@@ -600,6 +600,32 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
                                             onChange={(e) => onChange({ ...data, sessionKey: e.target.value })}
                                         />
                                     </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Session ID Table</Label>
+                                        <Select
+                                            value={data.sessionIDTable || "__uuid__"}
+                                            onValueChange={(v) => onChange({ ...data, sessionIDTable: v === "__uuid__" ? "" : v })}
+                                        >
+                                            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {XHTTP_SESSION_ID_TABLES.map((t) => (
+                                                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">
+                                            Alphabet the session ID is drawn from. Default generates a UUID.
+                                        </p>
+                                    </div>
+                                    <RangeInput
+                                        label="Session ID Length"
+                                        value={data.sessionIDLength}
+                                        onChange={(v) => onChange({ ...data, sessionIDLength: v })}
+                                        fromPlaceholder="8"
+                                        toPlaceholder="16"
+                                    />
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">

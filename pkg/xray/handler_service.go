@@ -2,7 +2,11 @@ package xray
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"net/netip"
+	"strconv"
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
@@ -21,6 +25,7 @@ import (
 	vlessOutbound "github.com/xtls/xray-core/proxy/vless/outbound"
 	"github.com/xtls/xray-core/proxy/vmess"
 	vmessOutbound "github.com/xtls/xray-core/proxy/vmess/outbound"
+	"github.com/xtls/xray-core/proxy/wireguard"
 	"github.com/xtls/xray-core/transport/internet"
 	"github.com/xtls/xray-core/transport/internet/grpc"
 	"github.com/xtls/xray-core/transport/internet/httpupgrade"
@@ -130,6 +135,12 @@ func (c *GRPCClient) AddUser(ctx context.Context, target string, inboundTag stri
 		account = serial.ToTypedMessage(&hysteriaAccount.Account{
 			Auth: user.UUID,
 		})
+	case ProtocolWireGuard:
+		peer, buildErr := buildWireGuardPeerAccount(user)
+		if buildErr != nil {
+			return buildErr
+		}
+		account = serial.ToTypedMessage(peer)
 	default:
 		return fmt.Errorf("unsupported protocol: %s", user.Protocol)
 	}
@@ -163,6 +174,76 @@ func (c *GRPCClient) AddUser(ctx context.Context, target string, inboundTag stri
 	// log.Debugf("Created xray user account: %s on node %s", user.Email, target)
 
 	return nil
+}
+
+// buildWireGuardPeerAccount builds the account message for a live WireGuard peer
+// add. Unlike the JSON config path (which normalizes keys in infra/conf), the
+// proto reaching PeerConfig.AsAccount is parsed by proxy/wireguard.ParseKey,
+// which accepts hex only — so base64 keys must be converted here or the node
+// rejects the peer.
+func buildWireGuardPeerAccount(user *User) (*wireguard.PeerConfig, error) {
+	pub, err := parseWireGuardKeyToHex(user.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid WireGuard public key for peer %s: %w", user.Email, err)
+	}
+	if len(user.AllowedIPs) == 0 {
+		// GetUserByAddr matches the source address against AllowedIPs; with none
+		// set, traffic from this peer can never be attributed to it.
+		return nil, fmt.Errorf("WireGuard peer %s needs at least one allowedIP prefix", user.Email)
+	}
+	for _, cidr := range user.AllowedIPs {
+		if _, err := netip.ParsePrefix(cidr); err != nil {
+			return nil, fmt.Errorf("WireGuard peer %s has invalid allowedIP %q: %w", user.Email, cidr, err)
+		}
+	}
+
+	peer := &wireguard.PeerConfig{
+		PublicKey:  pub,
+		AllowedIps: user.AllowedIPs,
+	}
+	if user.PreSharedKey != "" {
+		psk, err := parseWireGuardKeyToHex(user.PreSharedKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid WireGuard preshared key for peer %s: %w", user.Email, err)
+		}
+		peer.PreSharedKey = psk
+	}
+	if user.KeepAlive > 0 {
+		peer.KeepAlive = strconv.Itoa(user.KeepAlive)
+	}
+	return peer, nil
+}
+
+// parseWireGuardKeyToHex mirrors infra/conf.ParseWireGuardKey: hex passes
+// through, base64 (std or URL alphabet, padded or not) is decoded and re-encoded
+// as hex. Always yields the 64-char hex form the core expects.
+func parseWireGuardKeyToHex(key string) (string, error) {
+	if key == "" {
+		return "", fmt.Errorf("key must not be empty")
+	}
+	if len(key) == 64 {
+		if _, err := hex.DecodeString(key); err == nil {
+			return key, nil
+		}
+	}
+
+	trimmed := strings.TrimRight(key, "=")
+	var (
+		raw []byte
+		err error
+	)
+	if strings.ContainsAny(trimmed, "+/") {
+		raw, err = base64.RawStdEncoding.DecodeString(trimmed)
+	} else {
+		raw, err = base64.RawURLEncoding.DecodeString(trimmed)
+	}
+	if err != nil {
+		return "", fmt.Errorf("not a hex or base64 key: %w", err)
+	}
+	if len(raw) != 32 {
+		return "", fmt.Errorf("decoded key is %d bytes, want 32", len(raw))
+	}
+	return hex.EncodeToString(raw), nil
 }
 
 // RemoveUser removes a user from an inbound handler on a specific target node
@@ -604,9 +685,10 @@ func parseOutboundStreamSettings(info *OutboundInfo, ss *internet.StreamConfig) 
 				info.TLSServerName = tlsCfg.ServerName
 				info.TLSFingerprint = tlsCfg.Fingerprint
 				info.TLSALPN = tlsCfg.NextProtocol
-				// tls.Config.AllowInsecure no longer exists upstream, so it
-				// cannot be read back from a live config. info.AllowInsecure
-				// stays false.
+				// xray-core removed `allowInsecure`; name-only verification
+				// (verifyPeerCertByName) is what buildStreamSettings emits in
+				// its place, so read it back as the same flag.
+				info.AllowInsecure = len(tlsCfg.VerifyPeerCertByName) > 0
 			}
 		}
 	}

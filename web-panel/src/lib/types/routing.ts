@@ -40,6 +40,10 @@ export interface RoutingRule {
     process_names: string[]
     local_ips: string[]
     local_ports: string[]
+    vless_routes: string[]
+    webhook_url: string
+    webhook_deduplication: number
+    webhook_headers: Record<string, string>
     created_at: string
     updated_at: string
 }

@@ -377,14 +377,18 @@ func buildOutboundStreamSettings(cfg *OutboundConfig) (*internet.StreamConfig, e
 	switch cfg.Security {
 	case "tls":
 		if cfg.TLS != nil {
-			// NOTE: xray-core removed tls.Config.AllowInsecure. Certificate
-			// verification can no longer be disabled from here, so
-			// cfg.TLS.AllowInsecure is accepted by the API but has no effect on
-			// the generated config. Pinning (PinnedPeerCertSha256) or
-			// VerifyPeerCertByName are the supported alternatives.
 			tlsConfig := &tls.Config{
 				ServerName:   cfg.TLS.ServerName,
 				NextProtocol: cfg.TLS.ALPN,
+			}
+			// xray-core removed `allowInsecure` (verify nothing) and points at
+			// `verifyPeerCertByName`/`pinnedPeerCertSha256` instead. Name-only
+			// verification is the documented replacement and keeps self-signed
+			// outbounds working, so map onto it when we know the expected name.
+			// With no serverName there is nothing to verify against, so the
+			// connection stays strictly verified.
+			if cfg.TLS.AllowInsecure && cfg.TLS.ServerName != "" {
+				tlsConfig.VerifyPeerCertByName = []string{cfg.TLS.ServerName}
 			}
 			if cfg.TLS.Fingerprint != "" {
 				tlsConfig.Fingerprint = cfg.TLS.Fingerprint
@@ -512,10 +516,13 @@ func buildShadowsocksOutbound(cfg *OutboundConfig) (*serial.TypedMessage, error)
 		methodType = shadowsocks.CipherType_AES_256_GCM
 	case "chacha20-poly1305", "chacha20-ietf-poly1305":
 		methodType = shadowsocks.CipherType_CHACHA20_POLY1305
-	case "none":
-		// CipherType_NONE was renamed to CipherType_UNKNOWN upstream; both are
-		// wire value 0, so the emitted config is unchanged.
-		methodType = shadowsocks.CipherType_UNKNOWN
+	case "xchacha20-poly1305", "xchacha20-ietf-poly1305":
+		methodType = shadowsocks.CipherType_XCHACHA20_POLY1305
+	case "none", "plain", "zero":
+		// xray-core dropped the unencrypted Shadowsocks ciphers. CipherType_
+		// UNKNOWN falls through getCipher()'s default to "Unsupported cipher.",
+		// so refuse here with a message that says what actually happened.
+		return nil, fmt.Errorf("shadowsocks method %q is no longer supported by xray-core; pick an AEAD cipher", cfg.Method)
 	default:
 		// Default to AES-128-GCM if unknown
 		methodType = shadowsocks.CipherType_AES_128_GCM
@@ -793,6 +800,24 @@ func BuildRoutingRule(cfg *RoutingRuleConfig) (*router.RoutingRule, error) {
 			return nil, fmt.Errorf("failed to build local port list: %w", err)
 		}
 		rule.LocalPortList = localPortList
+	}
+
+	// VLESS Reverse Proxy route ports (Hysteria inbounds honor these too).
+	if len(cfg.VlessRoutes) > 0 {
+		vlessRouteList, err := buildRoutingPortList(cfg.VlessRoutes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build vless route list: %w", err)
+		}
+		rule.VlessRouteList = vlessRouteList
+	}
+
+	// Match notification webhook. xray-core drops a webhook with no url.
+	if cfg.WebhookURL != "" {
+		rule.Webhook = &router.WebhookConfig{
+			Url:           cfg.WebhookURL,
+			Deduplication: cfg.WebhookDeduplication,
+			Headers:       cfg.WebhookHeaders,
+		}
 	}
 
 	return rule, nil

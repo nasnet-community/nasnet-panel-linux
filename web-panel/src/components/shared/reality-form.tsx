@@ -243,6 +243,11 @@ function AdvancedRealitySection({ data, onChange }: { data: RealitySettings; onC
                                 value={data.minClientVer || ""}
                                 onChange={(e) => onChange({ ...data, minClientVer: e.target.value })}
                             />
+                            <p className="text-xs text-muted-foreground">
+                                Left empty, xray-core enforces its own floor of <strong>26.3.27</strong> and
+                                refuses older clients. Set <code>0.0.0</code> to accept any client — upstream
+                                warns this raises the odds of the server IP being blocked.
+                            </p>
                         </div>
                         <div className="space-y-2">
                             <Label>Max Client Version</Label>

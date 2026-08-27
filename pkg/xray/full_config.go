@@ -441,20 +441,7 @@ func (b *FullConfigBuilder) convertInbound(inb *nodeDomain.Inbound) map[string]i
 	case "wireguard", "dokodemo-door", "hysteria2":
 		// no-op
 	default:
-		sniffing := inb.GetSniffingSettingsOrDefault()
-		sniffCfg := map[string]interface{}{
-			"enabled":      sniffing.Enabled,
-			"destOverride": sniffing.DestOverride,
-			"metadataOnly": sniffing.MetadataOnly,
-			"routeOnly":    sniffing.RouteOnly,
-		}
-		if len(sniffing.DomainsExcluded) > 0 {
-			sniffCfg["domainsExcluded"] = sniffing.DomainsExcluded
-		}
-		if len(sniffing.IPsExcluded) > 0 {
-			sniffCfg["ipsExcluded"] = sniffing.IPsExcluded
-		}
-		cfg["sniffing"] = sniffCfg
+		cfg["sniffing"] = buildSniffingMap(inb.GetSniffingSettingsOrDefault())
 	}
 
 	// Sockopt - Moved to streamSettings
@@ -820,11 +807,19 @@ func (b *FullConfigBuilder) buildXHTTPSettings(ts *nodeDomain.TransportSettings)
 	if ts.UplinkHTTPMethod != "" {
 		settings["uplinkHTTPMethod"] = ts.UplinkHTTPMethod
 	}
+	// xray-core renamed these to sessionID* (transport/internet/splithttp);
+	// the old keys are silently ignored, which drops the obfuscation entirely.
 	if ts.SessionPlacement != "" {
-		settings["sessionPlacement"] = ts.SessionPlacement
+		settings["sessionIDPlacement"] = ts.SessionPlacement
 	}
 	if ts.SessionKey != "" {
-		settings["sessionKey"] = ts.SessionKey
+		settings["sessionIDKey"] = ts.SessionKey
+	}
+	if ts.SessionIDTable != "" {
+		settings["sessionIDTable"] = ts.SessionIDTable
+	}
+	if ts.SessionIDLength != nil {
+		settings["sessionIDLength"] = xrayRange(ts.SessionIDLength)
 	}
 	if ts.SeqPlacement != "" {
 		settings["seqPlacement"] = ts.SeqPlacement
@@ -1369,7 +1364,38 @@ func (b *FullConfigBuilder) buildFreedomSettings(out *nodeDomain.Outbound) map[s
 	if fs.ProxyProtocol > 0 {
 		settings["proxyProtocol"] = fs.ProxyProtocol
 	}
+	if rules := buildFreedomFinalRules(fs.FinalRules); len(rules) > 0 {
+		settings["finalRules"] = rules
+	}
 	return settings
+}
+
+// buildFreedomFinalRules renders the Freedom outbound's allow/block gates.
+// Entries with an action other than allow/block are dropped: xray-core fails the
+// whole config on "unknown action: ".
+func buildFreedomFinalRules(rules []nodeDomain.FreedomFinalRule) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rules))
+	for _, r := range rules {
+		action := strings.ToLower(strings.TrimSpace(r.Action))
+		if action != "allow" && action != "block" {
+			continue
+		}
+		entry := map[string]interface{}{"action": action}
+		if n := strings.TrimSpace(r.Network); n != "" {
+			entry["network"] = n
+		}
+		if len(r.Port) > 0 {
+			entry["port"] = strings.Join(r.Port, ",")
+		}
+		if len(r.IP) > 0 {
+			entry["ip"] = r.IP
+		}
+		if r.BlockDelay != nil {
+			entry["blockDelay"] = xrayRange(r.BlockDelay)
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // buildBlackholeSettings creates Blackhole protocol settings
@@ -1458,12 +1484,8 @@ func (b *FullConfigBuilder) buildShadowsocksOutboundSettings(out *nodeDomain.Out
 	if ss.Email != "" {
 		settings["servers"].([]map[string]interface{})[0]["email"] = ss.Email
 	}
-	if ss.UoT {
-		settings["servers"].([]map[string]interface{})[0]["uot"] = true
-		if ss.UoTVersion > 0 {
-			settings["servers"].([]map[string]interface{})[0]["uotVersion"] = ss.UoTVersion
-		}
-	}
+	// `uot`/`uotVersion` were removed from xray-core's Shadowsocks config; the
+	// keys are now ignored, so emitting them only misleads. Left unset.
 
 	return settings
 }
@@ -1482,9 +1504,7 @@ func (b *FullConfigBuilder) buildWireGuardOutboundSettings(out *nodeDomain.Outbo
 	if wg.MTU > 0 {
 		settings["mtu"] = wg.MTU
 	}
-	if wg.NumWorkers > 0 {
-		settings["workers"] = wg.NumWorkers
-	}
+	// xray-core dropped the WireGuard `workers` knob; nothing to emit.
 	if len(wg.Reserved) > 0 {
 		settings["reserved"] = wg.Reserved
 	}
@@ -1607,6 +1627,13 @@ func (b *FullConfigBuilder) buildDNSOutboundSettings(out *nodeDomain.Outbound) m
 	if dns.UserLevel > 0 {
 		settings["userLevel"] = dns.UserLevel
 	}
+	// xray-core rejects a config that mixes `rules` with the legacy
+	// nonIPQuery/blockTypes pair ("legacy nonIPQuery and blockTypes cannot be
+	// mixed with rules"), so rules wins outright when present.
+	if rules := buildDNSOutboundRules(dns.Rules); len(rules) > 0 {
+		settings["rules"] = rules
+		return settings
+	}
 	if dns.NonIPQuery != "" {
 		settings["nonIPQuery"] = dns.NonIPQuery
 	}
@@ -1616,6 +1643,61 @@ func (b *FullConfigBuilder) buildDNSOutboundSettings(out *nodeDomain.Outbound) m
 	return settings
 }
 
+// buildDNSOutboundRules renders the DNS outbound policy list. Entries without an
+// action are dropped: xray-core fails the whole config on "unknown action: ".
+func buildDNSOutboundRules(rules []nodeDomain.DNSOutboundRule) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(rules))
+	for _, r := range rules {
+		action := strings.ToLower(strings.TrimSpace(r.Action))
+		switch action {
+		case "direct", "drop", "return", "hijack":
+		default:
+			continue
+		}
+		entry := map[string]interface{}{"action": action}
+		if len(r.QType) > 0 {
+			// qType is parsed as a PortList, which takes a comma-joined string.
+			parts := make([]string, 0, len(r.QType))
+			for _, q := range r.QType {
+				if q <= 0 || q > 65535 {
+					continue
+				}
+				parts = append(parts, strconv.Itoa(int(q)))
+			}
+			if len(parts) > 0 {
+				entry["qType"] = strings.Join(parts, ",")
+			}
+		}
+		if len(r.Domain) > 0 {
+			entry["domain"] = r.Domain
+		}
+		// rCode 0 is the proto default and only means anything for "return".
+		if action == "return" && r.RCode > 0 {
+			entry["rCode"] = r.RCode
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// buildSniffingMap renders a sniffing block. Shared by inbounds and the
+// loopback outbound, which gained its own `sniffing` in xray-core v26.6.22.
+func buildSniffingMap(sniffing *nodeDomain.SniffingSettings) map[string]interface{} {
+	cfg := map[string]interface{}{
+		"enabled":      sniffing.Enabled,
+		"destOverride": sniffing.DestOverride,
+		"metadataOnly": sniffing.MetadataOnly,
+		"routeOnly":    sniffing.RouteOnly,
+	}
+	if len(sniffing.DomainsExcluded) > 0 {
+		cfg["domainsExcluded"] = sniffing.DomainsExcluded
+	}
+	if len(sniffing.IPsExcluded) > 0 {
+		cfg["ipsExcluded"] = sniffing.IPsExcluded
+	}
+	return cfg
+}
+
 // buildLoopbackSettings creates Loopback outbound settings
 func (b *FullConfigBuilder) buildLoopbackSettings(out *nodeDomain.Outbound) map[string]interface{} {
 	lb := out.GetLoopbackSettingsOrDefault()
@@ -1623,6 +1705,11 @@ func (b *FullConfigBuilder) buildLoopbackSettings(out *nodeDomain.Outbound) map[
 
 	if lb.InboundTag != "" {
 		settings["inboundTag"] = lb.InboundTag
+	}
+	// Only emit when explicitly configured — an all-defaults block would turn
+	// sniffing off on the second router pass rather than leaving it alone.
+	if lb.Sniffing != nil {
+		settings["sniffing"] = buildSniffingMap(lb.Sniffing)
 	}
 	return settings
 }
@@ -2223,6 +2310,24 @@ func (b *FullConfigBuilder) convertRoutingRule(rule *nodeDomain.RoutingRule) map
 		cfg["localPort"] = localPortStr
 	}
 
+	// VLESS Reverse Proxy route ports (also honored by Hysteria inbounds).
+	if len(rule.VlessRoutes) > 0 {
+		cfg["vlessRoute"] = strings.Join([]string(rule.VlessRoutes), ",")
+	}
+
+	// Webhook notification on match. xray-core ignores a webhook with no url,
+	// so only emit the block once one is set.
+	if rule.WebhookURL != "" {
+		webhook := map[string]interface{}{"url": rule.WebhookURL}
+		if rule.WebhookDeduplication > 0 {
+			webhook["deduplication"] = rule.WebhookDeduplication
+		}
+		if len(rule.WebhookHeaders) > 0 {
+			webhook["headers"] = map[string]string(rule.WebhookHeaders)
+		}
+		cfg["webhook"] = webhook
+	}
+
 	return cfg
 }
 
@@ -2324,11 +2429,7 @@ func (b *FullConfigBuilder) buildWireGuardSettings(inb *nodeDomain.Inbound) map[
 	if len(wg.Endpoint) > 0 {
 		settings["address"] = wg.Endpoint
 	}
-	if wg.NumWorkers > 0 {
-		// xray-core reads this as "workers" (infra/conf/wireguard.go);
-		// "numWorkers" was silently ignored.
-		settings["workers"] = wg.NumWorkers
-	}
+	// xray-core dropped the WireGuard `workers` knob; nothing to emit.
 	if len(wg.Reserved) > 0 {
 		settings["reserved"] = wg.Reserved
 	}
@@ -2358,6 +2459,14 @@ func (b *FullConfigBuilder) buildWireGuardSettings(inb *nodeDomain.Inbound) map[
 			}
 			if len(p.AllowedIPs) > 0 {
 				peer["allowedIps"] = p.AllowedIPs
+				// Per-peer stats (xray-core >= v26.6.27 native WG user support):
+				// tag each peer with a synthetic user email keyed by its tunnel /32,
+				// matching wgEmailKey in wg_attribution.go ("wg:"+tag+":"+bareIP).
+				// Upstream turns each WG peer carrying an email into a stats user,
+				// replacing the old wg1 fork patch. Without this the attribution
+				// index looks up keys that never appear in the stats output.
+				bareIP := strings.SplitN(p.AllowedIPs[0], "/", 2)[0]
+				peer["email"] = "wg:" + inb.Tag + ":" + bareIP
 			}
 			peers = append(peers, peer)
 		}

@@ -144,6 +144,8 @@ export interface TransportSettings {
     uplinkHTTPMethod?: string
     sessionPlacement?: string
     sessionKey?: string
+    sessionIDTable?: string
+    sessionIDLength?: RangeConfig
     seqPlacement?: string
     seqKey?: string
     uplinkDataPlacement?: string

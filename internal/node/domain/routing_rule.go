@@ -47,6 +47,18 @@ type RoutingRule struct {
 	LocalIPs     jsontype.StringSlice `gorm:"serializer:json;type:jsonb" json:"local_ips"`     // Match local/bind IPs
 	LocalPorts   jsontype.StringSlice `gorm:"serializer:json;type:jsonb" json:"local_ports"`   // Match local/bind ports
 
+	// VlessRoutes matches the VLESS Reverse Proxy route ports a request carries
+	// ("vlessRoute"); Hysteria inbounds honor it too since xray-core v26.6.27.
+	// Same syntax as PortRules: single ports or "from-to" ranges.
+	VlessRoutes jsontype.StringSlice `gorm:"serializer:json;type:jsonb" json:"vless_routes"`
+
+	// Webhook fires an HTTP POST when this rule matches. Deduplication is a
+	// window in seconds within which repeat matches are suppressed (0 = every
+	// match). Requires xray-core >= v26.3.27.
+	WebhookURL           string             `gorm:"size:500" json:"webhook_url"`
+	WebhookDeduplication uint32             `gorm:"default:0" json:"webhook_deduplication"`
+	WebhookHeaders       jsontype.StringMap `gorm:"serializer:json;type:jsonb" json:"webhook_headers"`
+
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`

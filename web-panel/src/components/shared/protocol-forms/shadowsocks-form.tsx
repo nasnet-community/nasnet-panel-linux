@@ -1,6 +1,5 @@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { SHADOWSOCKS_METHODS } from "@/lib/types"
 import type { ShadowsocksSettings } from "@/lib/types"
@@ -8,10 +7,11 @@ import type { ShadowsocksSettings } from "@/lib/types"
 interface ShadowsocksFormProps {
     settings?: ShadowsocksSettings
     onChange: (settings: ShadowsocksSettings) => void
+    /** Kept for call-site compatibility; no outbound-only fields remain. */
     isOutbound?: boolean
 }
 
-export function ShadowsocksForm({ settings, onChange, isOutbound }: ShadowsocksFormProps) {
+export function ShadowsocksForm({ settings, onChange }: ShadowsocksFormProps) {
     const data = settings || { method: "2022-blake3-aes-128-gcm", network: "tcp,udp" }
 
     return (
@@ -71,29 +71,6 @@ export function ShadowsocksForm({ settings, onChange, isOutbound }: ShadowsocksF
                     </p>
                 )}
             </div>
-            {isOutbound && (
-                <div className="flex items-center justify-between">
-                    <div>
-                        <Label>UDP over TCP</Label>
-                        <p className="text-xs text-muted-foreground">Encapsulate UDP in TCP</p>
-                    </div>
-                    <Switch
-                        checked={data.uot ?? false}
-                        onCheckedChange={(checked) => onChange({ ...data, uot: checked })}
-                    />
-                </div>
-            )}
-            {isOutbound && data.uot && (
-                <div className="space-y-2">
-                    <Label>UoT Version</Label>
-                    <Input
-                        type="number"
-                        placeholder="2"
-                        value={data.uotVersion ?? ""}
-                        onChange={(e) => onChange({ ...data, uotVersion: parseInt(e.target.value) || 0 })}
-                    />
-                </div>
-            )}
         </div>
     )
 }
