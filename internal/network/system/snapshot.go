@@ -35,6 +35,7 @@ type Paths struct {
 	CloudInitDir       string
 	RunNetworkdDir     string // holds netplan's generated units.
 	StateDir           string
+	HostapdDir         string // ours is nasnet-ap.conf inside it
 }
 
 func DefaultPaths() Paths {
@@ -43,6 +44,7 @@ func DefaultPaths() Paths {
 		NetworkdConfDir:    "/etc/systemd/networkd.conf.d",
 		NetplanDir:         "/etc/netplan",
 		NetplanDisabledDir: "/etc/netplan.disabled",
+		HostapdDir:         "/etc/hostapd",
 		SysctlDir:          "/etc/sysctl.d",
 		RTTablesDir:        "/etc/iproute2/rt_tables.d",
 		CloudInitDir:       "/etc/cloud/cloud.cfg.d",
@@ -92,6 +94,16 @@ type Snapshot struct {
 	VPNPoolCaptured bool                `json:"vpn_pool_captured,omitempty"`
 	VPNProfiles     []domain.VPNProfile `json:"vpn_profiles,omitempty"`
 	VPNConfigs      []string            `json:"vpn_configs,omitempty"`
+
+	// HostapdFiles is the hostapd dir, restored exactly, deletions included.
+	HostapdFiles map[string][]byte `json:"hostapd_files,omitempty"`
+	HostapdModes map[string]uint32 `json:"hostapd_modes,omitempty"`
+
+	// WifiConfigs is the stored wifi intent. WifiCaptured tells an empty set
+	// apart from an older snapshot. PSKs ride separately, like VPN configs.
+	WifiCaptured bool                `json:"wifi_captured,omitempty"`
+	WifiConfigs  []domain.WifiConfig `json:"wifi_configs,omitempty"`
+	WifiPSKs     []string            `json:"wifi_psks,omitempty"`
 }
 
 type Snapshotter struct {
@@ -110,6 +122,9 @@ type Snapshotter struct {
 	// enabled", which has to tear every device down.
 	CapturePool func(context.Context) ([]domain.VPNProfile, error)
 	RestorePool func(context.Context, []domain.VPNProfile) error
+	// And the wifi rows. Both nil is fine: older snapshots have no wifi either.
+	CaptureWifi func(context.Context) ([]domain.WifiConfig, error)
+	RestoreWifi func(context.Context, []domain.WifiConfig) error
 }
 
 // Capture reads current state
@@ -135,6 +150,9 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 	}
 	if snap.RTTablesFiles, snap.RTTablesModes, err = readDirFiles(s.Paths.RTTablesDir); err != nil {
 		return nil, fmt.Errorf("snapshot rt_tables.d: %w", err)
+	}
+	if snap.HostapdFiles, snap.HostapdModes, err = readDirFiles(s.Paths.HostapdDir); err != nil {
+		return nil, fmt.Errorf("snapshot hostapd: %w", err)
 	}
 
 	if snap.Rules, err = s.Backend.RuleList(ctx); err != nil {
@@ -172,6 +190,16 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 		snap.VPNProfiles, snap.VPNPoolCaptured = rows, true
 		for i := range rows {
 			snap.VPNConfigs = append(snap.VPNConfigs, rows[i].Config)
+		}
+	}
+	if s.CaptureWifi != nil {
+		rows, err := s.CaptureWifi(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("capture the wifi rows: %w", err)
+		}
+		snap.WifiConfigs, snap.WifiCaptured = rows, true
+		for i := range rows {
+			snap.WifiPSKs = append(snap.WifiPSKs, rows[i].PSK)
 		}
 	}
 	snap.MaskedUnits = maskedUnits("NetworkManager.service", "NetworkManager-wait-online.service")
@@ -218,6 +246,11 @@ func LoadSnapshot(path string) (*Snapshot, error) {
 			snap.VPNProfiles[i].Config = snap.VPNConfigs[i]
 		}
 	}
+	for i := range snap.WifiConfigs {
+		if i < len(snap.WifiPSKs) {
+			snap.WifiConfigs[i].PSK = snap.WifiPSKs[i]
+		}
+	}
 	if snap.Version != snapshotVersion {
 		return nil, fmt.Errorf("snapshot version %d, this build understands %d",
 			snap.Version, snapshotVersion)
@@ -245,6 +278,7 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	restoreDir(s.Paths.NetplanDir, snap.NetplanFiles, snap.NetplanModes)
 	restoreDir(s.Paths.SysctlDir, snap.SysctlFiles, snap.SysctlModes)
 	restoreDir(s.Paths.RTTablesDir, snap.RTTablesFiles, snap.RTTablesModes)
+	restoreDir(s.Paths.HostapdDir, snap.HostapdFiles, snap.HostapdModes)
 
 	// The takeover deleted netplan's generated units; putting the YAML back does
 	// not recreate them, and networkd would come up owning nothing at all.
@@ -257,6 +291,21 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 	if snap.LANConfig != nil && s.RestoreLAN != nil {
 		if err := s.RestoreLAN(ctx, snap.LANConfig); err != nil {
 			errs = append(errs, fmt.Sprintf("restore the LAN row: %v", err))
+		}
+	}
+
+	if snap.WifiCaptured && s.RestoreWifi != nil {
+		if err := s.RestoreWifi(ctx, snap.WifiConfigs); err != nil {
+			errs = append(errs, fmt.Sprintf("restore the wifi rows: %v", err))
+		}
+	}
+	// Putting the config file back is not enough while hostapd still runs the
+	// new one. The captured dir decides whether it should run at all.
+	if s.Paths.HostapdDir != "" {
+		if len(snap.HostapdFiles) == 0 {
+			_ = systemctl(ctx, "stop", "hostapd")
+		} else {
+			_ = systemctl(ctx, "restart", "hostapd")
 		}
 	}
 
