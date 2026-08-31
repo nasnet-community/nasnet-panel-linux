@@ -40,6 +40,10 @@ type ChangeRequest struct {
 
 	// NewIfName exists only so V21 can reject it. We never rename.
 	NewIfName string `json:"new_if_name"`
+
+	// MACPolicy mirrors networkd's MACAddressPolicy. "random" is rejected on
+	// uplinks and on APs.
+	MACPolicy string `json:"mac_policy"`
 }
 
 // ValidationInput is the whole world a validation needs
@@ -54,6 +58,13 @@ type ValidationInput struct {
 	PeerIfName       string
 	HostapdInstalled bool
 	IWDInstalled     bool
+	// RadioSupportsAP and RadioSupportsSTA are probed at runtime, keyed by phy.
+	// Absent means unknown, treated as unsupported: offering a role a radio
+	// cannot hold produces a daemon crash the operator cannot diagnose.
+	RadioSupportsAP  map[string]bool
+	RadioSupportsSTA map[string]bool
+	// CountryCode is the current regulatory domain. Mandatory before an AP.
+	CountryCode string
 }
 
 // Ranges a LAN CIDR may never overlap.
@@ -209,19 +220,45 @@ func Validate(in ValidationInput) []Verdict {
 		}
 	}
 
-	// V11 / V12 | Wi-Fi gates.
+	// V11 / V12 | Wi-Fi gates, from probed capability rather than assumption.
 	if strings.HasPrefix(source, "wifi_") {
 		if in.Req.Role == RoleLAN || in.Req.Role == RoleLANMember {
 			if !in.HostapdInstalled {
 				reject("V11", "hostapd is not installed, so %s cannot be an access point", target.IfName)
 				return vs
 			}
+			if !in.RadioSupportsAP[target.Phy()] {
+				reject("V11", "radio %s does not support access point mode, so %s cannot hold %s",
+					target.Phy(), target.IfName, in.Req.Role)
+				return vs
+			}
+			if RegDomainUnset(in.CountryCode) {
+				reject("V11", "set a country code before enabling an access point: the default "+
+					"regulatory domain marks nearly all 5 GHz as no-initiating-radiation and "+
+					"hostapd refuses to start")
+				return vs
+			}
 		}
-		if in.Req.Role == RoleWAN && !in.IWDInstalled {
-			reject("V12", "iwd is not installed, so %s cannot join a network (networkd cannot associate)",
-				target.IfName)
-			return vs
+		if in.Req.Role == RoleWAN {
+			if !in.IWDInstalled {
+				reject("V12", "iwd is not installed, so %s cannot join a network "+
+					"(networkd cannot associate)", target.IfName)
+				return vs
+			}
+			if !in.RadioSupportsSTA[target.Phy()] {
+				reject("V12", "radio %s does not support station mode", target.Phy())
+				return vs
+			}
 		}
+	}
+
+	// V24 a random MAC invalidates every client's saved network on an AP, and
+	// breaks DHCP reservations and our own identity key on an uplink.
+	if in.Req.MACPolicy == "random" &&
+		(in.Req.Role == RoleWAN || in.Req.Role == RoleLAN || in.Req.Role == RoleLANMember) {
+		reject("V24", "a random MAC policy cannot be used on %s: clients and DHCP "+
+			"reservations both depend on a stable address", in.Req.Role)
+		return vs
 	}
 
 	// V13 one radio, one role. AP+STA concurrency is never offered.
@@ -555,4 +592,69 @@ func unmap4in6(p netip.Prefix) netip.Prefix {
 		return p
 	}
 	return netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+}
+
+// RegDomainUnset mirrors system.RegDomainIsUnset. Duplicated so domain never
+// depends on the privileged system package.
+func RegDomainUnset(code string) bool {
+	c := strings.ToUpper(strings.TrimSpace(code))
+	return c == "" || c == "00" || c == "0"
+}
+
+// ValidateWifiConfig checks the settings form. Role rules (V11-V13, V24) run in
+// Validate; this covers what hostapd or iwd would reject at startup.
+func ValidateWifiConfig(cfg WifiConfig) []Verdict {
+	var vs []Verdict
+	reject := func(rule, format string, args ...any) {
+		vs = append(vs, Verdict{Rule: rule, Level: LevelReject, Message: fmt.Sprintf(format, args...)})
+	}
+
+	// V38 the 802.11 SSID element is at most 32 octets of the encoding.
+	if n := len(cfg.SSID); n == 0 || n > 32 {
+		reject("V38", "the network name must be 1-32 bytes; %q is %d", cfg.SSID, n)
+	}
+
+	// V39 a WPA passphrase is 8-63 printable ASCII, or exactly 64 hex digits for
+	// a raw PSK. A station on an open network has none, so empty is only an
+	// error on an AP.
+	if (cfg.Mode == "ap" || cfg.PSK != "") && !validWPAPassphrase(cfg.PSK) {
+		reject("V39", "the passphrase must be 8-63 printable characters, or 64 hex digits")
+	}
+
+	switch cfg.Band {
+	case "2g", "5g", "6g":
+	default:
+		reject("V40", "unknown band %q", cfg.Band)
+	}
+	switch cfg.Mode {
+	case "ap", "station":
+	default:
+		reject("V41", "unknown mode %q", cfg.Mode)
+	}
+
+	// V42 the render and the daemon both refuse this, so catch it as a form error
+	if cfg.Mode == "ap" && RegDomainUnset(cfg.CountryCode) {
+		reject("V42", "a country code is required before an access point can start")
+	}
+	return vs
+}
+
+func validWPAPassphrase(psk string) bool {
+	if len(psk) == 64 {
+		for _, r := range psk {
+			if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+				return false
+			}
+		}
+		return true
+	}
+	if len(psk) < 8 || len(psk) > 63 {
+		return false
+	}
+	for _, r := range psk {
+		if r < 0x20 || r > 0x7e {
+			return false
+		}
+	}
+	return true
 }

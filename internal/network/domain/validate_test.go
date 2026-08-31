@@ -302,6 +302,9 @@ func TestValidate_Warnings(t *testing.T) {
 // One radio is a station or an access point, never both.
 func TestValidate_V13_OneRadioOneRole(t *testing.T) {
 	i := in(ChangeRequest{InterfaceID: 4, Role: RoleLAN})
+	// V11 runs first and fails closed on an unprobed radio
+	i.RadioSupportsAP = map[string]bool{"phy0": true}
+	i.CountryCode = "IR"
 	i.Rows[3].PhyName = "phy0"
 	i.Rows = append(i.Rows, NetworkInterface{
 		ID: 9, Key: "k9", IfName: "wlp4s0-sta", Source: "wifi_pci",
