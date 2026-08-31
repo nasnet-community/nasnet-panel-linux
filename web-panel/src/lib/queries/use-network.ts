@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
     applyNetworkChange,
     confirmNetworkApply,
+    connectWifi,
     createPortForward,
     createVPNProfile,
     deletePortForward,
     deleteVPNProfile,
     disableVPNProfile,
+    disableWifi,
+    enableAP,
     enableVPNProfile,
     generateVPNKeypair,
     getLAN,
@@ -14,11 +17,13 @@ import {
     getNetworkInterfaces,
     getNetworkState,
     getPortForwards,
+    getRadios,
     getVPNProfiles,
     getVPNStatus,
     parseVPNInput,
     planNetworkChange,
     rollbackNetworkApply,
+    scanWifi,
     setDeviceLabel,
     setInterfaceLabel,
     setVPNPoolOrder,
@@ -35,6 +40,7 @@ import type {
     LANConfig,
     PoolStrategy,
     VPNProfileInput,
+    WifiAPRequest,
 } from "@/lib/types/network"
 
 /** Router mode off 404s every route; not worth retrying, so the page can hide. */
@@ -403,3 +409,72 @@ export function useSetVPNTransport() {
     })
 }
 
+export function useRadios(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkWifi(),
+        queryFn: async () => {
+            const res = await getRadios()
+            if (!res.success) throw new Error(res.error || "Failed to read the radios")
+            return res.data!
+        },
+        enabled,
+        staleTime: 10 * 1000,
+        retry: false,
+    })
+}
+
+/** An AP rewrites the bridge and the firewall, so invalidate the whole subtree —
+ *  same blast radius as updateLAN. */
+export function useEnableAP() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (req: WifiAPRequest) => {
+            const res = await enableAP(req)
+            if (!res.success) throw new Error(res.error || "Failed to enable the access point")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+export function useDisableWifi() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (key: string) => {
+            const res = await disableWifi(key)
+            if (!res.success) throw new Error(res.error || "Failed to turn Wi-Fi off")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+/** A new uplink changes addressing and routing, so the whole subtree goes. */
+export function useConnectWifi() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (v: { key: string; ssid: string; psk: string }) => {
+            const res = await connectWifi(v.key, v.ssid, v.psk)
+            if (!res.success) throw new Error(res.error || "Failed to join the network")
+            return res.data!
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.network })
+        },
+    })
+}
+
+/** A scan changes nothing on the box, so nothing is invalidated. */
+export function useScanWifi() {
+    return useMutation({
+        mutationFn: async (key: string) => {
+            const res = await scanWifi(key)
+            if (!res.success) throw new Error(res.error || "Failed to scan")
+            return res.data!
+        },
+    })
+}

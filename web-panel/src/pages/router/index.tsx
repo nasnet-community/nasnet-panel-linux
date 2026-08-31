@@ -10,6 +10,7 @@ import { HealthStrip } from "@/components/router/health-strip"
 import { LanTab } from "@/pages/router/lan-tab"
 import { PortForwardsTab } from "@/pages/router/port-forwards-tab"
 import { VpnTab } from "@/pages/router/vpn-tab"
+import { WifiTab } from "@/pages/router/wifi-tab"
 import { useEventListener } from "@/components/providers/events-provider"
 import { ApplyDialog } from "@/components/network/apply-dialog"
 import { ArmedChangeBar } from "@/components/network/armed-change-bar"
@@ -25,6 +26,7 @@ import {
     useNetworkState,
     usePlanNetworkChange,
     usePortForwards,
+    useRadios,
 } from "@/lib/queries/use-network"
 import { remainingSeconds } from "@/lib/api/network"
 import { missingRoleHint, uncoveredWarnings } from "@/lib/network-labels"
@@ -105,6 +107,7 @@ export default function NetworkPage() {
     // Fetched here so the tab labels can carry live meta; the tabs share the cache.
     const lan = useLAN()
     const forwards = usePortForwards()
+    const radios = useRadios()
 
     const [dialogOpen, setDialogOpen] = useState(false)
     const [pending, setPending] = useState<AssignRoleRequest | null>(null)
@@ -259,6 +262,15 @@ export default function NetworkPage() {
                             </TabMeta>
                         )}
                     </TabsTrigger>
+                    <TabsTrigger value="wifi">
+                        Wi-Fi
+                        {(radios.data?.length ?? 0) > 0 &&
+                            !radios.data!.some((r) => r.config?.enabled) && (
+                                <TabMeta>
+                                    <span className="text-status-warning">off</span>
+                                </TabMeta>
+                            )}
+                    </TabsTrigger>
                     <TabsTrigger value="vpn">
                         VPN
                         {state.data?.vpn.active && (
@@ -298,6 +310,10 @@ export default function NetworkPage() {
 
                 <TabsContent value="lan" className="mt-0">
                     <LanTab state={state.data} armed={armed} onApplied={refresh} />
+                </TabsContent>
+
+                <TabsContent value="wifi" className="mt-0">
+                    <WifiTab armed={armed} onApplied={refresh} />
                 </TabsContent>
 
                 <TabsContent value="vpn" className="mt-0">

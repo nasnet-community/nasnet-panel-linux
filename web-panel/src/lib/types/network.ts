@@ -17,6 +17,9 @@ export interface Verdict {
 export interface NetworkInterfaceView {
     id: number
     if_name: string
+    /** The nl80211 radio, "" for wired. Interfaces sharing one cannot hold
+     * opposite wifi roles. */
+    phy: string
     perm_mac: string
     id_path: string
     key: string
@@ -250,4 +253,68 @@ export interface VPNProfileInput {
     raw?: string
     /** The manual-entry path, used when raw is empty. */
     config?: WireGuardConfig
+}
+
+export type WifiBand = "2g" | "5g" | "6g"
+
+export interface WifiChannel {
+    number: number
+    freq_mhz: number
+    /** No initiating radiation: we may listen but not beacon. */
+    no_ir: boolean
+    /** DFS required, which we do not implement. */
+    radar: boolean
+    disabled_by_regdomain: boolean
+}
+
+/** The stored intent. The passphrase is never served. */
+export interface WifiConfigView {
+    id: number
+    interface_id: number
+    mode: "ap" | "station"
+    ssid: string
+    country_code: string
+    band: WifiBand
+    channel: number
+    hidden: boolean
+    enabled: boolean
+}
+
+export interface RadioView {
+    phy: string
+    if_name: string
+    key: string
+    interface_id: number
+    role: InterfaceRole | "unassigned"
+    mode: "ap" | "station" | ""
+    supports_ap: boolean
+    supports_sta: boolean
+    bands: Partial<Record<WifiBand, WifiChannel[]>>
+    country_code: string
+    country_code_set: boolean
+    ax_supported: boolean
+    /** WPA3 transition mode, decided by the installed hostapd binary. */
+    sae_supported: boolean
+    /** A role another interface holds on this radio, "" when free. */
+    sibling_role: string
+    config?: WifiConfigView
+}
+
+export interface WifiNetwork {
+    ssid: string
+    security: string
+    signal_dbm: number
+    connected: boolean
+    known: boolean
+}
+
+export interface WifiAPRequest {
+    interface_id: number
+    ssid: string
+    /** Empty on an edit keeps the stored one. */
+    psk: string
+    country_code: string
+    band: WifiBand
+    channel: number
+    hidden: boolean
 }

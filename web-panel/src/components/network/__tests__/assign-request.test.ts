@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildAssignRequest, ROLE_CHOICES } from "../interface-table"
+import { buildAssignRequest, caveats, ROLE_CHOICES } from "../interface-table"
 import type { NetworkInterfaceView } from "@/lib/types/network"
 
 function iface(over: Partial<NetworkInterfaceView>): NetworkInterfaceView {
@@ -63,5 +63,28 @@ describe("buildAssignRequest", () => {
         )
 
         expect(req.evict_id).toBe(2)
+    })
+})
+
+describe("caveats", () => {
+    const radio = iface({ key: "k2", if_name: "wlp3s0", phy: "phy0", source: "wifi_pci" })
+
+    // One radio is a station or an access point, never both
+    it("names the interface already holding a role on the same radio", () => {
+        const sibling = iface({ key: "k3", if_name: "wlp3s0-1", phy: "phy0", role: "wan" })
+        const notes = caveats(radio, [radio, sibling])
+        expect(notes.join(" ")).toContain("wlp3s0-1")
+        expect(notes.join(" ")).toContain("phy0")
+    })
+
+    it("says nothing when the sibling holds no role", () => {
+        const free = iface({ key: "k3", if_name: "wlp3s0-1", phy: "phy0" })
+        expect(caveats(radio, [radio, free]).join(" ")).not.toContain("Shares radio")
+    })
+
+    it("says nothing for a wired port", () => {
+        const eth = iface({ key: "k1", if_name: "enp1s0", phy: "" })
+        const other = iface({ key: "k9", if_name: "enp2s0", phy: "", role: "wan" })
+        expect(caveats(eth, [eth, other]).join(" ")).not.toContain("Shares radio")
     })
 })
