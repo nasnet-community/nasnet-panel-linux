@@ -53,6 +53,7 @@ pkg/geofiles/embedded/*.dat
 /MULTINODE_REMOVAL_PLAN.md
 /GROUPS_REMOVAL_PLAN.md
 /scripts/fork-xray-wg-stats.sh
+/scripts/test-installer-router.sh
 .claude/
 /DUAL_WAN_ROUTER_PLAN.md
 /ROUTER_MODE_PLAN.md
