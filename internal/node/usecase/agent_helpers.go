@@ -522,6 +522,13 @@ func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) 
 			if acc.Status != "active" || acc.Inbound == nil {
 				continue
 			}
+			// An account's own status is only as correct as the last lifecycle
+			// hook that wrote it, and an account assigned to an already-terminal
+			// subscription is created active with nothing to correct it. The
+			// subscription's state is the authority for what reaches a node.
+			if acc.Subscription != nil && !acc.Subscription.GrantsAccess() {
+				continue
+			}
 			if acc.Inbound.IsDisabled {
 				continue
 			}

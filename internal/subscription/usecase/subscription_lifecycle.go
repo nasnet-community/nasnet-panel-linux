@@ -334,10 +334,11 @@ func (u *subscriptionUsecase) deactivateOnNodes(ctx context.Context, sub *domain
 		}
 	}
 
-	if u.accountManager != nil {
-		if err := u.accountManager.DisableAccountsBySubscription(ctx, sub.ID); err != nil {
-			log.WithError(err).WithField("subscription_id", sub.ID).Warn("[deactivateOnNodes] Failed to disable accounts")
-		}
+	// Revokes Xray accounts and WireGuard peers alike. The provider call above
+	// is keyed on sub.ProductType and reaches WG only for the product families
+	// a provider is registered for; this reaches the rest.
+	if err := u.setTunnelAccess(ctx, sub.ID, false); err != nil {
+		log.WithError(err).WithField("subscription_id", sub.ID).Warn("[deactivateOnNodes] Failed to revoke tunnel access")
 	}
 }
 
@@ -390,11 +391,9 @@ func (u *subscriptionUsecase) reactivateSubscription(ctx context.Context, id uin
 		return err
 	}
 
-	// Enable associated accounts
-	if u.accountManager != nil {
-		if err := u.accountManager.EnableAccountsBySubscription(ctx, id); err != nil {
-			log.WithError(err).WithField("subscription_id", id).Warn("Failed to enable accounts during reactivation")
-		}
+	// Enable associated accounts and WireGuard peers
+	if err := u.setTunnelAccess(ctx, id, true); err != nil {
+		log.WithError(err).WithField("subscription_id", id).Warn("Failed to restore tunnel access during reactivation")
 	}
 
 	// Activate user on Xray Provider

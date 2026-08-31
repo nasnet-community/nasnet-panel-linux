@@ -31,6 +31,9 @@ func (u *adminUsecase) ExtendSubscription(ctx context.Context, id uint, days int
 		if err := u.subRepo.ExtendDays(ctx, id, days); err != nil {
 			return err
 		}
+		// An expired sub's access was revoked on expiry; restore it here or the
+		// extension only moves the date and the user stays cut off.
+		u.setTunnelAccess(ctx, id, true)
 		return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusActive)
 	}
 
@@ -45,17 +48,15 @@ func (u *adminUsecase) GetSubscriptionsByUser(ctx context.Context, userID uint) 
 }
 
 func (u *adminUsecase) RevokeSubscription(ctx context.Context, id uint) error {
-	if u.accountUC != nil {
-		_ = u.accountUC.DisableAccountsBySubscription(ctx, id)
-	}
+	// Revokes WireGuard peers as well as Xray accounts; going through accountUC
+	// alone left a subscription's peers live after a revoke.
+	u.setTunnelAccess(ctx, id, false)
 
 	return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusCancelled)
 }
 
 func (u *adminUsecase) PauseSubscription(ctx context.Context, id uint) error {
-	if u.accountUC != nil {
-		_ = u.accountUC.DisableAccountsBySubscription(ctx, id)
-	}
+	u.setTunnelAccess(ctx, id, false)
 	return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusPaused)
 }
 
@@ -68,9 +69,7 @@ func (u *adminUsecase) ResumeSubscription(ctx context.Context, id uint) error {
 		return errors.New("cannot resume expired subscription")
 	}
 
-	if u.accountUC != nil {
-		_ = u.accountUC.EnableAccountsBySubscription(ctx, id)
-	}
+	u.setTunnelAccess(ctx, id, true)
 
 	return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusActive)
 }
@@ -578,4 +577,29 @@ func (u *adminUsecase) BulkManageInbounds(ctx context.Context, subscriptionIDs [
 	}
 
 	return result, nil
+}
+
+// setTunnelAccess revokes or restores every access artifact a subscription owns
+// (Xray accounts AND WireGuard peers). Prefers the subscription usecase, which
+// knows about both; falls back to the account manager alone when the admin
+// usecase was built without it. Best-effort: a failure is logged, never fatal
+// to the status transition the caller is performing.
+func (u *adminUsecase) setTunnelAccess(ctx context.Context, id uint, enabled bool) {
+	if u.subUC != nil {
+		if err := u.subUC.SetTunnelAccess(ctx, id, enabled); err != nil {
+			logger.GetLogger().WithError(err).WithFields(map[string]interface{}{
+				"subscription_id": id,
+				"enabled":         enabled,
+			}).Warn("[admin] Failed to update tunnel access")
+		}
+		return
+	}
+	if u.accountUC == nil {
+		return
+	}
+	if enabled {
+		_ = u.accountUC.EnableAccountsBySubscription(ctx, id)
+	} else {
+		_ = u.accountUC.DisableAccountsBySubscription(ctx, id)
+	}
 }

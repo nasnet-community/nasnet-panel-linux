@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -323,7 +324,23 @@ func runServe(cmd *cobra.Command, args []string) {
 	xrayProv.SetNodeClientFunc(uc.Node.GetNodeClient)
 
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
-	uc.Node.SetWGPeerSource(wireguardNodebridge.New(repos.WGPeer))
+	wgPeers := wireguardNodebridge.New(repos.WGPeer)
+	wgPeers.SetAccessResolver(func(ctx context.Context, subIDs []uint) (map[uint]bool, error) {
+		out := make(map[uint]bool, len(subIDs))
+		for _, id := range subIDs {
+			sub, err := repos.Subscription.FindByID(ctx, id)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					out[id] = false // peer outlived its subscription
+				}
+				continue // transient: no opinion, render the peer as stored
+			}
+			out[id] = sub.GrantsAccess()
+		}
+		return out, nil
+	})
+	uc.Node.SetWGPeerSource(wgPeers)
+	uc.Subscription.SetWGAccess(uc.WGDevice) // Revoking a subscription must reach its WG peers too, not only via the Xray
 	uc.Node.SetRouterMode(cfg.Router.Enabled)
 
 	httpFactory.SetRouterMode(cfg.Router.Enabled, httpclient.EgressDomestic)
