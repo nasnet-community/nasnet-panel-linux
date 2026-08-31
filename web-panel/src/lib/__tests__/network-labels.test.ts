@@ -14,6 +14,7 @@ function iface(over: Partial<NetworkInterfaceView>): NetworkInterfaceView {
     return {
         id: 1,
         if_name: "eth0",
+        phy: "",
         perm_mac: "",
         id_path: "",
         key: "k1",
