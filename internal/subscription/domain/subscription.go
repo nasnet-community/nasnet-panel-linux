@@ -91,6 +91,21 @@ func (Subscription) TableName() string {
 	return "subscriptions"
 }
 
+// GrantsAccess reports whether this subscription should currently be carrying
+// traffic. It is the authority for what a node is told about a user, so that a
+// missed lifecycle hook cannot leave access live: pause, cancel, expiry and
+// quota exhaustion all revoke here regardless of what any per-account or
+// per-peer status column says. Pending is allowed so a freshly purchased
+// subscription works in the window before its status flips to active.
+func (s *Subscription) GrantsAccess() bool {
+	switch s.Status {
+	case SubscriptionStatusPending, SubscriptionStatusActive:
+	default:
+		return false
+	}
+	return !s.IsExpired() && !s.IsDataExhausted()
+}
+
 func (s *Subscription) IsExpired() bool {
 	endDate := s.GetEffectiveEndDate()
 	if endDate == nil {

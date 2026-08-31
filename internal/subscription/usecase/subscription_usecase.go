@@ -146,6 +146,15 @@ type SubscriptionUsecase interface {
 
 	// Manual subscription (no user/plan)
 	CreateManual(ctx context.Context, req *ManualSubscriptionRequest) (*domain.Subscription, error)
+
+	// SetTunnelAccess enables/disables EVERY access artifact the subscription
+	// owns — Xray accounts and WireGuard peers alike. Callers outside this
+	// package must use this rather than the account manager directly, or they
+	// revoke only half of a subscription's access.
+	SetTunnelAccess(ctx context.Context, subID uint, enabled bool) error
+	// SetWGAccess wires the wireguard peer enable/disable port so SetTunnelAccess
+	// covers WG as well as Xray accounts.
+	SetWGAccess(w WGAccess)
 }
 
 // ManualSubscriptionRequest contains parameters for creating a manual subscription
@@ -179,6 +188,7 @@ type subscriptionUsecase struct {
 	eventBus        *events.EventBus
 	notifCleaner    NotificationCleaner // optional; re-arms one-shot notifications on renew/reset
 	wgPeerReader    WGPeerReader        // optional; enables wireguard:// links in /sub
+	wgAccess        WGAccess            // optional; revokes/restores WG peers on lifecycle changes
 	userLocks       sync.Map            // keyed by uint userID → *userLockEntry
 }
 

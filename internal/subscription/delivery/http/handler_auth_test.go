@@ -162,6 +162,10 @@ func (s *stubSubscriptionUsecase) HasUserPurchasedPlan(_ context.Context, _, _ u
 func (s *stubSubscriptionUsecase) CreateManual(_ context.Context, _ *usecase.ManualSubscriptionRequest) (*domain.Subscription, error) {
 	return nil, errStub
 }
+func (s *stubSubscriptionUsecase) SetTunnelAccess(_ context.Context, _ uint, _ bool) error {
+	return nil
+}
+func (s *stubSubscriptionUsecase) SetWGAccess(_ usecase.WGAccess) {}
 func (s *stubSubscriptionUsecase) SetRenewalConfig(_ context.Context, _ uint, _ *int, _ *float64) error {
 	return errStub
 }

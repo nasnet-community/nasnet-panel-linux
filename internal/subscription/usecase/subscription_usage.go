@@ -156,12 +156,12 @@ func (u *subscriptionUsecase) SetCustomDataLimit(ctx context.Context, id uint, l
 		if effectiveLimit == 0 || effectiveLimit > sub.DataUsed {
 			u.reactivateSubscription(ctx, id)
 		}
-	} else if sub.Status == domain.SubscriptionStatusActive && u.accountManager != nil {
+	} else if sub.Status == domain.SubscriptionStatusActive {
 		// Subscription is Active but accounts may have been disabled by per-account
 		// data limit checks (CheckAndDisableExhaustedAccounts). Since we've cleared
 		// account data limits above, re-enable any disabled accounts and re-provision on Xray.
-		if enableErr := u.accountManager.EnableAccountsBySubscription(ctx, id); enableErr != nil {
-			log.WithError(enableErr).WithField("subscription_id", id).Warn("[SetCustomDataLimit] Failed to re-enable accounts")
+		if enableErr := u.setTunnelAccess(ctx, id, true); enableErr != nil {
+			log.WithError(enableErr).WithField("subscription_id", id).Warn("[SetCustomDataLimit] Failed to restore tunnel access")
 		}
 	}
 
@@ -270,10 +270,8 @@ func (u *subscriptionUsecase) SetCustomEndDate(ctx context.Context, id uint, end
 		}
 		// Update local object
 		sub.Status = domain.SubscriptionStatusExpired
-		if u.accountManager != nil {
-			if disableErr := u.accountManager.DisableAccountsBySubscription(ctx, id); disableErr != nil {
-				log.WithError(disableErr).WithField("subscription_id", id).Warn("[SetCustomEndDate] Failed to disable accounts")
-			}
+		if disableErr := u.setTunnelAccess(ctx, id, false); disableErr != nil {
+			log.WithError(disableErr).WithField("subscription_id", id).Warn("[SetCustomEndDate] Failed to revoke tunnel access")
 		}
 	} else if !isExpired && sub.Status == domain.SubscriptionStatusExpired {
 		// Check if data is also exhausted before reactivating
@@ -289,10 +287,8 @@ func (u *subscriptionUsecase) SetCustomEndDate(ctx context.Context, id uint, end
 				return nil, err
 			}
 			sub.Status = domain.SubscriptionStatusActive
-			if u.accountManager != nil {
-				if enableErr := u.accountManager.EnableAccountsBySubscription(ctx, id); enableErr != nil {
-					log.WithError(enableErr).WithField("subscription_id", id).Warn("[SetCustomEndDate] Failed to enable accounts")
-				}
+			if enableErr := u.setTunnelAccess(ctx, id, true); enableErr != nil {
+				log.WithError(enableErr).WithField("subscription_id", id).Warn("[SetCustomEndDate] Failed to restore tunnel access")
 			}
 		}
 	}
@@ -355,10 +351,10 @@ func (u *subscriptionUsecase) AddData(ctx context.Context, id uint, additionalGB
 		if newLimit > sub.DataUsed {
 			u.reactivateSubscription(ctx, id)
 		}
-	} else if sub.Status == domain.SubscriptionStatusActive && u.accountManager != nil {
+	} else if sub.Status == domain.SubscriptionStatusActive {
 		// Re-enable accounts that were disabled by per-account data limit checks
-		if enableErr := u.accountManager.EnableAccountsBySubscription(ctx, id); enableErr != nil {
-			log.WithError(enableErr).WithField("subscription_id", id).Warn("[AddData] Failed to re-enable accounts")
+		if enableErr := u.setTunnelAccess(ctx, id, true); enableErr != nil {
+			log.WithError(enableErr).WithField("subscription_id", id).Warn("[AddData] Failed to restore tunnel access")
 		}
 	}
 
