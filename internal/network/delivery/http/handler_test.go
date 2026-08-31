@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 )
@@ -31,6 +32,17 @@ type stubUsecase struct {
 	labelledMAC string
 	labelledAs  string
 	setLabelErr error
+
+	radios        []usecase.RadioView
+	radiosErr     error
+	wifiVerdicts  []domain.Verdict
+	wifiEnabled   *domain.WifiConfig
+	wifiEnableErr error
+	wifiDisabled  string
+	wifiScanned   string
+	wifiNets      []system.WifiNetwork
+	wifiScanErr   error
+	wifiConnected [3]string
 
 	vpnProfiles   []usecase.VPNProfileView
 	vpnCreated    *usecase.CreateVPNProfileRequest
@@ -390,4 +402,34 @@ func TestGetState_ReportsPreTakeover(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "finish setup") {
 		t.Errorf("state does not carry the finish-setup warning: %s", w.Body.String())
 	}
+}
+
+func (s *stubUsecase) Radios(context.Context) ([]usecase.RadioView, error) {
+	return s.radios, s.radiosErr
+}
+
+func (s *stubUsecase) EnableAP(_ context.Context, cfg domain.WifiConfig) ([]domain.Verdict, *usecase.ApplyView, error) {
+	if s.wifiEnableErr != nil {
+		return nil, nil, s.wifiEnableErr
+	}
+	s.wifiEnabled = &cfg
+	if domain.Rejected(s.wifiVerdicts) {
+		return s.wifiVerdicts, nil, nil
+	}
+	return s.wifiVerdicts, &usecase.ApplyView{PlanID: 11, ConfirmDeadlineUnix: 1_800_000_090}, nil
+}
+
+func (s *stubUsecase) DisableWifi(_ context.Context, key string) (*usecase.ApplyView, error) {
+	s.wifiDisabled = key
+	return &usecase.ApplyView{PlanID: 12}, nil
+}
+
+func (s *stubUsecase) ScanWifi(_ context.Context, key string) ([]system.WifiNetwork, error) {
+	s.wifiScanned = key
+	return s.wifiNets, s.wifiScanErr
+}
+
+func (s *stubUsecase) ConnectWifi(_ context.Context, key, ssid, psk string) (*usecase.ApplyView, error) {
+	s.wifiConnected = [3]string{key, ssid, psk}
+	return &usecase.ApplyView{PlanID: 13}, nil
 }
