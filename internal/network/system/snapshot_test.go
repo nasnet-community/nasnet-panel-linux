@@ -2,10 +2,13 @@ package system
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
@@ -23,9 +26,10 @@ func tmpPaths(t *testing.T) Paths {
 		CloudInitDir:       filepath.Join(root, "etc/cloud/cloud.cfg.d"),
 		RunNetworkdDir:     filepath.Join(root, "run/systemd/network"),
 		StateDir:           filepath.Join(root, "var/lib/nasnet"),
+		HostapdDir:         filepath.Join(root, "etc/hostapd"),
 	}
 	for _, d := range []string{p.NetworkdDir, p.NetworkdConfDir, p.NetplanDir, p.SysctlDir,
-		p.RTTablesDir, p.CloudInitDir, p.RunNetworkdDir, p.StateDir} {
+		p.RTTablesDir, p.CloudInitDir, p.RunNetworkdDir, p.StateDir, p.HostapdDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -224,5 +228,93 @@ func TestUnitMasked_CountsRuntimeMasks(t *testing.T) {
 		if unitIsMasked(s) {
 			t.Errorf("%q must not count as masked", s)
 		}
+	}
+}
+
+// The AP config holds a passphrase, so it must ride the snapshot's side channel
+// and never the model's own JSON
+func TestSaveAndLoad_CarriesWifiIntentAndPSK(t *testing.T) {
+	s, _, p := newSnapshotter(t)
+	s.CaptureWifi = func(context.Context) ([]domain.WifiConfig, error) {
+		return []domain.WifiConfig{{InterfaceID: 7, Mode: "ap", SSID: "nasnet",
+			PSK: "sekritsekrit", CountryCode: "IR", Band: "2g", Enabled: true}}, nil
+	}
+	if err := os.WriteFile(filepath.Join(p.HostapdDir, "nasnet-ap.conf"),
+		[]byte("interface=wlan0\nwpa_passphrase=sekritsekrit\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := s.Capture(context.Background(), []int{201})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snap.WifiCaptured || len(snap.WifiConfigs) != 1 {
+		t.Fatalf("wifi rows not captured: %+v", snap.WifiConfigs)
+	}
+	if snap.WifiPSKs[0] != "sekritsekrit" {
+		t.Errorf("PSK side channel = %q", snap.WifiPSKs[0])
+	}
+	if snap.HostapdModes["nasnet-ap.conf"] != 0o600 {
+		t.Errorf("conf mode not captured: %o", snap.HostapdModes["nasnet-ap.conf"])
+	}
+
+	path := filepath.Join(p.StateDir, "snap-9.json")
+	if err := s.Save(snap, path); err != nil {
+		t.Fatal(err)
+	}
+	back, err := LoadSnapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.WifiConfigs) != 1 || back.WifiConfigs[0].PSK != "sekritsekrit" {
+		t.Fatalf("PSK lost across the round trip: %+v", back.WifiConfigs)
+	}
+	if back.WifiConfigs[0].SSID != "nasnet" || !back.WifiConfigs[0].Enabled {
+		t.Errorf("intent lost: %+v", back.WifiConfigs[0])
+	}
+
+	// json:"-" on the model is what keeps the secret out of wifi_configs
+	blob, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configs := strings.Split(strings.Split(string(blob), `"wifi_psks"`)[0], `"wifi_configs"`)
+	if len(configs) > 1 && strings.Contains(configs[1], "sekritsekrit") {
+		t.Error("the PSK leaked into wifi_configs; json:\"-\" on the model is gone")
+	}
+}
+
+// A rolled-back AP enable must not leave the row saying "on"
+func TestRestore_PutsTheWifiRowsBack(t *testing.T) {
+	s, _, _ := newSnapshotter(t)
+	var restored []domain.WifiConfig
+	s.RestoreWifi = func(_ context.Context, cfgs []domain.WifiConfig) error {
+		restored = cfgs
+		return nil
+	}
+	snap := &Snapshot{Version: snapshotVersion, Routes: map[int][]Route{},
+		WifiCaptured: true, WifiConfigs: []domain.WifiConfig{{InterfaceID: 7, SSID: "before"}}}
+	if err := s.Restore(context.Background(), snap); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || restored[0].SSID != "before" {
+		t.Fatalf("restored = %+v", restored)
+	}
+}
+
+// An older snapshot has no wifi at all, and empty must not read as "clear it"
+func TestRestore_OlderSnapshotLeavesWifiAlone(t *testing.T) {
+	s, _, _ := newSnapshotter(t)
+	called := false
+	s.RestoreWifi = func(context.Context, []domain.WifiConfig) error {
+		called = true
+		return nil
+	}
+	snap := &Snapshot{Version: snapshotVersion, Routes: map[int][]Route{}}
+	if err := s.Restore(context.Background(), snap); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("a snapshot with no wifi section triggered a restore")
 	}
 }
