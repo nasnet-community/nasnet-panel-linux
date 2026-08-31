@@ -36,6 +36,12 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.PUT("/lan", h.UpdateLAN)
 		n.GET("/lan/devices", h.ListDevices)
 		n.PUT("/lan/devices/:mac/label", h.SetDeviceLabel)
+
+		n.GET("/wifi/radios", h.ListRadios)
+		n.PUT("/wifi/ap", h.EnableAP)
+		n.DELETE("/wifi/:key", h.DisableWifi)
+		n.POST("/wifi/scan/:key", h.ScanWifi)
+		n.POST("/wifi/connect/:key", h.ConnectWifi)
 		// Only enable and disable touch packets; role changes redistribute
 		// flows, and the rest is plain storage.
 		n.GET("/vpn/profiles", h.ListVPNProfiles)
