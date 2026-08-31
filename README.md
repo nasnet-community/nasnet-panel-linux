@@ -98,6 +98,14 @@ The codebase follows a clean, layered architecture (`domain` → `usecase` → `
 
 > 🧭 **New here?** Follow the simple step-by-step [Getting Started guide](./docs/getting-started.md) ([فارسی](./docs/getting-started.fa.md)) — it walks you through the whole install.
 
+**One-liner install** (Debian/Ubuntu) — downloads the interactive installer; no clone, no toolchains. It walks you through everything and installs verified release binaries:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nasnet-community/nasnet-panel-linux/main/nasnet-tool.sh -o nasnet-tool.sh && bash nasnet-tool.sh
+```
+
+### Docker (manual)
+
 > Requires a Linux server with **Docker** + **Docker Compose**. Default panel port is **`9761`**.
 
 ```bash

@@ -401,7 +401,8 @@ do_update() {
     local retries=0
     local max_retries=15
     while (( retries < max_retries )); do
-        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null \
+            || curl -skf --max-time 3 "https://localhost:${app_port}/health/ready" &>/dev/null; then
             ok "Backend health check passed"
             break
         fi
@@ -472,7 +473,8 @@ do_rollback() {
 
     local retries=0
     while (( retries < 10 )); do
-        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null \
+            || curl -skf --max-time 3 "https://localhost:${app_port}/health/ready" &>/dev/null; then
             ok "Backend health check passed"
             break
         fi
