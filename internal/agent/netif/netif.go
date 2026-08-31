@@ -95,10 +95,7 @@ func List(o Opts) ([]Interface, error) {
 			Driver:    driverOf(dir),
 		}
 		if _, err := os.Stat(filepath.Join(dir, "phy80211")); err == nil {
-			in.Phy = readString(dir, "phy80211", "name")
-			if in.Phy == "" {
-				in.Phy = "phy?"
-			}
+			in.Phy = phyFallback(name, readString(dir, "phy80211", "name"))
 		}
 		if o.PermMAC != nil {
 			if pm, err := o.PermMAC(name); err == nil {
@@ -313,4 +310,19 @@ func readInt(parts ...string) int {
 		return 0
 	}
 	return v
+}
+
+// phyFallback keeps two radios with unreadable phy names from aliasing into one
+// value: V13 groups interfaces by this string, and a shared sentinel would merge
+// two real radios. The symlink target usually still knows.
+func phyFallback(ifName, phy string) string {
+	if phy != "" {
+		return phy
+	}
+	if dst, err := os.Readlink("/sys/class/net/" + ifName + "/phy80211"); err == nil {
+		return filepath.Base(dst)
+	}
+	// Unique per interface, so V13 fails open across two unknown radios rather
+	// than falsely merging them
+	return "phy?" + ifName
 }

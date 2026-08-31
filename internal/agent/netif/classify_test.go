@@ -155,3 +155,16 @@ func TestAssignable(t *testing.T) {
 		}
 	}
 }
+
+// Two radios whose phy name is unreadable must never alias into one value, or
+// V13 treats them as the same radio.
+func TestPhyFallback_NeverAliasesTwoRadios(t *testing.T) {
+	a := phyFallback("wlan0", "")
+	b := phyFallback("wlan1", "")
+	if a == b {
+		t.Fatalf("both unreadable radios resolved to %q", a)
+	}
+	if got := phyFallback("wlan0", "phy3"); got != "phy3" {
+		t.Fatalf("a readable name was overridden: %q", got)
+	}
+}
