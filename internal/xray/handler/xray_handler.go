@@ -77,7 +77,7 @@ func (h *XrayHandler) resolveVersion(c *gin.Context) string {
 			return v
 		}
 	}
-	return "26.2.6"
+	return "26.7.28"
 }
 
 // resolveArch returns the arch from query param, defaulting to amd64.

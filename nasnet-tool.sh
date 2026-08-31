@@ -14,6 +14,7 @@ ENV_FILE="$PROJECT_DIR/.env"
 ENV_EXAMPLE="$PROJECT_DIR/.env.example"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 SQLITE_COMPOSE_FILE="$PROJECT_DIR/docker-compose.sqlite.yml"
+ACME_COMPOSE_FILE="$PROJECT_DIR/docker-compose.acme.yml"
 
 CONTAINER_BACKEND="nasnet_panel_backend"
 CONTAINER_DB="nasnet_panel_db"
@@ -29,7 +30,7 @@ BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"
 XRAY_BINARY="/usr/local/bin/xray"
 XRAY_CONFIG_DIR="/usr/local/etc/xray"
 # Must match the panel default and bin/xray/, or we ship a core it never expects.
-XRAY_VERSION="${XRAY_VERSION:-26.2.6}"
+XRAY_VERSION="${XRAY_VERSION:-26.7.28}"
 
 # GitHub release auto-update settings
 GITHUB_REPO="${GITHUB_REPO:-nasnet-community/nasnet-panel-linux}"
@@ -39,6 +40,29 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 OFFLINE_MODE="${OFFLINE_MODE:-false}"
 PGSQL_INSTALL_DIR="/usr/local/nasnet-pgsql"
 PGSQL_SERVICE="nasnet-postgresql"
+
+# ── Standalone bootstrap ──────────────────────────────────────────────────────
+# The script runs alone — a single curl'd nasnet-tool.sh, no repo clone — for
+# the release-binary and offline installs; everything then lives in
+# INSTALL_DIR. A checkout next to the script keeps the classic behavior.
+# Docker and source builds still need the repo; the wizard offers to clone it.
+STANDALONE_MODE=false
+if [[ ! -f "$SCRIPT_DIR/go.mod" ]]; then
+    STANDALONE_MODE=true
+    PROJECT_DIR="$INSTALL_DIR"
+    BACKUP_DIR="$PROJECT_DIR/data/backups"
+    ENV_FILE="$PROJECT_DIR/.env"
+    ENV_EXAMPLE="$PROJECT_DIR/.env.example"
+    COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+    SQLITE_COMPOSE_FILE="$PROJECT_DIR/docker-compose.sqlite.yml"
+    ACME_COMPOSE_FILE="$PROJECT_DIR/docker-compose.acme.yml"
+fi
+
+# Minimal images often run as root with no sudo installed; the script calls
+# sudo throughout, so give it one that just runs the command.
+if [[ $EUID -eq 0 ]] && ! command -v sudo &>/dev/null; then
+    sudo() { "$@"; }
+fi
 
 # Ensure common tool paths are available (Go, Node via nvm/fnm, pnpm, etc.)
 # /etc/profile.d/ scripts are only sourced by login shells, so non-login
@@ -388,6 +412,14 @@ get_db_port()     { echo "${DB_PORT:-5432}"; }
 get_db_path()     { echo "${DB_PATH:-/app/data/nasnet_panel.db}"; }
 get_app_port()    { echo "${APP_PORT:-9761}"; }
 
+# With ACME or custom certs the panel serves TLS on APP_PORT, so probe
+# plain HTTP first and fall back to HTTPS without cert verification.
+_health_ok() {
+    local port="$1"
+    curl -sf --max-time 3 "http://localhost:${port}/health/ready" &>/dev/null \
+        || curl -skf --max-time 3 "https://localhost:${port}/health/ready" &>/dev/null
+}
+
 # Export VERSION/COMMIT/BUILD_TIME so compose can interpolate them
 # into build.args for the app service.
 _export_build_env() {
@@ -421,15 +453,27 @@ _prepare_docker_bind_mounts() {
 _compose_cmd_with_files() {
     local compose_cmd
     compose_cmd=$(get_compose_cmd)
-    if is_sqlite; then
-        $compose_cmd -f "$COMPOSE_FILE" -f "$SQLITE_COMPOSE_FILE" --project-directory "$PROJECT_DIR" "$@"
-    else
-        $compose_cmd -f "$COMPOSE_FILE" --project-directory "$PROJECT_DIR" "$@"
+    local files=(-f "$COMPOSE_FILE")
+    is_sqlite && files+=(-f "$SQLITE_COMPOSE_FILE")
+    # ACME needs :80 published so HTTP-01 challenges reach the panel
+    if [[ "${ACME_ENABLED:-false}" == "true" && -f "$ACME_COMPOSE_FILE" ]]; then
+        files+=(-f "$ACME_COMPOSE_FILE")
     fi
+    $compose_cmd "${files[@]}" --project-directory "$PROJECT_DIR" "$@"
 }
 
 is_docker_running() {
     docker info &>/dev/null
+}
+
+# Compose derives volume names from the project directory; mirror its
+# normalization (lowercase, strip anything outside [a-z0-9_-]).
+_docker_project_name() {
+    basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]//g'
+}
+
+_docker_pg_volume_exists() {
+    docker volume ls -q 2>/dev/null | grep -qx "$(_docker_project_name)_postgres_data"
 }
 
 get_compose_cmd() {
@@ -470,7 +514,10 @@ _deploy_mode() {
 # Sync .env to INSTALL_DIR when in systemd mode
 _sync_env_to_install_dir() {
     if [[ "$(_deploy_mode)" == "systemd" ]] && [[ -d "$INSTALL_DIR" ]]; then
-        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+        # Standalone runs already live in INSTALL_DIR — cp on itself fails.
+        if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
+            sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+        fi
         sudo chmod 600 "$INSTALL_DIR/.env"
         local run_user="${SUDO_USER:-$(whoami)}"
         sudo chown "$run_user:" "$INSTALL_DIR/.env" 2>/dev/null || true
@@ -527,10 +574,14 @@ pg_dump_exec() {
 pg_dump_to_file() {
     local filepath="$1"
     if is_sqlite; then
+        # SQLite's online backup, not a raw copy — the backend keeps the
+        # file open and a mid-write cp hands back a torn database.
         if [[ "$(_deploy_mode)" == "systemd" ]]; then
-            cp "$(get_db_path)" "$filepath"
+            sqlite3 "$(get_db_path)" ".backup '${filepath}'"
         else
-            docker cp "$CONTAINER_BACKEND:$(get_db_path)" "$filepath"
+            docker exec "$CONTAINER_BACKEND" sqlite3 "$(get_db_path)" ".backup '/tmp/nasnet-sqlite-backup.db'"
+            docker cp "$CONTAINER_BACKEND:/tmp/nasnet-sqlite-backup.db" "$filepath"
+            docker exec "$CONTAINER_BACKEND" rm -f /tmp/nasnet-sqlite-backup.db
         fi
     else
         pg_dump_exec > "$filepath"
@@ -541,10 +592,15 @@ pg_dump_to_file() {
 psql_restore_from_file() {
     local filepath="$1"
     if is_sqlite; then
+        # Never overwrite a live SQLite file — stop the backend around the copy.
         if [[ "$(_deploy_mode)" == "systemd" ]]; then
+            sudo systemctl stop "$BACKEND_SERVICE" 2>/dev/null || true
             cp "$filepath" "$(get_db_path)"
+            sudo systemctl start "$BACKEND_SERVICE" 2>/dev/null || true
         else
+            _compose_cmd_with_files stop app >/dev/null 2>&1 || true
             docker cp "$filepath" "$CONTAINER_BACKEND:$(get_db_path)"
+            _compose_cmd_with_files start app >/dev/null 2>&1 || true
         fi
     else
         cat "$filepath" | psql_exec --single-transaction -q
@@ -678,6 +734,30 @@ wizard_install_docker() {
     fi
 }
 
+# Standalone runs need the repo for Docker or source builds: clone it and
+# hand the wizard over to the checkout. Never returns on success (exec).
+wizard_clone_repo() {
+    local dest="${HOME}/nasnet-panel-linux"
+
+    if ! command -v git &>/dev/null; then
+        if ! run_logged "Installing git" sudo apt-get install -y git; then
+            step_fail "git is required to clone the repository"
+            return 1
+        fi
+    fi
+
+    if [[ -d "$dest/.git" ]]; then
+        step_ok "Repository already at ${dest}"
+    else
+        if ! run_logged "Cloning repository to ${dest}" git clone "https://github.com/${GITHUB_REPO}.git" "$dest"; then
+            return 1
+        fi
+    fi
+
+    step_info "Continuing from the repository checkout..."
+    exec "$dest/nasnet-tool.sh" install
+}
+
 wizard_read_env_value() {
     local key="$1"
     local file="${2:-$ENV_FILE}"
@@ -723,6 +803,142 @@ wizard_random_port() {
     done
     # Exhausted attempts — return last generated port
     echo "$port"
+}
+
+# Validate an IPv4 address. Echoes nothing; returns 0/1.
+wizard_valid_ip() {
+    local ip="$1" i
+    [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    for i in 1 2 3 4; do
+        (( BASH_REMATCH[i] > 255 )) && return 1
+    done
+    return 0
+}
+
+# Validate a bare hostname — no scheme, port, path, and not an IP.
+# Prints the reason it failed so callers can just relay it.
+wizard_valid_domain() {
+    local d="$1"
+    if [[ -z "$d" ]]; then
+        echo "Domain is required"; return 1
+    fi
+    if [[ "$d" == *"://"* || "$d" == *":"* || "$d" == *"/"* ]]; then
+        echo "Enter the domain only (no http://, port, or path). Example: example.com"; return 1
+    fi
+    if [[ "$d" != *.* ]]; then
+        echo "Invalid domain: ${d} (must contain at least one dot)"; return 1
+    fi
+    if wizard_valid_ip "$d"; then
+        echo "That looks like an IP address — choose IP mode instead"; return 1
+    fi
+    if [[ ! "$d" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+        echo "Invalid domain: ${d}"; return 1
+    fi
+    return 0
+}
+
+wizard_valid_port() {
+    local p="$1"
+    [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 ))
+}
+
+# Print the tail of the backend's journal. Callers hit this right after a
+# failure, so show the reason instead of a command to go run.
+show_service_logs() {
+    local svc="${1:-$BACKEND_SERVICE}" lines="${2:-15}"
+    command -v journalctl &>/dev/null || return 0
+    echo ""
+    echo -e "  ${DIM}── last ${lines} lines of ${svc} ──${RESET}"
+    sudo journalctl -u "$svc" -n "$lines" --no-pager 2>/dev/null \
+        | sed 's/^/    /' || true
+    echo -e "  ${DIM}── follow with: journalctl -u ${svc} -f ──${RESET}"
+}
+
+# Open the panel's port in whichever firewall is actually active. Silent
+# no-op when none is — a closed port is the most common "it installed but
+# I can't reach it" report.
+wizard_open_firewall() {
+    local port="$1" acme="${2:-false}"
+
+    if command -v ufw &>/dev/null && sudo ufw status 2>/dev/null | grep -q "^Status: active"; then
+        step_info "ufw is active — opening port ${port}"
+        sudo ufw allow "${port}/tcp" >/dev/null 2>&1 && step_ok "ufw: ${port}/tcp allowed" \
+            || step_warn "ufw: could not open ${port}/tcp"
+        if [[ "$acme" == "true" ]]; then
+            sudo ufw allow 80/tcp >/dev/null 2>&1 && step_ok "ufw: 80/tcp allowed (ACME)" || true
+            sudo ufw allow 443/tcp >/dev/null 2>&1 && step_ok "ufw: 443/tcp allowed" || true
+        fi
+        return 0
+    fi
+
+    if command -v firewall-cmd &>/dev/null && sudo firewall-cmd --state &>/dev/null; then
+        step_info "firewalld is active — opening port ${port}"
+        sudo firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 \
+            && step_ok "firewalld: ${port}/tcp allowed" || step_warn "firewalld: could not open ${port}/tcp"
+        if [[ "$acme" == "true" ]]; then
+            sudo firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1 || true
+            sudo firewall-cmd --permanent --add-port=443/tcp >/dev/null 2>&1 || true
+        fi
+        sudo firewall-cmd --reload >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    return 0
+}
+
+# Put the tool on PATH as `nasnet`, the way x-ui and marzban ship theirs.
+# A copy, not a symlink: standalone runs live wherever the user curl'd the
+# script, and that path may not survive. Written via temp+mv so replacing
+# it under a running copy of itself can't corrupt the read.
+# install_cli_command [--fetch]
+# Default installs the script that is running, so what you ran is what you
+# get. --fetch pulls a fresh copy first (used by auto-update, so the CLI
+# moves forward with the binaries) and falls back to the local copy.
+install_cli_command() {
+    local target="/usr/local/bin/nasnet"
+    local tmp="/usr/local/bin/.nasnet-new.$$"
+    local src=""
+    local downloaded=""
+
+    if [[ "${1:-}" == "--fetch" && "$OFFLINE_MODE" != "true" ]]; then
+        local raw_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/nasnet-tool.sh"
+        downloaded=$(mktemp)
+        if curl -fsSL --max-time 20 -o "$downloaded" "$raw_url" 2>/dev/null \
+            && [[ -s "$downloaded" ]] && head -1 "$downloaded" | grep -q '^#!' \
+            && bash -n "$downloaded" 2>/dev/null; then
+            src="$downloaded"
+        else
+            rm -f "$downloaded"
+            downloaded=""
+        fi
+    fi
+
+    # Fall back to whichever local copy exists: the deployed one, else the
+    # script currently executing.
+    if [[ -z "$src" ]]; then
+        if [[ -s "$INSTALL_DIR/nasnet-tool.sh" ]]; then
+            src="$INSTALL_DIR/nasnet-tool.sh"
+        elif [[ -s "${BASH_SOURCE[0]}" ]]; then
+            src="${BASH_SOURCE[0]}"
+        fi
+    fi
+
+    [[ -n "$src" && -s "$src" ]] || { step_warn "No script to install as ${target}"; return 0; }
+
+    if sudo install -m 755 "$src" "$tmp" 2>/dev/null && sudo mv -f "$tmp" "$target" 2>/dev/null; then
+        step_ok "Command installed: ${BOLD}nasnet${RESET}"
+    else
+        sudo rm -f "$tmp" 2>/dev/null || true
+        step_warn "Could not install the ${target} command"
+    fi
+    [[ -n "$downloaded" ]] && rm -f "$downloaded"
+    return 0
+}
+
+remove_cli_command() {
+    if [[ -f /usr/local/bin/nasnet ]]; then
+        sudo rm -f /usr/local/bin/nasnet && step_ok "Removed the nasnet command"
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -880,8 +1096,12 @@ wizard_prereqs_systemd() {
     fi
 
     # ── System packages ───────────────────────────────────────────────────
-    local SYSTEM_PKGS=(git openssl apache2-utils ca-certificates wget curl unzip build-essential)
-    SYSTEM_PKGS+=(nftables dnsmasq hostapd iw ethtool conntrack)
+    local SYSTEM_PKGS=(git openssl apache2-utils ca-certificates wget curl unzip)
+    [[ "${WIZ_INSTALL_METHOD:-source}" == "source" ]] && SYSTEM_PKGS+=(build-essential)
+    [[ "$db_driver" == "sqlite" ]] && SYSTEM_PKGS+=(sqlite3)
+    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
+        SYSTEM_PKGS+=(nftables dnsmasq hostapd iw ethtool conntrack iwd)
+    fi
     local to_install=()
 
     for pkg in "${SYSTEM_PKGS[@]}"; do
@@ -901,17 +1121,20 @@ wizard_prereqs_systemd() {
         fi
     fi
 
-    # nasnet owns dnsmasq's and hostapd's lifecycle
-    sudo systemctl disable --now dnsmasq hostapd 2>/dev/null || true
-    step_ok "dnsmasq and hostapd left to nasnet"
+    # Only a router install may touch existing network daemons — disabling
+    # dnsmasq on a box that relies on it takes its LAN down.
+    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
+        # nasnet owns dnsmasq's, hostapd's and iwd's lifecycle
+        sudo systemctl disable --now dnsmasq hostapd iwd 2>/dev/null || true
+        step_ok "dnsmasq, hostapd and iwd left to nasnet"
 
-    # One dnsmasq process serves both DNS and DHCP, and Ubuntu ships Restart=no,
-    # so a crash takes the LAN down for good. StartLimitIntervalSec=0 because the
-    # usual crash is "the bridge has no address yet" — it must keep retrying
-    # until the address appears, not give up after five tries.
-    sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
-    # StartLimitIntervalSec belongs to [Unit]; systemd ignores it under [Service].
-    sudo tee /etc/systemd/system/dnsmasq.service.d/10-nasnet.conf >/dev/null <<'DNSMASQ_RESTART'
+        # One dnsmasq process serves both DNS and DHCP, and Ubuntu ships Restart=no,
+        # so a crash takes the LAN down for good. StartLimitIntervalSec=0 because the
+        # usual crash is "the bridge has no address yet" — it must keep retrying
+        # until the address appears, not give up after five tries.
+        sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+        # StartLimitIntervalSec belongs to [Unit]; systemd ignores it under [Service].
+        sudo tee /etc/systemd/system/dnsmasq.service.d/10-nasnet.conf >/dev/null <<'DNSMASQ_RESTART'
 # Managed by nasnet.
 [Unit]
 StartLimitIntervalSec=0
@@ -920,10 +1143,14 @@ StartLimitIntervalSec=0
 Restart=always
 RestartSec=2
 DNSMASQ_RESTART
-    sudo systemctl daemon-reload 2>/dev/null || true
-    step_ok "dnsmasq set to restart on failure"
+        sudo systemctl daemon-reload 2>/dev/null || true
+        step_ok "dnsmasq set to restart on failure"
+    fi
 
     echo ""
+
+    # Toolchains only matter when building on this box.
+    if [[ "${WIZ_INSTALL_METHOD:-source}" == "source" ]]; then
 
     # ── Go ────────────────────────────────────────────────────────────────
     local go_ok=false
@@ -1043,6 +1270,8 @@ DNSMASQ_RESTART
             return 1
         fi
     fi
+
+    fi  # end source-build toolchains
 
     echo ""
 
@@ -1477,6 +1706,111 @@ _install_geofiles() {
     return 0
 }
 
+# Download the latest GitHub release binaries into a temp dir and verify
+# them against the release's checksums.txt.
+# Sets RELEASE_TMP_DIR and RELEASE_VERSION on success.
+wizard_fetch_release() {
+    draw_header "Downloading Release Binaries"
+
+    local arch
+    if ! arch=$(detect_arch); then
+        step_fail "Unsupported architecture: $(uname -m)"
+        return 1
+    fi
+
+    local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    local curl_args=(-s -f)
+    [[ -n "$GITHUB_TOKEN" ]] && curl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+
+    local release_json
+    if ! release_json=$(curl "${curl_args[@]}" "$api_url" 2>/dev/null); then
+        step_fail "Failed to fetch latest release from GitHub"
+        step_info "If this is a private repo, set GITHUB_TOKEN environment variable"
+        return 1
+    fi
+
+    RELEASE_VERSION=$(echo "$release_json" | grep -m1 '"tag_name"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    if [[ -z "$RELEASE_VERSION" ]]; then
+        step_fail "Could not parse release tag from GitHub API response"
+        return 1
+    fi
+    step_info "Latest release: ${BOLD}${RELEASE_VERSION}${RESET} (linux/${arch})"
+
+    local all_urls
+    all_urls=$(echo "$release_json" | grep '"browser_download_url"' | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+    RELEASE_TMP_DIR=$(mktemp -d)
+    local dl_args=(-fL)
+    [[ -n "$GITHUB_TOKEN" ]] && dl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream")
+
+    local asset url
+    for asset in "nasnet-panel-linux-${arch}" "nasnet-agent-linux-${arch}" "checksums.txt"; do
+        url=$(echo "$all_urls" | grep "$asset" | head -1)
+        if [[ -z "$url" ]]; then
+            step_fail "Release ${RELEASE_VERSION} has no asset ${asset}"
+            rm -rf "$RELEASE_TMP_DIR"
+            return 1
+        fi
+        if ! run_logged "Downloading ${asset}" curl "${dl_args[@]}" -o "${RELEASE_TMP_DIR}/${asset}" "$url"; then
+            step_fail "Failed to download ${asset}"
+            rm -rf "$RELEASE_TMP_DIR"
+            return 1
+        fi
+    done
+
+    local line expected_hash expected_file actual_hash
+    while IFS= read -r line; do
+        expected_hash=$(echo "$line" | awk '{print $1}')
+        expected_file=$(echo "$line" | awk '{print $2}')
+        [[ -f "${RELEASE_TMP_DIR}/${expected_file}" ]] || continue
+        actual_hash=$(sha256sum "${RELEASE_TMP_DIR}/${expected_file}" | awk '{print $1}')
+        if [[ "$actual_hash" != "$expected_hash" ]]; then
+            step_fail "${expected_file} checksum MISMATCH"
+            rm -rf "$RELEASE_TMP_DIR"
+            return 1
+        fi
+        step_ok "${expected_file} checksum OK"
+    done < "${RELEASE_TMP_DIR}/checksums.txt"
+
+    return 0
+}
+
+# Deploy the binaries fetched by wizard_fetch_release to INSTALL_DIR.
+wizard_deploy_release() {
+    local arch
+    arch=$(detect_arch)
+    local run_user="${SUDO_USER:-$(whoami)}"
+    local run_group
+    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
+
+    step_info "Deploying ${RELEASE_VERSION} to ${INSTALL_DIR}..."
+    sudo mkdir -p "$INSTALL_DIR"/{bin/{agent,xray},data/{backups,acme}}
+
+    sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel"
+    sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-agent-linux-${arch}" "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
+
+    # Has to be here before the service starts, or every config push fails.
+    install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
+
+    if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
+        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+    fi
+    sudo chmod 600 "$INSTALL_DIR/.env"
+    echo "$RELEASE_VERSION" | sudo tee "$INSTALL_DIR/.version" >/dev/null
+
+    # Keep the tool next to the install so later runs manage it from there.
+    if [[ "${BASH_SOURCE[0]}" != "$INSTALL_DIR/nasnet-tool.sh" && -f "${BASH_SOURCE[0]}" ]]; then
+        sudo cp "${BASH_SOURCE[0]}" "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
+        sudo chmod +x "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
+    fi
+
+    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+    rm -rf "$RELEASE_TMP_DIR"
+
+    step_ok "Deployed ${RELEASE_VERSION} to ${INSTALL_DIR}"
+    install_cli_command
+}
+
 wizard_deploy_artifacts() {
     local run_user="${SUDO_USER:-$(whoami)}"
     local run_group
@@ -1486,9 +1820,11 @@ wizard_deploy_artifacts() {
     if [[ "$OFFLINE_MODE" == "true" ]]; then
         step_info "Offline mode — syncing configuration..."
 
-        # Copy .env to install dir
+        # Copy .env to install dir (unless it already lives there)
         if [[ -f "$ENV_FILE" ]]; then
-            sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+            if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
+                sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+            fi
             sudo chmod 600 "$INSTALL_DIR/.env"
         fi
 
@@ -1519,8 +1855,10 @@ wizard_deploy_artifacts() {
     # Has to be here before the service starts, or every config push fails.
     install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
 
-    # Copy .env
-    sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+    # Copy .env (unless it already lives there)
+    if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
+        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+    fi
     sudo chmod 600 "$INSTALL_DIR/.env"
 
     # Write version marker
@@ -1530,6 +1868,16 @@ wizard_deploy_artifacts() {
 
     # Set ownership
     sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+
+    # A repo checkout drives itself; only standalone installs need the
+    # tool copied out of the source tree and onto PATH.
+    if [[ "$STANDALONE_MODE" == "true" ]]; then
+        if [[ "${BASH_SOURCE[0]}" != "$INSTALL_DIR/nasnet-tool.sh" && -f "${BASH_SOURCE[0]}" ]]; then
+            sudo cp "${BASH_SOURCE[0]}" "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
+            sudo chmod +x "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
+        fi
+        install_cli_command
+    fi
 
     step_ok "Deployed to ${INSTALL_DIR}"
 }
@@ -1634,6 +1982,16 @@ wizard_build_start_systemd() {
         # ── Offline: skip all builds, artifacts already deployed by install.sh ──
         step_ok "Offline mode — using pre-built artifacts from bundle"
         echo ""
+    elif [[ "${WIZ_INSTALL_METHOD:-source}" == "release" ]]; then
+        # ── Release binaries: download, verify, deploy ────────────────────
+        if ! wizard_fetch_release; then
+            step_fail "Release download failed"
+            step_info "Re-run and choose 'Build from source', or set GITHUB_TOKEN for private repos"
+            return 1
+        fi
+        echo ""
+        draw_header "Deploying to ${INSTALL_DIR}"
+        wizard_deploy_release
     else
     # ── Build frontend (embedded in Go binary via go:embed) ─────────────
     if run_logged "Building frontend" bash -c "cd '$PROJECT_DIR/web-panel' && pnpm install && pnpm build"; then
@@ -1708,6 +2066,15 @@ wizard_build_start_systemd() {
         svc_env_db="Environment=DB_HOST=localhost"
     fi
 
+    # ACME (:80) and privileged proxy inbounds need CAP_NET_BIND_SERVICE.
+    # Router mode adds netlink, nft and SO_MARK; xray inherits these.
+    local svc_caps="CAP_NET_BIND_SERVICE"
+    local svc_router_env=""
+    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
+        svc_caps="CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE"
+        svc_router_env="Environment=NASNET_ROUTER_MODE=1"
+    fi
+
     sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.service" > /dev/null << SVCEOF
 [Unit]
 Description=nasnet-panel Backend API
@@ -1728,11 +2095,10 @@ Restart=always
 RestartSec=5
 LimitNOFILE=65536
 
-# Router mode needs netlink, nft and SO_MARK. xray inherits thes
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+AmbientCapabilities=${svc_caps}
+CapabilityBoundingSet=${svc_caps}
 NoNewPrivileges=yes
-Environment=NASNET_ROUTER_MODE=1
+${svc_router_env}
 
 # Logging
 StandardOutput=journal
@@ -1744,7 +2110,11 @@ WantedBy=multi-user.target
 SVCEOF
     step_ok "${BACKEND_SERVICE}.service created"
 
-    install_netrollback_units
+    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
+        install_netrollback_units
+    else
+        step_info "Server mode — network apply dead-man not installed"
+    fi
 
     # Reload systemd
     sudo systemctl daemon-reload
@@ -1761,7 +2131,7 @@ SVCEOF
         step_ok "${BACKEND_SERVICE} is running"
     else
         step_fail "${BACKEND_SERVICE} failed to start"
-        step_info "Check logs: journalctl -u ${BACKEND_SERVICE} -n 20"
+        show_service_logs "$BACKEND_SERVICE" 20
     fi
 
     # ── Health check ──────────────────────────────────────────────────────
@@ -1770,7 +2140,7 @@ SVCEOF
     local retries=0
     local max_retries=15
     while (( retries < max_retries )); do
-        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+        if _health_ok "$app_port"; then
             break
         fi
         sleep 2
@@ -1784,7 +2154,7 @@ SVCEOF
     local rows=()
     local api_status pg_status
 
-    if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+    if _health_ok "$app_port"; then
         api_status="${GREEN}● Healthy${RESET}"
     else
         api_status="${RED}● Unreachable${RESET}"
@@ -1818,6 +2188,12 @@ wizard_write_env() {
     local header_comment="$2"
 
     local db_driver="${WIZ_DB_DRIVER:-postgres}"
+
+    # Standalone runs write into INSTALL_DIR before it exists.
+    if [[ ! -w "$PROJECT_DIR" ]]; then
+        sudo mkdir -p "$PROJECT_DIR"
+        sudo chown "$(whoami):" "$PROJECT_DIR" 2>/dev/null || true
+    fi
 
     cat > "$ENV_FILE" << ENVEOF
 # ── nasnet-panel Configuration ──────────────────────────────────────────────────
@@ -1968,25 +2344,35 @@ wizard_prompt_access_mode() {
 
         # ── API domain & port ──
         echo ""
-        echo -ne "  ${CYAN}API domain${RESET} (e.g. api.example.com): "
-        read -r WIZ_API_DOMAIN
-        if [[ -z "$WIZ_API_DOMAIN" ]]; then
-            step_fail "API domain is required"
-            return 1
-        fi
+        local domain_err
+        while true; do
+            echo -ne "  ${CYAN}API domain${RESET} (e.g. api.example.com): "
+            read -r WIZ_API_DOMAIN
+            domain_err=$(wizard_valid_domain "$WIZ_API_DOMAIN") && break
+            step_fail "$domain_err"
+        done
 
         local default_api_port="$WIZ_APP_PORT"
-        echo -ne "  ${CYAN}API port${RESET} [${default_api_port}]: "
-        read -r api_port_input
-        if [[ -n "$api_port_input" ]]; then
-            WIZ_APP_PORT="$api_port_input"
-        fi
+        while true; do
+            echo -ne "  ${CYAN}API port${RESET} [${default_api_port}]: "
+            read -r api_port_input
+            [[ -z "$api_port_input" ]] && break
+            if wizard_valid_port "$api_port_input"; then
+                WIZ_APP_PORT="$api_port_input"
+                break
+            fi
+            step_fail "Invalid port: ${api_port_input} (1-65535)"
+        done
 
         # ── Panel domain & port ──
         echo ""
-        echo -ne "  ${CYAN}Panel domain${RESET} [${WIZ_API_DOMAIN}]: "
-        read -r WIZ_PANEL_DOMAIN
-        [[ -z "$WIZ_PANEL_DOMAIN" ]] && WIZ_PANEL_DOMAIN="$WIZ_API_DOMAIN"
+        while true; do
+            echo -ne "  ${CYAN}Panel domain${RESET} [${WIZ_API_DOMAIN}]: "
+            read -r WIZ_PANEL_DOMAIN
+            [[ -z "$WIZ_PANEL_DOMAIN" ]] && WIZ_PANEL_DOMAIN="$WIZ_API_DOMAIN" && break
+            domain_err=$(wizard_valid_domain "$WIZ_PANEL_DOMAIN") && break
+            step_fail "$domain_err"
+        done
 
         # ── Panel base path (auto-generated for security) ──
         WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
@@ -2059,14 +2445,18 @@ wizard_prompt_access_mode() {
             step_warn "Could not auto-detect IP"
         fi
 
-        echo -ne "  ${CYAN}Server IP${RESET} [${WIZ_IP}]: "
-        read -r ip_override
-        [[ -n "$ip_override" ]] && WIZ_IP="$ip_override"
-
-        if [[ -z "$WIZ_IP" ]]; then
-            step_fail "Server IP is required"
-            return 1
-        fi
+        while true; do
+            echo -ne "  ${CYAN}Server IP${RESET} [${WIZ_IP}]: "
+            read -r ip_override
+            [[ -n "$ip_override" ]] && WIZ_IP="$ip_override"
+            if [[ -z "$WIZ_IP" ]]; then
+                step_fail "Server IP is required"
+                continue
+            fi
+            wizard_valid_ip "$WIZ_IP" && break
+            step_fail "Invalid IP address: ${WIZ_IP}"
+            WIZ_IP=""
+        done
 
         # ── Panel base path (auto-generated for security) ──
         WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
@@ -2108,7 +2498,23 @@ wizard_install() {
     clear
     draw_box "nasnet-panel Installation Wizard"
 
+    # Ask for sudo once, up front — otherwise the first password prompt
+    # lands in the middle of apt, six questions deep.
+    if [[ $EUID -ne 0 ]]; then
+        step_info "Installation needs sudo."
+        if ! sudo -v; then
+            step_fail "sudo is required to install nasnet-panel"
+            press_any_key
+            return
+        fi
+        step_ok "sudo granted"
+    fi
+
+    # Keep the old DB password around: an existing postgres volume only
+    # honors the password it was initialized with.
+    local WIZ_PREV_DB_PASSWORD=""
     if [[ -f "$ENV_FILE" ]]; then
+        WIZ_PREV_DB_PASSWORD=$(wizard_read_env_value DB_PASSWORD)
         step_warn "An .env file already exists at ${ENV_FILE}"
         if ! confirm_action "Overwrite it? (existing secrets will be lost)"; then
             step_info "Cancelled — use Reconfigure to modify existing config"
@@ -2128,7 +2534,9 @@ wizard_install() {
     echo -e "  ${BOLD}How do you want to run nasnet-panel?${RESET}"
     echo ""
     echo -e "  ${CYAN}Docker${RESET}   — Runs in containers (Docker + Docker Compose required)"
-    echo -e "  ${CYAN}Systemd${RESET}  — Runs natively on this machine (Debian/Ubuntu, installs Go/Node/PostgreSQL)"
+    echo -e "  ${CYAN}Systemd${RESET}  — Runs natively on this machine (Debian/Ubuntu)"
+    echo ""
+    echo -e "  ${DIM}Router mode (LAN routing, Wi-Fi, DHCP) needs Systemd — Docker can't manage the host network.${RESET}"
     echo ""
 
     local deploy_choice
@@ -2145,7 +2553,42 @@ wizard_install() {
     else
         WIZ_DEPLOY_MODE="systemd"
     fi
+
+    # Docker builds the image from source — a bare curl'd script has none.
+    if [[ "$STANDALONE_MODE" == "true" && "$WIZ_DEPLOY_MODE" == "docker" ]]; then
+        echo ""
+        step_warn "Docker mode builds from source and needs the repository checkout"
+        if confirm_action "Clone it to ~/nasnet-panel-linux and continue there?"; then
+            wizard_clone_repo || { step_fail "Clone failed"; press_any_key; return; }
+        fi
+        step_info "Cancelled — pick Systemd for the clone-free install"
+        press_any_key
+        return
+    fi
     fi  # end offline/online deploy mode selection
+
+    # ── Step 1.5: Router Mode (systemd only) ─────────────────────────────
+    local WIZ_ROUTER_MODE="false"
+    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
+        draw_header "Router Mode"
+
+        echo -e "  ${BOLD}Will this machine act as your LAN router?${RESET}"
+        echo ""
+        echo -e "  ${CYAN}Server mode${RESET} — plain panel on a VPS/server, host network left alone"
+        echo -e "  ${CYAN}Router mode${RESET} — panel manages the LAN: nftables, DHCP/DNS (dnsmasq), Wi-Fi (hostapd/iwd)"
+        echo ""
+        step_warn "Router mode takes over dnsmasq, hostapd and iwd on this box"
+        echo ""
+
+        local router_choice
+        arrow_menu "Router mode" router_choice \
+            "No — plain server (recommended for VPS)" \
+            "Yes — this box is the LAN router" \
+            "← Cancel"
+
+        [[ $router_choice -eq -1 || $router_choice -eq 2 ]] && return
+        [[ $router_choice -eq 1 ]] && WIZ_ROUTER_MODE="true"
+    fi
 
     # ── Step 2: Database Engine ──────────────────────────────────────────
     draw_header "Step 2: Database Engine"
@@ -2169,6 +2612,39 @@ wizard_install() {
         WIZ_DB_DRIVER="postgres"
     else
         WIZ_DB_DRIVER="sqlite"
+    fi
+
+    # ── Step 2.5: Install Method (systemd only) ──────────────────────────
+    local WIZ_INSTALL_METHOD="release"
+    [[ "$OFFLINE_MODE" == "true" ]] && WIZ_INSTALL_METHOD="offline bundle"
+    if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$OFFLINE_MODE" != "true" ]]; then
+        draw_header "Step 2.5: Install Method"
+
+        echo -e "  ${BOLD}How should the panel binaries be installed?${RESET}"
+        echo ""
+        echo -e "  ${CYAN}Release${RESET} — download prebuilt, checksum-verified binaries (fast, no toolchains)"
+        echo -e "  ${CYAN}Source${RESET}  — build on this machine (installs Go, Node.js, pnpm, build tools)"
+        echo ""
+
+        local method_choice
+        arrow_menu "Select install method" method_choice \
+            "Download release binaries (recommended)" \
+            "Build from source (developer)" \
+            "← Cancel"
+
+        [[ $method_choice -eq -1 || $method_choice -eq 2 ]] && return
+        [[ $method_choice -eq 1 ]] && WIZ_INSTALL_METHOD="source"
+
+        # Source builds need the repo — a bare curl'd script has none.
+        if [[ "$STANDALONE_MODE" == "true" && "$WIZ_INSTALL_METHOD" == "source" ]]; then
+            echo ""
+            step_warn "Building from source needs the repository checkout"
+            if confirm_action "Clone it to ~/nasnet-panel-linux and continue there?"; then
+                wizard_clone_repo || { step_fail "Clone failed"; press_any_key; return; }
+            fi
+            step_info "Staying with release binaries"
+            WIZ_INSTALL_METHOD="release"
+        fi
     fi
 
     # ── Step 3: Prerequisites ─────────────────────────────────────────────
@@ -2266,8 +2742,58 @@ wizard_install() {
 
     local WIZ_DB_PASSWORD=""
     if [[ "$WIZ_DB_DRIVER" != "sqlite" ]]; then
-        WIZ_DB_PASSWORD=$(wizard_gen_password)
-        step_ok "Database password generated"
+        if [[ "$WIZ_DEPLOY_MODE" == "docker" ]] && is_docker_running && _docker_pg_volume_exists; then
+            # POSTGRES_PASSWORD only applies on first init — an existing
+            # volume keeps the password it was created with.
+            if [[ -n "${WIZ_PREV_DB_PASSWORD:-}" ]]; then
+                WIZ_DB_PASSWORD="$WIZ_PREV_DB_PASSWORD"
+                step_ok "Existing postgres volume found — reusing its database password"
+            else
+                step_warn "A postgres data volume exists but its password is unknown"
+                local pgvol_choice
+                arrow_menu "Existing postgres volume" pgvol_choice \
+                    "Wipe the old volume (DESTROYS previous data)" \
+                    "Enter the old database password" \
+                    "← Cancel install"
+
+                case $pgvol_choice in
+                    0)
+                        if ! confirm_dangerous "Delete the old postgres volume and all its data?" "WIPE"; then
+                            step_info "Cancelled"
+                            press_any_key
+                            return
+                        fi
+                        _compose_cmd_with_files down 2>/dev/null || true
+                        if docker volume rm "$(_docker_project_name)_postgres_data" 2>/dev/null; then
+                            step_ok "Old postgres volume removed"
+                        else
+                            step_fail "Could not remove the postgres volume"
+                            press_any_key
+                            return
+                        fi
+                        WIZ_DB_PASSWORD=$(wizard_gen_password)
+                        step_ok "Database password generated"
+                        ;;
+                    1)
+                        echo -ne "  ${CYAN}Old database password${RESET}: "
+                        read -rs WIZ_DB_PASSWORD
+                        echo ""
+                        if [[ -z "$WIZ_DB_PASSWORD" ]]; then
+                            step_fail "Password is required"
+                            press_any_key
+                            return
+                        fi
+                        ;;
+                    *)
+                        press_any_key
+                        return
+                        ;;
+                esac
+            fi
+        else
+            WIZ_DB_PASSWORD=$(wizard_gen_password)
+            step_ok "Database password generated"
+        fi
     else
         step_ok "SQLite — no database password needed"
     fi
@@ -2335,6 +2861,10 @@ wizard_install() {
         masked_db_pass=$(wizard_mask_secret "$WIZ_DB_PASSWORD" 4)
         review_rows+=("DB_PASSWORD|${masked_db_pass}")
     fi
+    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
+        review_rows+=("Router Mode|${WIZ_ROUTER_MODE}")
+        review_rows+=("Install Method|${WIZ_INSTALL_METHOD}")
+    fi
 
     draw_table "Setting|Value" "${review_rows[@]}"
 
@@ -2361,6 +2891,9 @@ wizard_install() {
 
     # Reload env
     load_env
+
+    # An install nobody can reach reads as a broken install.
+    wizard_open_firewall "$WIZ_APP_PORT" "$WIZ_ACME_ENABLED"
 
     # ── Step 9: Build & Start ─────────────────────────────────────────────
     if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
@@ -2403,7 +2936,13 @@ wizard_install() {
     else
         echo -e "  ${DIM}Config: ${ENV_FILE}${RESET}"
     fi
-    echo -e "  ${DIM}Manage: ./nasnet-tool.sh${RESET}"
+    if [[ -x /usr/local/bin/nasnet ]]; then
+        echo -e "  ${DIM}Manage: run ${RESET}${BOLD}nasnet${RESET}${DIM} from anywhere${RESET}"
+    elif [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$STANDALONE_MODE" == "true" ]]; then
+        echo -e "  ${DIM}Manage: ${INSTALL_DIR}/nasnet-tool.sh${RESET}"
+    else
+        echo -e "  ${DIM}Manage: ./nasnet-tool.sh${RESET}"
+    fi
 
     press_any_key
 }
@@ -2791,6 +3330,15 @@ action_auto_update() {
     # Write version marker
     echo "$latest_version" | sudo tee "$INSTALL_DIR/.version" >/dev/null
 
+    # Refresh the tool itself — binaries move forward, the CLI should too.
+    if [[ "$STANDALONE_MODE" == "true" ]]; then
+        install_cli_command --fetch
+        if [[ -f /usr/local/bin/nasnet ]]; then
+            sudo cp /usr/local/bin/nasnet "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
+            step_info "The nasnet command was refreshed — restart it to pick up changes"
+        fi
+    fi
+
     # Set ownership
     sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
 
@@ -2802,7 +3350,6 @@ action_auto_update() {
     # ── Verify health ─────────────────────────────────────────────────────
     load_env
     local app_port="${APP_PORT:-9761}"
-    local health_url="http://127.0.0.1:${app_port}/health"
 
     echo ""
     step_info "Waiting for health check..."
@@ -2810,7 +3357,7 @@ action_auto_update() {
     local max_retries=15
     local healthy=false
     while (( retries < max_retries )); do
-        if curl -sf "$health_url" >/dev/null 2>&1; then
+        if _health_ok "$app_port"; then
             healthy=true
             break
         fi
@@ -2854,6 +3401,14 @@ wizard_update() {
         return
     fi
 
+    # Release-binary and standalone installs have no checkout to pull.
+    if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
+        step_warn "No repository checkout at ${PROJECT_DIR} — this install came from release binaries"
+        step_info "Use 'Auto-Update (Release)' from the main menu instead"
+        press_any_key
+        return
+    fi
+
     load_env
     local deploy_mode
     deploy_mode=$(wizard_get_deploy_mode)
@@ -2868,6 +3423,12 @@ wizard_update() {
             press_any_key
             return
         fi
+    elif [[ "$deploy_mode" == "systemd" ]] && ! command -v go &>/dev/null; then
+        # Release-binary installs have no toolchain to build with.
+        step_warn "No Go toolchain found — this looks like a release-binary install"
+        step_info "Use 'Auto-Update (Release)' from the main menu instead"
+        press_any_key
+        return
     fi
 
     # Show current version
@@ -3211,7 +3772,7 @@ wizard_change_ports() {
         local retries=0
         local max_retries=15
         while (( retries < max_retries )); do
-            if curl -sf --max-time 3 "http://localhost:${new_app_port}/health/ready" &>/dev/null; then
+            if _health_ok "$new_app_port"; then
                 break
             fi
             sleep 2
@@ -3221,10 +3782,11 @@ wizard_change_ports() {
         printf "\r%60s\r" ""
 
         echo ""
-        if curl -sf --max-time 3 "http://localhost:${new_app_port}/health/ready" &>/dev/null; then
+        if _health_ok "$new_app_port"; then
             step_ok "Backend health check passed"
         else
-            step_warn "Backend health check failed — check logs: journalctl -u ${BACKEND_SERVICE} -n 30"
+            step_warn "Backend health check failed"
+            show_service_logs "$BACKEND_SERVICE" 15
         fi
     fi
 
@@ -3324,12 +3886,12 @@ wizard_change_urls() {
 
         # Validate IPv4
         if [[ -z "$new_host" ]]; then
-            step_error "Server IP is required"
+            step_fail "Server IP is required"
             press_any_key
             return
         fi
         if ! [[ "$new_host" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
-            step_error "Invalid IP address: ${new_host}"
+            step_fail "Invalid IP address: ${new_host}"
             press_any_key
             return
         fi
@@ -3337,7 +3899,7 @@ wizard_change_urls() {
         local i
         for i in 1 2 3 4; do
             if (( BASH_REMATCH[i] > 255 )); then
-                step_error "Invalid IP address: ${new_host} (octet ${BASH_REMATCH[i]} > 255)"
+                step_fail "Invalid IP address: ${new_host} (octet ${BASH_REMATCH[i]} > 255)"
                 press_any_key
                 return
             fi
@@ -3353,22 +3915,22 @@ wizard_change_urls() {
 
         # Validate domain
         if [[ -z "$new_host" ]]; then
-            step_error "Domain is required"
+            step_fail "Domain is required"
             press_any_key
             return
         fi
         if [[ "$new_host" == *"://"* ]] || [[ "$new_host" == *":"* ]] || [[ "$new_host" == *"/"* ]]; then
-            step_error "Enter the domain only (no http://, port, or path). Example: example.com"
+            step_fail "Enter the domain only (no http://, port, or path). Example: example.com"
             press_any_key
             return
         fi
         if ! [[ "$new_host" == *.* ]]; then
-            step_error "Invalid domain: ${new_host} (must contain at least one dot)"
+            step_fail "Invalid domain: ${new_host} (must contain at least one dot)"
             press_any_key
             return
         fi
         if [[ "$new_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            step_error "That looks like an IP address — choose option 1 for IP mode"
+            step_fail "That looks like an IP address — choose option 1 for IP mode"
             press_any_key
             return
         fi
@@ -3415,7 +3977,7 @@ wizard_change_urls() {
     # Validate path
     if [[ -n "$new_base_path" ]]; then
         if [[ "$new_base_path" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9] ]] || [[ "$new_base_path" =~ ^[a-zA-Z0-9]+\.[a-zA-Z] ]]; then
-            step_error "Panel path must be a URL path (e.g. /mypath), not a hostname or IP"
+            step_fail "Panel path must be a URL path (e.g. /mypath), not a hostname or IP"
             press_any_key
             return
         fi
@@ -3639,7 +4201,7 @@ wizard_change_urls() {
         local retries=0
         local max_retries=15
         while (( retries < max_retries )); do
-            if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+            if _health_ok "$app_port"; then
                 break
             fi
             sleep 2
@@ -3648,10 +4210,11 @@ wizard_change_urls() {
         done
         printf "\r%60s\r" ""
 
-        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+        if _health_ok "$app_port"; then
             step_ok "Backend health check passed"
         else
-            step_warn "Backend health check failed — check logs: journalctl -u ${BACKEND_SERVICE} -n 30"
+            step_warn "Backend health check failed"
+            show_service_logs "$BACKEND_SERVICE" 15
         fi
     fi
 
@@ -3675,6 +4238,12 @@ wizard_view_config() {
     fi
 
     load_env
+
+    # The panel path is randomly generated at install and shown once —
+    # this is where people come back to find it.
+    echo -e "  ${BOLD}Panel login:${RESET} ${GREEN}${SUB_PANEL_URL:-(not set)}${RESET}"
+    echo -e "  ${BOLD}Username:${RESET}    ${ADMIN_USERNAME:-admin}"
+    echo ""
 
     local rows=()
     local _val
@@ -4017,13 +4586,13 @@ action_db_restore() {
     fi
 
     if is_sqlite; then
-        # SQLite: overwrite the database file
+        # SQLite: backend is stopped and restarted around the file swap
         step_info "Restoring from ${selected}..."
         if spinner "Restoring database" psql_restore_from_file "${BACKUP_DIR}/${selected}"; then
             step_ok "Database restored successfully"
             step_info "Safety backup available: ${safety}"
             echo ""
-            step_warn "You may need to restart the backend for changes to take effect"
+            step_info "Backend was restarted around the restore"
         else
             step_fail "Restore failed - safety backup: ${safety}"
         fi
@@ -4202,7 +4771,7 @@ action_health_check() {
 
     # Check Backend API
     local api_status
-    if curl -sf --max-time 5 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+    if _health_ok "$app_port"; then
         api_status="${GREEN}● Healthy${RESET}"
     else
         api_status="${RED}● Unreachable${RESET}"
@@ -4842,6 +5411,8 @@ action_uninstall_docker() {
         step_ok ".env removed"
     fi
 
+    remove_cli_command
+
     echo ""
     step_ok "Docker uninstallation complete"
     step_info "Source code remains at: ${PROJECT_DIR}"
@@ -4887,6 +5458,8 @@ action_uninstall_systemd() {
         sudo rm -rf "$INSTALL_DIR"
         step_ok "Install directory removed"
     fi
+
+    remove_cli_command
 
     # Optionally drop database
     echo ""
@@ -5057,6 +5630,9 @@ action_systemd_install() {
     local compose_args="compose -f ${COMPOSE_FILE}"
     if is_sqlite; then
         compose_args="${compose_args} -f ${SQLITE_COMPOSE_FILE}"
+    fi
+    if [[ "${ACME_ENABLED:-false}" == "true" && -f "$ACME_COMPOSE_FILE" ]]; then
+        compose_args="${compose_args} -f ${ACME_COMPOSE_FILE}"
     fi
     compose_args="${compose_args} --project-directory ${PROJECT_DIR}"
 
@@ -5491,7 +6067,7 @@ action_systemd_rebuild() {
     local retries=0
     local max_retries=15
     while (( retries < max_retries )); do
-        if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+        if _health_ok "$app_port"; then
             break
         fi
         sleep 2
@@ -5505,10 +6081,11 @@ action_systemd_rebuild() {
     draw_header "Rebuild Complete"
     systemd_status_inline
 
-    if curl -sf --max-time 3 "http://localhost:${app_port}/health/ready" &>/dev/null; then
+    if _health_ok "$app_port"; then
         step_ok "Backend health check passed"
     else
-        step_warn "Backend health check failed — check logs: journalctl -u ${BACKEND_SERVICE} -n 30"
+        step_warn "Backend health check failed"
+            show_service_logs "$BACKEND_SERVICE" 15
     fi
 
     press_any_key
@@ -5628,11 +6205,49 @@ menu_maintenance() {
     done
 }
 
+action_systemd_logs() {
+    clear
+    draw_header "Service Logs"
+    require_systemd || return 0
+
+    if ! detect_systemd_services; then
+        step_fail "No services installed"
+        press_any_key
+        return
+    fi
+
+    local choice
+    arrow_menu "View Logs" choice \
+        "Follow live (Ctrl+C to stop)" \
+        "Last 100 lines" \
+        "Errors only (last 50)" \
+        "← Back"
+
+    [[ $choice -eq -1 || $choice -eq 3 ]] && return
+
+    clear
+    case $choice in
+        0)
+            echo -e "  ${DIM}Streaming ${BACKEND_SERVICE}... Press Ctrl+C to stop${RESET}"
+            echo ""
+            sudo journalctl -u "$BACKEND_SERVICE" -f --no-pager || true
+            ;;
+        1)
+            sudo journalctl -u "$BACKEND_SERVICE" -n 100 --no-pager 2>&1 || true
+            ;;
+        2)
+            sudo journalctl -u "$BACKEND_SERVICE" -n 50 -p err --no-pager 2>&1 || true
+            ;;
+    esac
+    press_any_key
+}
+
 menu_systemd() {
     while true; do
         local choice
         arrow_menu "Systemd Services" choice \
             "View Status" \
+            "View Logs" \
             "Install Service" \
             "Rebuild & Redeploy" \
             "Start Service" \
@@ -5644,13 +6259,14 @@ menu_systemd() {
 
         case $choice in
             0) action_systemd_status ;;
-            1) action_systemd_install ;;
-            2) action_systemd_rebuild ;;
-            3) action_systemd_start ;;
-            4) action_systemd_stop ;;
-            5) action_systemd_enable ;;
-            6) action_systemd_disable ;;
-            7) action_systemd_delete ;;
+            1) action_systemd_logs ;;
+            2) action_systemd_install ;;
+            3) action_systemd_rebuild ;;
+            4) action_systemd_start ;;
+            5) action_systemd_stop ;;
+            6) action_systemd_enable ;;
+            7) action_systemd_disable ;;
+            8) action_systemd_delete ;;
             *) return ;;
         esac
     done
@@ -5665,11 +6281,41 @@ cleanup() {
     echo ""
 }
 
+print_usage() {
+    cat <<USAGE
+
+  nasnet-tool — installer and operations tool for nasnet-panel
+
+  Usage: $(basename "${BASH_SOURCE[0]}") [command]
+
+  Commands:
+    (none)         Open the interactive menu
+    install        Run the installation wizard
+    reconfigure    Change settings, keeping existing secrets
+    update         Pull and rebuild from a git checkout
+    auto-update    Update from the latest GitHub release
+    config         Show the current configuration
+    --offline      Install from an offline bundle
+    --help         Show this message
+
+  Paths:
+    Install dir    ${INSTALL_DIR}
+    Config         ${ENV_FILE}
+    Backups        ${BACKUP_DIR}
+    Service logs   journalctl -u ${BACKEND_SERVICE} -f
+
+USAGE
+}
+
 main() {
     trap cleanup EXIT
 
     # CLI subcommand support
     case "${1:-}" in
+        -h|--help|help)
+            print_usage
+            exit 0
+            ;;
         install)
             load_env
             wizard_install
@@ -5702,6 +6348,19 @@ main() {
             exit 0
             ;;
     esac
+
+    # The menu reads single keypresses — piping the script in (curl | bash)
+    # leaves it with no terminal to read from.
+    if [[ ! -t 0 ]]; then
+        echo "" >&2
+        echo "  nasnet-tool needs an interactive terminal." >&2
+        echo "  Download it first, then run it:" >&2
+        echo "" >&2
+        echo "    curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/main/nasnet-tool.sh -o nasnet-tool.sh" >&2
+        echo "    bash nasnet-tool.sh" >&2
+        echo "" >&2
+        exit 1
+    fi
 
     # Auto-detect offline mode if bundle manifest exists
     if [[ -f "$INSTALL_DIR/.bundle-manifest" ]]; then

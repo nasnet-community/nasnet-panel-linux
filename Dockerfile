@@ -57,19 +57,27 @@ WORKDIR /app
 # Install runtime dependencies. iproute2 + iptables are needed for xray bandwidth shaping
 RUN apk --no-cache add ca-certificates tzdata postgresql16-client wget su-exec sqlite unzip iproute2 iptables openssh-client
 
-# Install xray-core. The single binary runs xray as a local child
+# Install xray-core. The single binary runs xray as a local child.
+# Pinned to the version the panel expects and verified against the
+# release's published .dgst — never "latest", never unchecked.
 ARG TARGETARCH
+ARG XRAY_VERSION=26.7.28
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
       amd64) asset="Xray-linux-64.zip" ;; \
       arm64) asset="Xray-linux-arm64-v8a.zip" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    wget -q -O /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/${asset}"; \
+    url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${asset}"; \
+    wget -q -O /tmp/xray.zip "$url"; \
+    wget -q -O /tmp/xray.zip.dgst "${url}.dgst"; \
+    want=$(grep -iE 'sha2?-?256' /tmp/xray.zip.dgst | grep -oE '[0-9a-f]{64}' | head -1); \
+    test -n "$want"; \
+    echo "${want}  /tmp/xray.zip" | sha256sum -c -; \
     mkdir -p /usr/local/bin /usr/local/etc/xray; \
     unzip -o /tmp/xray.zip xray -d /usr/local/bin/; \
     chmod +x /usr/local/bin/xray; \
-    rm /tmp/xray.zip
+    rm /tmp/xray.zip /tmp/xray.zip.dgst
 
 # Create non-root user with a stable UID/GID so host bind mounts
 # (e.g. ./data/backups) can be chowned to match.

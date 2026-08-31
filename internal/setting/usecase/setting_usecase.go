@@ -275,7 +275,7 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "utls_sni_override", Value: "meet.google.com", Type: "string", Category: "agent", Description: "Camouflage SNI domain for agent connections (e.g. www.google.com). Leave empty to use actual server address.", Label: "SNI Camouflage Domain"},
 
 		// Agent Xray Version
-		{Key: "xray_default_version", Value: "26.2.6", Type: "string", Category: "agent", Description: "Default xray-core version installed on new nodes (without v prefix)", Label: "Default Xray Version"},
+		{Key: "xray_default_version", Value: "26.7.28", Type: "string", Category: "agent", Description: "Default xray-core version installed on new nodes (without v prefix)", Label: "Default Xray Version"},
 		{Key: "xray_auto_download", Value: "true", Type: "bool", Category: "agent", Description: "Auto-download xray binaries from GitHub when version changes", Label: "Auto Download Xray"},
 
 		// Subscription

@@ -76,6 +76,28 @@ Compose creates named volumes for `postgres_data`, `acme_data`, and `prometheus_
 
 `nasnet-tool.sh` is an interactive terminal UI that wraps the whole lifecycle: it checks prerequisites, generates `.env` (secrets, admin hash, URLs, ports), and brings the service up in either **Docker** or **systemd** mode.
 
+**No clone needed** — the script runs standalone. Download it and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nasnet-community/nasnet-panel-linux/main/nasnet-tool.sh -o nasnet-tool.sh
+bash nasnet-tool.sh
+```
+
+The default systemd path (**Download release binaries**) fetches checksum-verified binaries from GitHub Releases and installs everything under `/usr/local/nasnet-panel` — no Go, Node, or repository on the box. It also installs itself as `/usr/local/bin/nasnet`, so afterwards you manage the panel by running **`nasnet`** from anywhere:
+
+```bash
+nasnet              # interactive menu
+nasnet --help       # commands and paths
+nasnet config       # show panel URL, login, and current settings
+nasnet auto-update  # update to the latest release
+```
+
+`nasnet auto-update` refreshes the command itself alongside the binaries. Uninstalling removes it.
+
+The installer opens the panel's port in `ufw` or `firewalld` when either is active, and asks for `sudo` once at the start rather than midway through.
+
+Docker mode and source builds need the repository; when picked from a standalone run the wizard offers to clone it to `~/nasnet-panel-linux` and continues from there. Running the script from an existing checkout works exactly as before:
+
 ```bash
 git clone https://github.com/nasnet-community/nasnet-panel-linux.git
 cd nasnet-panel-linux
@@ -84,7 +106,7 @@ cd nasnet-panel-linux
 
 From the menu you can **install**, **reconfigure**, **update**, **back up / restore**, and **uninstall**. The chosen deployment mode is recorded as `DEPLOY_MODE` in `.env` so later actions behave correctly.
 
-> The tool can also auto-update from GitHub Releases (`nasnet-community/nasnet-panel-linux`). Set a `GITHUB_TOKEN` in the environment if you hit API rate limits.
+> The tool auto-updates from GitHub Releases (`nasnet-community/nasnet-panel-linux`). Set a `GITHUB_TOKEN` in the environment if you hit API rate limits.
 
 ---
 
@@ -95,7 +117,9 @@ Each tagged release publishes static Linux binaries (no CGO) for `amd64` and `ar
 | Binary | Purpose |
 |--------|---------|
 | `nasnet-panel-linux-<arch>` | the panel (web panel embedded) |
+| `nasnet-agent-linux-<arch>` | the node agent |
 | `nasnet-tool-linux-<arch>` | the operations tool |
+| `checksums.txt` | sha256 sums the installer verifies against |
 
 Download from the [Releases page](https://github.com/nasnet-community/nasnet-panel-linux/releases), then run the panel with a `.env` file in the working directory:
 

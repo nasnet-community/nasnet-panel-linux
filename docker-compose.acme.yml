@@ -1,0 +1,7 @@
+# ACME override — publishes :80 so Let's Encrypt HTTP-01 challenges reach
+# the panel's challenge server (pkg/acme binds :80 inside the container).
+# nasnet-tool.sh adds this file automatically when ACME_ENABLED=true.
+services:
+  app:
+    ports:
+      - "80:80"

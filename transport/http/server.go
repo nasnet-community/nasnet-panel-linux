@@ -425,7 +425,7 @@ func NewServer(deps ServerDeps) *Server {
 
 		// Startup check: ensure default xray version is cached
 		go func() {
-			defaultVersion := "26.2.6"
+			defaultVersion := "26.7.28"
 			if deps.Admin.SettingUsecase != nil {
 				if v, err := deps.Admin.SettingUsecase.GetByKey(context.Background(), "xray_default_version"); err == nil && v != "" {
 					defaultVersion = v
