@@ -880,6 +880,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		ApplyRepo:    applyRepo,
 		LANRepo:      networkRepo.NewLANRepository(deps.DB),
 		PFRepo:       networkRepo.NewPortForwardRepository(deps.DB),
+		WifiRepo:     networkRepo.NewWifiRepository(deps.DB),
 		DeviceLabels: networkRepo.NewDeviceLabelRepository(deps.DB),
 		VPNRepo:      networkRepo.NewVPNRepository(deps.DB),
 		PoolSettings: deps.PoolSettings,

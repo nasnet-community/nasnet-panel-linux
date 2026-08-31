@@ -105,6 +105,14 @@ type NetworkUsecase interface {
 	GetLAN(ctx context.Context) (*LANView, error)
 	UpdateLAN(ctx context.Context, cfg domain.LANConfig) ([]domain.Verdict, *ApplyView, error)
 
+	// Radios and ScanWifi read; the rest ride the apply, since an AP or a new
+	// uplink can lock the operator out.
+	Radios(ctx context.Context) ([]RadioView, error)
+	EnableAP(ctx context.Context, cfg domain.WifiConfig) ([]domain.Verdict, *ApplyView, error)
+	DisableWifi(ctx context.Context, key string) (*ApplyView, error)
+	ScanWifi(ctx context.Context, key string) ([]system.WifiNetwork, error)
+	ConnectWifi(ctx context.Context, key, ssid, psk string) (*ApplyView, error)
+
 	// ListDevices reports what is on the LAN bridge. Derived per request; the
 	// only stored part is the operator's name for a device.
 	ListDevices(ctx context.Context) (*LANDeviceList, error)
@@ -150,6 +158,8 @@ type Deps struct {
 	ApplyRepo repository.ApplyRepository
 	LANRepo   repository.LANRepository
 	PFRepo    repository.PortForwardRepository
+	// WifiRepo holds the per-radio AP and station intent. Nil means no wifi.
+	WifiRepo repository.WifiRepository
 	// DeviceLabels is optional: with no storage the device list still renders,
 	// it just carries no operator-assigned names.
 	DeviceLabels repository.DeviceLabelRepository
@@ -171,6 +181,10 @@ type Deps struct {
 	Flow system.FlowSource
 	// Prober dials the internet-layer targets. Nil uses the live kernel.
 	Prober TargetProber
+	// RadioProber and Station drive the radios. Both nil off Linux and in tests,
+	// where V11/V12 then read every radio as incapable, which fails closed.
+	RadioProber system.RadioProber
+	Station     system.StationClient
 	// Events is the flow page's timeline history. Nil means no history.
 	Events     *events.Recorder
 	Backend    system.Backend
@@ -198,6 +212,7 @@ type networkUsecase struct {
 	applier *system.Applier
 	health  *HealthMonitor
 	dnsmasq *system.DNSMasq
+	hostapd *system.Hostapd
 
 	// The geoip sets are thousands of prefixes; compiling them on every
 	// reconcile tick would be waste.
@@ -302,6 +317,27 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 		}
 		snap.RestorePool = u.restorePool
 	}
+	if d.WifiRepo != nil {
+		snap.CaptureWifi = func(ctx context.Context) ([]domain.WifiConfig, error) {
+			return d.WifiRepo.List(ctx)
+		}
+		snap.RestoreWifi = func(ctx context.Context, cfgs []domain.WifiConfig) error {
+			return d.WifiRepo.ReplaceAll(ctx, cfgs)
+		}
+	}
+	u.hostapd = system.NewHostapd(d.Paths)
+	if d.RouterMode {
+		if u.RadioProber == nil {
+			if p, err := system.NewRadioProber(); err == nil {
+				u.RadioProber = p
+			}
+		}
+		if u.Station == nil {
+			if c, err := system.NewIWDClient(); err == nil {
+				u.Station = c
+			}
+		}
+	}
 	u.applier = &system.Applier{
 		Snap:   snap,
 		Repo:   d.ApplyRepo,
@@ -384,6 +420,10 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	lan := u.lanConfig(ctx)
 	if err := u.applyLAN(ctx, lan, uplinks, pool); err != nil {
 		return err
+	}
+	// After the LAN: hostapd cannot enslave into a bridge that is not up yet
+	if err := u.applyWifi(ctx, lan, rows); err != nil {
+		return fmt.Errorf("apply wifi: %w", err)
 	}
 	bridge, on := "", lan != nil && lan.Enabled
 	if on {
@@ -721,11 +761,26 @@ func (u *networkUsecase) validationInput(ctx context.Context, req domain.ChangeR
 	}
 	// V14 runs against the live LAN, not a hypothetical one: a static uplink
 	// address that overlaps the configured bridge is the real failure.
-	return domain.ValidationInput{
+	in := domain.ValidationInput{
 		Rows: rows, Req: req, LAN: u.lanConfig(ctx), MgmtCIDR: defaultMgmtCIDR,
 		HostapdInstalled: binaryExists("hostapd"),
 		IWDInstalled:     binaryExists("iwd"),
-	}, nil
+	}
+	// With no prober the maps stay nil and V11/V12 read every radio as
+	// incapable, which is the right answer for "unknown".
+	if u.RadioProber != nil {
+		if caps, err := u.RadioProber.Radios(ctx); err == nil {
+			in.RadioSupportsAP, in.RadioSupportsSTA = map[string]bool{}, map[string]bool{}
+			for _, c := range caps {
+				in.RadioSupportsAP[c.Phy] = c.SupportsAP
+				in.RadioSupportsSTA[c.Phy] = c.SupportsSTA
+			}
+		}
+	}
+	if code, err := system.ReadRegDomain(ctx); err == nil {
+		in.CountryCode = code
+	}
+	return in, nil
 }
 
 // buildPlan turns a validated request into ops. The first apply carries the
@@ -801,8 +856,10 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 		// The port holding the lan role is enslaved like any other member; the
 		// bridge itself is the device we created.
 		if lanOn && in.Present && (in.Role == domain.RoleLAN || in.Role == domain.RoleLANMember) {
-			if f := system.RenderLANMember(in, bridge); f.Name != "" {
-				files = append(files, f)
+			if wantsLANMemberUnit(in) {
+				if f := system.RenderLANMember(in, bridge); f.Name != "" {
+					files = append(files, f)
+				}
 			}
 			continue
 		}
