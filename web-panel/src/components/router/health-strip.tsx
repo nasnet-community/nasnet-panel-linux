@@ -202,6 +202,8 @@ function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceV
                 <VerdictBadge verdict={up.verdict} />
             </div>
             <Ladder carrier={up.carrier} gateway={up.gateway} internet={up.internet} />
+            {/* A diagnosis, not an event, so it sits here rather than in a toast. */}
+            {up.note && <p className="text-text-tertiary text-xs">{up.note}</p>}
             <StatsRow loss={up.loss_pct} rtt={up.median_rtt_ms} history={up.history} />
             <ForceControl ifName={up.if_name} force={up.force_state} slot={up.slot} />
         </div>

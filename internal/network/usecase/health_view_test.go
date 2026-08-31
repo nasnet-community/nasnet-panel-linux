@@ -125,3 +125,31 @@ func TestVPNHealthClearsWhenTheTunnelGoesAway(t *testing.T) {
 		t.Fatal("stale tunnel readings survived deactivation")
 	}
 }
+
+// A captive portal upstream of a station uplink reads as "gateway up, internet
+// down" forever, which looks like a broken probe list unless it is named.
+func TestUplinkNote_NamesTheCaptivePortalShape(t *testing.T) {
+	got := uplinkNote("wifi_pci", "up", "down", false)
+	if !strings.Contains(got, "captive portal") {
+		t.Fatalf("note = %q", got)
+	}
+
+	cases := map[string]struct {
+		source, gateway, internet string
+		everUp                    bool
+	}{
+		"ethernet uplink":       {"eth_onboard", "up", "down", false},
+		"internet has been up":  {"wifi_pci", "up", "down", true},
+		"internet currently up": {"wifi_pci", "up", "up", true},
+		"gateway down":          {"wifi_pci", "down", "down", false},
+		"internet unknown":      {"wifi_pci", "up", "unknown", false},
+		"nothing measured yet":  {"wifi_pci", "", "", false},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := uplinkNote(c.source, c.gateway, c.internet, c.everUp); got != "" {
+				t.Errorf("unexpected note %q", got)
+			}
+		})
+	}
+}
