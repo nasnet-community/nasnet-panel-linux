@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -28,6 +29,9 @@ type UplinkHealthView struct {
 	MedianRTTms int                `json:"median_rtt_ms"`
 	Targets     []TargetStatusView `json:"targets"`
 	History     []HealthSample     `json:"history"`
+	// Note names a state the ladder can see but not explain, empty when there
+	// is nothing to say.
+	Note string `json:"note,omitempty"`
 }
 
 type TunnelHealthView struct {
@@ -80,11 +84,12 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 	if err != nil {
 		return nil, err
 	}
-	forceByIf := map[string]string{}
+	forceByIf, sourceByIf := map[string]string{}, map[string]string{}
 	if u.IfRepo != nil {
 		if rows, err := u.IfRepo.GetByRole(ctx, domain.RoleWAN); err == nil {
 			for _, r := range rows {
 				forceByIf[r.IfName] = r.ForceState
+				sourceByIf[r.IfName] = r.Source
 			}
 		}
 	}
@@ -104,6 +109,7 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 		l := ladders[up.IfName]
 		// The page only draws 15 minutes.
 		samples := window(u.ring(up.IfName).snapshot(), 180)
+		_, everUp := u.inetState(up.IfName).snapshot()
 		view.Uplinks = append(view.Uplinks, UplinkHealthView{
 			Slot: string(up.Slot), IfName: up.IfName,
 			Carrier: l.Carrier, Gateway: l.Gateway, Internet: l.Internet,
@@ -111,6 +117,7 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 			Degraded: l.Degraded, LossPct: lossPct(samples, 20),
 			MedianRTTms: medianRTT(samples, 20),
 			Targets:     targetViews(l.Results), History: samples,
+			Note: uplinkNote(sourceByIf[up.IfName], l.Gateway, l.Internet, everUp),
 		})
 	}
 
@@ -148,4 +155,22 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 		view.VPN = v
 	}
 	return view, nil
+}
+
+// A vanished AP does not clear carrier (see the StationClient comment), so a
+// wifi uplink's outage arrives through the gateway rung, not no-carrier.
+//
+// uplinkNote explains the one failure shape a wifi uplink hits constantly: an
+// upstream captive portal answers ARP and DHCP but blocks everything else, so
+// the ladder reads "gateway up, internet down" forever. Only claimed while the
+// internet has never answered — a link that worked and stopped is an outage.
+func uplinkNote(source, gateway, internet string, everUp bool) string {
+	if !strings.HasPrefix(source, "wifi_") || everUp {
+		return ""
+	}
+	if gateway != "up" || internet != "down" {
+		return ""
+	}
+	return "the gateway answers but the internet never has — a captive portal on the " +
+		"upstream network is the usual cause; open its login page from a device on it"
 }

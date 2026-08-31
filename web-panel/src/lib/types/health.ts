@@ -39,6 +39,8 @@ export interface UplinkHealth {
     median_rtt_ms: number
     targets: TargetStatus[]
     history: HealthSample[]
+    /** A state the ladder can see but not explain, e.g. a captive portal. */
+    note?: string
 }
 
 export type TunnelVerdict = "" | "up" | "no-internet" | "degraded"
