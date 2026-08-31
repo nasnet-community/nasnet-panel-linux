@@ -141,6 +141,7 @@ export const queryKeys = {
     networkPortForwards: () => [...queryKeys.network, 'port-forwards'] as const,
     networkVPNProfiles: () => [...queryKeys.network, 'vpn', 'profiles'] as const,
     networkVPNStatus: () => [...queryKeys.network, 'vpn', 'status'] as const,
+    networkWifi: () => [...queryKeys.network, 'wifi'] as const,
     networkHealth: () => [...queryKeys.network, 'health'] as const,
     networkFlow: () => [...queryKeys.network, 'flow'] as const,
     networkFlowConns: () => [...queryKeys.network, 'flow', 'conns'] as const,

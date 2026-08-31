@@ -106,8 +106,17 @@ export function buildAssignRequest(
 
 /** Everything about a port that changes how you'd assign it, in one place —
  *  these used to be scattered across two columns. */
-export function caveats(iface: NetworkInterfaceView): string[] {
+export function caveats(iface: NetworkInterfaceView, all: NetworkInterfaceView[] = []): string[] {
     const out: string[] = []
+    // One radio is a station or an access point, never both
+    const sibling = iface.phy
+        ? all.find((o) => o.phy === iface.phy && o.key !== iface.key && o.role !== "unassigned")
+        : undefined
+    if (sibling) {
+        out.push(
+            `Shares radio ${iface.phy} with ${sibling.if_name} — a radio is a station or an access point, never both.`,
+        )
+    }
     if (iface.key_kind !== "permaddr") {
         out.push("No permanent MAC — the role follows this port, not the device in it.")
     }
@@ -155,8 +164,8 @@ function Caveats({ notes }: { notes: string[] }) {
     )
 }
 
-function Identity({ iface }: { iface: NetworkInterfaceView }) {
-    const notes = caveats(iface)
+function Identity({ iface, all }: { iface: NetworkInterfaceView; all: NetworkInterfaceView[] }) {
+    const notes = caveats(iface, all)
     return (
         <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -343,7 +352,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Prop
                                 className={cn("align-top", !iface.present && "opacity-60")}
                             >
                                 <TableCell>
-                                    <Identity iface={iface} />
+                                    <Identity iface={iface} all={interfaces} />
                                 </TableCell>
                                 <TableCell>
                                     <Attachment iface={iface} />
@@ -380,7 +389,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Prop
                         )}
                     >
                         <div className="flex items-start justify-between gap-3">
-                            <Identity iface={iface} />
+                            <Identity iface={iface} all={interfaces} />
                             <LinkState iface={iface} uplink={uplinkFor(iface)} />
                         </div>
                         <div className="flex items-start justify-between gap-3">

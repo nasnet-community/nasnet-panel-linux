@@ -15,7 +15,12 @@ import type {
     VPNPoolStatus,
     VPNProfile,
     VPNProfileInput,
+    WifiAPRequest,
+    WifiBand,
+    WifiChannel,
+    WifiNetwork,
     WireGuardConfig,
+    RadioView,
 } from "@/lib/types/network"
 import type { RouterHealth } from "@/lib/types/health"
 
@@ -251,4 +256,71 @@ export async function setVPNPoolOrder(ids: number[]): Promise<ApiResponse<null>>
 
 export async function getVPNStatus(): Promise<ApiResponse<VPNPoolStatus>> {
     return api.get<VPNPoolStatus>("/api/v1/network/vpn/status")
+}
+
+export async function getRadios(): Promise<ApiResponse<RadioView[]>> {
+    return api.get<RadioView[]>("/api/v1/network/wifi/radios")
+}
+
+/** Starts a beacon and enslaves a port to the bridge, so it arms the dead-man. */
+export async function enableAP(req: WifiAPRequest): Promise<ApiResponse<NetworkApply>> {
+    return api.put<NetworkApply>("/api/v1/network/wifi/ap", req)
+}
+
+export async function disableWifi(key: string): Promise<ApiResponse<NetworkApply>> {
+    return api.delete<NetworkApply>(`/api/v1/network/wifi/${encodeURIComponent(key)}`)
+}
+
+/** Read-only: iwd scans, nothing on the box changes. */
+export async function scanWifi(key: string): Promise<ApiResponse<WifiNetwork[]>> {
+    return api.post<WifiNetwork[]>(`/api/v1/network/wifi/scan/${encodeURIComponent(key)}`)
+}
+
+/** Joining a network can cost the box its reachability, so it arms the dead-man. */
+export async function connectWifi(
+    key: string,
+    ssid: string,
+    psk: string,
+): Promise<ApiResponse<NetworkApply>> {
+    return api.post<NetworkApply>(`/api/v1/network/wifi/connect/${encodeURIComponent(key)}`, {
+        ssid,
+        psk,
+    })
+}
+
+/** Four bars from dBm. -55 and above is full, below -90 is empty. */
+export function signalBars(dbm: number): number {
+    if (dbm >= -55) return 4
+    if (dbm >= -67) return 3
+    if (dbm >= -80) return 2
+    if (dbm >= -90) return 1
+    return 0
+}
+
+/**
+ * Channels an AP may actually use. A channel we may not initiate radiation on,
+ * or that needs DFS, cannot carry a beacon — and with no country code set the
+ * default regulatory domain marks nearly all of 5 GHz that way. The Go side is
+ * authoritative and re-checks; this only keeps the picker honest.
+ */
+export function beaconableChannels(radio: RadioView, band: WifiBand): WifiChannel[] {
+    if (!radio.supports_ap || !radio.country_code_set) return []
+    return (radio.bands[band] ?? []).filter(
+        (c) => !c.no_ir && !c.radar && !c.disabled_by_regdomain,
+    )
+}
+
+/** The one-radio-one-role consequence, stated plainly. "" when nothing to explain. */
+export function describeRadioTradeoff(
+    radio: RadioView,
+    assignableInterfaces: number,
+    radioCount: number,
+): string {
+    if (radio.sibling_role) {
+        return `Another interface on radio ${radio.phy} already holds the ${radio.sibling_role} role. A radio is a station or an access point, never both.`
+    }
+    if (assignableInterfaces <= 2 && radioCount <= 1) {
+        return "This box has one radio and one other port, so it can be either dual-WAN with no local network, or single-uplink with a Wi-Fi access point. Getting both needs a third interface — a USB ethernet or USB Wi-Fi adapter."
+    }
+    return ""
 }
