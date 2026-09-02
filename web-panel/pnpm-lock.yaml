@@ -136,7 +136,7 @@ importers:
         version: 19.2.8(react@19.2.8)
       react-grid-layout:
         specifier: ^2.2.2
-        version: 2.2.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 2.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react-hook-form:
         specifier: ^7.71.2
         version: 7.71.2(react@19.2.8)
@@ -2685,6 +2685,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -3339,8 +3340,8 @@ packages:
       react: '>= 16.3.0'
       react-dom: '>= 16.3.0'
 
-  react-grid-layout@2.2.3:
-    resolution: {integrity: sha512-OAEJHBxmfuxQfVtZwRzmsokijGlBgzYIJ7MUlLk/VSa43SaGzu15w5D0P2RDrfX5EvP9POMbL6bFrai/huDzbQ==}
+  react-grid-layout@2.2.4:
+    resolution: {integrity: sha512-Eb57FsgOMYOfsUGrMI1ku/FFR+dPNPrE8qo+3hwZubpqVSy4GO9v52DeX50Tl3JDYAlCypP4rmw7Vrqk/zOIvA==}
     peerDependencies:
       react: '>= 16.3.0'
       react-dom: '>= 16.3.0'
@@ -5789,7 +5790,7 @@ snapshots:
 
   '@types/react-grid-layout@2.1.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      react-grid-layout: 2.2.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react-grid-layout: 2.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
     transitivePeerDependencies:
       - react
       - react-dom
@@ -7100,7 +7101,7 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  react-grid-layout@2.2.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  react-grid-layout@2.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       clsx: 2.1.1
       fast-equals: 4.0.3
