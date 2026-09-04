@@ -71,6 +71,22 @@ func (u *nodeUsecase) ingressUplinkIfName() string {
 // SetIngressUplinkSource wires the router-mode uplink lookup.
 func (u *nodeUsecase) SetIngressUplinkSource(fn func() string) { u.ingressUplinkFn = fn }
 
+// SetInboundsChangedHook wires the router-mode consumers of the inbound rows.
+func (u *nodeUsecase) SetInboundsChangedHook(fn func(context.Context) error) {
+	u.onInboundsChanged = fn
+}
+
+// notifyInboundsChanged is nil-safe: unwired means router mode is off. An
+// accept that drifts from its inbound is worth a warning, never a failure.
+func (u *nodeUsecase) notifyInboundsChanged(ctx context.Context) {
+	if u.onInboundsChanged == nil {
+		return
+	}
+	if err := u.onInboundsChanged(ctx); err != nil {
+		logger.GetLogger().WithError(err).Warn("[Inbounds] firewall refresh after inbound change failed")
+	}
+}
+
 // mergeWGRenderPeers unions admin static peers with managed device peers, deduped by pubkey.
 func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) []domain.WireGuardPeer {
 	seen := make(map[string]bool, len(static)+len(managed))

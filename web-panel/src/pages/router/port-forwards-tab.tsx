@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import { ArrowRight, Pencil, Plus, ShieldAlert, Trash2, TriangleAlert } from "lucide-react"
+import { Pencil, Plus, ShieldAlert, Trash2, TriangleAlert } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,7 +11,6 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -32,6 +31,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { useConfirm } from "@/components/ui/confirm-dialog"
+import { UpstreamMappingCard } from "@/components/network/upstream-mapping-card"
+import { PortSocket, Wire, WireEmpty } from "@/components/network/wire"
 import {
     useDeletePortForward,
     usePortForwards,
@@ -81,6 +82,47 @@ const CONFIRM_EXPOSURE = {
 
 function forwardName(pf: Pick<PortForward, "proto" | "dport">): string {
     return `${pf.proto.toUpperCase()}/${pf.dport}`
+}
+
+/** A forward drawn as the path it opens: internet, uplink, socket, device. */
+function ForwardPath({
+    proto,
+    dport,
+    toAddr,
+    toPort,
+    uplink,
+    comment,
+    enabled,
+}: {
+    proto: string
+    dport: string
+    toAddr: string
+    toPort: string
+    uplink: string
+    comment?: string
+    enabled: boolean
+}) {
+    const state = enabled ? ("live" as const) : ("off" as const)
+    return (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1.5">
+            <span className="text-text-tertiary shrink-0 font-mono text-xs">internet</span>
+            <Wire state={state} />
+            <span className="text-text-secondary shrink-0 text-xs">{uplink}</span>
+            <Wire state={state} />
+            <PortSocket className={cn(!enabled && "text-text-tertiary")}>
+                {proto}/{dport}
+            </PortSocket>
+            <Wire state={state} arrow />
+            <span className={cn("min-w-0 shrink-0 text-right", !enabled && "opacity-60")}>
+                <span className="block truncate font-mono text-sm tabular-nums">
+                    {toAddr}:{toPort}
+                </span>
+                {comment && (
+                    <span className="text-text-tertiary block truncate text-xs">{comment}</span>
+                )}
+            </span>
+        </div>
+    )
 }
 
 export function PortForwardsTab({ state, interfaces }: Props) {
@@ -252,19 +294,33 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                 </CardHeader>
                 <CardContent>
                     {forwards.length === 0 ? (
-                        <EmptyState
-                            icon={ArrowRight}
-                            title="No port forwards"
-                            description="Add one to reach a device on your network — a NAS, a camera, a game server — from outside."
+                        <WireEmpty
+                            from="internet"
+                            to="your network"
+                            title="No ways in are open"
+                            description="Forward a port to reach a device on your network — a NAS, a camera, a game server — from outside."
                         />
                     ) : (
                         <ul className="divide-border-subtle divide-y">
                             {forwards.map((pf) => (
                                 <li
                                     key={pf.id}
-                                    className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                                    className="flex flex-col gap-2.5 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2"
                                 >
-                                    <div className="flex min-w-0 items-center gap-3.5">
+                                    <ForwardPath
+                                        proto={pf.proto}
+                                        dport={String(pf.dport)}
+                                        toAddr={pf.to_addr}
+                                        toPort={String(pf.to_port)}
+                                        uplink={
+                                            pf.uplink_key
+                                                ? (labels[pf.uplink_key] ?? pf.uplink_key)
+                                                : "any uplink"
+                                        }
+                                        comment={pf.comment}
+                                        enabled={pf.enabled}
+                                    />
+                                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
                                         <Switch
                                             checked={pf.enabled}
                                             aria-label={
@@ -275,38 +331,10 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                                             disabled={save.isPending}
                                             onCheckedChange={(v) => void toggle(pf, v)}
                                         />
-                                        <div
-                                            className={cn(
-                                                "min-w-0",
-                                                !pf.enabled && "text-text-tertiary opacity-70",
-                                            )}
-                                        >
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="bg-surface-3 rounded px-1.5 py-0.5 font-mono text-xs font-medium tabular-nums">
-                                                    {forwardName(pf)}
-                                                </span>
-                                                <ArrowRight
-                                                    aria-hidden
-                                                    className="text-text-tertiary h-3.5 w-3.5"
-                                                />
-                                                <span className="font-mono text-sm tabular-nums">
-                                                    {pf.to_addr}:{pf.to_port}
-                                                </span>
-                                            </div>
-                                            <p className="text-text-secondary mt-0.5 text-xs">
-                                                on{" "}
-                                                {pf.uplink_key
-                                                    ? (labels[pf.uplink_key] ?? pf.uplink_key)
-                                                    : "any uplink"}
-                                                {pf.comment && ` · ${pf.comment}`}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
                                         <Button
                                             size="icon"
                                             variant="ghost"
-                                            className="h-8 w-8"
+                                            className="text-text-tertiary hover:text-text-primary h-8 w-8"
                                             aria-label={`Edit ${forwardName(pf)}`}
                                             onClick={() => openEdit(pf)}
                                         >
@@ -315,12 +343,12 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                                         <Button
                                             size="icon"
                                             variant="ghost"
-                                            className="h-8 w-8"
+                                            className="text-text-tertiary hover:text-status-danger h-8 w-8"
                                             onClick={() => void del(pf)}
                                             disabled={remove.isPending}
                                             aria-label={`Remove the forward on port ${pf.dport}`}
                                         >
-                                            <Trash2 className="text-status-danger h-3.5 w-3.5" />
+                                            <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
                                     </div>
                                 </li>
@@ -329,6 +357,8 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                     )}
                 </CardContent>
             </Card>
+
+            <UpstreamMappingCard state={state} interfaces={interfaces} />
 
             <Sheet
                 open={draft !== null}
@@ -352,90 +382,117 @@ export function PortForwardsTab({ state, interfaces }: Props) {
                                 </SheetDescription>
                             </SheetHeader>
 
-                            <div className="space-y-4 px-4">
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label>Accept on</Label>
-                                        <Select
-                                            value={draft.uplink_key || "any"}
-                                            onValueChange={(v) =>
-                                                setDraft({
-                                                    ...draft,
-                                                    uplink_key: v === "any" ? "" : v,
-                                                })
-                                            }
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="any">Any uplink</SelectItem>
-                                                {uplinks.map((u) => (
-                                                    <SelectItem key={u.key} value={u.key}>
-                                                        {u.label}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label>Protocol</Label>
-                                        <Select
-                                            value={draft.proto}
-                                            onValueChange={(v) =>
-                                                setDraft({ ...draft, proto: v as "tcp" | "udp" })
-                                            }
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="tcp">TCP</SelectItem>
-                                                <SelectItem value="udp">UDP</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="pf-dport">Outside port</Label>
-                                    <Input
-                                        id="pf-dport"
-                                        className="font-mono tabular-nums"
-                                        inputMode="numeric"
-                                        value={draft.dport}
-                                        onChange={(e) =>
-                                            setDraft({ ...draft, dport: e.target.value })
+                            <div className="space-y-5 px-4">
+                                <div className="border-border-subtle bg-surface-1 rounded-lg border px-3.5 py-3">
+                                    <ForwardPath
+                                        proto={draft.proto}
+                                        dport={draft.dport || "…"}
+                                        toAddr={draft.to_addr || "device"}
+                                        toPort={draft.to_port || "…"}
+                                        uplink={
+                                            draft.uplink_key
+                                                ? (labels[draft.uplink_key] ?? draft.uplink_key)
+                                                : "any uplink"
                                         }
-                                        placeholder="8080"
+                                        enabled={draft.enabled}
                                     />
                                 </div>
 
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="space-y-1.5">
-                                        <Label htmlFor="pf-addr">Device address</Label>
-                                        <Input
-                                            id="pf-addr"
-                                            className="font-mono"
-                                            value={draft.to_addr}
-                                            onChange={(e) =>
-                                                setDraft({ ...draft, to_addr: e.target.value })
-                                            }
-                                            placeholder="10.77.0.5"
-                                        />
+                                <div className="space-y-4">
+                                    <p className="text-text-tertiary font-mono text-xs">
+                                        from the internet
+                                    </p>
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="space-y-1.5">
+                                            <Label>Accept on</Label>
+                                            <Select
+                                                value={draft.uplink_key || "any"}
+                                                onValueChange={(v) =>
+                                                    setDraft({
+                                                        ...draft,
+                                                        uplink_key: v === "any" ? "" : v,
+                                                    })
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="any">Any uplink</SelectItem>
+                                                    {uplinks.map((u) => (
+                                                        <SelectItem key={u.key} value={u.key}>
+                                                            {u.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label>Protocol</Label>
+                                            <Select
+                                                value={draft.proto}
+                                                onValueChange={(v) =>
+                                                    setDraft({
+                                                        ...draft,
+                                                        proto: v as "tcp" | "udp",
+                                                    })
+                                                }
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="tcp">TCP</SelectItem>
+                                                    <SelectItem value="udp">UDP</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label htmlFor="pf-toport">Port on the device</Label>
+                                        <Label htmlFor="pf-dport">Outside port</Label>
                                         <Input
-                                            id="pf-toport"
+                                            id="pf-dport"
                                             className="font-mono tabular-nums"
                                             inputMode="numeric"
-                                            value={draft.to_port}
+                                            value={draft.dport}
                                             onChange={(e) =>
-                                                setDraft({ ...draft, to_port: e.target.value })
+                                                setDraft({ ...draft, dport: e.target.value })
                                             }
-                                            placeholder="80"
+                                            placeholder="8080"
                                         />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <p className="text-text-tertiary font-mono text-xs">
+                                        to the device
+                                    </p>
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="pf-addr">Device address</Label>
+                                            <Input
+                                                id="pf-addr"
+                                                className="font-mono"
+                                                value={draft.to_addr}
+                                                onChange={(e) =>
+                                                    setDraft({ ...draft, to_addr: e.target.value })
+                                                }
+                                                placeholder="10.77.0.5"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label htmlFor="pf-toport">Port on the device</Label>
+                                            <Input
+                                                id="pf-toport"
+                                                className="font-mono tabular-nums"
+                                                inputMode="numeric"
+                                                value={draft.to_port}
+                                                onChange={(e) =>
+                                                    setDraft({ ...draft, to_port: e.target.value })
+                                                }
+                                                placeholder="80"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 

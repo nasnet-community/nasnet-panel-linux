@@ -210,6 +210,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&networkDomain.LANConfig{},
 		&networkDomain.WifiConfig{},
 		&networkDomain.PortForward{},
+		&networkDomain.PortMapRule{},
 		&networkDomain.LANDeviceLabel{},
 		&networkDomain.VPNProfile{},
 		&networkDomain.ApplyRecord{},
@@ -378,6 +379,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	if networkUC != nil {
 		// Shaping follows the uplink clients arrive on.
 		uc.Node.SetIngressUplinkSource(networkUC.IngressUplinkIfName)
+		// An inbound edit has to reach the firewall and the mapper at once, or
+		// an armed filter_in silently drops the inbound that was just added.
+		uc.Node.SetInboundsChangedHook(networkUC.OnInboundsChanged)
 		// Read per config build, so the outbounds follow role changes.
 		uc.Node.SetRouterWANSource(func(ctx context.Context) []xray.RouterWAN {
 			views := networkUC.RouterWANs(ctx)
@@ -799,7 +803,15 @@ func runServe(cmd *cobra.Command, args []string) {
 	defer shutdownCancel()
 
 	// Stop background event producers so SSE connections can drain
-	bgCancel()                    // stops monitor service
+	bgCancel() // stops monitor service
+	if networkUC != nil {
+		// The mapper hands its leases back on the way out. Waiting is the
+		// difference between a released port and one the upstream router keeps
+		// forwarding here for the next two hours.
+		relCtx, relCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		networkUC.StopPortMap(relCtx)
+		relCancel()
+	}
 	embeddedSrv.Stop(shutdownCtx) // stop in process xray
 	uc.Node.StopHeartbeats()
 	uc.AlertEngine.Stop()
@@ -910,6 +922,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		EventBus:     deps.Bus,
 		Events:       deps.NetEvents,
 		Inbounds:     inboundSource{repo: deps.NodeRepo, nodeID: 1},
+		PortMapRepo:  networkRepo.NewPortMapRepository(deps.DB),
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),
 	})
@@ -928,6 +941,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 	}
 	uc.StartHealthLoop(ctx, 5*time.Second)
 	uc.StartRangesRefreshLoop(ctx, 0)
+	uc.StartPortMapLoop(ctx, 0)
 	deps.Log.Info("Router mode active")
 	return uc, nil
 }

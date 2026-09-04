@@ -97,6 +97,17 @@ type NetworkUsecase interface {
 	// StartRangesRefreshLoop keeps the domestic prefix list current. Zero uses
 	// the default weekly cadence.
 	StartRangesRefreshLoop(ctx context.Context, interval time.Duration)
+	// StartPortMapLoop keeps upstream port mappings alive. Zero uses 30s.
+	StartPortMapLoop(ctx context.Context, interval time.Duration)
+	// StopPortMap waits for the loop's shutdown release to finish.
+	StopPortMap(ctx context.Context)
+	// Upstream port mapping: status is assembly only, the rest is CRUD.
+	PortMapStatus(ctx context.Context) (*PortMapStatusView, error)
+	ForcePortMapProbe(ctx context.Context)
+	ListPortMapRules(ctx context.Context) ([]domain.PortMapRule, error)
+	CreatePortMapRule(ctx context.Context, r domain.PortMapRule, confirmed bool) ([]domain.Verdict, error)
+	UpdatePortMapRule(ctx context.Context, r domain.PortMapRule, confirmed bool) ([]domain.Verdict, error)
+	DeletePortMapRule(ctx context.Context, id uint) error
 	RefreshDomesticRanges(ctx context.Context) error
 	SetLabel(ctx context.Context, key, label string) error
 	IngressUplinkIfName() string
@@ -199,6 +210,10 @@ type Deps struct {
 	// Inbounds is optional: with no source, filter_in stays off rather than
 	// dropping every VPN it does not know about.
 	Inbounds InboundSource
+	// PortMapRepo holds the operator's upstream mapping rules. Nil means none.
+	PortMapRepo repository.PortMapRepository
+	// PortMap asks the upstream router for mappings. Nil uses the live client.
+	PortMap system.PortMapper
 
 	// RangesURL is where the prefix list refreshes from; empty means the default.
 	RangesURL string
@@ -256,6 +271,13 @@ type networkUsecase struct {
 	poolCarrier        string
 	poolChallenger     string
 	poolChallengeTicks int
+
+	// Everything the port mapper holds, keyed by uplink Key.
+	pmMu    sync.Mutex
+	pmState map[string]*pmWANState
+	pmKick  chan struct{}
+	// pmDone closes once the loop has released every lease.
+	pmDone chan struct{}
 }
 
 func (u *networkUsecase) dnsmasqStatus(ctx context.Context) system.DNSMasqStatus {
@@ -1073,8 +1095,12 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 				}
 			}
 			if gw != "" && gw != learnedByIf[up.IfName] {
-				_ = u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw)
-				learnedByIf[up.IfName] = gw
+				// Only a stored gateway is a changed gateway: a failing write
+				// would otherwise announce the same move every tick.
+				if err := u.IfRepo.SetLearnedGateway(ctx, idByIf[up.IfName], gw); err == nil {
+					u.emit(events.EventWANGatewayChanged, map[string]any{"if_name": up.IfName, "gateway": gw})
+					learnedByIf[up.IfName] = gw
+				}
 				// The kill switch names this gateway; the probe has to get past
 				// it. Re-arm every leg, or the others lose their exemption.
 				if up.Slot.IsSecondary() {

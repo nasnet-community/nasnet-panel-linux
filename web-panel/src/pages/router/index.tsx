@@ -53,6 +53,10 @@ const NETWORK_EVENTS = new Set([
     "vpn.pool_changed",
     "vpn.tunnel_rehomed",
     "wan.applied",
+    "wan.gateway_changed",
+    "portmap.acquired",
+    "portmap.lost",
+    "portmap.denied",
 ])
 
 function useFreshness(updatedAt: number | undefined) {

@@ -17,6 +17,13 @@ import {
     getNetworkInterfaces,
     getNetworkState,
     getPortForwards,
+    getPortMapRules,
+    getPortMapStatus,
+    probePortMap,
+    createPortMapRule,
+    updatePortMapRule,
+    deletePortMapRule,
+    type PortMapRuleInput,
     getRadios,
     getVPNProfiles,
     getVPNStatus,
@@ -475,6 +482,82 @@ export function useScanWifi() {
             const res = await scanWifi(key)
             if (!res.success) throw new Error(res.error || "Failed to scan")
             return res.data!
+        },
+    })
+}
+
+/** The mapper reconciles every 30s; polling faster re-reads the same pass.
+ *  Switched off, there is nothing to watch: one read settles it. */
+export function usePortMapStatus(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkPortMapStatus(),
+        queryFn: async () => {
+            const res = await getPortMapStatus()
+            if (!res.success) throw new Error(res.error || "Failed to read the mapping status")
+            return res.data!
+        },
+        enabled,
+        refetchInterval: (query) => (enabled && query.state.data?.enabled ? 15 * 1000 : false),
+        refetchIntervalInBackground: false,
+        staleTime: 5000,
+        retry: false,
+    })
+}
+
+export function usePortMapRules(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.networkPortMapRules(),
+        queryFn: async () => {
+            const res = await getPortMapRules()
+            if (!res.success) throw new Error(res.error || "Failed to fetch the mapping rules")
+            return res.data!
+        },
+        enabled,
+        staleTime: 10 * 1000,
+        retry: false,
+    })
+}
+
+export function useSavePortMapRule() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (r: PortMapRuleInput) => {
+            const res = r.id ? await updatePortMapRule(r.id, r) : await createPortMapRule(r)
+            if (!res.success) throw new Error(res.error || "Failed to save the rule")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkPortMapRules() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
+        },
+    })
+}
+
+export function useDeletePortMapRule() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async (id: number) => {
+            const res = await deletePortMapRule(id)
+            if (!res.success) throw new Error(res.error || "Failed to delete the rule")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkPortMapRules() })
+            void qc.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
+        },
+    })
+}
+
+export function useProbePortMap() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async () => {
+            const res = await probePortMap()
+            if (!res.success) throw new Error(res.error || "Probe failed to start")
+            return res.data
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
         },
     })
 }

@@ -16,6 +16,9 @@ type HealthConfig struct {
 	DegradedLossPct int
 	DegradedRTTms   map[domain.UplinkSlot]int
 	FailoverToVPN   bool
+	// PortMapEnabled turns the upstream port mapper on. Off by default: it
+	// transmits to the upstream router and opens inbound ports.
+	PortMapEnabled bool
 	// Settings-backed like the rest, so one reload covers it.
 	PoolStrategy PoolStrategy
 }
@@ -118,6 +121,9 @@ func ParseHealthConfig(get func(string) (string, error)) HealthConfig {
 	}
 	if v, err := get("router_failover_domestic_to_vpn"); err == nil && v != "" {
 		cfg.FailoverToVPN = v == "true"
+	}
+	if v, err := get("router_portmap_enabled"); err == nil && v != "" {
+		cfg.PortMapEnabled = v == "true"
 	}
 	// Empty is the unmigrated box, and a typo is not a fourth strategy.
 	if v, err := get(PoolStrategyKey); err == nil {

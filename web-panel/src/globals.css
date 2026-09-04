@@ -83,6 +83,27 @@
   to { width: 100%; }
 }
 
+/* Packet flow on an open wire — dashes drift toward the device. */
+@keyframes wire-flow {
+  to { background-position: 14px 0; }
+}
+
+@layer utilities {
+  .wire-live {
+    background-image: repeating-linear-gradient(
+      90deg,
+      currentColor 0,
+      currentColor 5px,
+      transparent 5px,
+      transparent 14px
+    );
+    animation: wire-flow 1.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wire-live { animation: none; }
+  }
+}
+
 @keyframes nuke-border-pulse {
   0%, 100% { border-color: var(--warning-base); opacity: 1; }
   50%      { border-color: var(--warning-strong); opacity: 0.55; }

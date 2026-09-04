@@ -44,7 +44,8 @@ func (r *portForwardRepository) Create(ctx context.Context, pf *domain.PortForwa
 	if pf.NodeID == 0 {
 		pf.NodeID = 1
 	}
-	return r.db.WithContext(ctx).Create(pf).Error
+	// Named fields, or GORM swaps a false Enabled for the column default.
+	return r.db.WithContext(ctx).Select("NodeID", "UplinkKey", "Proto", "DPort", "ToAddr", "ToPort", "Comment", "Enabled").Create(pf).Error
 }
 
 func (r *portForwardRepository) Update(ctx context.Context, pf *domain.PortForward) error {

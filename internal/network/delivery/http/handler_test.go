@@ -93,6 +93,29 @@ func (s *stubUsecase) UpdateLAN(_ context.Context, _ domain.LANConfig) ([]domain
 	return s.lanVerdicts, &usecase.ApplyView{PlanID: 9, ConfirmDeadlineUnix: 1_800_000_090}, nil
 }
 
+func (s *stubUsecase) StartPortMapLoop(context.Context, time.Duration) {}
+
+func (s *stubUsecase) PortMapStatus(context.Context) (*usecase.PortMapStatusView, error) {
+	return &usecase.PortMapStatusView{}, nil
+}
+
+func (s *stubUsecase) ForcePortMapProbe(context.Context) {}
+func (s *stubUsecase) StopPortMap(context.Context)       {}
+
+func (s *stubUsecase) ListPortMapRules(context.Context) ([]domain.PortMapRule, error) {
+	return nil, nil
+}
+
+func (s *stubUsecase) CreatePortMapRule(context.Context, domain.PortMapRule, bool) ([]domain.Verdict, error) {
+	return nil, nil
+}
+
+func (s *stubUsecase) UpdatePortMapRule(context.Context, domain.PortMapRule, bool) ([]domain.Verdict, error) {
+	return nil, nil
+}
+
+func (s *stubUsecase) DeletePortMapRule(context.Context, uint) error { return nil }
+
 func (s *stubUsecase) ListPortForwards(context.Context) ([]domain.PortForward, error) {
 	return []domain.PortForward{}, nil
 }

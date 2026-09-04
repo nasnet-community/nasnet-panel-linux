@@ -491,6 +491,7 @@ func (u *nodeUsecase) AddInbound(ctx context.Context, inbound *domain.Inbound) e
 	// Mirror the inbound's managed-cert reference into inbound_sni. Done after a
 	// successful push (a rolled-back inbound leaves no link). Outside any tx.
 	u.syncSNILink(ctx, inbound)
+	u.notifyInboundsChanged(ctx)
 
 	log.WithFields(map[string]interface{}{
 		"inbound_id": inbound.ID,
@@ -543,6 +544,7 @@ func (u *nodeUsecase) ToggleInboundDisabled(ctx context.Context, id uint) (*doma
 		"inbound_id":  id,
 		"is_disabled": inbound.IsDisabled,
 	}).Info("[ToggleInboundDisabled] Toggled inbound")
+	u.notifyInboundsChanged(ctx)
 
 	// Push updated config to agent
 	if inbound.Node != nil {
@@ -609,6 +611,8 @@ func (u *nodeUsecase) DeleteInbound(ctx context.Context, id uint) error {
 		}
 	}
 
+	u.notifyInboundsChanged(ctx)
+
 	log.WithFields(map[string]interface{}{
 		"inbound_id": id,
 		"tag":        inbound.Tag,
@@ -652,6 +656,7 @@ func (u *nodeUsecase) UpdateInbound(ctx context.Context, inbound *domain.Inbound
 
 	// Keep inbound_sni in step with the (possibly changed) cert reference.
 	u.syncSNILink(ctx, inbound)
+	u.notifyInboundsChanged(ctx)
 
 	return nil
 }
@@ -672,6 +677,7 @@ func (u *nodeUsecase) SyncInbounds(ctx context.Context, nodeID uint) (*SyncResul
 	if err := u.pushConfigToAgent(ctx, node); err != nil {
 		return nil, fmt.Errorf("failed to push config to agent: %w", err)
 	}
+	u.notifyInboundsChanged(ctx)
 	return &SyncResult{
 		Restored: len(dbInbounds),
 		Kept:     0,

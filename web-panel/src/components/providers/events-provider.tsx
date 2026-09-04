@@ -6,6 +6,7 @@ import type {
     EventType,
     ServerEvent,
     NodeStatusPayload,
+    PortMapPayload,
     NodeStatsPayload,
     SubscriptionEventPayload,
     SystemAlertPayload,
@@ -159,6 +160,8 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'wan.failover_restored', 'wan.degraded', 'wan.force_state',
             'wan.applied', 'wan.apply_rolled_back', 'wan.lease_warning',
             'vpn.up', 'vpn.down', 'vpn.degraded', 'vpn.pool_changed', 'vpn.tunnel_rehomed',
+            'wan.gateway_changed',
+            'portmap.acquired', 'portmap.lost', 'portmap.denied',
         ]
 
         eventTypes.forEach((eventType) => {
@@ -375,6 +378,33 @@ function handleEvent(
             }
             break
         }
+        case 'portmap.acquired': {
+            const p = event.payload as PortMapPayload
+            toast.success(`${p.proto}/${p.port} open from outside`, {
+                description: p.external ? `Reachable at ${p.external}` : undefined,
+            })
+            queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
+            break
+        }
+
+        case 'portmap.lost': {
+            const p = event.payload as PortMapPayload
+            toast.warning(
+                p.count ? `${p.count} upstream mappings dropped` : `${p.proto}/${p.port} closed upstream`,
+                { description: p.reason || 'Retrying on the next pass.' },
+            )
+            queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
+            break
+        }
+
+        case 'portmap.denied': {
+            toast.error('The upstream router refuses port mapping', {
+                description: 'Turn UPnP on there, or forward the ports by hand.',
+            })
+            queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
+            break
+        }
+
         case 'system.alert': {
             const payload = event.payload as SystemAlertPayload
             const toastFn = payload.level === 'error' ? toast.error : payload.level === 'warning' ? toast.warning : toast.info

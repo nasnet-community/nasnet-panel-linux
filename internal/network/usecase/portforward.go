@@ -162,6 +162,17 @@ func (u *networkUsecase) portForwardInput(ctx context.Context, pf domain.PortFor
 // inboundPorts is proto -> ports for the enabled inbounds. Empty with no source
 // wired, which only loosens V27 — filter_in is the enforcement point.
 func (u *networkUsecase) inboundPorts(ctx context.Context) map[string][]int {
+	return u.inboundPortsWhere(ctx, func(InboundSpec) bool { return true })
+}
+
+// autoMappedInboundPorts is the subset the upstream mapper asks for by itself.
+// A local-only inbound is missing here on purpose: nothing maps it, so a manual
+// rule for it is the operator's one way to expose it, not a duplicate.
+func (u *networkUsecase) autoMappedInboundPorts(ctx context.Context) map[string][]int {
+	return u.inboundPortsWhere(ctx, func(s InboundSpec) bool { return !s.NoAutoMap })
+}
+
+func (u *networkUsecase) inboundPortsWhere(ctx context.Context, keep func(InboundSpec) bool) map[string][]int {
 	out := map[string][]int{}
 	if u.Inbounds == nil {
 		return out
@@ -171,7 +182,7 @@ func (u *networkUsecase) inboundPorts(ctx context.Context) map[string][]int {
 		return out
 	}
 	for _, s := range specs {
-		if s.Enabled && s.Port > 0 {
+		if s.Enabled && s.Port > 0 && keep(s) {
 			out[s.Proto] = append(out[s.Proto], s.Port)
 		}
 	}

@@ -34,6 +34,10 @@ const (
 // PinProbe marks the health probe's own sockets. Uplinks count up from 1.
 const PinProbe uint32 = 15
 
+// PinPortmap marks the port mapper's own sockets. 14 keeps clear of the
+// uplinks (1..5) and the probe.
+const PinPortmap uint32 = 14
+
 // Foreign-via groups take 0x10–0x1F, low nibble naming the uplink. A via mark
 // routes into that WAN's slice of the tunnel pool, never the WAN itself.
 const groupForeignViaBase uint32 = 0x10

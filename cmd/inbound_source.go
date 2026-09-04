@@ -27,7 +27,7 @@ func (s inboundSource) EnabledInbounds(ctx context.Context) ([]networkUsecase.In
 	out := make([]networkUsecase.InboundSpec, 0, len(rows))
 	for _, ib := range rows {
 		out = append(out, networkUsecase.InboundSpecsFor(
-			ib.Tag, ib.Protocol, ib.Port, !ib.IsDisabled)...)
+			ib.Tag, ib.Protocol, ib.Port, ib.PortRange, !ib.IsDisabled)...)
 	}
 	return out, nil
 }
