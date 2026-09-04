@@ -318,3 +318,63 @@ export interface WifiAPRequest {
     channel: number
     hidden: boolean
 }
+
+export interface PortMapRule {
+    id: number
+    uplink_key: string
+    proto: "tcp" | "udp"
+    port: number
+    external_hint: number
+    comment: string
+    enabled: boolean
+}
+
+export interface PortMapLeaseView {
+    source: string
+    proto: string
+    internal_port: number
+    external_ip: string
+    external_port: number
+    method: string
+    renews_at: string
+    expires_at: string
+    warning?: string
+}
+
+export interface PortMapFailureView {
+    source: string
+    proto: string
+    internal_port: number
+    error: string
+}
+
+export type PortMapVerdict =
+    | "pending"
+    | "disabled"
+    | "public_direct"
+    | "ok"
+    | "partial"
+    | "nested_nat"
+    | "no_service"
+    | "denied"
+    | "error"
+
+export interface PortMapWANView {
+    key: string
+    if_name: string
+    label: string
+    gateway?: string
+    verdict: PortMapVerdict
+    error?: string
+    suspended: boolean
+    probe: { pmp: boolean; pcp: boolean; upnp: boolean; seen_at?: string }
+    external_ip?: string
+    leases: PortMapLeaseView[]
+    failures: PortMapFailureView[]
+    unmapped_ranges?: string[]
+}
+
+export interface PortMapStatus {
+    enabled: boolean
+    wans: PortMapWANView[]
+}

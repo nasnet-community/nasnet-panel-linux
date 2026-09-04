@@ -957,6 +957,7 @@ func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink,
 			BootstrapIPs: dohboot.BootstrapIPs(),
 			ProbeMark:    netmark.PinMark(netmark.PinProbe),
 			ProbeIPs:     probeIPs,
+			PortmapMark:  netmark.PinMark(netmark.PinPortmap),
 		}
 	})
 }

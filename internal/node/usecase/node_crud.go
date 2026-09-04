@@ -172,6 +172,9 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 				log.WithError(err).Warnf("[DeleteNode] Failed to delete inbound %d", inbound.ID)
 			}
 		}
+		if len(inbounds) > 0 {
+			u.notifyInboundsChanged(ctx)
+		}
 
 		// Delete Reverse Proxies (before routing rules since they reference them)
 		if err := u.nodeRepo.DeleteReverseProxiesByNode(ctx, id); err != nil {
@@ -441,6 +444,8 @@ func (u *nodeUsecase) MigrateInbound(ctx context.Context, sourceInboundID, targe
 			log.WithError(err).Warn("[MigrateInbound] Failed to deactivate source inbound")
 		} else {
 			result.SourceDeactivated = true
+			// The accept and the upstream mapping outlive the inbound otherwise.
+			u.notifyInboundsChanged(ctx)
 		}
 	}
 

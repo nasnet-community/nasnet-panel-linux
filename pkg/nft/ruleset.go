@@ -67,6 +67,12 @@ type InputAccept struct {
 type FilterInput struct {
 	LocalIfNames []string
 	Accepts      []InputAccept
+	// PortMapReplyIfNames are the uplinks the upstream port mapper is asking
+	// on. Some routers answer a discovery from a port conntrack cannot tie
+	// back to the request, so the client's own port is named here. Empty
+	// unless the feature is on.
+	PortMapReplyIfNames []string
+	PortMapReplyPort    int
 }
 
 // Resolvers the kill switch lets through, so an endpoint hostname can be
@@ -107,6 +113,10 @@ type KillSwitch struct {
 	// The health probe's own traffic. Empty renders no exemption.
 	ProbeMark uint32
 	ProbeIPs  []string
+	// The port mapper's own chatter: SSDP and NAT-PMP/PCP. Mark-gated, so it is
+	// inert unless our own sockets stamp it. TCP to the IGD rides the per-leg
+	// gateway exemption — control URLs are always repointed there.
+	PortmapMark uint32
 }
 
 // Ruleset is the complete desired state of the owned table. Zero value renders
@@ -354,6 +364,13 @@ func (r Ruleset) renderFilterInput() string {
 	b.WriteString("\n\t\t# Every accept below is RENDERED from the same rows that generate\n")
 	b.WriteString("\t\t# the xray config and the port forwards. A hand-maintained port list\n")
 	b.WriteString("\t\t# would silently kill somebody's VPN.\n")
+	if len(f.PortMapReplyIfNames) > 0 && f.PortMapReplyPort > 0 {
+		b.WriteString("\n\t\t# The upstream router's answers to our own port-mapping requests.\n")
+		b.WriteString("\t\t# Only this one port, and only while the mapper is asking: some\n")
+		b.WriteString("\t\t# routers reply from a port conntrack cannot match to the search.\n")
+		fmt.Fprintf(&b, "\t\tiifname { %s } udp dport %d accept\n",
+			quoteList(f.PortMapReplyIfNames), f.PortMapReplyPort)
+	}
 	for _, a := range f.Accepts {
 		if a.Comment != "" {
 			fmt.Fprintf(&b, "\t\t# %s\n", a.Comment)
@@ -444,6 +461,12 @@ func (k *KillSwitch) exemptions() string {
 		b.WriteString("\n\t\t# The health probe measuring this uplink.\n")
 		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s ip daddr @%s accept\n",
 			netmark.Hex(netmark.MaskPin), netmark.Hex(k.ProbeMark), SetProbe)
+	}
+
+	if k.PortmapMark != 0 {
+		b.WriteString("\n\t\t# Asking the upstream router to forward ports here.\n")
+		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s udp dport { 1900, 5351 } accept\n",
+			netmark.Hex(netmark.MaskPin), netmark.Hex(k.PortmapMark))
 	}
 
 	b.WriteString("\n\t\t# Link-scoped only: a lease, each gateway the health probe pings,\n")

@@ -450,6 +450,9 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "router_failover_domestic_to_vpn", Value: "true", Type: "bool", Category: "router",
 			Label:       "Failover domestic traffic to the VPN",
 			Description: "When the domestic ISP loses internet, send Iranian-destined traffic through the tunnel until it recovers. Turn off if your domestic services reject foreign IPs."},
+		{Key: "router_portmap_enabled", Value: "false", Type: "bool", Category: "router",
+			Label:       "Upstream port mapping",
+			Description: "Ask the router in front of this box (UPnP, NAT-PMP or PCP) to forward the VPN ports here. Off until you turn it on."},
 	}
 
 	// Server/Infrastructure settings seeded from environment config

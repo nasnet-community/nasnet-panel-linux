@@ -72,6 +72,14 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		n.POST("/port-forwards", h.CreatePortForward)
 		n.PUT("/port-forwards/:id", h.UpdatePortForward)
 		n.DELETE("/port-forwards/:id", h.DeletePortForward)
+
+		// Upstream port mapping: this box as the UPnP/NAT-PMP/PCP client.
+		n.GET("/portmap/status", h.PortMapStatus)
+		n.POST("/portmap/probe", h.ForcePortMapProbe)
+		n.GET("/portmap/rules", h.ListPortMapRules)
+		n.POST("/portmap/rules", h.CreatePortMapRule)
+		n.PUT("/portmap/rules/:id", h.UpdatePortMapRule)
+		n.DELETE("/portmap/rules/:id", h.DeletePortMapRule)
 	}
 }
 

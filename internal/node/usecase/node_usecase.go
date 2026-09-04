@@ -235,6 +235,7 @@ type NodeUsecase interface {
 	SetRouterMode(enabled bool)
 	SetRouterWANSource(fn func(context.Context) []xray.RouterWAN)
 	SetIngressUplinkSource(fn func() string)
+	SetInboundsChangedHook(fn func(context.Context) error)
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)
@@ -398,6 +399,9 @@ type nodeUsecase struct {
 
 	// Resolves the shaped interface
 	ingressUplinkFn func() string
+
+	// Re-derives filter_in and re-checks port mappings after an inbound edit.
+	onInboundsChanged func(context.Context) error
 
 	// nukeAgentClientFactory: test override; nil → getAgentClient.
 	nukeAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)

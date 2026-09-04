@@ -172,7 +172,7 @@ func TestInboundSpecsFor(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.protocol, func(t *testing.T) {
-			got := InboundSpecsFor("tag", c.protocol, 443, true)
+			got := InboundSpecsFor("tag", c.protocol, 443, "", true)
 			if len(got) != len(c.want) {
 				t.Fatalf("%s -> %d specs, want %d: %+v", c.protocol, len(got), len(c.want), got)
 			}
@@ -188,14 +188,14 @@ func TestInboundSpecsFor(t *testing.T) {
 // A disabled inbound still produces a spec — DeriveFilterInput is what drops it,
 // and keeping the row visible means the count never silently disagrees.
 func TestInboundSpecsFor_DisabledIsCarriedThrough(t *testing.T) {
-	got := InboundSpecsFor("old", "vless", 8443, false)
+	got := InboundSpecsFor("old", "vless", 8443, "", false)
 	if len(got) != 1 || got[0].Enabled {
 		t.Errorf("got %+v, want one disabled spec", got)
 	}
 }
 
 func TestInboundSpecsFor_NoPortIsSkipped(t *testing.T) {
-	if got := InboundSpecsFor("broken", "vless", 0, true); len(got) != 0 {
+	if got := InboundSpecsFor("broken", "vless", 0, "", true); len(got) != 0 {
 		t.Errorf("got %+v, want nothing for a portless inbound", got)
 	}
 }

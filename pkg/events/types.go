@@ -71,6 +71,13 @@ const (
 	EventWANForceState        EventType = "wan.force_state"
 	EventWANApplyRolledBack   EventType = "wan.apply_rolled_back"
 	EventWANLeaseWarning      EventType = "wan.lease_warning"
+	// The learned gateway moved: the upstream router, and every mapping on it,
+	// may be a different box now.
+	EventWANGatewayChanged EventType = "wan.gateway_changed"
+	// Upstream port mapping lifecycle.
+	EventPortMapAcquired EventType = "portmap.acquired"
+	EventPortMapLost     EventType = "portmap.lost"
+	EventPortMapDenied   EventType = "portmap.denied"
 	// EventWANApplied fires when a plan's ops have run and the dead-man is armed.
 	EventWANApplied EventType = "wan.applied"
 	// Separate from uplink health: that loop withdraws routes, and a dead tunnel
@@ -91,7 +98,7 @@ const (
 func IsNetworkEvent(e Event) bool {
 	t := string(e.Type)
 	return strings.HasPrefix(t, "wan.") || strings.HasPrefix(t, "vpn.") ||
-		strings.HasPrefix(t, "interface.")
+		strings.HasPrefix(t, "interface.") || strings.HasPrefix(t, "portmap.")
 }
 
 // Event represents a real-time event that can be published and subscribed to

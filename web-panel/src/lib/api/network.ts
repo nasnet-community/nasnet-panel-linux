@@ -6,6 +6,8 @@ import type {
     LANView,
     NetworkApply,
     NetworkInterfaceView,
+    PortMapRule,
+    PortMapStatus,
     NetworkPlan,
     NetworkState,
     PoolStrategy,
@@ -323,4 +325,30 @@ export function describeRadioTradeoff(
         return "This box has one radio and one other port, so it can be either dual-WAN with no local network, or single-uplink with a Wi-Fi access point. Getting both needs a third interface — a USB ethernet or USB Wi-Fi adapter."
     }
     return ""
+}
+
+export async function getPortMapStatus(): Promise<ApiResponse<PortMapStatus>> {
+    return api.get<PortMapStatus>("/api/v1/network/portmap/status")
+}
+
+export async function probePortMap(): Promise<ApiResponse<null>> {
+    return api.post<null>("/api/v1/network/portmap/probe", {})
+}
+
+export async function getPortMapRules(): Promise<ApiResponse<PortMapRule[]>> {
+    return api.get<PortMapRule[]>("/api/v1/network/portmap/rules")
+}
+
+export type PortMapRuleInput = Omit<PortMapRule, "id"> & { id?: number; confirmed?: boolean }
+
+export async function createPortMapRule(r: PortMapRuleInput): Promise<ApiResponse<null>> {
+    return api.post<null>("/api/v1/network/portmap/rules", r)
+}
+
+export async function updatePortMapRule(id: number, r: PortMapRuleInput): Promise<ApiResponse<null>> {
+    return api.put<null>(`/api/v1/network/portmap/rules/${id}`, r)
+}
+
+export async function deletePortMapRule(id: number): Promise<ApiResponse<null>> {
+    return api.delete<null>(`/api/v1/network/portmap/rules/${id}`)
 }

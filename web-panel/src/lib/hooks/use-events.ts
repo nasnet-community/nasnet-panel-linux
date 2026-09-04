@@ -34,6 +34,21 @@ export type EventType =
     | 'vpn.degraded'
     | 'vpn.pool_changed'
     | 'vpn.tunnel_rehomed'
+    | 'wan.gateway_changed'
+    // Upstream port mapping: this box asking the router in front of it.
+    | 'portmap.acquired'
+    | 'portmap.lost'
+    | 'portmap.denied'
+
+export interface PortMapPayload {
+    if_name: string
+    proto?: string
+    port?: number
+    external?: string
+    method?: string
+    count?: number
+    reason?: string
+}
 
 // Event payloads
 export interface NodeStatusPayload {

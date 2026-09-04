@@ -20,11 +20,17 @@ type InboundSpec struct {
 	Proto   string
 	Port    int
 	Enabled bool
+	// PortRange is xray's hop range. filter_in ignores it and the mapper cannot
+	// map it; it is here so the UI can say "range not mapped".
+	PortRange string
+	// NoAutoMap marks an inbound that must never be asked for upstream: a
+	// local proxy behind NAT is unreachable by accident, not by design.
+	NoAutoMap bool
 }
 
 // InboundSpecsFor maps a row onto the accepts it needs. Either-transport
 // protocols get both: an extra accept is recoverable, a missing one is not.
-func InboundSpecsFor(tag, protocol string, port int, enabled bool) []InboundSpec {
+func InboundSpecsFor(tag, protocol string, port int, portRange string, enabled bool) []InboundSpec {
 	if port <= 0 {
 		return nil
 	}
@@ -40,9 +46,21 @@ func InboundSpecsFor(tag, protocol string, port int, enabled bool) []InboundSpec
 
 	out := make([]InboundSpec, 0, len(protos))
 	for _, p := range protos {
-		out = append(out, InboundSpec{Tag: tag, Proto: p, Port: port, Enabled: enabled})
+		out = append(out, InboundSpec{Tag: tag, Proto: p, Port: port, Enabled: enabled,
+			PortRange: portRange, NoAutoMap: localOnlyInbound(protocol)})
 	}
 	return out
+}
+
+// localOnlyInbound names the protocols that serve this box or its LAN. They
+// listen without the auth a public endpoint needs, so the upstream mapper
+// leaves them alone unless the operator writes a rule by hand.
+func localOnlyInbound(protocol string) bool {
+	switch strings.ToLower(protocol) {
+	case "socks", "http", "dokodemo-door":
+		return true
+	}
+	return false
 }
 
 // InboundSource is the seam onto the node usecase's inbound rows.
@@ -59,6 +77,10 @@ type FilterInputSpec struct {
 	AdvertisedIfName string
 	Inbounds         []InboundSpec
 	PortForwards     []domain.PortForward
+	PortMapRules     []domain.PortMapRule
+	// PortMapUplinks are the uplinks the mapper is allowed to ask on. Empty
+	// while the feature is off.
+	PortMapUplinks []string
 	// TwoWANNoLAN has no local management path, so the panel opens on every uplink.
 	TwoWANNoLAN bool
 }
@@ -69,6 +91,8 @@ func (u *networkUsecase) OnInboundsChanged(ctx context.Context) error {
 	if !u.RouterMode {
 		return nil
 	}
+	// The mapper's desired set just moved too.
+	u.kickPortMap()
 	return u.reapplyFilterInput(ctx)
 }
 
@@ -95,6 +119,21 @@ func (u *networkUsecase) reapplyFilterInput(ctx context.Context) error {
 			return err
 		}
 	}
+	// Only a live mapping needs an accept. With the feature off nothing
+	// invites that traffic, so nothing should be listening for it either.
+	var pmRules []domain.PortMapRule
+	if u.PortMapRepo != nil && u.healthConfigSnapshot().PortMapEnabled {
+		if pmRules, err = u.PortMapRepo.List(ctx); err != nil {
+			return err
+		}
+	}
+
+	var pmUplinks []string
+	if u.healthConfigSnapshot().PortMapEnabled {
+		for _, up := range uplinks {
+			pmUplinks = append(pmUplinks, up.IfName)
+		}
+	}
 
 	local, twoWANNoLAN := u.localIfNames(ctx, lan)
 	fi := DeriveFilterInput(FilterInputSpec{
@@ -104,6 +143,8 @@ func (u *networkUsecase) reapplyFilterInput(ctx context.Context) error {
 		AdvertisedIfName: u.IngressUplinkIfName(),
 		Inbounds:         inbounds,
 		PortForwards:     pfs,
+		PortMapRules:     pmRules,
+		PortMapUplinks:   pmUplinks,
 		TwoWANNoLAN:      twoWANNoLAN,
 	})
 	return u.Nft.Update(ctx, func(rs *nft.Ruleset) { rs.FilterInput = fi })
@@ -197,6 +238,40 @@ func DeriveFilterInput(spec FilterInputSpec) *nft.FilterInput {
 		f.Accepts = append(f.Accepts, nft.InputAccept{
 			IfNames: names, Proto: pf.Proto, Port: pf.DPort,
 			Comment: "box-terminated port forward",
+		})
+	}
+
+	// The mapper's own replies. PortMapRules is empty while the feature is
+	// off, which is exactly when this must not be open.
+	if len(spec.PortMapUplinks) > 0 {
+		f.PortMapReplyIfNames = spec.PortMapUplinks
+		f.PortMapReplyPort = system.PortMapLocalPort
+	}
+
+	// Manual upstream mappings terminate on the box. Without an accept an armed
+	// input firewall drops exactly the traffic the mapping invited.
+	for _, r := range spec.PortMapRules {
+		if !r.Enabled || seen[key(r.Proto, r.Port)] {
+			continue
+		}
+		names := allUplinks
+		if r.UplinkKey != "" {
+			names = nil
+			for _, u := range spec.Uplinks {
+				if u.Key == r.UplinkKey {
+					names = []string{u.IfName}
+				}
+			}
+			if len(names) == 0 {
+				// Unassigned since this row was written. Opening the port on
+				// every uplink is not a safe reading of "only that one".
+				continue
+			}
+		}
+		seen[key(r.Proto, r.Port)] = true
+		f.Accepts = append(f.Accepts, nft.InputAccept{
+			IfNames: names, Proto: r.Proto, Port: r.Port,
+			Comment: "upstream port mapping",
 		})
 	}
 

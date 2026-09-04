@@ -45,6 +45,7 @@ func (u *networkUsecase) SetUplinkForce(ctx context.Context, ifName, state strin
 // Also re-syncs the kill-switch set: the exemption must match the new targets.
 func (u *networkUsecase) SetHealthConfig(cfg HealthConfig) {
 	u.healthMu.Lock()
+	prevPortMap := u.healthCfg.PortMapEnabled
 	u.healthCfg = cfg
 	u.healthMu.Unlock()
 	ctx := context.Background()
@@ -52,6 +53,10 @@ func (u *networkUsecase) SetHealthConfig(cfg HealthConfig) {
 		rows, _ := u.IfRepo.GetByRole(ctx, domain.RoleWAN)
 		_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateways(uplinks, rows),
 			cfg.probeExemptIPs())
+	}
+	// The operator just flipped the mapper; do not make them wait a tick.
+	if prevPortMap != cfg.PortMapEnabled {
+		u.kickPortMap()
 	}
 }
 
