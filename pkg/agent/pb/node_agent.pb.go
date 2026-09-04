@@ -2689,8 +2689,14 @@ func (x *UpdateXrayRequest) GetChecksum() string {
 type OutboundTestRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConfigLink     string                 `protobuf:"bytes,1,opt,name=config_link,json=configLink,proto3" json:"config_link,omitempty"`              // Protocol link (vless://..., vmess://..., etc.)
-	TestUrl        string                 `protobuf:"bytes,2,opt,name=test_url,json=testUrl,proto3" json:"test_url,omitempty"`                       // URL to fetch through proxy (default: https://www.google.com/generate_204)
-	TimeoutSeconds int32                  `protobuf:"varint,3,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"` // Per-test timeout (default: 10s)
+	TestUrl        string                 `protobuf:"bytes,2,opt,name=test_url,json=testUrl,proto3" json:"test_url,omitempty"`                       // URL to fetch through proxy (default: https://cloudflare.com/cdn-cgi/trace)
+	TimeoutSeconds int32                  `protobuf:"varint,3,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"` // Legacy per-test timeout; honored when max_delay_ms is unset
+	MaxDelayMs     int32                  `protobuf:"varint,4,opt,name=max_delay_ms,json=maxDelayMs,proto3" json:"max_delay_ms,omitempty"`           // Max acceptable delay / HTTP timeout (default 5000, capped at 65535)
+	Retries        int32                  `protobuf:"varint,5,opt,name=retries,proto3" json:"retries,omitempty"`                                     // Retry count, best result wins (default 1)
+	InsecureTls    bool                   `protobuf:"varint,6,opt,name=insecure_tls,json=insecureTls,proto3" json:"insecure_tls,omitempty"`          // Skip TLS verification during the test
+	Speedtest      bool                   `protobuf:"varint,7,opt,name=speedtest,proto3" json:"speedtest,omitempty"`                                 // Also measure download/upload speed
+	SpeedtestKb    int32                  `protobuf:"varint,8,opt,name=speedtest_kb,json=speedtestKb,proto3" json:"speedtest_kb,omitempty"`          // Speedtest payload per direction in KB (default 10000)
+	DirectProbe    bool                   `protobuf:"varint,9,opt,name=direct_probe,json=directProbe,proto3" json:"direct_probe,omitempty"`          // Skip xray-knife: plain HTTP probe (freedom outbounds)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2746,15 +2752,62 @@ func (x *OutboundTestRequest) GetTimeoutSeconds() int32 {
 	return 0
 }
 
+func (x *OutboundTestRequest) GetMaxDelayMs() int32 {
+	if x != nil {
+		return x.MaxDelayMs
+	}
+	return 0
+}
+
+func (x *OutboundTestRequest) GetRetries() int32 {
+	if x != nil {
+		return x.Retries
+	}
+	return 0
+}
+
+func (x *OutboundTestRequest) GetInsecureTls() bool {
+	if x != nil {
+		return x.InsecureTls
+	}
+	return false
+}
+
+func (x *OutboundTestRequest) GetSpeedtest() bool {
+	if x != nil {
+		return x.Speedtest
+	}
+	return false
+}
+
+func (x *OutboundTestRequest) GetSpeedtestKb() int32 {
+	if x != nil {
+		return x.SpeedtestKb
+	}
+	return 0
+}
+
+func (x *OutboundTestRequest) GetDirectProbe() bool {
+	if x != nil {
+		return x.DirectProbe
+	}
+	return false
+}
+
 type OutboundTestResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	LatencyMs     int64                  `protobuf:"varint,2,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`    // Round-trip latency in milliseconds
-	StatusCode    int32                  `protobuf:"varint,3,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"` // HTTP status code (204 for generate_204)
-	Ip            string                 `protobuf:"bytes,4,opt,name=ip,proto3" json:"ip,omitempty"`                                    // Exit IP (if available)
-	Country       string                 `protobuf:"bytes,5,opt,name=country,proto3" json:"country,omitempty"`                          // Exit country code (optional)
-	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`                              // Error message if failed
-	Message       string                 `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`                          // Human-readable summary
+	LatencyMs     int64                  `protobuf:"varint,2,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`                // Round-trip latency in milliseconds
+	StatusCode    int32                  `protobuf:"varint,3,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`             // HTTP status code (204 for generate_204)
+	Ip            string                 `protobuf:"bytes,4,opt,name=ip,proto3" json:"ip,omitempty"`                                                // Exit IP (if available)
+	Country       string                 `protobuf:"bytes,5,opt,name=country,proto3" json:"country,omitempty"`                                      // Exit country code (optional)
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`                                          // Error message if failed
+	Message       string                 `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`                                      // Human-readable summary
+	Status        string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`                                        // passed | semi-passed | failed | timeout | broken
+	TtfbMs        int64                  `protobuf:"varint,9,opt,name=ttfb_ms,json=ttfbMs,proto3" json:"ttfb_ms,omitempty"`                         // Time to first byte in milliseconds
+	ConnectTimeMs int64                  `protobuf:"varint,10,opt,name=connect_time_ms,json=connectTimeMs,proto3" json:"connect_time_ms,omitempty"` // Connection establishment time in milliseconds
+	DownloadMbps  float64                `protobuf:"fixed64,11,opt,name=download_mbps,json=downloadMbps,proto3" json:"download_mbps,omitempty"`     // Download speed (speedtest only)
+	UploadMbps    float64                `protobuf:"fixed64,12,opt,name=upload_mbps,json=uploadMbps,proto3" json:"upload_mbps,omitempty"`           // Upload speed (speedtest only)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2836,6 +2889,41 @@ func (x *OutboundTestResponse) GetMessage() string {
 		return x.Message
 	}
 	return ""
+}
+
+func (x *OutboundTestResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *OutboundTestResponse) GetTtfbMs() int64 {
+	if x != nil {
+		return x.TtfbMs
+	}
+	return 0
+}
+
+func (x *OutboundTestResponse) GetConnectTimeMs() int64 {
+	if x != nil {
+		return x.ConnectTimeMs
+	}
+	return 0
+}
+
+func (x *OutboundTestResponse) GetDownloadMbps() float64 {
+	if x != nil {
+		return x.DownloadMbps
+	}
+	return 0
+}
+
+func (x *OutboundTestResponse) GetUploadMbps() float64 {
+	if x != nil {
+		return x.UploadMbps
+	}
+	return 0
 }
 
 type UserEmailRequest struct {
@@ -5078,12 +5166,19 @@ const file_node_agent_proto_rawDesc = "" +
 	"\rrestart_after\x18\x02 \x01(\bR\frestartAfter\x12!\n" +
 	"\fdownload_url\x18\x03 \x01(\tR\vdownloadUrl\x12%\n" +
 	"\x0edownload_token\x18\x04 \x01(\tR\rdownloadToken\x12\x1a\n" +
-	"\bchecksum\x18\x05 \x01(\tR\bchecksum\"z\n" +
+	"\bchecksum\x18\x05 \x01(\tR\bchecksum\"\xbd\x02\n" +
 	"\x13OutboundTestRequest\x12\x1f\n" +
 	"\vconfig_link\x18\x01 \x01(\tR\n" +
 	"configLink\x12\x19\n" +
 	"\btest_url\x18\x02 \x01(\tR\atestUrl\x12'\n" +
-	"\x0ftimeout_seconds\x18\x03 \x01(\x05R\x0etimeoutSeconds\"\xca\x01\n" +
+	"\x0ftimeout_seconds\x18\x03 \x01(\x05R\x0etimeoutSeconds\x12 \n" +
+	"\fmax_delay_ms\x18\x04 \x01(\x05R\n" +
+	"maxDelayMs\x12\x18\n" +
+	"\aretries\x18\x05 \x01(\x05R\aretries\x12!\n" +
+	"\finsecure_tls\x18\x06 \x01(\bR\vinsecureTls\x12\x1c\n" +
+	"\tspeedtest\x18\a \x01(\bR\tspeedtest\x12!\n" +
+	"\fspeedtest_kb\x18\b \x01(\x05R\vspeedtestKb\x12!\n" +
+	"\fdirect_probe\x18\t \x01(\bR\vdirectProbe\"\xe9\x02\n" +
 	"\x14OutboundTestResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1d\n" +
 	"\n" +
@@ -5093,7 +5188,14 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x02ip\x18\x04 \x01(\tR\x02ip\x12\x18\n" +
 	"\acountry\x18\x05 \x01(\tR\acountry\x12\x14\n" +
 	"\x05error\x18\x06 \x01(\tR\x05error\x12\x18\n" +
-	"\amessage\x18\a \x01(\tR\amessage\"(\n" +
+	"\amessage\x18\a \x01(\tR\amessage\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12\x17\n" +
+	"\attfb_ms\x18\t \x01(\x03R\x06ttfbMs\x12&\n" +
+	"\x0fconnect_time_ms\x18\n" +
+	" \x01(\x03R\rconnectTimeMs\x12#\n" +
+	"\rdownload_mbps\x18\v \x01(\x01R\fdownloadMbps\x12\x1f\n" +
+	"\vupload_mbps\x18\f \x01(\x01R\n" +
+	"uploadMbps\"(\n" +
 	"\x10UserEmailRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\"\x84\x01\n" +
 	"\x11OnlineIPsResponse\x127\n" +

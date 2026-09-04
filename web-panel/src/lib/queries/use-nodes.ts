@@ -35,6 +35,8 @@ import {
     deleteNodeOutbound,
     toggleOutboundDisabled,
     testOutbound,
+    getOutboundTestSettings,
+    updateOutboundTestSettings,
     addNodeRoutingRule,
     updateNodeRoutingRule,
     deleteNodeRoutingRule,
@@ -48,7 +50,7 @@ import {
 import type { NodeStatsBulkMap, NodeBulkActionResponse, XrayConfigDiff } from "@/lib/api/nodes"
 import { ApiError } from "@/lib/api"
 import { queryKeys } from "./keys"
-import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, NodeDataPoint } from "@/lib/types"
+import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, OutboundTestEntry, OutboundTestSettings, NodeDataPoint } from "@/lib/types"
 import { toast } from "sonner"
 
 // ==================== Queries ====================
@@ -710,13 +712,42 @@ export function useToggleOutbound(nodeId: number) {
 }
 
 export function useTestOutbound() {
-    return useMutation<OutboundTestResult, Error, number>({
-        mutationFn: async (outboundId: number) => {
-            const res = await testOutbound(outboundId)
+    return useMutation<OutboundTestEntry, Error, { outboundId: number; speedtest?: boolean }>({
+        mutationFn: async ({ outboundId, speedtest }) => {
+            const res = await testOutbound(outboundId, { speedtest })
             if (!res.success) throw new Error(res.error || "Test failed")
             return res.data!
         },
         // Caller decides toast (per-row context)
+    })
+}
+
+export function useOutboundTestSettings(nodeId: number) {
+    return useQuery({
+        queryKey: queryKeys.outboundTestSettings(nodeId),
+        queryFn: async () => {
+            const res = await getOutboundTestSettings(nodeId)
+            if (!res.success) throw new Error(res.error || "Failed to load outbound test settings")
+            return res.data!
+        },
+        enabled: nodeId > 0,
+    })
+}
+
+export function useUpdateOutboundTestSettings(nodeId: number) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (settings: OutboundTestSettings) => {
+            const res = await updateOutboundTestSettings(nodeId, settings)
+            if (!res.success) throw new Error(res.error || "Failed to save outbound test settings")
+            return res.data!
+        },
+        onSuccess: () => {
+            toast.success("Outbound test settings saved")
+            queryClient.invalidateQueries({ queryKey: queryKeys.outboundTestSettings(nodeId) })
+            queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
+        },
+        onError: (error: Error) => toast.error(error.message),
     })
 }
 
@@ -861,4 +892,4 @@ export function useDeleteReverseProxy(nodeId: number) {
 }
 
 // Suppress unused vars (BalancingRule type kept for downstream consumers)
-export type { BalancingRule, ReverseProxy, RoutingRule, Outbound, OutboundTestResult }
+export type { BalancingRule, ReverseProxy, RoutingRule, Outbound, OutboundTestResult, OutboundTestEntry, OutboundTestSettings }

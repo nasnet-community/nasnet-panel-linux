@@ -457,6 +457,9 @@ func (m *mockNodeRepo) ListOutboundsByNode(_ context.Context, _ uint) ([]*nodeDo
 func (m *mockNodeRepo) GetOutboundWithNode(_ context.Context, _ uint) (*nodeDomain.Outbound, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockNodeRepo) UpdateOutboundTestResult(_ context.Context, _ uint, _ *nodeDomain.OutboundTestResult, _ time.Time) error {
+	return fmt.Errorf("not implemented")
+}
 func (m *mockNodeRepo) GetOutboundByTagAndNode(_ context.Context, _ uint, _ string) (*nodeDomain.Outbound, error) {
 	return nil, fmt.Errorf("not implemented")
 }

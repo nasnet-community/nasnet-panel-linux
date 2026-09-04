@@ -98,15 +98,32 @@ type ChecksumResult struct {
 	Path     string
 }
 
+// OutboundTestSpec carries every parameter for one outbound connectivity test.
+type OutboundTestSpec struct {
+	ConfigLink  string // empty when DirectProbe is set
+	TestURL     string
+	MaxDelayMs  int32
+	Retries     int32
+	InsecureTLS bool
+	Speedtest   bool
+	SpeedtestKb int32
+	DirectProbe bool // freedom outbounds: probe node egress without xray-knife
+}
+
 // OutboundTestResult holds the result of an outbound connectivity test.
 type OutboundTestResult struct {
-	Success    bool   `json:"success"`
-	LatencyMs  int64  `json:"latency_ms"`
-	StatusCode int32  `json:"status_code"`
-	IP         string `json:"ip,omitempty"`
-	Country    string `json:"country,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Message    string `json:"message,omitempty"`
+	Success      bool    `json:"success"`
+	Status       string  `json:"status,omitempty"`
+	LatencyMs    int64   `json:"latency_ms"`
+	TTFBMs       int64   `json:"ttfb_ms,omitempty"`
+	ConnectMs    int64   `json:"connect_time_ms,omitempty"`
+	StatusCode   int32   `json:"status_code"`
+	IP           string  `json:"ip,omitempty"`
+	Country      string  `json:"country,omitempty"`
+	DownloadMbps float64 `json:"download_mbps,omitempty"`
+	UploadMbps   float64 `json:"upload_mbps,omitempty"`
+	Error        string  `json:"error,omitempty"`
+	Message      string  `json:"message,omitempty"`
 }
 
 // TrafficRecord holds traffic data for a single time bucket.

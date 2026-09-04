@@ -96,6 +96,9 @@ type Node struct {
 	// Last crash recovery attempt result (for panel display)
 	LastCrashRecovery *LastCrashRecovery `gorm:"serializer:json;type:jsonb" json:"last_crash_recovery"`
 
+	// Per-node outbound connectivity test tuning (concurrency, timeouts, test URL)
+	OutboundTestSettings *OutboundTestSettings `gorm:"serializer:json;type:jsonb" json:"outbound_test_settings"`
+
 	// One Node has many RoutingRules
 	RoutingRules   []RoutingRule   `gorm:"foreignKey:NodeID" json:"routing_rules,omitempty"`
 	BalancingRules []BalancingRule `gorm:"foreignKey:NodeID" json:"balancing_rules,omitempty"`
@@ -801,6 +804,11 @@ type Outbound struct {
 	// IsDisabled allows temporarily disabling an outbound without deleting it.
 	// When disabled: excluded from Xray config push.
 	IsDisabled bool `gorm:"default:false" json:"is_disabled"`
+
+	// Outcome of the last connectivity test, overwritten on every test so the
+	// panel can show a result that survives a page reload.
+	LastTestResult *OutboundTestResult `gorm:"serializer:json;type:jsonb" json:"last_test_result"`
+	LastTestedAt   *time.Time          `gorm:"column:last_tested_at" json:"last_tested_at"`
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

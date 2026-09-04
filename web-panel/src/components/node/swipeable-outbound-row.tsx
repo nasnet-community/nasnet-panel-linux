@@ -1,8 +1,8 @@
 import React, { useRef, useCallback, useEffect } from "react"
 import { motion, useMotionValue, useTransform, animate } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
-import { cn, formatBytes } from "@/lib/utils"
-import type { Outbound, OutboundTestResult } from "@/lib/types"
+import { cn, formatBytes, countryFlag, formatRelativeTime } from "@/lib/utils"
+import type { Outbound, OutboundTestEntry } from "@/lib/types"
 import { HiOutlinePencil, HiOutlineStatusOnline, HiOutlineCheckCircle, HiOutlineXCircle, HiOutlineUpload, HiOutlineDownload, HiOutlineBan } from "react-icons/hi"
 import { Trash2, Power } from "lucide-react"
 import { ProtocolBadge } from "./protocol-badge"
@@ -16,7 +16,9 @@ interface SwipeableOutboundRowProps {
     onToggleDisabled: (outbound: Outbound) => void
     onTest?: (outbound: Outbound) => void
     isTesting?: boolean
-    testResult?: OutboundTestResult | null
+    /** Mirrors the desktop row: nothing to probe, or a Test All is mid-flight. */
+    testDisabled?: boolean
+    testEntry?: OutboundTestEntry | null
     onViewTestResult?: (outbound: Outbound) => void
 }
 
@@ -33,7 +35,8 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
     onToggleDisabled,
     onTest,
     isTesting,
-    testResult,
+    testDisabled,
+    testEntry,
     onViewTestResult,
 }: SwipeableOutboundRowProps) {
     const x = useMotionValue(0)
@@ -115,9 +118,9 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                     <span className="text-[10px] font-medium">{outbound.is_disabled ? "Enable" : "Disable"}</span>
                 </button>
                 <button
-                    className="w-16 flex flex-col items-center justify-center gap-1 bg-emerald-600 text-white active:bg-emerald-700"
+                    className="w-16 flex flex-col items-center justify-center gap-1 bg-emerald-600 text-white active:bg-emerald-700 disabled:opacity-40"
                     onClick={() => onTest && handleAction(() => onTest(outbound))}
-                    disabled={isTesting}
+                    disabled={isTesting || testDisabled}
                 >
                     <HiOutlineStatusOnline className={cn("w-5 h-5", isTesting && "animate-pulse")} />
                     <span className="text-[10px] font-medium">{isTesting ? "..." : "Test"}</span>
@@ -196,7 +199,7 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                     </div>
 
                     {/* Test result indicator (right side) */}
-                    {testResult && (
+                    {testEntry && (
                         <button
                             onClick={(e) => {
                                 e.stopPropagation()
@@ -204,20 +207,30 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                             }}
                             className="flex flex-col items-center gap-0.5 pt-1 shrink-0"
                         >
-                            {testResult.success ? (
-                                <HiOutlineCheckCircle className="w-5 h-5 text-emerald-500" />
-                            ) : (
-                                <HiOutlineXCircle className="w-5 h-5 text-red-500" />
-                            )}
-                            {testResult.latency_ms > 0 && (
+                            <span className="inline-flex items-center gap-1">
+                                {testEntry.result.status === "not_applicable" ? (
+                                    <span className="text-[11px] font-medium text-muted-foreground/70">N/A</span>
+                                ) : testEntry.result.success ? (
+                                    <HiOutlineCheckCircle className="w-5 h-5 text-emerald-500" />
+                                ) : (
+                                    <HiOutlineXCircle className="w-5 h-5 text-red-500" />
+                                )}
+                                {testEntry.result.country && (
+                                    <span className="text-sm leading-none">{countryFlag(testEntry.result.country)}</span>
+                                )}
+                            </span>
+                            {testEntry.result.latency_ms > 0 && (
                                 <span className={cn(
                                     "text-[10px] font-mono font-medium",
-                                    testResult.latency_ms < 300 ? "text-emerald-500" :
-                                    testResult.latency_ms < 800 ? "text-amber-500" : "text-red-500"
+                                    testEntry.result.latency_ms < 300 ? "text-emerald-500" :
+                                    testEntry.result.latency_ms < 800 ? "text-amber-500" : "text-red-500"
                                 )}>
-                                    {testResult.latency_ms}ms
+                                    {testEntry.result.latency_ms}ms
                                 </span>
                             )}
+                            <span className="text-[10px] text-muted-foreground/60">
+                                {formatRelativeTime(testEntry.tested_at)}
+                            </span>
                         </button>
                     )}
                 </div>

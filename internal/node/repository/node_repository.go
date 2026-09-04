@@ -53,6 +53,9 @@ type NodeRepository interface {
 	// Helper to fetch an outbound with its parent node details
 	GetOutboundWithNode(ctx context.Context, id uint) (*domain.Outbound, error)
 
+	// Outbound connectivity test result (single-row write, never inside a tx)
+	UpdateOutboundTestResult(ctx context.Context, outboundID uint, result *domain.OutboundTestResult, testedAt time.Time) error
+
 	// Outbound Discovery-related methods
 	GetOutboundByTagAndNode(ctx context.Context, nodeID uint, tag string) (*domain.Outbound, error)
 	BulkCreateOutbounds(ctx context.Context, outbounds []*domain.Outbound) error
@@ -428,6 +431,15 @@ func (r *nodeRepository) GetOutboundWithNode(ctx context.Context, id uint) (*dom
 
 func (r *nodeRepository) UpdateOutbound(ctx context.Context, outbound *domain.Outbound) error {
 	return r.db.WithContext(ctx).Save(outbound).Error
+}
+
+// UpdateOutboundTestResult persists the outcome of a connectivity test. Kept as
+// a bare single-row update on purpose: it runs right after an agent RPC, so it
+// must never be wrapped in a long-lived transaction.
+func (r *nodeRepository) UpdateOutboundTestResult(ctx context.Context, outboundID uint, result *domain.OutboundTestResult, testedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&domain.Outbound{ID: outboundID}).
+		Select("LastTestResult", "LastTestedAt").
+		Updates(domain.Outbound{LastTestResult: result, LastTestedAt: &testedAt}).Error
 }
 
 func (r *nodeRepository) DeleteOutbound(ctx context.Context, id uint) error {

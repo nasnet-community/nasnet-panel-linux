@@ -160,6 +160,14 @@ export function generateUUID(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
+/** Two-letter country code to its flag emoji. Empty string when the code is
+ * not a usable ISO pair, so callers can render nothing instead of a tofu box. */
+export function countryFlag(code?: string | null): string {
+  if (!code || !/^[A-Za-z]{2}$/.test(code)) return ""
+  const up = code.toUpperCase()
+  return String.fromCodePoint(0x1f1e6 + up.charCodeAt(0) - 65, 0x1f1e6 + up.charCodeAt(1) - 65)
+}
+
 export function formatRelativeTime(dateStr: string): string {
   const now = new Date()
   const date = new Date(dateStr)

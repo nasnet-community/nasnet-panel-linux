@@ -78,7 +78,8 @@ class ApiClient {
     private async request<T>(
         endpoint: string,
         options: RequestInit = {},
-        skipRefresh = false
+        skipRefresh = false,
+        timeoutMs?: number
     ): Promise<ApiResponse<T>> {
         const url = `${this.baseUrl}${endpoint}`
 
@@ -90,7 +91,7 @@ class ApiClient {
                     "Content-Type": "application/json",
                     ...options.headers,
                 },
-            })
+            }, timeoutMs)
 
             const data: ApiResponse<T> = await this.parseJson(response)
 
@@ -101,7 +102,7 @@ class ApiClient {
                     const refreshed = await this.refreshToken()
                     if (refreshed) {
                         // Retry the original request with skipRefresh=true to avoid infinite loop
-                        return this.request<T>(endpoint, options, true)
+                        return this.request<T>(endpoint, options, true, timeoutMs)
                     } else {
                         // Refresh failed, redirect to login (skip for public pages like /sub/)
                         if (typeof window !== "undefined" && window.location.pathname !== `${BASE_PATH}/login` && !window.location.pathname.startsWith(`${BASE_PATH}/sub/`)) {
@@ -136,11 +137,13 @@ class ApiClient {
         return this.request<T>(endpoint, { method: "GET" })
     }
 
-    async post<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {
+    /** timeoutMs overrides the 30s default — for endpoints that legitimately
+     * take longer, such as an outbound test with a throughput measurement. */
+    async post<T>(endpoint: string, body?: unknown, timeoutMs?: number): Promise<ApiResponse<T>> {
         return this.request<T>(endpoint, {
             method: "POST",
             body: body ? JSON.stringify(body) : undefined,
-        })
+        }, false, timeoutMs)
     }
 
     async put<T>(endpoint: string, body?: unknown): Promise<ApiResponse<T>> {

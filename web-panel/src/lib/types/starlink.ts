@@ -79,12 +79,3 @@ export interface StarlinkDataPoint {
     created_at: string
 }
 
-export interface OutboundTestResult {
-    success: boolean
-    latency_ms: number
-    status_code: number
-    ip: string
-    country: string
-    error: string
-    message: string
-}
