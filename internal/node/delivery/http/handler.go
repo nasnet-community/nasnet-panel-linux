@@ -211,6 +211,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	// Routing Settings (per-node basic routing presets)
 	nodes.GET("/:id/routing-settings", h.GetRoutingSettings)
 	nodes.PUT("/:id/routing-settings", h.UpdateRoutingSettings)
+	nodes.GET("/:id/outbound-test-settings", h.GetOutboundTestSettings)
+	nodes.PUT("/:id/outbound-test-settings", h.UpdateOutboundTestSettings)
 
 	// DNS Settings (per-node DNS configuration)
 	nodes.GET("/:id/dns-settings", h.GetDNSSettings)
@@ -1138,16 +1140,20 @@ func (h *Handler) TestOutbound(c *gin.Context) {
 	}
 
 	var body struct {
-		TestURL string `json:"test_url"`
+		TestURL   string `json:"test_url"`
+		Speedtest bool   `json:"speedtest"`
 	}
 	_ = c.ShouldBindJSON(&body) // optional body
 
-	result, err := h.nodeUsecase.TestOutbound(c.Request.Context(), uint(id), body.TestURL)
+	outcome, err := h.nodeUsecase.TestOutbound(c.Request.Context(), uint(id), usecase.OutboundTestOptions{
+		TestURL:   body.TestURL,
+		Speedtest: body.Speedtest,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": result})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": outcome})
 }
 
 // ==================== Routing Rules Operations ====================
@@ -1395,6 +1401,51 @@ func (h *Handler) UpdateRoutingSettings(c *gin.Context) {
 	// fires POST /push-config. Pushing now would race those writes.
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": node.RoutingSettings})
+}
+
+func (h *Handler) GetOutboundTestSettings(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+
+	node, err := h.nodeUsecase.GetNode(c.Request.Context(), uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": node.GetOutboundTestSettingsOrDefault()})
+}
+
+func (h *Handler) UpdateOutboundTestSettings(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+
+	node, err := h.nodeUsecase.GetNode(c.Request.Context(), uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	var settings domain.OutboundTestSettings
+	if err := c.ShouldBindJSON(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	node.OutboundTestSettings = &settings
+	if err := h.nodeUsecase.UpdateNode(c.Request.Context(), node); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	// Test settings only affect on-demand tests, so there is nothing to push.
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": node.GetOutboundTestSettingsOrDefault()})
 }
 
 func (h *Handler) GetDNSSettings(c *gin.Context) {

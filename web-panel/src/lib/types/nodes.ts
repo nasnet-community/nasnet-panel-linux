@@ -1,6 +1,7 @@
 import type { Inbound } from "./inbounds"
 import type { RoutingSettings } from "./routing"
 import type { DNSSettings } from "./dns"
+import type { OutboundTestSettings } from "./outbounds"
 
 // Node Types
 export interface Node {
@@ -26,6 +27,7 @@ export interface Node {
     starlink_settings?: StarlinkSettings
     crash_recovery_settings?: CrashRecoverySettings
     last_crash_recovery?: LastCrashRecovery
+    outbound_test_settings?: OutboundTestSettings
     enable_access_log?: boolean
     // System stats (populated from agent)
     cpu_usage?: number

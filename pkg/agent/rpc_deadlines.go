@@ -54,11 +54,14 @@ var rpcDeadlines = map[string]time.Duration{
 	"TeardownBandwidth":   15 * time.Second,
 
 	// Process control (xray restart includes a validate + kill + re-exec)
-	"StartXray":      30 * time.Second,
-	"StopXray":       30 * time.Second,
-	"RestartXray":    45 * time.Second,
-	"RestartSSH":     30 * time.Second,
-	"TestOutbound":   30 * time.Second,
+	"StartXray":   30 * time.Second,
+	"StopXray":    30 * time.Second,
+	"RestartXray": 45 * time.Second,
+	"RestartSSH":  30 * time.Second,
+	// Outbound test: xray-knife spins a temporary instance, retries, and can
+	// run a two-direction speedtest — the hub sets its own budget per test,
+	// this is only the fallback for callers that don't.
+	"TestOutbound":   120 * time.Second,
 	"ExecuteCommand": 60 * time.Second,
 
 	// Binary uploads and self-update

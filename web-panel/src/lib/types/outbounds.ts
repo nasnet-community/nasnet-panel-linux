@@ -77,6 +77,49 @@ export const OUTBOUND_PROTOCOLS = [
     { value: 'hysteria2', label: 'Hysteria2' },
 ] as const
 
+// Verdict of one connectivity test. The first five statuses come from
+// xray-knife; not_applicable is ours, for outbounds with nothing to probe.
+export type OutboundTestStatus =
+    | "passed"
+    | "semi-passed"
+    | "failed"
+    | "timeout"
+    | "broken"
+    | "not_applicable"
+
+export interface OutboundTestResult {
+    success: boolean
+    status?: OutboundTestStatus
+    latency_ms: number
+    ttfb_ms?: number
+    connect_time_ms?: number
+    status_code?: number
+    ip?: string
+    country?: string
+    download_mbps?: number
+    upload_mbps?: number
+    speedtest?: boolean
+    error?: string
+    message?: string
+}
+
+// A result plus when it was taken — what the test endpoint returns and what
+// the outbound stores, so a reload shows the same thing as a fresh test.
+export interface OutboundTestEntry {
+    result: OutboundTestResult
+    tested_at: string
+}
+
+// Per-node test tuning. Every field is optional; the backend fills defaults.
+export interface OutboundTestSettings {
+    concurrency?: number
+    max_delay_ms?: number
+    retries?: number
+    test_url?: string
+    speedtest_kb?: number
+    insecure_tls?: boolean
+}
+
 export interface Outbound {
     id: number
     node_id: number
@@ -116,6 +159,11 @@ export interface Outbound {
     uplink?: number
     downlink?: number
     is_disabled: boolean
+
+    // Outcome of the last connectivity test, persisted server-side
+    last_test_result?: OutboundTestResult | null
+    last_tested_at?: string | null
+
     created_at: string
     updated_at: string
 }

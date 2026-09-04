@@ -17,12 +17,12 @@ import (
 	sniUC "github.com/nasnet-community/nasnet-panel-linux/internal/sni/usecase"
 	subRepo "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
-	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 )
 
 var (
@@ -150,7 +150,7 @@ type NodeUsecase interface {
 	ToggleOutboundDisabled(ctx context.Context, id uint) (*domain.Outbound, error)
 
 	// Outbound Testing
-	TestOutbound(ctx context.Context, outboundID uint, testURL string) (*agent.OutboundTestResult, error)
+	TestOutbound(ctx context.Context, outboundID uint, opts OutboundTestOptions) (*OutboundTestOutcome, error)
 
 	// Outbound Discovery & Sync
 	DiscoverOutbounds(ctx context.Context, nodeID uint) ([]*domain.Outbound, error)

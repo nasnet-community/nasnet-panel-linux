@@ -131,6 +131,11 @@ func parseVlessTrojan(u *url.URL) (*domain.Outbound, error) {
 		headerType := q.Get("headerType")
 		if headerType == "http" {
 			transport.HeaderType = "http"
+			// HTTP obfuscation carries the request path and Host header the
+			// server matches on; without them the outbound is a bare TCP
+			// connection the inbound will reject.
+			transport.Path = q.Get("path")
+			transport.Host = q.Get("host")
 		}
 	}
 	outbound.TransportSettings = transport

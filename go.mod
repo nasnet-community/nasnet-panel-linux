@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
-	github.com/lilendian0x00/xray-knife/v10 v10.1.1
+	github.com/lilendian0x00/xray-knife/v11 v11.0.0
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/refraction-networking/utls v1.8.3-0.20260301010127-aa6edf4b11af

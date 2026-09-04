@@ -76,7 +76,7 @@ type NodeClient interface {
 	UpdateXrayBinary(ctx context.Context, version string, restartAfter bool, downloadURL, downloadToken, checksum string) error
 
 	// Outbound testing
-	TestOutbound(ctx context.Context, configLink, testURL string, timeout time.Duration) (*OutboundTestResult, error)
+	TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error)
 
 	// Online user detection
 	GetUserOnlineIPs(ctx context.Context, email string) (map[string]int64, error)

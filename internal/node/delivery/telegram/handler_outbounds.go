@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/keyboards"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/utils"
@@ -284,16 +285,19 @@ func (h *Handler) HandleOutboundExportLink(c telebot.Context) error {
 func (h *Handler) HandleOutboundTestConnectivity(c telebot.Context) error {
 	utils.AnswerCallback(c, "🔌 Testing connectivity...")
 	id := utils.CallbackID(c)
-	ctx, cancel := tgctx.FromTelebotWithTimeout(c, 30*time.Second)
+	// Generous enough for a node configured with several retries; the usecase
+	// derives the real per-test budget from the node's settings.
+	ctx, cancel := tgctx.FromTelebotWithTimeout(c, 2*time.Minute)
 	defer cancel()
 
-	result, err := h.nodeUsecase.TestOutbound(ctx, id, "")
+	outcome, err := h.nodeUsecase.TestOutbound(ctx, id, usecase.OutboundTestOptions{})
 	if err != nil {
 		msg := fmt.Sprintf("❌ *Test Failed*\n\n❗ *Error:* `%s`", err.Error())
 		kb := &telebot.ReplyMarkup{}
 		kb.Inline(keyboards.BackRowID(kb, "admin_outbound_view", id))
 		return c.Send(msg, telebot.ModeMarkdown, kb)
 	}
+	result := outcome.Result
 
 	var msg string
 	if result.Success {
@@ -303,6 +307,9 @@ func (h *Handler) HandleOutboundTestConnectivity(c telebot.Context) error {
 			result.LatencyMs, result.StatusCode)
 		if result.IP != "" {
 			msg += fmt.Sprintf("\n🌐 *Exit IP:* `%s`", result.IP)
+		}
+		if result.Country != "" {
+			msg += fmt.Sprintf("\n📍 *Exit Country:* `%s`", result.Country)
 		}
 		if result.Message != "" {
 			msg += fmt.Sprintf("\n💬 `%s`", result.Message)

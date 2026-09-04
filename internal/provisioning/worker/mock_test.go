@@ -281,7 +281,7 @@ func (m *mockNodeUsecase) ToggleOutboundDisabled(context.Context, uint) (*nodeDo
 }
 
 // Outbound Testing
-func (m *mockNodeUsecase) TestOutbound(context.Context, uint, string) (*agent.OutboundTestResult, error) {
+func (m *mockNodeUsecase) TestOutbound(context.Context, uint, nodeUC.OutboundTestOptions) (*nodeUC.OutboundTestOutcome, error) {
 	return nil, nil
 }
 
@@ -423,8 +423,9 @@ func (m *mockNodeUsecase) SetWGPeerSource(nodeUC.WGPeerSource)      {}
 func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
 func (m *mockNodeUsecase) SetRouterWANSource(func(context.Context) []xray.RouterWAN) {
 }
-func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)     {}
-func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)    {}
+func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)               {}
+func (m *mockNodeUsecase) SetInboundsChangedHook(func(context.Context) error) {}
+func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)              {}
 
 // Geofile Management
 func (m *mockNodeUsecase) UpdateGeoFiles(context.Context, uint, string, string, string) error {

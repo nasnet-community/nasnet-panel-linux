@@ -442,8 +442,8 @@ github.com/libdns/cloudflare v0.2.2 h1:XWHv+C1dDcApqazlh08Q6pjytYLgR2a+Y3xrXFu0v
 github.com/libdns/cloudflare v0.2.2/go.mod h1:w9uTmRCDlAoafAsTPnn2nJ0XHK/eaUMh86DUk8BWi60=
 github.com/libdns/libdns v1.1.1 h1:wPrHrXILoSHKWJKGd0EiAVmiJbFShguILTg9leS/P/U=
 github.com/libdns/libdns v1.1.1/go.mod h1:4Bj9+5CQiNMVGf87wjX4CY3HQJypUHRuLvlsfsZqLWQ=
-github.com/lilendian0x00/xray-knife/v10 v10.1.1 h1:FtsYgIyEiU0dT/wadJKpGO4LVRAsU8snVaCm/Gn04vI=
-github.com/lilendian0x00/xray-knife/v10 v10.1.1/go.mod h1:Jsr8ngWS1FtmxUz3k4fKytjDdBBPZakN102uPFkxzKs=
+github.com/lilendian0x00/xray-knife/v11 v11.0.0 h1:ZARswa8p5QYGmuXBMioHVhiHaQJLyhh1d4FVcbl+tEw=
+github.com/lilendian0x00/xray-knife/v11 v11.0.0/go.mod h1:QxUnoIPmFljJshRm65DB4uRi+QTu5PLXLdRZkaNQ1fI=
 github.com/logrusorgru/aurora v2.0.3+incompatible h1:tOpm7WcpBTn4fjmVfgpQq0EfczGlG91VSDkswnjF5A8=
 github.com/logrusorgru/aurora v2.0.3+incompatible/go.mod h1:7rIyQOR62GCctdiQpZ/zOJlFyk6y+94wXzv6RNZgaR4=
 github.com/lucasb-eyer/go-colorful v1.2.0 h1:1nnpGOrhyZZuNyfu1QjKiUICQ74+3FNCN69Aj6K7nkY=

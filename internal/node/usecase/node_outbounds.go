@@ -359,48 +359,160 @@ func (u *nodeUsecase) SyncOutbounds(ctx context.Context, nodeID uint) (*SyncResu
 	}, nil
 }
 
-// TestOutbound tests outbound connectivity via the agent using xray-knife
-func (u *nodeUsecase) TestOutbound(ctx context.Context, outboundID uint, testURL string) (*agent.OutboundTestResult, error) {
+// OutboundTestOptions are per-request overrides for a single outbound test.
+// Everything not set here comes from the node's OutboundTestSettings.
+type OutboundTestOptions struct {
+	TestURL   string // overrides the node's configured test URL
+	Speedtest bool   // also measure throughput (opt-in: it burns upstream traffic)
+}
+
+// OutboundTestOutcome is a test result paired with the moment it was taken.
+// Both halves are persisted on the outbound, so the panel renders the same
+// values after a reload as it did right after the test.
+type OutboundTestOutcome struct {
+	Result   *domain.OutboundTestResult `json:"result"`
+	TestedAt time.Time                  `json:"tested_at"`
+}
+
+// TestOutbound tests outbound connectivity via the agent using xray-knife and
+// records the outcome on the outbound.
+func (u *nodeUsecase) TestOutbound(ctx context.Context, outboundID uint, opts OutboundTestOptions) (*OutboundTestOutcome, error) {
 	outbound, err := u.nodeRepo.GetOutboundWithNode(ctx, outboundID)
 	if err != nil {
 		return nil, ErrOutboundNotFound
 	}
-
-	// Freedom/blackhole don't need testing
-	if outbound.Protocol == "freedom" || outbound.Protocol == "blackhole" {
-		return &agent.OutboundTestResult{
+	// Protocols with nothing to probe are answered without needing a node at all.
+	if !outbound.IsTestable() {
+		return u.recordTestResult(ctx, outbound.ID, &domain.OutboundTestResult{
 			Success: true,
+			Status:  domain.OutboundTestNotApplicable,
 			Message: fmt.Sprintf("N/A - %s outbound", outbound.Protocol),
-		}, nil
+		}), nil
 	}
 
-	// Require agent
 	if outbound.Node == nil {
 		return nil, fmt.Errorf("outbound testing requires a node")
 	}
 
-	// Generate config link from outbound domain model
-	configLink, err := link.Generate(outbound)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate config link: %w", err)
-	}
-
-	// Determine test URL (request param > node setting > default)
+	settings := outbound.Node.GetOutboundTestSettingsOrDefault()
+	testURL := opts.TestURL
 	if testURL == "" {
-		rs := outbound.Node.GetRoutingSettingsOrDefault()
-		if rs.OutboundTestURL != "" {
-			testURL = rs.OutboundTestURL
-		}
+		testURL = settings.TestURL
 	}
 
-	// Connect to agent and test
+	// Freedom has no share-link to build — the agent probes its own egress, and
+	// a raw probe has no throughput mode. Dropping the flag here (rather than
+	// letting the agent refuse) keeps a caller that asked for one from
+	// overwriting a good stored result with a refusal.
+	speedtest := opts.Speedtest && outbound.Protocol != "freedom"
+
+	spec := &agent.OutboundTestSpec{
+		TestURL:     testURL,
+		MaxDelayMs:  int32(settings.MaxDelayMs),
+		Retries:     int32(settings.Retries),
+		InsecureTLS: *settings.InsecureTLS,
+		Speedtest:   speedtest,
+		SpeedtestKb: int32(settings.SpeedtestKb),
+	}
+
+	if outbound.Protocol == "freedom" {
+		spec.DirectProbe = true
+	} else {
+		configLink, err := link.Generate(outbound)
+		if err != nil {
+			return nil, fmt.Errorf("cannot generate config link: %w", err)
+		}
+		spec.ConfigLink = configLink
+	}
+
 	client, err := u.getAgentClient(outbound.Node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to agent: %w", err)
 	}
 	defer closeAgentClient(client)
 
-	return client.TestOutbound(ctx, configLink, testURL, 15*time.Second)
+	rpcCtx, cancel := context.WithTimeout(ctx, outboundTestBudget(settings, speedtest))
+	defer cancel()
+
+	agentResult, err := client.TestOutbound(rpcCtx, spec)
+	if err != nil {
+		return u.recordTestResult(ctx, outbound.ID, &domain.OutboundTestResult{
+			Success: false,
+			Status:  domain.OutboundTestFailed,
+			Error:   "agent: " + err.Error(),
+		}), nil
+	}
+
+	result := &domain.OutboundTestResult{
+		Success:      agentResult.Success,
+		Status:       agentResult.Status,
+		LatencyMs:    agentResult.LatencyMs,
+		TTFBMs:       agentResult.TTFBMs,
+		ConnectMs:    agentResult.ConnectMs,
+		StatusCode:   agentResult.StatusCode,
+		IP:           agentResult.IP,
+		Country:      agentResult.Country,
+		DownloadMbps: agentResult.DownloadMbps,
+		UploadMbps:   agentResult.UploadMbps,
+		Speedtest:    speedtest,
+		Error:        agentResult.Error,
+		Message:      agentResult.Message,
+	}
+	// Agents predating the v2 response fields report success as a bare bool.
+	if result.Status == "" {
+		if result.Success {
+			result.Status = domain.OutboundTestPassed
+		} else {
+			result.Status = domain.OutboundTestFailed
+		}
+	}
+
+	return u.recordTestResult(ctx, outbound.ID, result), nil
+}
+
+// Hard ceilings on how long one test may occupy the RPC, whatever the node's
+// settings say. The panel's HTTP client has to be able to outwait these or the
+// browser gives up on a test the agent then completes for nobody.
+const (
+	maxOutboundTestBudget          = 90 * time.Second
+	maxOutboundSpeedtestBudget     = 240 * time.Second
+	outboundTestSetupSlack         = 15 * time.Second
+	outboundSpeedtestDirectionCost = 60 * time.Second // knife: 30s per direction, doubled for slack
+)
+
+// outboundTestBudget bounds the agent RPC. The tester makes 1+Retries attempts,
+// each able to burn the full max delay, plus setup for the temporary core
+// instance, plus the two speedtest directions when those are requested.
+func outboundTestBudget(settings *domain.OutboundTestSettings, speedtest bool) time.Duration {
+	attempts := 1 + settings.Retries
+	budget := time.Duration(settings.MaxDelayMs)*time.Millisecond*time.Duration(attempts) + outboundTestSetupSlack
+
+	cap := maxOutboundTestBudget
+	if speedtest {
+		budget += 2 * outboundSpeedtestDirectionCost
+		cap = maxOutboundSpeedtestBudget
+	}
+	if budget > cap {
+		budget = cap
+	}
+	return budget
+}
+
+// recordTestResult persists a result and returns it paired with its timestamp.
+// A persistence failure is logged, never surfaced: the caller asked for a test,
+// and the test itself succeeded or failed on its own merits.
+func (u *nodeUsecase) recordTestResult(ctx context.Context, outboundID uint, result *domain.OutboundTestResult) *OutboundTestOutcome {
+	testedAt := time.Now()
+	// Detached from the request: a test that outlives the browser's patience
+	// (or a Test All the operator navigated away from) has still produced a
+	// real verdict, and dropping it would leave a stale result on screen.
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := u.nodeRepo.UpdateOutboundTestResult(writeCtx, outboundID, result, testedAt); err != nil {
+		logger.GetLogger().WithError(err).WithField("outbound_id", outboundID).
+			Warn("[TestOutbound] Failed to persist test result")
+	}
+	return &OutboundTestOutcome{Result: result, TestedAt: testedAt}
 }
 
 func (u *nodeUsecase) DiscoverOutbounds(ctx context.Context, nodeID uint) ([]*domain.Outbound, error) {

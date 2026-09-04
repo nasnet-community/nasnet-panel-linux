@@ -1,5 +1,5 @@
 import { api, type ApiResponse } from "@/lib/api"
-import type { Outbound, OutboundTestResult } from "@/lib/types"
+import type { Outbound, OutboundTestEntry, OutboundTestSettings } from "@/lib/types"
 
 export async function listNodeOutbounds(nodeId: number): Promise<ApiResponse<Outbound[]>> {
     return api.get<Outbound[]>(`/api/v1/nodes/${nodeId}/outbounds`)
@@ -17,8 +17,35 @@ export async function deleteNodeOutbound(nodeId: number, outboundId: number): Pr
     return api.delete<void>(`/api/v1/outbounds/${outboundId}`)
 }
 
-export async function testOutbound(outboundId: number, testUrl?: string): Promise<ApiResponse<OutboundTestResult>> {
-    return api.post<OutboundTestResult>(`/api/v1/outbounds/${outboundId}/test`, testUrl ? { test_url: testUrl } : {})
+// The default 30s client timeout is far below what a test may legitimately
+// take, so the browser would abort a run the agent goes on to finish. These
+// sit above the hard budget ceilings the usecase enforces.
+const TEST_TIMEOUT_MS = 120_000
+const SPEEDTEST_TIMEOUT_MS = 300_000
+
+export async function testOutbound(
+    outboundId: number,
+    opts?: { testUrl?: string; speedtest?: boolean },
+): Promise<ApiResponse<OutboundTestEntry>> {
+    const body: Record<string, unknown> = {}
+    if (opts?.testUrl) body.test_url = opts.testUrl
+    if (opts?.speedtest) body.speedtest = true
+    return api.post<OutboundTestEntry>(
+        `/api/v1/outbounds/${outboundId}/test`,
+        body,
+        opts?.speedtest ? SPEEDTEST_TIMEOUT_MS : TEST_TIMEOUT_MS,
+    )
+}
+
+export async function getOutboundTestSettings(nodeId: number): Promise<ApiResponse<OutboundTestSettings>> {
+    return api.get<OutboundTestSettings>(`/api/v1/nodes/${nodeId}/outbound-test-settings`)
+}
+
+export async function updateOutboundTestSettings(
+    nodeId: number,
+    settings: OutboundTestSettings,
+): Promise<ApiResponse<OutboundTestSettings>> {
+    return api.put<OutboundTestSettings>(`/api/v1/nodes/${nodeId}/outbound-test-settings`, settings)
 }
 
 export async function toggleOutboundDisabled(outboundId: number): Promise<ApiResponse<Outbound>> {

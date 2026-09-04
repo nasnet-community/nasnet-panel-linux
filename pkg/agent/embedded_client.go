@@ -480,28 +480,49 @@ func (c *EmbeddedClient) UpdateXrayBinary(ctx context.Context, version string, r
 
 // ===== Outbound Testing =====
 
-func (c *EmbeddedClient) TestOutbound(ctx context.Context, configLink, testURL string, timeout time.Duration) (*OutboundTestResult, error) {
-	timeoutSecs := int32(timeout.Seconds())
-	if timeoutSecs == 0 {
-		timeoutSecs = 10
+// outboundTestRequest maps a spec onto the wire message. TimeoutSeconds is kept
+// populated so an agent predating the option fields still gets a sane timeout.
+func outboundTestRequest(spec *OutboundTestSpec) *pb.OutboundTestRequest {
+	maxDelay := spec.MaxDelayMs
+	if maxDelay <= 0 {
+		maxDelay = 5000
 	}
-	resp, err := c.srv.TestOutbound(ctx, &pb.OutboundTestRequest{
-		ConfigLink:     configLink,
-		TestUrl:        testURL,
-		TimeoutSeconds: timeoutSecs,
-	})
+	return &pb.OutboundTestRequest{
+		ConfigLink:     spec.ConfigLink,
+		TestUrl:        spec.TestURL,
+		TimeoutSeconds: (maxDelay + 999) / 1000,
+		MaxDelayMs:     maxDelay,
+		Retries:        spec.Retries,
+		InsecureTls:    spec.InsecureTLS,
+		Speedtest:      spec.Speedtest,
+		SpeedtestKb:    spec.SpeedtestKb,
+		DirectProbe:    spec.DirectProbe,
+	}
+}
+
+func outboundTestResult(resp *pb.OutboundTestResponse) *OutboundTestResult {
+	return &OutboundTestResult{
+		Success:      resp.Success,
+		Status:       resp.Status,
+		LatencyMs:    resp.LatencyMs,
+		TTFBMs:       resp.TtfbMs,
+		ConnectMs:    resp.ConnectTimeMs,
+		StatusCode:   resp.StatusCode,
+		IP:           resp.Ip,
+		Country:      resp.Country,
+		DownloadMbps: resp.DownloadMbps,
+		UploadMbps:   resp.UploadMbps,
+		Error:        resp.Error,
+		Message:      resp.Message,
+	}
+}
+
+func (c *EmbeddedClient) TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error) {
+	resp, err := c.srv.TestOutbound(ctx, outboundTestRequest(spec))
 	if err != nil {
 		return nil, err
 	}
-	return &OutboundTestResult{
-		Success:    resp.Success,
-		LatencyMs:  resp.LatencyMs,
-		StatusCode: resp.StatusCode,
-		IP:         resp.Ip,
-		Country:    resp.Country,
-		Error:      resp.Error,
-		Message:    resp.Message,
-	}, nil
+	return outboundTestResult(resp), nil
 }
 
 // ===== Online User Detection =====

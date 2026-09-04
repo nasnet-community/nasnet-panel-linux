@@ -503,8 +503,14 @@ message UpdateXrayRequest {
 
 message OutboundTestRequest {
   string config_link = 1;     // Protocol link (vless://..., vmess://..., etc.)
-  string test_url = 2;        // URL to fetch through proxy (default: https://www.google.com/generate_204)
-  int32 timeout_seconds = 3;  // Per-test timeout (default: 10s)
+  string test_url = 2;        // URL to fetch through proxy (default: https://cloudflare.com/cdn-cgi/trace)
+  int32 timeout_seconds = 3;  // Legacy per-test timeout; honored when max_delay_ms is unset
+  int32 max_delay_ms = 4;     // Max acceptable delay / HTTP timeout (default 5000, capped at 65535)
+  int32 retries = 5;          // Retry count, best result wins (default 1)
+  bool insecure_tls = 6;      // Skip TLS verification during the test
+  bool speedtest = 7;         // Also measure download/upload speed
+  int32 speedtest_kb = 8;     // Speedtest payload per direction in KB (default 10000)
+  bool direct_probe = 9;      // Skip xray-knife: plain HTTP probe (freedom outbounds)
 }
 
 message OutboundTestResponse {
@@ -515,6 +521,11 @@ message OutboundTestResponse {
   string country = 5;         // Exit country code (optional)
   string error = 6;           // Error message if failed
   string message = 7;         // Human-readable summary
+  string status = 8;          // passed | semi-passed | failed | timeout | broken
+  int64 ttfb_ms = 9;          // Time to first byte in milliseconds
+  int64 connect_time_ms = 10; // Connection establishment time in milliseconds
+  double download_mbps = 11;  // Download speed (speedtest only)
+  double upload_mbps = 12;    // Upload speed (speedtest only)
 }
 
 // ===== Online User Detection Messages =====
