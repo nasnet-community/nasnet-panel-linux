@@ -84,7 +84,6 @@ import {
     useOnlineUsersWithIPs,
 } from "@/lib/queries"
 import { useSubscriptionsStore, type SubscriptionSortField } from "@/store/subscriptions-store"
-import { useQueryClient } from "@tanstack/react-query"
 import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
 import { toast } from "sonner"
 import { Plus, Trash2, Pause, Play, X as XIcon, Ban, Wifi, Network } from "lucide-react"
@@ -200,7 +199,6 @@ function TableSkeleton() {
 }
 
 export default function SubscriptionsPage() {
-    const queryClient = useQueryClient()
     const confirmDialog = useConfirm()
     const perPage = 20
 
@@ -393,10 +391,6 @@ export default function SubscriptionsPage() {
         })
     }
 
-    const handleRefresh = () => {
-        queryClient.invalidateQueries({ queryKey: ['subscriptions'] })
-    }
-
     const isAnyMutationPending = pauseMutation.isPending || resumeMutation.isPending || revokeMutation.isPending || resetDataMutation.isPending || deleteMutation.isPending || bulkActionMutation.isPending || bulkBandwidthMutation.isPending
 
     const canToggle = (sub: Subscription) => sub.status === "active" || sub.status === "paused"
@@ -423,7 +417,6 @@ export default function SubscriptionsPage() {
                         />
                         <div className="flex-1" />
                         <AutoRefreshControl
-                            onRefresh={handleRefresh}
                             isRefreshing={isRefetching}
                             dataUpdatedAt={dataUpdatedAt}
                         />
@@ -1263,7 +1256,6 @@ export default function SubscriptionsPage() {
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground mb-2 block">Auto Refresh</label>
                                 <AutoRefreshControl
-                                    onRefresh={handleRefresh}
                                     isRefreshing={isRefetching}
                                     dataUpdatedAt={dataUpdatedAt}
                                 />

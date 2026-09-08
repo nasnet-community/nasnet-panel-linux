@@ -37,6 +37,7 @@ import {
     type UsageHistoryPoint,
 } from "@/lib/api/subscriptions"
 import { queryKeys } from "./keys"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import { toast } from "sonner"
 
 // ==================== Types ====================
@@ -57,6 +58,7 @@ export interface UseSubscriptionsParams {
 
 // List subscriptions with filters
 export function useSubscriptions(params: UseSubscriptionsParams) {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.subscriptionList(params),
         queryFn: async () => {
@@ -74,6 +76,8 @@ export function useSubscriptions(params: UseSubscriptionsParams) {
             if (!res.success) throw new Error(res.error || "Failed to fetch subscriptions")
             return Array.isArray(res.data) ? res.data : []
         },
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 
