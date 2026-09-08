@@ -39,7 +39,10 @@ export const ROLE_LABELS: Record<InterfaceRole, string> = {
 }
 
 const SLOT_LABELS: Record<Exclude<UplinkSlot, "">, string> = {
-    domestic: "Domestic ISP",
+    domestic: "Domestic 1",
+    domestic2: "Domestic 2",
+    domestic3: "Domestic 3",
+    domestic4: "Domestic 4",
     secondary: "Secondary 1",
     secondary2: "Secondary 2",
     secondary3: "Secondary 3",
@@ -96,6 +99,10 @@ export function linkLabel(iface: NetworkInterfaceView, uplink?: UplinkView): str
     if (!iface.present) return "absent"
     if (uplink?.verdict) return uplink.verdict.replace("-", " ")
     return iface.carrier ? "up" : iface.oper_state || "down"
+}
+
+export function isDomesticSlot(slot: UplinkSlot): boolean {
+    return slot.startsWith("domestic")
 }
 
 export function isSecondarySlot(slot: UplinkSlot): boolean {

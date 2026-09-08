@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { ChevronDown, TriangleAlert } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -39,9 +40,15 @@ export interface RoleChoice {
     note?: string
 }
 
+const BACKUP_DOMESTIC_NOTE =
+    "Backup line, used when the ones before it fail. Its router must sit on a different subnet."
+
 export const ROLE_CHOICES: RoleChoice[] = [
     { value: "unassigned", label: "Unassigned", role: "unassigned", slot: "" },
-    { value: "wan:domestic", label: "Domestic ISP", role: "wan", slot: "domestic" },
+    { value: "wan:domestic", label: "Domestic 1", role: "wan", slot: "domestic" },
+    { value: "wan:domestic2", label: "Domestic 2", role: "wan", slot: "domestic2", note: BACKUP_DOMESTIC_NOTE },
+    { value: "wan:domestic3", label: "Domestic 3", role: "wan", slot: "domestic3", note: BACKUP_DOMESTIC_NOTE },
+    { value: "wan:domestic4", label: "Domestic 4", role: "wan", slot: "domestic4", note: BACKUP_DOMESTIC_NOTE },
     { value: "wan:secondary", label: "Secondary 1", role: "wan", slot: "secondary" },
     { value: "wan:secondary2", label: "Secondary 2", role: "wan", slot: "secondary2" },
     { value: "wan:secondary3", label: "Secondary 3", role: "wan", slot: "secondary3" },
@@ -273,9 +280,11 @@ interface RoleSelectProps {
 
 function RoleSelect({ iface, interfaces, onAssign, disabled }: RoleSelectProps) {
     const assigned = iface.role !== "unassigned"
+    const value = choiceValue(iface)
+    const current = ROLE_CHOICES.find((c) => c.value === value)
     return (
         <Select
-            value={choiceValue(iface)}
+            value={value}
             disabled={disabled}
             onValueChange={(v) => {
                 const choice = ROLE_CHOICES.find((c) => c.value === v)
@@ -289,7 +298,8 @@ function RoleSelect({ iface, interfaces, onAssign, disabled }: RoleSelectProps) 
                     assigned ? "font-medium" : "text-text-tertiary",
                 )}
             >
-                <SelectValue />
+                {/* Label only: the item's note would land in the trigger and shove it off centre. */}
+                <SelectValue>{current?.label}</SelectValue>
             </SelectTrigger>
             <SelectContent>
                 {ROLE_CHOICES.map((c) => {
@@ -311,6 +321,7 @@ function RoleSelect({ iface, interfaces, onAssign, disabled }: RoleSelectProps) 
 }
 
 interface Props {
+    onConfigure?: (iface: NetworkInterfaceView) => void
     interfaces: NetworkInterfaceView[]
     onAssign: (iface: NetworkInterfaceView, choice: RoleChoice) => void
     disabled?: boolean
@@ -318,9 +329,11 @@ interface Props {
     uplinks?: UplinkView[]
 }
 
-export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Props) {
+export function InterfaceTable({ interfaces, onAssign, onConfigure, disabled, uplinks }: Props) {
     const uplinkFor = (iface: NetworkInterfaceView) =>
         uplinks?.find((u) => u.if_name === iface.if_name)
+    const configure = (iface: NetworkInterfaceView) => onConfigure && iface.role === "wan" && !iface.source.startsWith("wwan_") && iface.wan?.method !== "rawip"
+        ? <Button variant="ghost" size="sm" disabled={disabled || !iface.present} aria-label={`Configure WAN ${iface.label || iface.if_name}`} onClick={() => onConfigure(iface)}>Configure</Button> : null
     const rows = interfaces.filter((i) => i.assignable)
 
     if (rows.length === 0) {
@@ -372,6 +385,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Prop
                                             disabled={disabled}
                                         />
                                     </div>
+                                    {configure(iface)}
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -402,6 +416,7 @@ export function InterfaceTable({ interfaces, onAssign, disabled, uplinks }: Prop
                             onAssign={onAssign}
                             disabled={disabled}
                         />
+                        {configure(iface)}
                     </div>
                 ))}
             </div>

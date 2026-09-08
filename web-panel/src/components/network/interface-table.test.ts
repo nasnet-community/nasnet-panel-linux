@@ -73,6 +73,16 @@ describe("the LAN roles explain themselves in the picker", () => {
     // The uplink slots are named well enough already; a note there is noise.
     it("leaves the self-explanatory roles unannotated", () => {
         expect(noteFor("wan:domestic")).toBeUndefined()
+        expect(noteFor("wan:secondary")).toBeUndefined()
         expect(noteFor("unassigned")).toBeUndefined()
+    })
+
+    // Two ISP routers both on 192.168.1.0/24 is the common failure; V30 warns
+    // after the fact, the picker says it before.
+    it("warns that a backup domestic line needs its own subnet", () => {
+        for (const v of ["wan:domestic2", "wan:domestic3", "wan:domestic4"]) {
+            expect(noteFor(v)).toMatch(/different subnet/i)
+            expect(noteFor(v)).toMatch(/backup/i)
+        }
     })
 })

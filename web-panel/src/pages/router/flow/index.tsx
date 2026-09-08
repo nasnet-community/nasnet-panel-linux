@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router"
-import { ArrowLeft, Download, Network, RefreshCw, TriangleAlert } from "lucide-react"
+import { ArrowLeft, Download, Network, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Label } from "@/components/ui/label"
@@ -16,7 +16,6 @@ import { exportDebugBundle } from "@/components/flow/flow-export"
 import { useRates } from "@/components/flow/use-rates"
 import { useFlowConns, useFlowEvents, useFlowGraph } from "@/lib/queries/use-flow"
 import { usePageTitle } from "@/hooks/use-page-title"
-import { cn } from "@/lib/utils"
 import type { TraceView } from "@/lib/types/flow"
 
 const DNS_OVERLAY_KEY = "flow-dns-overlay"
@@ -110,12 +109,6 @@ export default function TrafficFlowPage() {
                     >
                         <Download className="mr-1.5 h-3.5 w-3.5" />
                         Export
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => void flow.refetch()}>
-                        <RefreshCw
-                            className={cn("h-3.5 w-3.5", flow.isFetching && "animate-spin")}
-                        />
-                        <span className="sr-only">Refresh</span>
                     </Button>
                 </div>
             </div>

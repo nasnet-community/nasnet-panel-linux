@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link } from "react-router"
-import { Info, Network, RefreshCw, TriangleAlert, Waypoints } from "lucide-react"
+import { Info, Network, TriangleAlert, Waypoints } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { WANConfigSheet, type WANEditorTarget } from "@/components/router/wan-config-sheet"
+import { ApiError } from "@/lib/api"
 import { HealthStrip } from "@/components/router/health-strip"
 import { LanTab } from "@/pages/router/lan-tab"
 import { PortForwardsTab } from "@/pages/router/port-forwards-tab"
@@ -28,8 +30,7 @@ import {
     usePortForwards,
     useRadios,
 } from "@/lib/queries/use-network"
-import { remainingSeconds } from "@/lib/api/network"
-import { missingRoleHint, uncoveredWarnings } from "@/lib/network-labels"
+import { isDomesticSlot, missingRoleHint, uncoveredWarnings } from "@/lib/network-labels"
 import { queryKeys } from "@/lib/queries/keys"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
@@ -113,6 +114,7 @@ export default function NetworkPage() {
     const forwards = usePortForwards()
     const radios = useRadios()
 
+    const [wanTarget, setWANTarget] = useState<WANEditorTarget | null>(null)
     const [dialogOpen, setDialogOpen] = useState(false)
     const [pending, setPending] = useState<AssignRoleRequest | null>(null)
     const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -134,7 +136,7 @@ export default function NetworkPage() {
     )
 
     const altOrigin = useMemo(() => {
-        const lan = state.data?.uplinks?.find((u) => u.slot === "domestic")
+        const lan = state.data?.uplinks?.find((u) => isDomesticSlot(u.slot))
         const addr = lan?.addrs?.[0]?.split("/")[0]
         return addr ? `${window.location.protocol}//${addr}:${window.location.port}` : ""
     }, [state.data])
@@ -142,12 +144,12 @@ export default function NetworkPage() {
     const freshness = useFreshness(state.dataUpdatedAt)
 
     // Router mode off 404s every route, so an error means "hide the section".
-    if (state.isError) {
+    if (state.isError && !state.data && !wanTarget) {
         return (
             <EmptyState
                 icon={Network}
-                title="Router mode is not enabled"
-                description="This box is running as a VPN panel only. Router mode is enabled by nasnet-tool at install time."
+                title={state.error instanceof ApiError && state.error.status === 404 ? "Router mode is not enabled" : "Cannot reach the router"}
+                description={state.error instanceof ApiError && state.error.status === 404 ? "This box is running as a VPN panel only. Router mode is enabled by nasnet-tool at install time." : "Check your connection and reload. If a network change is pending, reconnect through the LAN or management address to check its result."}
             />
         )
     }
@@ -158,6 +160,10 @@ export default function NetworkPage() {
 
     function onAssign(iface: NetworkInterfaceView, choice: RoleChoice) {
         const req = buildAssignRequest(interfaces.data ?? [], iface, choice)
+        if (req.role === "wan" && !iface.source.startsWith("wwan_") && iface.wan?.method !== "rawip") {
+            setWANTarget({ iface, request: req })
+            return
+        }
         setPending(req)
         plan.mutate(req)
         setDialogOpen(true)
@@ -166,8 +172,11 @@ export default function NetworkPage() {
     const rows = interfaces.data ?? []
     const uplinkCount = state.data?.uplinks?.length ?? 0
     const setupPending = !!state.data && !state.data.takeover_done
-    const armed =
-        !!state.data?.pending_plan_id && remainingSeconds(state.data.confirm_deadline_unix) > 0
+    const armed = !!state.data?.pending_plan_id
+    const configureWAN = (iface: NetworkInterfaceView) => {
+        if (armed || apply.isPending || !iface.present || iface.source.startsWith("wwan_") || iface.wan?.method === "rawip") return
+        setWANTarget({ iface, request: { interface_id: iface.id, role: "wan", slot: iface.slot } })
+    }
     const warnings = uncoveredWarnings(state.data?.warnings)
     const roleHint = missingRoleHint(rows)
 
@@ -192,24 +201,10 @@ export default function NetworkPage() {
                             Traffic flow
                         </Link>
                     </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={refresh}
-                        disabled={state.isFetching || interfaces.isFetching}
-                    >
-                        <RefreshCw
-                            className={cn(
-                                "mr-1.5 h-3.5 w-3.5",
-                                (state.isFetching || interfaces.isFetching) && "animate-spin",
-                            )}
-                        />
-                        Refresh
-                    </Button>
                 </div>
             </div>
 
-            {armed && state.data && (
+            {armed && state.data && !wanTarget && (
                 <ArmedChangeBar
                     planId={state.data.pending_plan_id}
                     deadlineUnix={state.data.confirm_deadline_unix}
@@ -249,7 +244,7 @@ export default function NetworkPage() {
             ))}
 
             {/* First thing an operator checks; lives above the tabs. */}
-            {!setupPending && uplinkCount > 0 && <HealthStrip interfaces={rows} />}
+            {!setupPending && uplinkCount > 0 && <HealthStrip interfaces={rows} onConfigure={armed ? undefined : configureWAN} />}
 
             <Tabs defaultValue="ports" className="space-y-6">
                 <TabsList variant="line">
@@ -300,12 +295,10 @@ export default function NetworkPage() {
                 {/* The tab is already called Ports, and every uplink describes
                     itself on its own health card, so the table stands alone. */}
                 <TabsContent value="ports" className="mt-0 space-y-3">
-                    <p className="text-text-tertiary text-sm">
-                        Picking a role opens a review step — nothing changes until you apply.
-                    </p>
                     <InterfaceTable
                         interfaces={rows}
                         onAssign={onAssign}
+                        onConfigure={configureWAN}
                         disabled={apply.isPending || armed}
                         uplinks={state.data?.uplinks}
                     />
@@ -329,6 +322,7 @@ export default function NetworkPage() {
                 </TabsContent>
             </Tabs>
 
+            {wanTarget && <WANConfigSheet target={wanTarget} live={state.data?.uplinks.find((u) => u.if_name === wanTarget.iface.if_name)} onClose={() => { setWANTarget(null); refresh() }} />}
             <ApplyDialog
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
