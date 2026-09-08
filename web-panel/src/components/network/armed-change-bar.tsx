@@ -57,11 +57,7 @@ export function ArmedChangeBar({ planId, deadlineUnix, altOrigin, onSettled }: P
                             A network change is waiting for confirmation
                         </p>
                         <p className="text-text-secondary text-sm">
-                            Reverting in{" "}
-                            <span className="text-status-warning font-mono font-medium tabular-nums">
-                                {left}s
-                            </span>{" "}
-                            unless you keep it. If the box is unreachable, do nothing.
+                            {left > 0 ? <>Reverting in <span className="text-status-warning font-mono font-medium tabular-nums">{left}s</span> unless you keep it. If the box is unreachable, do nothing.</> : "Confirmation window ended. Waiting for the router to report recovery."}
                         </p>
                     </div>
                 </div>
@@ -72,7 +68,7 @@ export function ArmedChangeBar({ planId, deadlineUnix, altOrigin, onSettled }: P
                         size="sm"
                         disabled={rollback.isPending || keeping}
                         onClick={() =>
-                            rollback.mutate(undefined, {
+                            rollback.mutate(planId, {
                                 onSuccess: () => {
                                     toast.success("Change reverted")
                                     onSettled()
@@ -86,7 +82,7 @@ export function ArmedChangeBar({ planId, deadlineUnix, altOrigin, onSettled }: P
                     >
                         Revert now
                     </Button>
-                    <Button size="sm" disabled={keeping} onClick={() => void keep()}>
+                    <Button size="sm" disabled={keeping || rollback.isPending || left <= 0} onClick={() => void keep()}>
                         {keeping ? "Confirming…" : "Keep these settings"}
                     </Button>
                 </div>
