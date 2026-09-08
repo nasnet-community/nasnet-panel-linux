@@ -75,4 +75,16 @@ export default tseslint.config(
             globals: globals.node,
         },
     },
+
+    // Hand-run drills, not part of the bundle.
+    {
+        files: ["scripts/**/*.{js,cjs,mjs}"],
+        languageOptions: {
+            sourceType: "commonjs",
+            globals: globals.node,
+        },
+        rules: {
+            "@typescript-eslint/no-require-imports": "off",
+        },
+    },
 )
