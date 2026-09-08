@@ -42,6 +42,28 @@ func startFakePXP(t *testing.T) *fakePXP {
 
 func (f *fakePXP) port() int { return f.conn.LocalAddr().(*net.UDPAddr).Port }
 
+// What serve answers with. Tests set it after the server is already running,
+// so it rides the same lock lastNonce does.
+type pxpReplies struct {
+	pmpResult uint16
+	pcpResult uint8
+	epoch     uint32
+	extIP     [4]byte
+	grant     func(internal uint16) uint16
+}
+
+func (f *fakePXP) set(fn func(*fakePXP)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fn(f)
+}
+
+func (f *fakePXP) replies() pxpReplies {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return pxpReplies{f.pmpResult, f.pcpResult, f.epoch, f.extIP, f.grant}
+}
+
 func (f *fakePXP) nonce() [12]byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -56,25 +78,26 @@ func (f *fakePXP) serve() {
 			return
 		}
 		pkt := buf[:n]
+		r := f.replies()
 		switch pkt[0] {
 		case 0: // NAT-PMP
 			switch pkt[1] {
 			case 0:
 				out := make([]byte, 12)
 				out[1] = 0x80
-				binary.BigEndian.PutUint16(out[2:], f.pmpResult)
-				binary.BigEndian.PutUint32(out[4:], f.epoch)
-				copy(out[8:], f.extIP[:])
+				binary.BigEndian.PutUint16(out[2:], r.pmpResult)
+				binary.BigEndian.PutUint32(out[4:], r.epoch)
+				copy(out[8:], r.extIP[:])
 				f.conn.WriteToUDP(out, from)
 			case 1, 2:
 				out := make([]byte, 16)
 				out[1] = 0x80 | pkt[1]
-				binary.BigEndian.PutUint16(out[2:], f.pmpResult)
-				binary.BigEndian.PutUint32(out[4:], f.epoch)
+				binary.BigEndian.PutUint16(out[2:], r.pmpResult)
+				binary.BigEndian.PutUint32(out[4:], r.epoch)
 				copy(out[8:10], pkt[4:6])
 				ext := binary.BigEndian.Uint16(pkt[6:8])
-				if f.grant != nil {
-					ext = f.grant(binary.BigEndian.Uint16(pkt[4:6]))
+				if r.grant != nil {
+					ext = r.grant(binary.BigEndian.Uint16(pkt[4:6]))
 				}
 				binary.BigEndian.PutUint16(out[10:], ext)
 				copy(out[12:16], pkt[8:12])
@@ -88,9 +111,9 @@ func (f *fakePXP) serve() {
 			}
 			out := make([]byte, 60)
 			out[0], out[1] = 2, pkt[1]|0x80
-			out[3] = f.pcpResult
+			out[3] = r.pcpResult
 			copy(out[4:8], pkt[4:8])
-			binary.BigEndian.PutUint32(out[8:], f.epoch)
+			binary.BigEndian.PutUint32(out[8:], r.epoch)
 			if pkt[1] == 1 && n >= 60 {
 				copy(out[24:44], pkt[24:44]) // nonce, proto, ports
 				copy(out[44:60], []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 203, 0, 113, 7})
@@ -173,9 +196,8 @@ func TestProbeAllProtocols(t *testing.T) {
 
 func TestProbeDenied(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.pmpResult = 2 // not authorized
-	pxp.pcpResult = 2
-	c := testClient(pxp.port(), 1) // nothing answers on port 1
+	pxp.set(func(f *fakePXP) { f.pmpResult, f.pcpResult = 2, 2 }) // not authorized
+	c := testClient(pxp.port(), 1)                                // nothing answers on port 1
 	probe, err := c.Probe(context.Background(), testWAN())
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +287,7 @@ func upnpProbe(svcVersion int, controlURL string) PortMapProbe {
 
 func TestMapPMP(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.grant = func(uint16) uint16 { return 60001 }
+	pxp.set(func(f *fakePXP) { f.grant = func(uint16) uint16 { return 60001 } })
 	c := testClient(pxp.port(), 1)
 	probe := PortMapProbe{PMP: true, SeenAt: time.Now()}
 	lease, err := c.Map(context.Background(), testWAN(), probe,
@@ -287,7 +309,7 @@ func TestMapPMP(t *testing.T) {
 
 func TestMapPMPDenied(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.pmpResult = 2
+	pxp.set(func(f *fakePXP) { f.pmpResult = 2 })
 	c := testClient(pxp.port(), 1)
 	_, err := c.Map(context.Background(), testWAN(), PortMapProbe{PMP: true},
 		PortMapRequest{Proto: "udp", InternalPort: 51820})
@@ -315,7 +337,7 @@ func TestMapPCP(t *testing.T) {
 
 func TestMapPCPNested(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.pcpResult = 12 // ADDRESS_MISMATCH: pcp server behind another NAT
+	pxp.set(func(f *fakePXP) { f.pcpResult = 12 }) // pcp server behind another NAT
 	c := testClient(pxp.port(), 1)
 	_, err := c.Map(context.Background(), testWAN(), PortMapProbe{PCP: true},
 		PortMapRequest{Proto: "udp", InternalPort: 51820})
@@ -386,7 +408,7 @@ func TestMapUPnPPermanentFallback(t *testing.T) {
 
 func TestMapFallsBackToTheNextProtocol(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.pmpResult = 2 // NAT-PMP is there and says no
+	pxp.set(func(f *fakePXP) { f.pmpResult = 2 }) // NAT-PMP is there and says no
 	igd := &fakeIGDSoap{serviceVersion: 1, extIP: "203.0.113.7"}
 	srv := httptest.NewServer(igd.handler())
 	t.Cleanup(srv.Close)
@@ -406,7 +428,7 @@ func TestMapFallsBackToTheNextProtocol(t *testing.T) {
 
 func TestMapStopsAtNestedNAT(t *testing.T) {
 	pxp := startFakePXP(t)
-	pxp.pcpResult = 12 // ADDRESS_MISMATCH
+	pxp.set(func(f *fakePXP) { f.pcpResult = 12 }) // ADDRESS_MISMATCH
 	igd := &fakeIGDSoap{serviceVersion: 1, extIP: "203.0.113.7"}
 	srv := httptest.NewServer(igd.handler())
 	t.Cleanup(srv.Close)
