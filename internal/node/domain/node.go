@@ -1033,6 +1033,9 @@ type HappyEyeballsConfig struct {
 
 // CustomSockopt for custom socket options
 type CustomSockopt struct {
+	Type     string      `json:"type,omitempty"`
+	System   string      `json:"system,omitempty"`
+	Network  string      `json:"network,omitempty"`
 	Level    int         `json:"level,omitempty"`
 	OptName  int         `json:"optName,omitempty"`
 	OptValue interface{} `json:"optValue,omitempty"`
