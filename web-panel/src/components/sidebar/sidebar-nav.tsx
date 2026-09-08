@@ -74,9 +74,9 @@ export function SidebarNav({ sections, collapsed, onNavClick, getBadge }: Sideba
                             (collapsed ? (
                                 <div className="mx-2 my-2 border-t border-border/40" />
                             ) : (
-                                <div className="px-3 mt-3 mb-1.5">
-                                    <span className="font-mono text-[10.5px] font-semibold tracking-[0.12em] uppercase text-muted-foreground/70">
-                                        // {section.label.toLowerCase()}
+                                <div className="px-4 mt-3 mb-1.5">
+                                    <span className="text-[11px] font-medium tracking-[0.08em] uppercase text-muted-foreground/70">
+                                        {section.label}
                                     </span>
                                 </div>
                             ))}
@@ -136,7 +136,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                 )}
             >
-                <item.icon className="w-[18px] h-[18px]" />
+                <item.icon className="w-5 h-5" />
                 {showBadge && (
                     <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-white font-mono text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
                         {badge}
@@ -162,7 +162,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                     {isActive && (
                         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
                     )}
-                    <item.icon className="w-4 h-4 shrink-0" />
+                    <item.icon className="w-[18px] h-[18px] shrink-0" />
                     <span className="text-[13.5px] font-medium lowercase whitespace-nowrap">
                         {item.label}
                     </span>
@@ -183,7 +183,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                     >
                         <HiOutlineChevronDown
                             className={cn(
-                                "w-3 h-3 transition-transform duration-200",
+                                "w-3.5 h-3.5 transition-transform duration-200",
                                 expanded ? "rotate-0" : "-rotate-90",
                             )}
                         />
@@ -205,8 +205,8 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                                 to={child.href}
                                 onClick={onClick}
                                 className={cn(
-                                    "relative flex items-center gap-2.5 h-8 rounded-md transition-colors",
-                                    "pl-8 pr-3",
+                                    "relative flex items-center gap-3 h-8 rounded-md transition-colors",
+                                    "pl-11 pr-3",
                                     childActive
                                         ? "bg-primary/10 text-primary font-medium"
                                         : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
@@ -215,8 +215,8 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                                 {childActive && (
                                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-primary" />
                                 )}
-                                <span className="font-mono text-[12.5px] text-muted-foreground/60 select-none">└</span>
-                                <span className="text-[12.5px] font-medium lowercase whitespace-nowrap">
+                                <child.icon className="w-4 h-4 shrink-0" />
+                                <span className="text-[13px] font-medium lowercase whitespace-nowrap">
                                     {child.label}
                                 </span>
                             </Link>
