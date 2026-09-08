@@ -79,16 +79,19 @@ func (u *nodeUsecase) validateProxyChaining(ctx context.Context, outbound *domai
 // ensureUniqueOutboundTag rejects a tag already used by another outbound on the
 // node; duplicate tags stop xray from starting.
 func (u *nodeUsecase) ensureUniqueOutboundTag(ctx context.Context, outbound *domain.Outbound) error {
+	if u.routerMode && domain.IsRouterXrayTag(outbound.Tag) {
+		return fmt.Errorf("outbound tag %q is reserved for a managed router outbound", outbound.Tag)
+	}
 	existing, err := u.nodeRepo.ListOutboundsByNode(ctx, outbound.NodeID)
 	if err != nil {
-		return nil // don't block on a transient list error; push would surface it
+		return fmt.Errorf("failed to check outbound tags: %w", err)
 	}
 	for _, e := range existing {
 		if e.ID != outbound.ID && e.Tag == outbound.Tag {
 			return fmt.Errorf("an outbound with tag %q already exists on this node", outbound.Tag)
 		}
 	}
-	return nil
+	return u.ensureNoReverseTagCollision(ctx, outbound.NodeID, outbound.Tag, nil, outbound)
 }
 
 // findOutboundsChainingTo returns outbound tags that have proxy_settings.tag == targetTag
@@ -99,7 +102,7 @@ func (u *nodeUsecase) findOutboundsChainingTo(ctx context.Context, nodeID uint, 
 	}
 	var refs []string
 	for _, o := range allOutbounds {
-		if o.ProxySettings != nil && o.ProxySettings.Tag == targetTag {
+		if (o.ProxySettings != nil && o.ProxySettings.Tag == targetTag) || (o.SockoptSettings != nil && o.SockoptSettings.DialerProxy == targetTag) {
 			refs = append(refs, o.Tag)
 		}
 	}
@@ -189,16 +192,20 @@ func (u *nodeUsecase) DeleteOutbound(ctx context.Context, id uint) error {
 	}
 
 	// Check if any reverse proxy references this outbound's tag
-	if outbound.Node != nil {
-		refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, outbound.NodeID, outbound.Tag)
-		if refErr == nil && len(refs) > 0 {
-			return fmt.Errorf("cannot delete: outbound '%s' is referenced by reverse proxy '%s'", outbound.Tag, refs[0].Tag)
-		}
+	refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, outbound.NodeID, outbound.Tag)
+	if refErr != nil {
+		return fmt.Errorf("failed to check reverse proxy references: %w", refErr)
+	}
+	if len(refs) > 0 {
+		return fmt.Errorf("cannot delete: outbound '%s' is referenced by reverse proxy '%s'", outbound.Tag, refs[0].Tag)
 	}
 
 	// Check if any other outbound chains to this one via proxy_settings
 	chainRefs, err := u.findOutboundsChainingTo(ctx, outbound.NodeID, outbound.Tag)
-	if err == nil && len(chainRefs) > 0 {
+	if err != nil {
+		return fmt.Errorf("failed to check proxy chains: %w", err)
+	}
+	if len(chainRefs) > 0 {
 		return fmt.Errorf("cannot delete: outbound '%s' is a proxy chain target for outbound '%s'", outbound.Tag, chainRefs[0])
 	}
 
@@ -283,6 +290,17 @@ func (u *nodeUsecase) ToggleOutboundDisabled(ctx context.Context, id uint) (*dom
 
 func (u *nodeUsecase) UpdateOutbound(ctx context.Context, outbound *domain.Outbound) error {
 	log := logger.GetLogger()
+	// Keep the original node identity and a snapshot for push rollback.
+	prev, prevErr := u.nodeRepo.GetOutbound(ctx, outbound.ID)
+	if prevErr != nil {
+		return prevErr
+	}
+	outbound.NodeID = prev.NodeID
+	if prev.Tag != outbound.Tag {
+		if err := u.rejectReferencedTagRename(ctx, prev.NodeID, prev.Tag, "outbound", nil); err != nil {
+			return err
+		}
+	}
 	if err := validateOutboundProtocol(outbound.Protocol); err != nil {
 		return err
 	}
@@ -295,10 +313,6 @@ func (u *nodeUsecase) UpdateOutbound(ctx context.Context, outbound *domain.Outbo
 	if err := u.validateProxyChaining(ctx, outbound); err != nil {
 		return err
 	}
-
-	// snapshot the row so we can roll back if the push fails — one bad edit would
-	// otherwise wedge every later config push for the node
-	prev, prevErr := u.nodeRepo.GetOutbound(ctx, outbound.ID)
 
 	if err := u.nodeRepo.UpdateOutbound(ctx, outbound); err != nil {
 		return err

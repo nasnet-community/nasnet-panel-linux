@@ -27,6 +27,12 @@ func isIP(s string) bool {
 }
 
 func ValidateOutbound(out *domain.Outbound) error {
+	if err := out.SockoptSettings.ValidateCustomOptions(); err != nil {
+		return err
+	}
+	if out.Tag == "api" {
+		return errors.New(`outbound tag "api" is reserved`)
+	}
 	protocol := strings.ToLower(out.Protocol)
 
 	// 1. Tag Validation

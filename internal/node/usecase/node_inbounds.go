@@ -56,6 +56,9 @@ var validTLSFingerprints = map[string]bool{
 // validateInbound rejects configs xray would refuse, so the admin gets a real
 // error instead of a dead "xray failed to start".
 func validateInbound(inbound *domain.Inbound) error {
+	if err := inbound.SockoptSettings.ValidateCustomOptions(); err != nil {
+		return err
+	}
 	switch inbound.Protocol {
 	case "vless", "vmess", "trojan", "shadowsocks", "wireguard",
 		"http", "socks", "mixed", "dokodemo-door", "hysteria2":
@@ -204,14 +207,14 @@ func validatePortRange(pr string) error {
 func (u *nodeUsecase) ensureUniqueTag(ctx context.Context, inbound *domain.Inbound) error {
 	existing, err := u.nodeRepo.ListInboundsByNode(ctx, inbound.NodeID)
 	if err != nil {
-		return nil // don't block on a transient list error; push would surface it
+		return fmt.Errorf("failed to check inbound tags: %w", err)
 	}
 	for _, e := range existing {
 		if e.ID != inbound.ID && e.Tag == inbound.Tag {
 			return fmt.Errorf("an inbound with tag %q already exists on this node", inbound.Tag)
 		}
 	}
-	return nil
+	return u.ensureNoReverseTagCollision(ctx, inbound.NodeID, inbound.Tag, inbound, nil)
 }
 
 // validateStreamSettings checks transport enums: tcp/raw headerType, xhttp/splithttp mode,
@@ -529,6 +532,19 @@ func (u *nodeUsecase) GetInbound(ctx context.Context, id uint) (*domain.Inbound,
 
 func (u *nodeUsecase) ToggleInboundDisabled(ctx context.Context, id uint) (*domain.Inbound, error) {
 	log := logger.GetLogger()
+	current, err := u.nodeRepo.GetInbound(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !current.IsDisabled {
+		refs, err := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, current.NodeID, current.Tag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check reverse proxies: %w", err)
+		}
+		if len(refs) > 0 {
+			return nil, fmt.Errorf("cannot disable: inbound %q is referenced by reverse proxy %q", current.Tag, refs[0].Tag)
+		}
+	}
 
 	if err := u.nodeRepo.ToggleInboundDisabled(ctx, id); err != nil {
 		log.WithError(err).WithField("inbound_id", id).Error("[ToggleInboundDisabled] Failed to toggle")
@@ -567,11 +583,12 @@ func (u *nodeUsecase) DeleteInbound(ctx context.Context, id uint) error {
 	}
 
 	// Check if any reverse proxy references this inbound's tag
-	if inbound.Node != nil {
-		refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, inbound.NodeID, inbound.Tag)
-		if refErr == nil && len(refs) > 0 {
-			return fmt.Errorf("cannot delete: inbound '%s' is referenced by reverse proxy '%s'", inbound.Tag, refs[0].Tag)
-		}
+	refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, inbound.NodeID, inbound.Tag)
+	if refErr != nil {
+		return fmt.Errorf("failed to check reverse proxy references: %w", refErr)
+	}
+	if len(refs) > 0 {
+		return fmt.Errorf("cannot delete: inbound '%s' is referenced by reverse proxy '%s'", inbound.Tag, refs[0].Tag)
 	}
 
 	// 1. Soft-delete associated accounts
@@ -622,16 +639,23 @@ func (u *nodeUsecase) DeleteInbound(ctx context.Context, id uint) error {
 
 func (u *nodeUsecase) UpdateInbound(ctx context.Context, inbound *domain.Inbound) error {
 	log := logger.GetLogger()
+	// Keep the original node identity and a snapshot for push rollback.
+	prev, prevErr := u.nodeRepo.GetInbound(ctx, inbound.ID)
+	if prevErr != nil {
+		return prevErr
+	}
+	inbound.NodeID = prev.NodeID
+	if prev.Tag != inbound.Tag {
+		if err := u.rejectReferencedTagRename(ctx, prev.NodeID, prev.Tag, "inbound", nil); err != nil {
+			return err
+		}
+	}
 	if err := validateInbound(inbound); err != nil {
 		return err
 	}
 	if err := u.ensureUniqueTag(ctx, inbound); err != nil {
 		return err
 	}
-
-	// snapshot the row so we can roll back if the push fails — one bad edit would
-	// otherwise wedge every later config push for the node
-	prev, prevErr := u.nodeRepo.GetInbound(ctx, inbound.ID)
 
 	// 1. Update DB
 	if err := u.nodeRepo.UpdateInbound(ctx, inbound); err != nil {
