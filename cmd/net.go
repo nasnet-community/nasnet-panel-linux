@@ -90,6 +90,9 @@ func runNetRollback(ifExpired bool) error {
 			Backend: backend,
 			Nft:     nft.NewManager(nft.NewCmdApplier("")),
 			Paths:   paths,
+			RestoreInterfaces: func(ctx context.Context, rows []networkDomain.InterfaceIntent) error {
+				return repository.RestoreInterfaceIntent(ctx, db, rows)
+			},
 			// The LAN lives in the database, which the file snapshot cannot see.
 			CaptureLAN: func(ctx context.Context) (*networkDomain.LANConfig, error) {
 				return lanRepo.Get(ctx)

@@ -114,3 +114,30 @@ func TestRenderAll_WritesOneUnitPerSlot(t *testing.T) {
 		}
 	}
 }
+
+// The second domestic renders its own unit and its own named table.
+func TestRenderAll_SecondDomesticGetsItsOwnUnitAndTable(t *testing.T) {
+	u, err := renderWith(t, []domain.NetworkInterface{
+		{ID: 1, IfName: "enp1s0", Key: "k1", PermMAC: "aa:bb:cc:dd:ee:01",
+			Role: domain.RoleWAN, Slot: domain.SlotDomestic, Present: true, Method: domain.MethodDHCP4},
+		{ID: 2, IfName: "enp2s0", Key: "k2", PermMAC: "aa:bb:cc:dd:ee:02",
+			Role: domain.RoleWAN, Slot: domain.SlotDomestic2, Present: true, Method: domain.MethodDHCP4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit, err := os.ReadFile(filepath.Join(u.Paths.NetworkdDir, "10-nasnet-wan-domestic2.network"))
+	if err != nil {
+		t.Fatalf("no unit for the second domestic: %v", err)
+	}
+	if !strings.Contains(string(unit), "RouteTable=211") {
+		t.Errorf("second domestic unit does not route into 211:\n%s", unit)
+	}
+	rt, err := os.ReadFile(filepath.Join(u.Paths.RTTablesDir, "nasnet.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rt), "211\tnasnet-domestic2") {
+		t.Errorf("rt_tables lacks the second domestic:\n%s", rt)
+	}
+}

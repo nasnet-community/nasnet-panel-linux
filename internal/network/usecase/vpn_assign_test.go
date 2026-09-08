@@ -175,13 +175,13 @@ func TestKillSwitchStateBuildsALegPerSecondary(t *testing.T) {
 	}
 	rows := []domain.NetworkInterface{
 		{Key: "k1", LearnedGateway: "100.64.0.1"},
-		{Key: "k2", StaticGateway: "10.0.0.1"},
+		{Key: "k2", Method: domain.MethodStatic, StaticGateway: "10.0.0.1"},
 	}
 	gws := secondaryGateways(ups, rows)
 	if gws["dish0"] != "100.64.0.1" || gws["lte0"] != "10.0.0.1" {
 		t.Fatalf("gateways = %v", gws)
 	}
-	legs := killSwitchLegs(ups, gws)
+	legs := killSwitchLegs(ups, gws, DefaultHealthConfig().probeExemptIPsBySlot())
 	if len(legs) != 2 {
 		t.Fatalf("%d legs, want 2 - domestic must not get one", len(legs))
 	}

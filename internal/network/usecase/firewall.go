@@ -73,11 +73,12 @@ type FilterInputSpec struct {
 	Uplinks      []Uplink
 	LocalIfNames []string
 	PanelPort    int
-	// AdvertisedIfName is where clients connect; the panel is open there only.
-	AdvertisedIfName string
-	Inbounds         []InboundSpec
-	PortForwards     []domain.PortForward
-	PortMapRules     []domain.PortMapRule
+	// AdvertisedIfNames are the lines clients dial in on; the panel is open
+	// there only.
+	AdvertisedIfNames []string
+	Inbounds          []InboundSpec
+	PortForwards      []domain.PortForward
+	PortMapRules      []domain.PortMapRule
 	// PortMapUplinks are the uplinks the mapper is allowed to ask on. Empty
 	// while the feature is off.
 	PortMapUplinks []string
@@ -137,15 +138,15 @@ func (u *networkUsecase) reapplyFilterInput(ctx context.Context) error {
 
 	local, twoWANNoLAN := u.localIfNames(ctx, lan)
 	fi := DeriveFilterInput(FilterInputSpec{
-		Uplinks:          uplinks,
-		LocalIfNames:     local,
-		PanelPort:        u.PanelPort,
-		AdvertisedIfName: u.IngressUplinkIfName(),
-		Inbounds:         inbounds,
-		PortForwards:     pfs,
-		PortMapRules:     pmRules,
-		PortMapUplinks:   pmUplinks,
-		TwoWANNoLAN:      twoWANNoLAN,
+		Uplinks:           uplinks,
+		LocalIfNames:      local,
+		PanelPort:         u.PanelPort,
+		AdvertisedIfNames: u.ingressUplinkIfNames(ctx),
+		Inbounds:          inbounds,
+		PortForwards:      pfs,
+		PortMapRules:      pmRules,
+		PortMapUplinks:    pmUplinks,
+		TwoWANNoLAN:       twoWANNoLAN,
 	})
 	return u.Nft.Update(ctx, func(rs *nft.Ruleset) { rs.FilterInput = fi })
 }
@@ -184,7 +185,7 @@ func DeriveFilterInput(spec FilterInputSpec) *nft.FilterInput {
 
 	if spec.PanelPort > 0 {
 		switch {
-		case spec.AdvertisedIfName == "":
+		case len(spec.AdvertisedIfNames) == 0:
 			// Too widely reachable is recoverable; unreachable is not.
 			f.Accepts = append(f.Accepts, nft.InputAccept{
 				IfNames: allUplinks, Proto: "tcp", Port: spec.PanelPort,
@@ -198,8 +199,8 @@ func DeriveFilterInput(spec FilterInputSpec) *nft.FilterInput {
 			})
 		default:
 			f.Accepts = append(f.Accepts, nft.InputAccept{
-				IfNames: []string{spec.AdvertisedIfName}, Proto: "tcp", Port: spec.PanelPort,
-				Comment: "panel, advertised uplink only",
+				IfNames: append([]string(nil), spec.AdvertisedIfNames...), Proto: "tcp", Port: spec.PanelPort,
+				Comment: "panel, domestic uplinks only",
 			})
 		}
 	}

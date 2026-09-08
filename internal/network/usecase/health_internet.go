@@ -34,6 +34,14 @@ func (s *internetState) snapshot() (down, everUp bool) {
 	return s.down, s.everUp
 }
 
+// progress is what a card needs to draw the wait: how many clean ticks are
+// banked and how much of the dwell is left.
+func (s *internetState) progress() (down bool, successes int, lastDownAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.down, s.successes, s.lastDownAt
+}
+
 func (s *internetState) observe(ok bool, lim internetLimits, now time.Time) (bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

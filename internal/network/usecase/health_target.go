@@ -13,6 +13,9 @@ import (
 type ProbeTarget struct {
 	Address string `json:"address"` // host:port
 	Proto   string `json:"proto"`   // "tcp" | "dns"
+	// The operator's name for it. Carried so the panel can show something
+	// friendlier than an address; nothing here reads it.
+	Label string `json:"label,omitempty"`
 }
 
 type ProbeResult struct {

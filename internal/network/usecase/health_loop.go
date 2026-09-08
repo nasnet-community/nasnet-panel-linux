@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,7 +53,7 @@ func (u *networkUsecase) SetHealthConfig(cfg HealthConfig) {
 	if uplinks, err := u.uplinks(ctx); err == nil && u.IfRepo != nil {
 		rows, _ := u.IfRepo.GetByRole(ctx, domain.RoleWAN)
 		_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateways(uplinks, rows),
-			cfg.probeExemptIPs())
+			cfg.probeExemptIPsBySlot())
 	}
 	// The operator just flipped the mapper; do not make them wait a tick.
 	if prevPortMap != cfg.PortMapEnabled {
@@ -79,9 +80,17 @@ func (u *networkUsecase) ensureHealthMaps() {
 		u.degradedNow = map[string]bool{}
 		u.lastEffective = map[string]bool{}
 	}
+	if u.effectiveSince == nil {
+		u.effectiveSince = map[string]time.Time{}
+		u.linkBytes = map[string]system.LinkStat{}
+		u.routesByIf = map[string][]string{}
+	}
 	if u.tunnelWasUp == nil {
 		u.tunnelWasUp = map[string]bool{}
 		u.tunnelLastResolve = map[string]time.Time{}
+	}
+	if u.viaByIf == nil {
+		u.viaByIf = map[string]string{}
 	}
 }
 
@@ -122,7 +131,70 @@ func (u *networkUsecase) effectiveChanged(ifName string, now bool) bool {
 	defer u.healthMu.Unlock()
 	was, seen := u.lastEffective[ifName]
 	u.lastEffective[ifName] = now
-	return !seen || was != now
+	changed := !seen || was != now
+	if changed {
+		u.effectiveSince[ifName] = time.Now()
+	}
+	return changed
+}
+
+// Cached per tick: the view must not dial the kernel on every poll.
+func (u *networkUsecase) cacheLinkFacts(ctx context.Context, uplinks []Uplink) {
+	stats, _ := u.flowSource().LinkStats(ctx)
+	routes := map[string][]string{}
+	for _, up := range uplinks {
+		rs, err := u.Backend.RouteList(ctx, up.Table)
+		if err != nil {
+			continue
+		}
+		lines := make([]string, 0, len(rs))
+		for _, r := range rs {
+			lines = append(lines, routeLine(r))
+		}
+		routes[up.IfName] = lines
+	}
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	u.ensureHealthMaps()
+	if stats != nil {
+		u.linkBytes = stats
+	}
+	for k, v := range routes {
+		u.routesByIf[k] = v
+	}
+}
+
+// One route the way ip route prints it, so an operator can paste it anywhere.
+func routeLine(r system.Route) string {
+	out := r.Dest
+	if r.Gateway != "" {
+		out += " via " + r.Gateway
+	}
+	if r.OifName != "" {
+		out += " dev " + r.OifName
+	}
+	if r.Scope != "" {
+		out += " scope " + r.Scope
+	}
+	if r.Metric > 0 {
+		out += " metric " + strconv.Itoa(r.Metric)
+	}
+	return out
+}
+
+// What the internet damper is still waiting for, nil when there is nothing to
+// come back from.
+func (u *networkUsecase) recoveryFor(ifName string) *RecoveryView {
+	down, passes, lastDownAt := u.inetState(ifName).progress()
+	if !down {
+		return nil
+	}
+	lim := defaultInternetLimits()
+	left := int((lim.Dwell - time.Since(lastDownAt)) / time.Second)
+	if left < 0 {
+		left = 0
+	}
+	return &RecoveryView{Passes: passes, Needed: lim.SuccsToUp, DwellSecondsLeft: left}
 }
 
 // poolConnectedNow: one member with a fresh handshake makes failover viable.
@@ -166,29 +238,57 @@ func (u *networkUsecase) publishPoolNH(nh []system.Nexthop) {
 	}
 }
 
-// One route op per uplink per tick. A kernel refusal bubbles up so the caller
-// can't record a recovery that never happened.
+// One route op per secondary per tick. A kernel refusal bubbles up so the
+// caller can't record a recovery that never happened.
 func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw string, st routeState) error {
 	guarded := gw != "" && (st == routeUp || u.health.EverUp(up.IfName))
 	if !guarded {
 		return nil
 	}
-	u.healthMu.Lock()
-	wasFailover := u.failoverActive && up.Slot == domain.SlotDomestic
-	u.healthMu.Unlock()
-
 	switch st {
 	case routeUp:
+		return u.Backend.RouteReplace(ctx, system.Route{
+			Table: up.Table, Dest: "default", Gateway: gw, OifName: up.IfName, OnLink: up.GatewayOnLink,
+		})
+	case routeWithdraw:
+		_ = u.Backend.RouteDel(ctx, system.Route{Table: up.Table, Dest: "default"})
+	}
+	return nil
+}
+
+// One route op per domestic per tick, from the group plan. Whatever leaves the
+// table with a foreign default keeps the own gateway at metric 100: the probe
+// binds to the device, and an oif-bound lookup skips nexthops on other devices.
+func (u *networkUsecase) applyDomesticRoute(ctx context.Context, r domesticRoute) error {
+	// Automatic measurements need boot warm-up; a persisted force-down does
+	// not. Otherwise a restart restores the disabled primary ahead of backups.
+	if !r.ForcedDown && (r.Gateway == "" || (r.Via != viaOwn && !u.health.EverUp(r.Up.IfName))) {
+		return nil
+	}
+	probeHelper := system.Route{
+		Table: r.Up.Table, Dest: "default", Gateway: r.Gateway, OifName: r.Up.IfName, OnLink: r.Up.GatewayOnLink,
+		Metric: probeRouteMetric,
+	}
+	via := ""
+	switch r.Via {
+	case viaOwn:
 		if err := u.Backend.RouteReplace(ctx, system.Route{
-			Table: up.Table, Dest: "default", Gateway: gw, OifName: up.IfName,
+			Table: r.Up.Table, Dest: "default", Gateway: r.Gateway, OifName: r.Up.IfName, OnLink: r.Up.GatewayOnLink,
 		}); err != nil {
 			return err
 		}
-		if wasFailover {
-			u.setFailoverActive(false)
-			u.emit(events.EventWANFailoverRestored, map[string]any{"if_name": up.IfName})
+		_ = u.Backend.RouteDel(ctx, probeHelper)
+	case viaSibling:
+		if err := u.Backend.RouteReplace(ctx, system.Route{
+			Table: r.Up.Table, Dest: "default", Gateway: r.Sibling.Gateway, OifName: r.Sibling.Up.IfName, OnLink: r.Sibling.Up.GatewayOnLink,
+		}); err != nil {
+			return err
 		}
-	case routeFailover:
+		if r.Gateway != "" {
+			_ = u.Backend.RouteReplace(ctx, probeHelper)
+		}
+		via = r.Sibling.Up.IfName
+	case viaPool:
 		nh := u.currentPoolNexthops()
 		if len(nh) == 0 {
 			// First tick after boot: the pool loop hasn't published a set yet.
@@ -200,46 +300,85 @@ func (u *networkUsecase) applyRouteState(ctx context.Context, up Uplink, gw stri
 			return nil
 		}
 		if err := u.Backend.RouteReplace(ctx, system.Route{
-			Table: up.Table, Dest: "default", Nexthops: nh,
+			Table: r.Up.Table, Dest: "default", Nexthops: nh,
 		}); err != nil {
 			return err
 		}
-		// The probe still dials the real uplink; without this its failures
-		// are self-fulfilling.
-		_ = u.Backend.RouteReplace(ctx, system.Route{
-			Table: up.Table, Dest: "default", Gateway: gw, OifName: up.IfName,
-			Metric: probeRouteMetric,
-		})
-		if !wasFailover {
-			u.setFailoverActive(true)
-			u.emit(events.EventWANFailover, map[string]any{
-				"if_name": up.IfName, "to": "pool"})
+		if r.Gateway != "" {
+			_ = u.Backend.RouteReplace(ctx, probeHelper)
 		}
-	case routeWithdraw:
-		_ = u.Backend.RouteDel(ctx, system.Route{Table: up.Table, Dest: "default"})
+		via = "pool"
+	case viaNone:
+		_ = u.Backend.RouteDel(ctx, system.Route{Table: r.Up.Table, Dest: "default"})
 		// The kernel deletes only the lowest metric; the probe helper goes too.
-		_ = u.Backend.RouteDel(ctx, system.Route{
-			Table: up.Table, Dest: "default", Metric: probeRouteMetric,
-		})
-		if wasFailover {
-			u.setFailoverActive(false)
-			u.emit(events.EventWANFailoverLost, map[string]any{"if_name": up.IfName})
-		}
+		_ = u.Backend.RouteDel(ctx, system.Route{Table: r.Up.Table, Dest: "default", Metric: probeRouteMetric})
 	}
+	u.recordVia(r.Up.IfName, via, r.Via == viaNone)
 	return nil
 }
 
-func (u *networkUsecase) setFailoverActive(on bool) {
+// recordVia is the failover feed: entering or moving announces where the
+// traffic went, coming home says restored, and an empty table says lost.
+func (u *networkUsecase) recordVia(ifName, via string, withdrawn bool) {
 	u.healthMu.Lock()
-	u.failoverActive = on
+	u.ensureHealthMaps()
+	was, seen := u.viaByIf[ifName]
+	u.viaByIf[ifName] = via
 	u.healthMu.Unlock()
+	if seen && was == via {
+		return
+	}
+	switch {
+	case via != "":
+		u.emit(events.EventWANFailover, map[string]any{"if_name": ifName, "to": via})
+	case !seen:
+		// First observation and the line stands on its own: nothing to say.
+	case withdrawn:
+		u.emit(events.EventWANFailoverLost, map[string]any{"if_name": ifName})
+	default:
+		u.emit(events.EventWANFailoverRestored, map[string]any{"if_name": ifName})
+	}
+}
+
+// A vanished port isn't riding anything; keep it and the banner sticks.
+func (u *networkUsecase) pruneVia(uplinks []Uplink) {
+	keep := make(map[string]bool, len(uplinks))
+	for _, up := range uplinks {
+		keep[up.IfName] = true
+	}
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	for name := range u.viaByIf {
+		if !keep[name] {
+			delete(u.viaByIf, name)
+		}
+	}
+}
+
+func (u *networkUsecase) viaOf(ifName string) string {
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	u.ensureHealthMaps()
+	return u.viaByIf[ifName]
+}
+
+// Domestic traffic on the pool is the state the banner and the mirror care about.
+func (u *networkUsecase) poolFailoverActive() bool {
+	u.healthMu.Lock()
+	defer u.healthMu.Unlock()
+	for _, v := range u.viaByIf {
+		if v == "pool" {
+			return true
+		}
+	}
+	return false
 }
 
 func (u *networkUsecase) observeDegraded(up Uplink, cfg HealthConfig, ring *healthRing) {
 	samples := ring.snapshot()
 	loss, rtt := lossPct(samples, 20), medianRTT(samples, 20)
-	limit := cfg.DegradedRTTms[up.Slot]
-	degraded := len(samples) >= 20 && (loss >= cfg.DegradedLossPct || (limit > 0 && rtt > limit))
+	limit, lossLimit := cfg.DegradedRTTms[up.Slot], cfg.degradedLossFor(up.Slot)
+	degraded := len(samples) >= 20 && (loss >= lossLimit || (limit > 0 && rtt > limit))
 	u.healthMu.Lock()
 	u.ensureHealthMaps()
 	was := u.degradedNow[up.IfName]
@@ -342,7 +481,7 @@ func (u *networkUsecase) probePool(ctx context.Context, cfg HealthConfig) {
 		samples := u.ring(t.IfName).snapshot()
 		loss, rtt := lossPct(samples, 20), medianRTT(samples, 20)
 		limit := cfg.DegradedRTTms[domain.SlotSecondary]
-		degraded := len(samples) >= 20 && (loss >= cfg.DegradedLossPct || (limit > 0 && rtt > limit))
+		degraded := len(samples) >= 20 && (loss >= cfg.degradedGroupLossFor(domain.SlotSecondary) || (limit > 0 && rtt > limit))
 
 		inet := "down"
 		if up {
@@ -403,18 +542,15 @@ func (u *networkUsecase) applyPoolRoutes(ctx context.Context) error {
 		return err
 	}
 	nh := u.currentPoolNexthops()
-	u.healthMu.Lock()
-	failover := u.failoverActive
-	u.healthMu.Unlock()
-
+	if len(nh) == 0 {
+		return nil
+	}
 	// The failover route is a mirror; a pool reshuffle has to reach it too.
-	if failover && len(nh) > 0 {
-		for _, up := range uplinks {
-			if up.Slot == domain.SlotDomestic {
-				_ = u.Backend.RouteReplace(ctx, system.Route{
-					Table: up.Table, Dest: "default", Nexthops: nh,
-				})
-			}
+	for _, up := range uplinks {
+		if up.Slot.IsDomestic() && u.viaOf(up.IfName) == "pool" {
+			_ = u.Backend.RouteReplace(ctx, system.Route{
+				Table: up.Table, Dest: "default", Nexthops: nh,
+			})
 		}
 	}
 	return nil

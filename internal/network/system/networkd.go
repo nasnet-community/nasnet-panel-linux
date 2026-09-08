@@ -39,13 +39,17 @@ const (
 // The secondary gets none: plaintext 53 there leaks, and the kill switch drops
 // it anyway. Foreign lookups go through the tunnel, which brings its own.
 func linkDNS(in domain.NetworkInterface) (server, domains string) {
-	if in.DNSServer != "" {
-		return in.DNSServer, in.DNSDomains
+	if !in.Slot.IsDomestic() {
+		return "", ""
 	}
-	if in.Slot == domain.SlotDomestic {
+	if in.DNSServer == "" {
 		return DefaultDomesticDNS, DefaultDomesticDomains
 	}
-	return "", in.DNSDomains
+	servers := in.DNSServer
+	if in.DNSServer2 != "" {
+		servers += " " + in.DNSServer2
+	}
+	return servers, DefaultDomesticDomains
 }
 
 // An empty PermanentMACAddress= resets the list and matches every link, so a
@@ -69,7 +73,7 @@ func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 
 	b.WriteString("\n[Network]\n")
 	if in.Method == domain.MethodStatic && in.StaticAddress != "" {
-		fmt.Fprintf(&b, "Address=%s\n", in.StaticAddress)
+		fmt.Fprintf(&b, "DHCP=no\nAddress=%s\n", in.StaticAddress)
 	} else {
 		b.WriteString("DHCP=ipv4\n")
 	}
@@ -78,7 +82,10 @@ func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 	b.WriteString("LinkLocalAddressing=ipv4\n")
 	dnsServer, dnsDomains := linkDNS(in)
 	if dnsServer != "" {
-		fmt.Fprintf(&b, "DNS=%s\n", dnsServer)
+		for _, server := range strings.Fields(dnsServer) {
+			fmt.Fprintf(&b, "DNS=%s\n", server)
+		}
+		b.WriteString("DNSDefaultRoute=no\n")
 	}
 	if dnsDomains != "" {
 		// Routing domain per link, resolved by systemd-resolved.
@@ -96,8 +103,14 @@ func RenderUplink(in domain.NetworkInterface, table int) UplinkFile {
 	if in.Method == domain.MethodStatic && in.StaticGateway != "" {
 		b.WriteString("\n[Route]\n")
 		fmt.Fprintf(&b, "Gateway=%s\n", in.StaticGateway)
+		if in.GatewayOnLink {
+			b.WriteString("GatewayOnLink=yes\n")
+		}
 		fmt.Fprintf(&b, "Table=%d\n", table)
 
+		if in.GatewayOnLink {
+			fmt.Fprintf(&b, "\n[Route]\nDestination=%s/32\nScope=link\nTable=%d\n", in.StaticGateway, table)
+		}
 		if connected := connectedSubnet(in.StaticAddress); connected != "" {
 			b.WriteString("\n[Route]\n")
 			fmt.Fprintf(&b, "Destination=%s\n", connected)
@@ -354,4 +367,17 @@ func connectedSubnet(cidr string) string {
 		return ""
 	}
 	return p.Masked().String()
+}
+
+// ReconfigureWAN reloads the files and explicitly reconfigures the edited link.
+// This also restores networkd-owned routes removed during a DHCP transition.
+func ReconfigureWAN(ctx context.Context, ifName string) error {
+	if err := ReloadNetworkd(ctx); err != nil {
+		return err
+	}
+	out, err := exec.CommandContext(ctx, "networkctl", "reconfigure", "--", ifName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("reconfigure %s: %w (%s)", ifName, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }

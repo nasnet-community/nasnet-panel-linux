@@ -19,10 +19,10 @@ type DNSMasqConfig struct {
 	RangeHigh  string
 	LeaseHours int
 
-	// DomesticServer answers DomesticSuffix out DomesticIfName (empty -> none)
-	DomesticServer string
+	// Domestic answers DomesticSuffix, one line per domestic uplink so each
+	// ISP's resolver is reached over its own link. Empty means no suffix server.
+	Domestic       []DomesticServer
 	DomesticSuffix string
-	DomesticIfName string
 
 	// Foreign are the default resolvers: one per tunnel, each bound to its
 	// link so the query leaves by the same tunnel that answers it.
@@ -44,6 +44,12 @@ type DomainSet struct {
 
 // ForeignServer is one tunnel's resolver line.
 type ForeignServer struct {
+	Server string
+	IfName string
+}
+
+// DomesticServer is one domestic uplink's resolver line.
+type DomesticServer struct {
 	Server string
 	IfName string
 }
@@ -86,12 +92,17 @@ func RenderDNSMasq(c DNSMasqConfig) string {
 	// Or dnsmasq falls back to resolv.conf and foreign names leak to the
 	// domestic resolver whenever no tunnel is up.
 	b.WriteString("no-resolv\n")
-	if c.DomesticServer != "" && c.DomesticSuffix != "" {
-		line := fmt.Sprintf("server=/%s/%s", c.DomesticSuffix, c.DomesticServer)
-		if c.DomesticIfName != "" {
-			line += "@" + c.DomesticIfName
+	if c.DomesticSuffix != "" {
+		for _, d := range c.Domestic {
+			if d.Server == "" {
+				continue
+			}
+			line := fmt.Sprintf("server=/%s/%s", c.DomesticSuffix, d.Server)
+			if d.IfName != "" {
+				line += "@" + d.IfName
+			}
+			b.WriteString(line + "\n")
 		}
-		b.WriteString(line + "\n")
 	}
 	for _, f := range c.Foreign {
 		if f.Server == "" {

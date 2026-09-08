@@ -292,6 +292,7 @@ func (s *stubUsecase) Apply(_ context.Context, _ domain.ChangeRequest) (*usecase
 }
 
 func (s *stubUsecase) Confirm(_ context.Context, id uint) error       { s.confirmedID = id; return nil }
+func (s *stubUsecase) RollbackPlan(context.Context, uint) error       { return nil }
 func (s *stubUsecase) Rollback(context.Context) error                 { return nil }
 func (s *stubUsecase) Reconcile(context.Context) error                { return nil }
 func (s *stubUsecase) StartHealthLoop(context.Context, time.Duration) {}

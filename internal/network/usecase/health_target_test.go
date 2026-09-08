@@ -11,13 +11,25 @@ type fakeProber struct {
 	mu    sync.Mutex
 	calls []string
 	up    map[string]bool
+	// downIf fails every target on that interface; per-uplink outages.
+	downIf map[string]bool
 }
 
 func (f *fakeProber) ProbeTarget(_ context.Context, ifName string, mark uint32, t ProbeTarget) ProbeResult {
 	f.mu.Lock()
 	f.calls = append(f.calls, ifName+"/"+t.Address)
+	down := f.downIf[ifName]
 	f.mu.Unlock()
-	return ProbeResult{Target: t, OK: f.up[t.Address], RTT: 10 * time.Millisecond}
+	return ProbeResult{Target: t, OK: f.up[t.Address] && !down, RTT: 10 * time.Millisecond}
+}
+
+func (f *fakeProber) setDown(ifName string, down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.downIf == nil {
+		f.downIf = map[string]bool{}
+	}
+	f.downIf[ifName] = down
 }
 
 func TestProbeAllHitsEveryTargetConcurrently(t *testing.T) {

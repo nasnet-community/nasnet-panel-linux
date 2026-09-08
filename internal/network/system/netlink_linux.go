@@ -115,6 +115,9 @@ func (b *netlinkBackend) RuleList(context.Context) ([]Rule, error) {
 
 func (b *netlinkBackend) toNetlinkRoute(r Route) (*netlink.Route, error) {
 	nr := &netlink.Route{Table: r.Table, Priority: r.Metric}
+	if r.OnLink {
+		nr.Flags |= unix.RTNH_F_ONLINK
+	}
 	if r.Dest == "" || r.Dest == "default" {
 		// netlink needs Dst, Src, or Gw set; nil Dst can't express 0.0.0.0/0.
 		nr.Dst = &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)}
@@ -193,7 +196,7 @@ func (b *netlinkBackend) RouteList(_ context.Context, table int) ([]Route, error
 	}
 	out := make([]Route, 0, len(routes))
 	for _, nr := range routes {
-		r := Route{Table: nr.Table, Dest: "default", Metric: nr.Priority}
+		r := Route{Table: nr.Table, Dest: "default", Metric: nr.Priority, OnLink: nr.Flags&unix.RTNH_F_ONLINK != 0}
 		if nr.Dst != nil && nr.Dst.IP != nil {
 			// Normalise 0.0.0.0/0 back to "default" to match FakeBackend's key.
 			if ones, _ := nr.Dst.Mask.Size(); ones != 0 {
@@ -234,7 +237,7 @@ func (b *netlinkBackend) RouteGet(_ context.Context, dst string, mark uint32) (*
 		return nil, fmt.Errorf("route get %s mark 0x%x: no route", dst, mark)
 	}
 	r := routes[0]
-	out := &Route{Table: r.Table}
+	out := &Route{Table: r.Table, OnLink: r.Flags&unix.RTNH_F_ONLINK != 0}
 	if r.Gw != nil {
 		out.Gateway = r.Gw.String()
 	}

@@ -940,11 +940,11 @@ func (u *networkUsecase) applyViaRoutes(ctx context.Context, pool vpnPool, uplin
 // deliberately independent of the input firewall: that one is a setting the
 // operator chooses, this one is not.
 func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink,
-	gateways map[string]string, probeIPs []string) error {
+	gateways map[string]string, probeIPs map[domain.UplinkSlot][]string) error {
 	if m == nil {
 		return nil
 	}
-	legs := killSwitchLegs(uplinks, gateways)
+	legs := killSwitchLegs(uplinks, gateways, probeIPs)
 	return m.Update(ctx, func(rs *nft.Ruleset) {
 		if len(legs) == 0 {
 			rs.KillSwitch = nil
@@ -956,20 +956,23 @@ func ApplyKillSwitchState(ctx context.Context, m *nft.Manager, uplinks []Uplink,
 			MarkMask:     netmark.MaskPin,
 			BootstrapIPs: dohboot.BootstrapIPs(),
 			ProbeMark:    netmark.PinMark(netmark.PinProbe),
-			ProbeIPs:     probeIPs,
 			PortmapMark:  netmark.PinMark(netmark.PinPortmap),
 		}
 	})
 }
 
-// killSwitchLegs is one leg per secondary, in slot order.
-func killSwitchLegs(uplinks []Uplink, gateways map[string]string) []nft.KillSwitchLeg {
+// killSwitchLegs is one leg per secondary, in slot order. Each carries the
+// destinations its own line is checked against, so widening one line's checks
+// cannot open a hole on another.
+func killSwitchLegs(uplinks []Uplink, gateways map[string]string,
+	probeIPs map[domain.UplinkSlot][]string) []nft.KillSwitchLeg {
 	ordered := secondariesOf(uplinks)
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].UplinkIndex < ordered[j].UplinkIndex })
 	legs := make([]nft.KillSwitchLeg, 0, len(ordered))
 	for _, up := range ordered {
 		legs = append(legs, nft.KillSwitchLeg{
 			IfName: up.IfName, GatewayIP: gateways[up.IfName], PinValue: transportMark(up),
+			ProbeSet: nft.ProbeSetName(up.UplinkIndex), ProbeIPs: probeIPs[up.Slot],
 		})
 	}
 	return legs
@@ -988,7 +991,7 @@ func secondaryGateways(uplinks []Uplink, rows []domain.NetworkInterface) map[str
 		if !ok {
 			continue
 		}
-		if r.StaticGateway != "" {
+		if r.Method == domain.MethodStatic && r.StaticGateway != "" {
 			out[up.IfName] = r.StaticGateway
 		} else {
 			out[up.IfName] = r.LearnedGateway
@@ -1119,6 +1122,11 @@ func (u *networkUsecase) healthyKeys(ctx context.Context) map[string]bool {
 // and, when a hostname endpoint has gone quiet, looks it up again — providers
 // move them.
 func (u *networkUsecase) checkVPNHealth(ctx context.Context) {
+	unlock, err := u.lockHealthNetwork()
+	if err != nil {
+		return
+	}
+	defer unlock()
 	pool := u.vpnPoolNow(ctx)
 	present := map[string]bool{}
 	for _, t := range pool.Tunnels {

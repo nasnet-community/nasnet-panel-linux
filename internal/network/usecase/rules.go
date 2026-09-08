@@ -21,8 +21,9 @@ const (
 
 	// Unmarked traffic
 	RulePrefFallbackBase = 32000
-	// Terminates the fallback list.
-	RulePrefFallbackBlackhole = 32002
+	// Terminates the fallback list. Wide enough for the tunnel and every
+	// domestic slot, or the last backup line never gets a rule.
+	RulePrefFallbackBlackhole = 32009
 
 	tableMain = 254
 )
@@ -37,6 +38,10 @@ type Uplink struct {
 	UplinkIndex uint32
 	Slot        domain.UplinkSlot
 	GroupIndex  uint32
+	// DNSServer is the operator's resolver for this link, "" for the default.
+	DNSServer2    string
+	GatewayOnLink bool
+	DNSServer     string
 }
 
 // VPNRouteState is the pool as the rules need it. Empty IfNames and the
@@ -108,7 +113,7 @@ func fallbackTables(uplinks []Uplink, vpn VPNRouteState) []int {
 	}
 
 	rank := func(u Uplink) int {
-		if u.Slot == domain.SlotDomestic {
+		if u.Slot.IsDomestic() {
 			return 0
 		}
 		return 1
@@ -305,11 +310,17 @@ func AllRules(groups []domain.WANGroup, uplinks []Uplink, vpn VPNRouteState) []s
 }
 
 // Fixed table numbers, so a snapshot from one build restores under another.
-// 203 is the pool's, so the extra secondaries skip it.
+// 203 is the pool's and 207-210 its per-WAN slices, so the extra slots skip them.
 func tableFor(slot domain.UplinkSlot) int {
 	switch slot {
 	case domain.SlotDomestic:
 		return 201
+	case domain.SlotDomestic2:
+		return 211
+	case domain.SlotDomestic3:
+		return 212
+	case domain.SlotDomestic4:
+		return 213
 	case domain.SlotSecondary:
 		return 202
 	case domain.SlotSecondary2:
@@ -322,10 +333,18 @@ func tableFor(slot domain.UplinkSlot) int {
 	return 0
 }
 
+// 2-5 are the secondaries, which the via marks name by low nibble, so the
+// extra domestics take 6-8.
 func uplinkIndexFor(slot domain.UplinkSlot) uint32 {
 	switch slot {
 	case domain.SlotDomestic:
 		return 1
+	case domain.SlotDomestic2:
+		return 6
+	case domain.SlotDomestic3:
+		return 7
+	case domain.SlotDomestic4:
+		return 8
 	case domain.SlotSecondary:
 		return 2
 	case domain.SlotSecondary2:
@@ -339,7 +358,7 @@ func uplinkIndexFor(slot domain.UplinkSlot) uint32 {
 }
 
 func groupIndexFor(slot domain.UplinkSlot) uint32 {
-	if slot == domain.SlotDomestic {
+	if slot.IsDomestic() {
 		return netmark.GroupDomestic
 	}
 	if slot.IsSecondary() {

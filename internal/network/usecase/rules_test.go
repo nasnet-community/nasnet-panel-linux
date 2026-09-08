@@ -75,9 +75,9 @@ func TestBaseRules_OrderedFallbackTunnelThenDomesticThenDrop(t *testing.T) {
 	if r1 == nil || r1.Table != 201 {
 		t.Fatalf("pref 32001 = %+v, want the domestic uplink's table", r1)
 	}
-	r2 := find(rs, 32002)
+	r2 := find(rs, RulePrefFallbackBlackhole)
 	if r2 == nil || !r2.Blackhole {
-		t.Fatalf("pref 32002 = %+v, want a blackhole terminator", r2)
+		t.Fatalf("pref %d = %+v, want a blackhole terminator", RulePrefFallbackBlackhole, r2)
 	}
 	for _, r := range []*system.Rule{r0, r1, r2} {
 		if r.FwMask != 0 {
@@ -109,7 +109,7 @@ func TestBaseRules_FallbackWithoutATunnelIsDomesticOnly(t *testing.T) {
 	if r := find(rs, 32001); r != nil && !r.Blackhole {
 		t.Errorf("pref 32001 = %+v, want nothing between domestic and the terminator", r)
 	}
-	if r := find(rs, 32002); r == nil || !r.Blackhole {
+	if r := find(rs, RulePrefFallbackBlackhole); r == nil || !r.Blackhole {
 		t.Error("no fallback terminator")
 	}
 }
@@ -145,7 +145,7 @@ func TestBaseRules_SingleUplinkStillGetsAFallback(t *testing.T) {
 	if find(rs, 32000) == nil {
 		t.Error("no fallback rule on a single-uplink box")
 	}
-	if find(rs, 32002) == nil {
+	if find(rs, RulePrefFallbackBlackhole) == nil {
 		t.Error("no fallback terminator on a single-uplink box")
 	}
 }
@@ -155,7 +155,7 @@ func TestBaseRules_NoUplinksEmitsOnlyTheSuppressorAndTerminator(t *testing.T) {
 	if find(rs, RulePrefMainSuppress) == nil {
 		t.Error("the suppressor must exist regardless")
 	}
-	if find(rs, 32002) == nil {
+	if find(rs, RulePrefFallbackBlackhole) == nil {
 		t.Error("the terminator must exist regardless")
 	}
 	if find(rs, 20) != nil || find(rs, 32000) != nil {
@@ -334,5 +334,86 @@ func TestFallbackNeverWalksAnySecondary(t *testing.T) {
 				t.Fatalf("fallback reached secondary table %d - that is the leak", table)
 			}
 		}
+	}
+}
+
+// Every slot needs a table and a pin nobody else holds; the pool's 203 and its
+// 207-210 slices are spoken for.
+func TestSlotIdentitiesForEveryDomestic(t *testing.T) {
+	wantTable := map[domain.UplinkSlot]int{
+		domain.SlotDomestic: 201, domain.SlotDomestic2: 211,
+		domain.SlotDomestic3: 212, domain.SlotDomestic4: 213,
+	}
+	wantIndex := map[domain.UplinkSlot]uint32{
+		domain.SlotDomestic: 1, domain.SlotDomestic2: 6,
+		domain.SlotDomestic3: 7, domain.SlotDomestic4: 8,
+	}
+	for slot, table := range wantTable {
+		if got := tableFor(slot); got != table {
+			t.Errorf("tableFor(%s) = %d, want %d", slot, got, table)
+		}
+		if got := uplinkIndexFor(slot); got != wantIndex[slot] {
+			t.Errorf("uplinkIndexFor(%s) = %d, want %d", slot, got, wantIndex[slot])
+		}
+		if got := groupIndexFor(slot); got != netmark.GroupDomestic {
+			t.Errorf("groupIndexFor(%s) = %d, want the domestic group", slot, got)
+		}
+	}
+	seenTable, seenIndex := map[int]domain.UplinkSlot{}, map[uint32]domain.UplinkSlot{}
+	for _, s := range append(domain.DomesticSlots(), domain.SecondarySlots()...) {
+		if prev, dup := seenTable[tableFor(s)]; dup {
+			t.Errorf("%s and %s share table %d", prev, s, tableFor(s))
+		}
+		if prev, dup := seenIndex[uplinkIndexFor(s)]; dup {
+			t.Errorf("%s and %s share uplink index %d", prev, s, uplinkIndexFor(s))
+		}
+		seenTable[tableFor(s)], seenIndex[uplinkIndexFor(s)] = s, s
+		if uplinkIndexFor(s) >= netmark.PinPortmap {
+			t.Errorf("%s takes pin %d, which collides with the mapper or the probe", s, uplinkIndexFor(s))
+		}
+	}
+	for _, s := range domain.DomesticSlots() {
+		if tb := tableFor(s); tb == system.WGTable || (tb >= vpnViaTableFor(2) && tb <= vpnViaTableFor(5)) {
+			t.Errorf("%s took table %d from the pool", s, tb)
+		}
+	}
+}
+
+// One lookup per member in slot order, then the terminator: the kernel walks
+// to the next member itself when a table yields no route.
+func TestGroupRules_DomesticMembersWalkInSlotOrder(t *testing.T) {
+	ups := []Uplink{
+		{IfName: "enp2s0", Table: 211, UplinkIndex: 6, Slot: domain.SlotDomestic2, GroupIndex: 1},
+		{IfName: "enp1s0", Table: 201, UplinkIndex: 1, Slot: domain.SlotDomestic, GroupIndex: 1},
+	}
+	rs := GroupRules(flowGroups(), ups, VPNRouteState{})
+	if r := find(rs, 110); r == nil || r.Table != 201 {
+		t.Fatalf("pref 110 = %+v, want lookup 201 first", r)
+	}
+	if r := find(rs, 111); r == nil || r.Table != 211 {
+		t.Fatalf("pref 111 = %+v, want lookup 211 second", r)
+	}
+	if r := find(rs, 149); r == nil || !r.Blackhole {
+		t.Fatalf("pref 149 = %+v, want the group terminator", r)
+	}
+}
+
+// With two slots before the terminator the second domestic never got an
+// unmarked-fallback rule, so a box with no VPN lost its backup line.
+func TestBaseRules_FallbackWalksEveryDomesticBeforeTheTerminator(t *testing.T) {
+	ups := append(twoUplinks(),
+		Uplink{IfName: "enp4s0", Table: 211, UplinkIndex: 6, Slot: domain.SlotDomestic2, GroupIndex: 1})
+	rs := BaseRules(ups, VPNRouteState{IfNames: []string{system.WGLinkName}})
+	for i, table := range []int{system.WGTable, 201, 211} {
+		r := find(rs, RulePrefFallbackBase+i)
+		if r == nil || r.Table != table {
+			t.Fatalf("pref %d = %+v, want lookup %d", RulePrefFallbackBase+i, r, table)
+		}
+	}
+	if r := find(rs, RulePrefFallbackBlackhole); r == nil || !r.Blackhole {
+		t.Fatalf("pref %d = %+v, want the terminator", RulePrefFallbackBlackhole, r)
+	}
+	if RulePrefFallbackBlackhole-RulePrefFallbackBase < 1+len(domain.DomesticSlots()) {
+		t.Fatal("the fallback window cannot hold the tunnel plus every domestic slot")
 	}
 }

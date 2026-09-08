@@ -210,21 +210,67 @@ func equalLines(a, b []string) bool {
 
 func TestKillSwitchProbeExemption(t *testing.T) {
 	r := Ruleset{KillSwitch: &KillSwitch{
-		Legs:      []KillSwitchLeg{{IfName: "enp0s3", PinValue: netmark.PinMark(2)}},
+		Legs: []KillSwitchLeg{{
+			IfName: "enp0s3", PinValue: netmark.PinMark(2),
+			ProbeSet: ProbeSetName(2), ProbeIPs: []string{"1.1.1.1", "8.8.8.8"},
+		}},
 		MarkMask:  netmark.MaskPin,
 		ProbeMark: netmark.PinMark(netmark.PinProbe),
-		ProbeIPs:  []string{"1.1.1.1", "8.8.8.8"},
 	}}
 	out := r.Render()
 	for _, want := range []string{
-		"set probe_v4 {",
+		"set probe_v4_2 {",
 		"elements = { 1.1.1.1, 8.8.8.8 }",
-		"meta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4 accept",
+		`oifname "enp0s3" meta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4_2 accept`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}
+}
+
+// A line with its own checks must not be allowed to reach another line's.
+func TestKillSwitchProbeExemptionIsPerLeg(t *testing.T) {
+	r := Ruleset{KillSwitch: &KillSwitch{
+		Legs: []KillSwitchLeg{
+			{IfName: "dish0", PinValue: netmark.PinMark(2), ProbeSet: ProbeSetName(2),
+				ProbeIPs: []string{"1.1.1.1"}},
+			{IfName: "lte0", PinValue: netmark.PinMark(3), ProbeSet: ProbeSetName(3),
+				ProbeIPs: []string{"9.9.9.9"}},
+		},
+		MarkMask:  netmark.MaskPin,
+		ProbeMark: netmark.PinMark(netmark.PinProbe),
+	}}
+	out := r.Render()
+	for _, want := range []string{
+		"set probe_v4_2 {",
+		"elements = { 1.1.1.1 }",
+		"set probe_v4_3 {",
+		"elements = { 9.9.9.9 }",
+		`oifname "dish0" meta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4_2 accept`,
+		`oifname "lte0" meta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4_3 accept`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The unqualified form would let either leg reach either list.
+	if strings.Contains(out, "\t\tmeta mark and 0xf000000 == 0xf000000 ip daddr @probe_v4") {
+		t.Fatalf("probe exemption is not bound to one leg:\n%s", out)
+	}
+	names := r.SetNames()
+	if !containsStr(names, "probe_v4_2") || !containsStr(names, "probe_v4_3") {
+		t.Fatalf("SetNames must list every leg's set, got %v", names)
+	}
+}
+
+func containsStr(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestKillSwitchNoProbeIPsRendersNoProbeRule(t *testing.T) {

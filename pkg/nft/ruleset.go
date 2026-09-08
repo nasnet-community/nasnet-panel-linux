@@ -80,7 +80,13 @@ type FilterInput struct {
 const SetDoHBootstrap = "doh_bootstrap"
 
 // Targets the health probe may reach past the kill switch.
-const SetProbe = "probe_v4"
+// One set per secondary leg, so a line with its own checks cannot reach
+// another line's. Suffixed by uplink index, which is unique per slot.
+const SetProbePrefix = "probe_v4"
+
+func ProbeSetName(uplinkIndex uint32) string {
+	return fmt.Sprintf("%s_%d", SetProbePrefix, uplinkIndex)
+}
 
 // Named counters the flow page reads. Declared as a block so a chain
 // referencing one can never abort the transaction.
@@ -98,6 +104,10 @@ type KillSwitchLeg struct {
 	// forever. Empty before the first lease.
 	GatewayIP string
 	PinValue  uint32
+	// This leg's own probe destinations, and the set holding them. Both empty
+	// renders no exemption for it. Name it with ProbeSetName.
+	ProbeSet string
+	ProbeIPs []string
 }
 
 // Drops everything leaving a secondary uplink in the clear. Rendered whenever
@@ -110,9 +120,9 @@ type KillSwitch struct {
 	MarkMask uint32
 	// The DoH resolvers. Empty renders no exemption at all.
 	BootstrapIPs []string
-	// The health probe's own traffic. Empty renders no exemption.
+	// The health probe's own traffic. Zero renders no exemption; the
+	// destinations live per leg.
 	ProbeMark uint32
-	ProbeIPs  []string
 	// The port mapper's own chatter: SSDP and NAT-PMP/PCP. Mark-gated, so it is
 	// inert unless our own sockets stamp it. TCP to the IGD rides the per-leg
 	// gateway exemption — control URLs are always repointed there.
@@ -205,12 +215,17 @@ func (r Ruleset) renderSets() string {
 			Elements: k.BootstrapIPs,
 		})
 	}
-	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
-		sets = append(append([]Set(nil), sets...), Set{
-			Name:     SetProbe,
-			Family:   "ipv4_addr",
-			Elements: k.ProbeIPs,
-		})
+	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 {
+		for _, leg := range k.Legs {
+			if leg.ProbeSet == "" || len(leg.ProbeIPs) == 0 {
+				continue
+			}
+			sets = append(append([]Set(nil), sets...), Set{
+				Name:     leg.ProbeSet,
+				Family:   "ipv4_addr",
+				Elements: leg.ProbeIPs,
+			})
+		}
 	}
 	if len(sets) == 0 {
 		return ""
@@ -457,10 +472,20 @@ func (k *KillSwitch) exemptions() string {
 			}
 		}
 	}
-	if k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
-		b.WriteString("\n\t\t# The health probe measuring this uplink.\n")
-		fmt.Fprintf(&b, "\t\tmeta mark and %s == %s ip daddr @%s accept\n",
-			netmark.Hex(netmark.MaskPin), netmark.Hex(k.ProbeMark), SetProbe)
+	if k.ProbeMark != 0 {
+		wrote := false
+		for _, leg := range k.Legs {
+			if leg.ProbeSet == "" || len(leg.ProbeIPs) == 0 {
+				continue
+			}
+			if !wrote {
+				b.WriteString("\n\t\t# The health probe measuring this uplink, and only the\n")
+				b.WriteString("\t\t# destinations this line is checked against.\n")
+				wrote = true
+			}
+			fmt.Fprintf(&b, "\t\toifname %q meta mark and %s == %s ip daddr @%s accept\n",
+				leg.IfName, netmark.Hex(netmark.MaskPin), netmark.Hex(k.ProbeMark), leg.ProbeSet)
+		}
 	}
 
 	if k.PortmapMark != 0 {
@@ -561,8 +586,12 @@ func (r Ruleset) SetNames() []string {
 	if k := r.KillSwitch; k != nil && len(k.BootstrapIPs) > 0 {
 		out = append(out, SetDoHBootstrap)
 	}
-	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 && len(k.ProbeIPs) > 0 {
-		out = append(out, SetProbe)
+	if k := r.KillSwitch; k != nil && k.ProbeMark != 0 {
+		for _, leg := range k.Legs {
+			if leg.ProbeSet != "" && len(leg.ProbeIPs) > 0 {
+				out = append(out, leg.ProbeSet)
+			}
+		}
 	}
 	return out
 }

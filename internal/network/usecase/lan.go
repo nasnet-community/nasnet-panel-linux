@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -174,8 +175,8 @@ func LANDNSConfig(lan domain.LANConfig, uplinks []Uplink,
 	c := system.DNSMasqConfig{
 		BridgeName: bridge, ListenAddr: listen,
 		RangeLow: lan.DHCPRangeLow, RangeHigh: lan.DHCPRangeHigh,
-		LeaseHours:     lan.LeaseHours,
-		DomesticServer: domesticServer, DomesticSuffix: domesticSuffix,
+		LeaseHours:      lan.LeaseHours,
+		DomesticSuffix:  domesticSuffix,
 		Foreign:         foreign,
 		NftSetSupported: nftSetSupported,
 	}
@@ -186,15 +187,27 @@ func LANDNSConfig(lan domain.LANConfig, uplinks []Uplink,
 		}
 		c.DomainSets = []system.DomainSet{ds}
 	}
-	// Only the domestic side comes from an uplink; the caller decides the rest.
+	// One line per domestic uplink, slot order: each ISP answers over its own link.
+	var doms []Uplink
 	for _, u := range uplinks {
-		if u.Slot == domain.SlotDomestic {
-			c.DomesticIfName = u.IfName
+		if u.Slot.IsDomestic() {
+			doms = append(doms, u)
 		}
 	}
-	if c.DomesticIfName == "" {
+	sort.Slice(doms, func(i, j int) bool { return doms[i].UplinkIndex < doms[j].UplinkIndex })
+	for _, u := range doms {
+		srv := u.DNSServer
+		if srv == "" {
+			srv = domesticServer
+		}
+		c.Domestic = append(c.Domestic, system.DomesticServer{Server: srv, IfName: u.IfName})
+		if u.DNSServer2 != "" {
+			c.Domestic = append(c.Domestic, system.DomesticServer{Server: u.DNSServer2, IfName: u.IfName})
+		}
+	}
+	if len(c.Domestic) == 0 {
 		// No domestic uplink: drop it rather than get the wrong CDN edge back.
-		c.DomesticServer, c.DomesticSuffix = "", ""
+		c.DomesticSuffix = ""
 	}
 	return c
 }

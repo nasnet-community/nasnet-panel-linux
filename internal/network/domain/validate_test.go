@@ -401,3 +401,40 @@ func TestValidate_V20_AcceptsEverySecondarySlot(t *testing.T) {
 		}
 	}
 }
+
+// Slot order is failover priority, so the order here is load-bearing.
+func TestDomesticSlotsAreOrderedAndDomestic(t *testing.T) {
+	slots := DomesticSlots()
+	want := []UplinkSlot{SlotDomestic, SlotDomestic2, SlotDomestic3, SlotDomestic4}
+	if len(slots) != len(want) {
+		t.Fatalf("got %d slots, want %d", len(slots), len(want))
+	}
+	for i := range want {
+		if slots[i] != want[i] {
+			t.Fatalf("slot %d = %q, want %q", i, slots[i], want[i])
+		}
+		if !slots[i].IsDomestic() {
+			t.Fatalf("%q must report IsDomestic", slots[i])
+		}
+		if slots[i].IsSecondary() {
+			t.Fatalf("%q must not report IsSecondary", slots[i])
+		}
+	}
+	for _, s := range SecondarySlots() {
+		if s.IsDomestic() {
+			t.Fatalf("%q is a secondary, not a domestic", s)
+		}
+	}
+	if SlotNone.IsDomestic() {
+		t.Fatal("none is not a domestic")
+	}
+}
+
+func TestValidate_V20_AcceptsEveryDomesticSlot(t *testing.T) {
+	for _, slot := range DomesticSlots() {
+		vs := Validate(in(ChangeRequest{InterfaceID: 1, Role: RoleWAN, Slot: slot}))
+		if Rejected(vs) {
+			t.Errorf("%s slot rejected: %+v", slot, vs)
+		}
+	}
+}
