@@ -503,31 +503,24 @@ func ActionSystemdRebuild(cfg *Config) {
 	// Let user choose what to rebuild
 	fmt.Println()
 	choice, menuErr := ui.Menu("What to rebuild?", []string{
-		"Everything (backend + agents + frontend)",
+		"Everything (backend + frontend)",
 		"Backend only",
-		"Agents only",
 		"Frontend (rebuild binary with embedded SPA)",
-		"Backend + Agents",
 	})
 	if menuErr != nil || choice == -1 {
 		return
 	}
 
 	doBackend := false
-	doAgents := false
 	doWebPanel := false
 
 	switch choice {
 	case 0:
-		doBackend, doAgents, doWebPanel = true, true, true
+		doBackend, doWebPanel = true, true
 	case 1:
 		doBackend = true
 	case 2:
-		doAgents = true
-	case 3:
 		doWebPanel = true
-	case 4:
-		doBackend, doAgents = true, true
 	}
 
 	fmt.Println()
@@ -577,17 +570,6 @@ func ActionSystemdRebuild(cfg *Config) {
 			} else {
 				ui.StepOk("Backend binary built")
 			}
-		}
-	}
-
-	if doAgents && !buildFailed {
-		agentCmd := exec.Command("bash", "-c",
-			fmt.Sprintf("cd '%s' && make build-agent", cfg.ProjectDir))
-		if runErr := ui.RunLogged("Building agent binaries", agentCmd); runErr != nil {
-			ui.StepFail("Agent binary build failed")
-			buildFailed = true
-		} else {
-			ui.StepOk("Agent binaries built")
 		}
 	}
 
@@ -685,7 +667,6 @@ func deployArtifacts(cfg *Config) {
 	// Create directory structure
 	for _, dir := range []string{
 		filepath.Join(cfg.InstallDir, "bin"),
-		filepath.Join(cfg.InstallDir, "bin", "agent"),
 		filepath.Join(cfg.InstallDir, "data", "backups"),
 	} {
 		exec.Command("sudo", "mkdir", "-p", dir).Run() //nolint:errcheck
@@ -696,21 +677,6 @@ func deployArtifacts(cfg *Config) {
 	dstBin := filepath.Join(cfg.InstallDir, "bin", "nasnet-panel")
 	exec.Command("sudo", "cp", srcBin, dstBin).Run()  //nolint:errcheck
 	exec.Command("sudo", "chmod", "+x", dstBin).Run() //nolint:errcheck
-
-	// Copy agent binaries if they exist
-	agentSrcDir := filepath.Join(cfg.ProjectDir, "bin", "agent")
-	if entries, readErr := os.ReadDir(agentSrcDir); readErr == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			src := filepath.Join(agentSrcDir, entry.Name())
-			dst := filepath.Join(cfg.InstallDir, "bin", "agent", entry.Name())
-			exec.Command("sudo", "cp", src, dst).Run()     //nolint:errcheck
-			exec.Command("sudo", "chmod", "+x", dst).Run() //nolint:errcheck
-		}
-		ui.StepOk("Agent binaries deployed")
-	}
 
 	ui.StepOk(fmt.Sprintf("Deployed to %s", cfg.InstallDir))
 }

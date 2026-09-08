@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -99,6 +100,17 @@ func (c *Config) DockerCompose(args ...string) *exec.Cmd {
 	if c.IsSQLite() {
 		composeArgs = append(composeArgs, "-f", c.SQLiteComposeFile)
 	}
+	acmeEnabled := c.ACMEEnabled
+	if value := ReadEnvValue("ACME_ENABLED", c.EnvFile); value != "" {
+		acmeEnabled = value == "true"
+	}
+	if acmeEnabled {
+		acmeFile := c.ACMEComposeFile
+		if acmeFile == "" {
+			acmeFile = filepath.Join(c.ProjectDir, "docker-compose.acme.yml")
+		}
+		composeArgs = append(composeArgs, "-f", acmeFile)
+	}
 	composeArgs = append(composeArgs, "--project-directory", c.ProjectDir)
 	composeArgs = append(composeArgs, args...)
 	cmd := exec.Command("docker", composeArgs...)
@@ -107,6 +119,9 @@ func (c *Config) DockerCompose(args ...string) *exec.Cmd {
 }
 
 func (c *Config) Systemctl(args ...string) *exec.Cmd {
+	if os.Geteuid() == 0 {
+		return exec.Command("systemctl", args...)
+	}
 	return exec.Command("sudo", append([]string{"systemctl"}, args...)...)
 }
 

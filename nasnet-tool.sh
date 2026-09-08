@@ -29,6 +29,8 @@ BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"
 # xray-core. Compiled into the panel (internal/agent/config), not read from .env.
 XRAY_BINARY="/usr/local/bin/xray"
 XRAY_CONFIG_DIR="/usr/local/etc/xray"
+XRAY_LOG_DIR="/var/log/xray"
+XRAY_STATE_DIR="/var/lib/nasnet-agent"
 # Must match the panel default and bin/xray/, or we ship a core it never expects.
 XRAY_VERSION="${XRAY_VERSION:-26.7.28}"
 
@@ -58,10 +60,33 @@ if [[ ! -f "$SCRIPT_DIR/go.mod" ]]; then
     ACME_COMPOSE_FILE="$PROJECT_DIR/docker-compose.acme.yml"
 fi
 
-# Minimal images often run as root with no sudo installed; the script calls
-# sudo throughout, so give it one that just runs the command.
+# Minimal images often run as root with no sudo installed. Preserve user
+# switching, including in the child shells used by prerequisite installers.
+_nasnet_root_sudo() {
+    local target="root"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -u|--user) target="$2"; shift 2 ;;
+            -E|-H|-n) shift ;;
+            -v) return 0 ;;
+            --) shift; break ;;
+            -*) echo "Unsupported sudo option: $1" >&2; return 1 ;;
+            *) break ;;
+        esac
+    done
+    [[ $# -gt 0 ]] || return 0
+    if [[ "$target" == "root" ]]; then
+        "$@"
+    elif command -v runuser &>/dev/null; then
+        runuser -u "$target" -- "$@"
+    else
+        echo "runuser is required to run commands as ${target}" >&2
+        return 1
+    fi
+}
 if [[ $EUID -eq 0 ]] && ! command -v sudo &>/dev/null; then
-    sudo() { "$@"; }
+    sudo() { _nasnet_root_sudo "$@"; }
+    export -f sudo _nasnet_root_sudo
 fi
 
 # Ensure common tool paths are available (Go, Node via nvm/fnm, pnpm, etc.)
@@ -412,12 +437,64 @@ get_db_port()     { echo "${DB_PORT:-5432}"; }
 get_db_path()     { echo "${DB_PATH:-/app/data/nasnet_panel.db}"; }
 get_app_port()    { echo "${APP_PORT:-9761}"; }
 
-# With ACME or custom certs the panel serves TLS on APP_PORT, so probe
-# plain HTTP first and fall back to HTTPS without cert verification.
+# Check the configured listener. HTTPS uses the configured hostname for SNI
+# and certificate validation while connecting locally; never hide TLS errors.
 _health_ok() {
     local port="$1"
-    curl -sf --max-time 3 "http://localhost:${port}/health/ready" &>/dev/null \
-        || curl -skf --max-time 3 "https://localhost:${port}/health/ready" &>/dev/null
+    if [[ "${ACME_ENABLED:-false}" == "true" || -n "${TLS_CERT_FILE:-}" ]]; then
+        local host="${APP_BASE_URL:-}"
+        host="${host#*://}"
+        host="${host%%/*}"; host="${host%%:*}"
+        [[ -n "$host" ]] || return 1
+        curl -fsS --noproxy '*' --max-time "${NASNET_PROBE_TIMEOUT:-5}" --resolve "${host}:${port}:127.0.0.1" \
+            "https://${host}:${port}/health/ready" &>/dev/null
+    else
+        curl -fsS --noproxy '*' --max-time "${NASNET_PROBE_TIMEOUT:-5}" "http://127.0.0.1:${port}/health/ready" &>/dev/null
+    fi
+}
+
+_panel_url_ok() {
+    local url="${SUB_PANEL_URL:-}" result body
+    [[ "$url" == http://* || "$url" == https://* ]] || return 1
+    local redirects='=http,https'
+    [[ "$url" == https://* ]] && redirects='=https'
+    body=$(mktemp) || return 1
+    if ! result=$(curl -fsSL --max-time "${NASNET_PROBE_TIMEOUT:-10}" --proto '=http,https' --proto-redir "$redirects" \
+        -o "$body" -w '%{http_code} %{content_type}' "$url"); then
+        rm -f "$body"; return 1
+    fi
+    if [[ "$result" == '200 text/html'* ]] && grep -q 'window.__CONFIG__' "$body" \
+        && grep -q 'NasNet Panel' "$body" && ! grep -q '__RUNTIME_CONFIG_PLACEHOLDER__' "$body"; then
+        rm -f "$body"; return 0
+    fi
+    rm -f "$body"
+    return 1
+}
+
+wizard_verify_install() {
+    local attempts="${NASNET_HEALTH_ATTEMPTS:-15}" i remaining
+    local deadline=$(( SECONDS + ${NASNET_HEALTH_TIMEOUT:-60} ))
+    local NASNET_PROBE_TIMEOUT=5
+    for (( i=0; i<attempts; i++ )); do
+        remaining=$(( deadline - SECONDS ))
+        (( remaining > 0 )) || break
+        NASNET_PROBE_TIMEOUT=$(( remaining < 5 ? remaining : 5 ))
+        if _health_ok "$(get_app_port)"; then
+            remaining=$(( deadline - SECONDS ))
+            (( remaining > 0 )) || break
+            NASNET_PROBE_TIMEOUT=$(( remaining < 10 ? remaining : 10 ))
+            if _panel_url_ok; then
+                step_ok "Backend ready and web panel reachable at ${SUB_PANEL_URL}"
+                return 0
+            fi
+        fi
+        (( i + 1 < attempts && SECONDS + 2 < deadline )) && sleep 2
+    done
+    step_fail "Installation is incomplete: the backend or public panel URL could not be verified"
+    step_info "Check DNS, TLS, the configured panel path, and host/provider firewall rules"
+    step_info "Configuration kept at ${ENV_FILE}; retry after correcting the problem"
+    [[ "$(_deploy_mode)" == "systemd" ]] && show_service_logs "$BACKEND_SERVICE" 20
+    return 1
 }
 
 # Export VERSION/COMMIT/BUILD_TIME so compose can interpolate them
@@ -459,7 +536,7 @@ _compose_cmd_with_files() {
     if [[ "${ACME_ENABLED:-false}" == "true" && -f "$ACME_COMPOSE_FILE" ]]; then
         files+=(-f "$ACME_COMPOSE_FILE")
     fi
-    $compose_cmd "${files[@]}" --project-directory "$PROJECT_DIR" "$@"
+    $compose_cmd --env-file "$ENV_FILE" "${files[@]}" --project-directory "$PROJECT_DIR" "$@"
 }
 
 is_docker_running() {
@@ -516,9 +593,9 @@ _sync_env_to_install_dir() {
     if [[ "$(_deploy_mode)" == "systemd" ]] && [[ -d "$INSTALL_DIR" ]]; then
         # Standalone runs already live in INSTALL_DIR — cp on itself fails.
         if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
-            sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+            sudo cp "$ENV_FILE" "$INSTALL_DIR/.env" || return 1
         fi
-        sudo chmod 600 "$INSTALL_DIR/.env"
+        sudo chmod 600 "$INSTALL_DIR/.env" || return 1
         local run_user="${SUDO_USER:-$(whoami)}"
         sudo chown "$run_user:" "$INSTALL_DIR/.env" 2>/dev/null || true
     fi
@@ -734,8 +811,8 @@ wizard_install_docker() {
     fi
 }
 
-# Standalone runs need the repo for Docker or source builds: clone it and
-# hand the wizard over to the checkout. Never returns on success (exec).
+# Called only after configuration review. Keep the gathered settings when
+# obtaining source instead of restarting the wizard from the checkout.
 wizard_clone_repo() {
     local dest="${HOME}/nasnet-panel-linux"
 
@@ -754,8 +831,14 @@ wizard_clone_repo() {
         fi
     fi
 
-    step_info "Continuing from the repository checkout..."
-    exec "$dest/nasnet-tool.sh" install
+    PROJECT_DIR="$dest"
+    COMPOSE_FILE="$dest/docker-compose.yml"
+    SQLITE_COMPOSE_FILE="$dest/docker-compose.sqlite.yml"
+    ACME_COMPOSE_FILE="$dest/docker-compose.acme.yml"
+    if [[ "${WIZ_DEPLOY_MODE:-}" == "docker" ]]; then
+        ENV_FILE="$dest/.env"
+    fi
+    step_ok "Source ready at ${dest}"
 }
 
 wizard_read_env_value() {
@@ -945,10 +1028,12 @@ remove_cli_command() {
 # Section 6.6: Setup Wizard — Prerequisite Installers
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Required Go version (major.minor only, for download URL)
-WIZARD_GO_VERSION="1.26"
+# Toolchain minimums match go.mod, packageManager, CI, and Docker.
+WIZARD_GO_VERSION="1.27.1"
 # Required Node.js major version
-WIZARD_NODE_MAJOR="22"
+WIZARD_NODE_MAJOR="24"
+WIZARD_NODE_VERSION="24.20.0"
+WIZARD_PNPM_VERSION="12.3.4"
 
 # Detect deployment mode from existing .env
 wizard_get_deploy_mode() {
@@ -1047,6 +1132,11 @@ wizard_prereqs_systemd() {
             return 1
         fi
         step_ok "systemd"
+
+        if ! command -v curl &>/dev/null; then
+            step_fail "curl is required to verify this offline installation; install it before continuing"
+            return 1
+        fi
 
         if [[ -x "$INSTALL_DIR/bin/nasnet-panel" ]]; then
             step_ok "nasnet-panel binary"
@@ -1157,13 +1247,11 @@ DNSMASQ_RESTART
     if command -v go &>/dev/null; then
         local go_ver
         go_ver=$(go version 2>/dev/null | awk '{print $3}')
-        local go_minor
-        go_minor=$(echo "$go_ver" | sed 's/go//' | cut -d. -f1-2)
-        if [[ "$go_minor" == "$WIZARD_GO_VERSION" ]]; then
+        if dpkg --compare-versions "${go_ver#go}" ge "$WIZARD_GO_VERSION"; then
             step_ok "Go ${go_ver}"
             go_ok=true
         else
-            step_warn "Go ${go_ver} found but ${WIZARD_GO_VERSION}.x required"
+            step_warn "Go ${go_ver} found but ${WIZARD_GO_VERSION} or newer required"
         fi
     fi
 
@@ -1174,13 +1262,14 @@ DNSMASQ_RESTART
 
         # Dynamically resolve the latest patch version for the required major.minor
         local go_full_version
+        local go_release_series="${WIZARD_GO_VERSION%.*}"
         go_full_version=$(curl -fsSL "https://go.dev/dl/?mode=json" 2>/dev/null \
-            | grep -o '"version": *"go'"${WIZARD_GO_VERSION}"'\.[0-9]*"' \
+            | grep -o '"version": *"go'"${go_release_series//./\\.}"'\.[0-9]*"' \
             | head -1 \
             | grep -o 'go[0-9.]*')
 
-        if [[ -z "$go_full_version" ]]; then
-            step_fail "Failed to resolve latest Go ${WIZARD_GO_VERSION}.x patch version"
+        if [[ -z "$go_full_version" ]] || ! dpkg --compare-versions "${go_full_version#go}" ge "$WIZARD_GO_VERSION"; then
+            step_fail "Failed to resolve a Go patch release at or above ${WIZARD_GO_VERSION}"
             step_info "Download manually: https://go.dev/dl/"
             return 1
         fi
@@ -1229,11 +1318,11 @@ DNSMASQ_RESTART
         node_ver=$(node --version 2>/dev/null)
         local node_major
         node_major=$(echo "$node_ver" | sed 's/v//' | cut -d. -f1)
-        if [[ "$node_major" == "$WIZARD_NODE_MAJOR" ]]; then
+        if { [[ "$node_major" == "$WIZARD_NODE_MAJOR" ]] && dpkg --compare-versions "${node_ver#v}" ge "$WIZARD_NODE_VERSION"; } || [[ "$node_major" -ge 26 ]]; then
             step_ok "Node.js ${node_ver}"
             node_ok=true
         else
-            step_warn "Node.js ${node_ver} found but v${WIZARD_NODE_MAJOR}.x required"
+            step_warn "Node.js ${node_ver} found but v${WIZARD_NODE_VERSION}+ (24.x) or v26+ required"
         fi
     fi
 
@@ -1257,13 +1346,13 @@ DNSMASQ_RESTART
     fi
 
     # ── pnpm ──────────────────────────────────────────────────────────────
-    if command -v pnpm &>/dev/null; then
-        local pnpm_ver
-        pnpm_ver=$(pnpm --version 2>/dev/null)
+    local pnpm_ver
+    pnpm_ver=$(pnpm --version 2>/dev/null || true)
+    if [[ "$pnpm_ver" == "$WIZARD_PNPM_VERSION" ]]; then
         step_ok "pnpm ${pnpm_ver}"
     else
         step_info "Installing pnpm..."
-        if run_logged "Installing pnpm" sudo npm install -g pnpm; then
+        if run_logged "Installing pnpm" sudo npm install -g "pnpm@${WIZARD_PNPM_VERSION}"; then
             step_ok "pnpm $(pnpm --version 2>/dev/null) installed"
         else
             step_fail "Failed to install pnpm"
@@ -1278,7 +1367,10 @@ DNSMASQ_RESTART
     # ── Database engine ───────────────────────────────────────────────────
     if [[ "$db_driver" == "sqlite" ]]; then
         step_ok "SQLite selected — no separate database to install"
-        sudo mkdir -p "$INSTALL_DIR/data"
+        sudo mkdir -p "$INSTALL_DIR/data" || return 1
+    elif [[ "${WIZ_DB_HOST:-localhost}" != "localhost" && "${WIZ_DB_HOST:-localhost}" != "127.0.0.1" ]]; then
+        run_logged "Installing PostgreSQL client" sudo apt-get install -y postgresql-client || return 1
+        step_ok "Using the configured external PostgreSQL server"
     else
         # ── PostgreSQL ────────────────────────────────────────────────────
         local pg_ok=false
@@ -1339,49 +1431,41 @@ DNSMASQ_RESTART
 
 # Set up PostgreSQL database and user for systemd mode
 wizard_setup_postgres() {
-    local db_user="$1"
-    local db_pass="$2"
-    local db_name="$3"
-
-    step_info "Configuring PostgreSQL database..."
-
-    # Check if user exists
-    local user_exists
-    user_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${db_user}'" 2>/dev/null || echo "")
-
+    local db_user="$1" db_pass="$2" db_name="$3" pg_psql="${4:-psql}"
+    local db_port="${WIZ_DB_PORT:-${DB_PORT:-5432}}" escaped_pass user_exists db_exists
+    if [[ ! "$db_user" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ || ! "$db_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+        step_fail "Database role and name must contain only letters, numbers and underscores"
+        return 1
+    fi
+    escaped_pass=$(printf '%s' "$db_pass" | sed "s/'/''/g")
+    step_info "Preparing PostgreSQL database ${db_name} for role ${db_user}"
+    if ! user_exists=$(sudo -u postgres "$pg_psql" -p "$db_port" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_roles WHERE rolname='${db_user}'"); then
+        step_fail "Could not connect to PostgreSQL as its local administrator"
+        return 1
+    fi
     if [[ "$user_exists" == "1" ]]; then
-        step_ok "Database user '${db_user}' exists"
-        # Update password
-        sudo -u postgres psql -c "ALTER USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null
-        step_ok "Password updated for '${db_user}'"
-    else
-        if sudo -u postgres psql -c "CREATE USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null; then
-            step_ok "Database user '${db_user}' created"
-        else
-            step_fail "Failed to create database user"
+        # An existing role can serve other applications. Never rotate its
+        # password as a side effect of installing/retrying this panel.
+        if ! PGPASSWORD="$db_pass" "$pg_psql" -h localhost -p "$db_port" -U "$db_user" -d postgres -v ON_ERROR_STOP=1 -tAc 'SELECT 1' &>/dev/null; then
+            step_fail "The saved password does not authenticate role ${db_user}; its password was not changed"
             return 1
         fi
+        step_ok "Existing database credentials verified and preserved"
+    elif ! sudo -u postgres "$pg_psql" -p "$db_port" -v ON_ERROR_STOP=1 -c "CREATE USER ${db_user} WITH PASSWORD '${escaped_pass}';" &>/dev/null; then
+        step_fail "Failed to create the dedicated database role"
+        return 1
     fi
-
-    # Check if database exists
-    local db_exists
-    db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null || echo "")
-
-    if [[ "$db_exists" == "1" ]]; then
-        step_ok "Database '${db_name}' exists"
-    else
-        if sudo -u postgres psql -c "CREATE DATABASE ${db_name} OWNER ${db_user};" &>/dev/null; then
-            step_ok "Database '${db_name}' created"
-        else
-            step_fail "Failed to create database"
-            return 1
-        fi
+    if ! db_exists=$(sudo -u postgres "$pg_psql" -p "$db_port" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'"); then
+        return 1
     fi
-
-    # Grant privileges
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" &>/dev/null
-    step_ok "Privileges granted"
-
+    if [[ "$db_exists" != "1" ]]; then
+        sudo -u postgres "$pg_psql" -p "$db_port" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${db_name} OWNER ${db_user};" &>/dev/null || return 1
+    fi
+    if ! PGPASSWORD="$db_pass" "$pg_psql" -h localhost -p "$db_port" -U "$db_user" -d "$db_name" -v ON_ERROR_STOP=1 -tAc 'SELECT 1' &>/dev/null; then
+        step_fail "The configured role cannot connect to ${db_name}"
+        return 1
+    fi
+    step_ok "Database connection verified"
     return 0
 }
 
@@ -1406,8 +1490,13 @@ wizard_setup_postgres_offline() {
         return 1
     fi
 
-    # Check if port 5432 is already in use
-    if ss -tlnp 2>/dev/null | grep -q ':5432 '; then
+    if systemctl is-active --quiet "$PGSQL_SERVICE"; then
+        WIZ_PGSQL_SERVICE_NAME="$PGSQL_SERVICE"
+        wizard_setup_postgres "$db_user" "$db_pass" "$db_name" "$pg_bin/psql"
+        return $?
+    fi
+    # Track whether an existing listener is managed by the distro service.
+    if systemctl is-active --quiet postgresql || { command -v ss &>/dev/null && ss -tln 2>/dev/null | grep -q ':5432 '; }; then
         step_warn "Port 5432 is already in use"
         echo ""
         echo -e "  An existing PostgreSQL may be running."
@@ -1423,12 +1512,14 @@ wizard_setup_postgres_offline() {
             0)
                 # Use existing — just create user/database via system psql
                 step_info "Using existing PostgreSQL..."
-                wizard_setup_postgres "$db_user" "$db_pass" "$db_name"
+                WIZ_PGSQL_SERVICE_NAME="external"
+                systemctl is-active --quiet postgresql && WIZ_PGSQL_SERVICE_NAME="postgresql"
+                wizard_setup_postgres "$db_user" "$db_pass" "$db_name" "$pg_bin/psql"
                 return $?
                 ;;
             1)
                 step_info "Stopping existing PostgreSQL..."
-                systemctl stop postgresql 2>/dev/null || true
+                sudo systemctl stop postgresql || return 1
                 ;;
             *)
                 return 1
@@ -1442,33 +1533,31 @@ wizard_setup_postgres_offline() {
         # Write password to temp file (process substitution doesn't work through sudo)
         local pw_file
         pw_file=$(mktemp)
-        echo "$db_pass" > "$pw_file"
-        chmod 644 "$pw_file"
+        wizard_gen_password > "$pw_file" || return 1
+        chmod 600 "$pw_file"
+        sudo chown postgres:postgres "$pw_file" || { rm -f "$pw_file"; return 1; }
         if sudo -u postgres "$pg_bin/initdb" -D "$pg_data" --auth=md5 --pwfile="$pw_file" --username=postgres &>/dev/null; then
             rm -f "$pw_file"
         else
             rm -f "$pw_file"
-            # Retry without --pwfile (older pg versions)
-            sudo -u postgres "$pg_bin/initdb" -D "$pg_data" &>/dev/null || {
-                step_fail "Failed to initialize PostgreSQL data directory"
-                return 1
-            }
+            step_fail "Failed to initialize PostgreSQL data directory"
+            return 1
         fi
         step_ok "Data directory initialized"
 
         # Configure pg_hba.conf for local connections
-        cat > "$pg_data/pg_hba.conf" << 'HBAEOF'
+        sudo tee "$pg_data/pg_hba.conf" >/dev/null << 'HBAEOF' || return 1
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 local   all             postgres                                peer
 local   all             all                                     md5
 host    all             all             127.0.0.1/32            md5
 host    all             all             ::1/128                 md5
 HBAEOF
-        chown postgres:postgres "$pg_data/pg_hba.conf"
+        sudo chown postgres:postgres "$pg_data/pg_hba.conf" || return 1
         step_ok "pg_hba.conf configured"
 
         # Configure postgresql.conf
-        cat >> "$pg_data/postgresql.conf" << 'CONFEOF'
+        sudo tee -a "$pg_data/postgresql.conf" >/dev/null << 'CONFEOF' || return 1
 
 # nasnet-panel offline bundle settings
 listen_addresses = 'localhost'
@@ -1478,7 +1567,7 @@ shared_buffers = 128MB
 log_destination = 'stderr'
 logging_collector = off
 CONFEOF
-        chown postgres:postgres "$pg_data/postgresql.conf"
+        sudo chown postgres:postgres "$pg_data/postgresql.conf" || return 1
         step_ok "postgresql.conf configured"
     else
         step_ok "Data directory already initialized"
@@ -1532,41 +1621,9 @@ PGSVCEOF
         return 1
     fi
 
-    # Create database user and database
-    local user_exists
-    user_exists=$(sudo -u postgres "$pg_bin/psql" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${db_user}'" 2>/dev/null || echo "")
+    WIZ_PGSQL_SERVICE_NAME="$PGSQL_SERVICE"
+    wizard_setup_postgres "$db_user" "$db_pass" "$db_name" "$pg_bin/psql"
 
-    if [[ "$user_exists" == "1" ]]; then
-        step_ok "Database user '${db_user}' exists"
-        sudo -u postgres "$pg_bin/psql" -c "ALTER USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null
-        step_ok "Password updated for '${db_user}'"
-    else
-        if sudo -u postgres "$pg_bin/psql" -c "CREATE USER ${db_user} WITH PASSWORD '${db_pass}';" &>/dev/null; then
-            step_ok "Database user '${db_user}' created"
-        else
-            step_fail "Failed to create database user"
-            return 1
-        fi
-    fi
-
-    local db_exists
-    db_exists=$(sudo -u postgres "$pg_bin/psql" -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null || echo "")
-
-    if [[ "$db_exists" == "1" ]]; then
-        step_ok "Database '${db_name}' exists"
-    else
-        if sudo -u postgres "$pg_bin/psql" -c "CREATE DATABASE ${db_name} OWNER ${db_user};" &>/dev/null; then
-            step_ok "Database '${db_name}' created"
-        else
-            step_fail "Failed to create database"
-            return 1
-        fi
-    fi
-
-    sudo -u postgres "$pg_bin/psql" -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};" &>/dev/null
-    step_ok "Privileges granted"
-
-    return 0
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1587,13 +1644,21 @@ detect_arch() {
 install_xray_core() {
     local arch
     if ! arch=$(detect_arch); then
-        step_warn "Unsupported architecture $(uname -m) — skipping xray-core"
-        return 0
+        step_fail "Unsupported architecture $(uname -m) for xray-core"
+        return 1
     fi
 
-    sudo mkdir -p "$XRAY_CONFIG_DIR"
+    wizard_prepare_xray_dirs || return 1
 
     local vendored="${PROJECT_DIR:-}/bin/xray/v${XRAY_VERSION}/xray-linux-${arch}"
+    if [[ "$OFFLINE_MODE" == "true" ]]; then
+        vendored="$INSTALL_DIR/bin/xray/v${XRAY_VERSION}/xray-linux-${arch}"
+        [[ -f "$vendored" ]] || vendored="$INSTALL_DIR/bin/xray/xray-linux-${arch}"
+        if [[ ! -f "$vendored" ]]; then
+            step_fail "Offline bundle is missing xray-core for ${arch}"
+            return 1
+        fi
+    fi
     local want=""
     [[ -f "${vendored}.sha256" ]] && want=$(cut -d' ' -f1 < "${vendored}.sha256")
 
@@ -1617,13 +1682,24 @@ install_xray_core() {
                 return 1
             fi
         fi
-        sudo install -m 755 "$vendored" "$XRAY_BINARY"
+        sudo install -m 755 "$vendored" "$XRAY_BINARY" || return 1
         step_ok "xray-core ${XRAY_VERSION} installed (${arch}, from the bundle)"
         _install_geofiles
         return 0
     fi
 
     _download_xray_core "$arch"
+}
+
+wizard_prepare_xray_dirs() {
+    local run_user="${SUDO_USER:-$(whoami)}" run_group
+    run_group=$(id -gn "$run_user") || return 1
+    local dir
+    for dir in "$XRAY_CONFIG_DIR" "$XRAY_LOG_DIR" "$XRAY_STATE_DIR"; do
+        sudo mkdir -p "$dir" || return 1
+        sudo chown -R "$run_user:$run_group" "$dir" || return 1
+        sudo chmod 750 "$dir" || return 1
+    done
 }
 
 # This lands as root and then runs, so verify it first: the release's .dgst,
@@ -1683,7 +1759,7 @@ _download_xray_core() {
         return 1
     fi
 
-    sudo install -m 755 "${tmp}/xray" "$XRAY_BINARY"
+    sudo install -m 755 "${tmp}/xray" "$XRAY_BINARY" || return 1
     rm -rf "$tmp"
     step_ok "xray-core ${XRAY_VERSION} installed (${arch}, downloaded)"
     _install_geofiles
@@ -1744,7 +1820,7 @@ wizard_fetch_release() {
     [[ -n "$GITHUB_TOKEN" ]] && dl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream")
 
     local asset url
-    for asset in "nasnet-panel-linux-${arch}" "nasnet-agent-linux-${arch}" "checksums.txt"; do
+    for asset in "nasnet-panel-linux-${arch}" "checksums.txt"; do
         url=$(echo "$all_urls" | grep "$asset" | head -1)
         if [[ -z "$url" ]]; then
             step_fail "Release ${RELEASE_VERSION} has no asset ${asset}"
@@ -1784,19 +1860,18 @@ wizard_deploy_release() {
     run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
     step_info "Deploying ${RELEASE_VERSION} to ${INSTALL_DIR}..."
-    sudo mkdir -p "$INSTALL_DIR"/{bin/{agent,xray},data/{backups,acme}}
+    sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}} || return 1
 
-    sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel"
-    sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-agent-linux-${arch}" "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
+    sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel" || return 1
 
     # Has to be here before the service starts, or every config push fails.
-    install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
+    install_xray_core || return 1
 
     if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
-        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env" || return 1
     fi
-    sudo chmod 600 "$INSTALL_DIR/.env"
-    echo "$RELEASE_VERSION" | sudo tee "$INSTALL_DIR/.version" >/dev/null
+    sudo chmod 600 "$INSTALL_DIR/.env" || return 1
+    echo "$RELEASE_VERSION" | sudo tee "$INSTALL_DIR/.version" >/dev/null || return 1
 
     # Keep the tool next to the install so later runs manage it from there.
     if [[ "${BASH_SOURCE[0]}" != "$INSTALL_DIR/nasnet-tool.sh" && -f "${BASH_SOURCE[0]}" ]]; then
@@ -1804,7 +1879,7 @@ wizard_deploy_release() {
         sudo chmod +x "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
     fi
 
-    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
     rm -rf "$RELEASE_TMP_DIR"
 
     step_ok "Deployed ${RELEASE_VERSION} to ${INSTALL_DIR}"
@@ -1823,13 +1898,13 @@ wizard_deploy_artifacts() {
         # Copy .env to install dir (unless it already lives there)
         if [[ -f "$ENV_FILE" ]]; then
             if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
-                sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+                sudo cp "$ENV_FILE" "$INSTALL_DIR/.env" || return 1
             fi
-            sudo chmod 600 "$INSTALL_DIR/.env"
+            sudo chmod 600 "$INSTALL_DIR/.env" || return 1
         fi
 
         # Set ownership
-        sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+        sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
 
         step_ok "Configuration synced to ${INSTALL_DIR}"
         return 0
@@ -1838,36 +1913,28 @@ wizard_deploy_artifacts() {
     step_info "Deploying to ${INSTALL_DIR}..."
 
     # Create directory structure
-    sudo mkdir -p "$INSTALL_DIR"/{bin/{agent,xray},data/{backups,acme}}
+    sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}} || return 1
 
     # Copy backend binary
-    sudo cp "$PROJECT_DIR/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel"
-    sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel"
-
-    # Copy agent binaries
-    if [[ -d "$PROJECT_DIR/bin/agent" ]]; then
-        sudo mkdir -p "$INSTALL_DIR/bin/agent"
-        sudo cp "$PROJECT_DIR"/bin/agent/nasnet-agent-* "$INSTALL_DIR/bin/agent/"
-        sudo chmod +x "$INSTALL_DIR"/bin/agent/nasnet-agent-*
-        step_ok "Agent binaries deployed"
-    fi
+    sudo cp "$PROJECT_DIR/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" || return 1
+    sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel" || return 1
 
     # Has to be here before the service starts, or every config push fails.
-    install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
+    install_xray_core || return 1
 
     # Copy .env (unless it already lives there)
     if [[ "$ENV_FILE" != "$INSTALL_DIR/.env" ]]; then
-        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env"
+        sudo cp "$ENV_FILE" "$INSTALL_DIR/.env" || return 1
     fi
-    sudo chmod 600 "$INSTALL_DIR/.env"
+    sudo chmod 600 "$INSTALL_DIR/.env" || return 1
 
     # Write version marker
     local _deploy_version
     _deploy_version=$(cd "$PROJECT_DIR" && git describe --tags --always 2>/dev/null || echo "unknown")
-    echo "$_deploy_version" | sudo tee "$INSTALL_DIR/.version" >/dev/null
+    echo "$_deploy_version" | sudo tee "$INSTALL_DIR/.version" >/dev/null || return 1
 
     # Set ownership
-    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
 
     # A repo checkout drives itself; only standalone installs need the
     # tool copied out of the source tree and onto PATH.
@@ -1904,26 +1971,10 @@ wizard_build_start_docker() {
         return 1
     fi
 
-    # Wait for health checks
-    echo ""
-    step_info "Waiting for services to become healthy..."
-    local retries=0
-    local max_retries=30
-    while (( retries < max_retries )); do
-        local healthy_count
-        healthy_count=$(docker ps --filter "name=nasnet_panel" --filter "health=healthy" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')
-        if (( healthy_count >= 2 )); then
-            break
-        fi
-        sleep 2
-        retries=$(( retries + 1 ))
-        printf "\r  ${CYAN}⠋${RESET} Waiting for health checks... (%d/%ds)" $(( retries * 2 )) $(( max_retries * 2 ))
-    done
-    printf "\r%60s\r" ""  # clear line
-
-    echo ""
+    WIZ_PROVISIONED=true
     action_view_status_inline
-    return 0
+    wizard_verify_install
+
 }
 
 
@@ -1932,9 +1983,7 @@ install_netrollback_units() {
     step_info "Installing network apply dead-man..."
 
     local roll_env_db=""
-    if ! is_sqlite; then
-        roll_env_db="Environment=DB_HOST=localhost"
-    fi
+    # EnvironmentFile is the authoritative database configuration.
 
     sudo tee /etc/systemd/system/nasnet-netrollback.service > /dev/null << 'ROLLSVC'
 [Unit]
@@ -1981,6 +2030,8 @@ wizard_build_start_systemd() {
     if [[ "$OFFLINE_MODE" == "true" ]]; then
         # ── Offline: skip all builds, artifacts already deployed by install.sh ──
         step_ok "Offline mode — using pre-built artifacts from bundle"
+        wizard_deploy_artifacts || return 1
+        install_xray_core || return 1
         echo ""
     elif [[ "${WIZ_INSTALL_METHOD:-source}" == "release" ]]; then
         # ── Release binaries: download, verify, deploy ────────────────────
@@ -1991,7 +2042,7 @@ wizard_build_start_systemd() {
         fi
         echo ""
         draw_header "Deploying to ${INSTALL_DIR}"
-        wizard_deploy_release
+        wizard_deploy_release || return 1
     else
     # ── Build frontend (embedded in Go binary via go:embed) ─────────────
     if run_logged "Building frontend" bash -c "cd '$PROJECT_DIR/web-panel' && pnpm install && pnpm build"; then
@@ -2026,18 +2077,10 @@ wizard_build_start_systemd() {
         return 1
     fi
 
-    # ── Build agent binaries ─────────────────────────────────────────────
-    if run_logged "Building agent binaries" bash -c "cd '$PROJECT_DIR' && make build-agent"; then
-        step_ok "Agent binaries built"
-    else
-        step_fail "Agent binary build failed"
-        return 1
-    fi
-
     # ── Deploy artifacts to install directory ─────────────────────────────
     echo ""
     draw_header "Deploying to ${INSTALL_DIR}"
-    wizard_deploy_artifacts
+    wizard_deploy_artifacts || return 1
     fi  # end online/offline branch
 
     echo ""
@@ -2057,13 +2100,12 @@ wizard_build_start_systemd() {
     local svc_requires=""
     local svc_env_db=""
     if ! is_sqlite; then
-        local pg_svc_name="postgresql.service"
-        if [[ "$OFFLINE_MODE" == "true" ]]; then
-            pg_svc_name="${PGSQL_SERVICE}.service"
+        local pg_svc_name="${WIZ_PGSQL_SERVICE_NAME:-${PGSQL_SERVICE_NAME:-postgresql}}"
+        if [[ "$pg_svc_name" != "external" ]]; then
+            pg_svc_name="${pg_svc_name%.service}.service"
+            svc_after="network-online.target ${pg_svc_name}"
+            svc_requires="Requires=${pg_svc_name}"
         fi
-        svc_after="network-online.target ${pg_svc_name}"
-        svc_requires="Requires=${pg_svc_name}"
-        svc_env_db="Environment=DB_HOST=localhost"
     fi
 
     # ACME (:80) and privileged proxy inbounds need CAP_NET_BIND_SERVICE.
@@ -2075,7 +2117,7 @@ wizard_build_start_systemd() {
         svc_router_env="Environment=NASNET_ROUTER_MODE=1"
     fi
 
-    sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.service" > /dev/null << SVCEOF
+    sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.service" > /dev/null << SVCEOF || return 1
 [Unit]
 Description=nasnet-panel Backend API
 Documentation=https://github.com/nasnet-community/nasnet-panel-linux
@@ -2111,70 +2153,28 @@ SVCEOF
     step_ok "${BACKEND_SERVICE}.service created"
 
     if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
-        install_netrollback_units
+        install_netrollback_units || return 1
     else
         step_info "Server mode — network apply dead-man not installed"
     fi
 
     # Reload systemd
-    sudo systemctl daemon-reload
+    sudo systemctl daemon-reload || return 1
     step_ok "Systemd daemon reloaded"
 
     # ── Enable and start services ─────────────────────────────────────────
     echo ""
     step_info "Starting services..."
 
-    sudo systemctl enable "$BACKEND_SERVICE" --now 2>/dev/null
-    sleep 2
-
-    if systemctl is-active "$BACKEND_SERVICE" &>/dev/null; then
-        step_ok "${BACKEND_SERVICE} is running"
-    else
+    if ! sudo systemctl enable "$BACKEND_SERVICE" 2>/dev/null \
+        || ! sudo systemctl restart "$BACKEND_SERVICE"; then
         step_fail "${BACKEND_SERVICE} failed to start"
         show_service_logs "$BACKEND_SERVICE" 20
+        return 1
     fi
+    WIZ_PROVISIONED=true
+    wizard_verify_install
 
-    # ── Health check ──────────────────────────────────────────────────────
-    echo ""
-    step_info "Waiting for services to become healthy..."
-    local retries=0
-    local max_retries=15
-    while (( retries < max_retries )); do
-        if _health_ok "$app_port"; then
-            break
-        fi
-        sleep 2
-        retries=$(( retries + 1 ))
-        printf "\r  ${CYAN}⠋${RESET} Waiting for backend... (%d/%ds)" $(( retries * 2 )) $(( max_retries * 2 ))
-    done
-    printf "\r%60s\r" ""
-
-    # Show status
-    echo ""
-    local rows=()
-    local api_status pg_status
-
-    if _health_ok "$app_port"; then
-        api_status="${GREEN}● Healthy${RESET}"
-    else
-        api_status="${RED}● Unreachable${RESET}"
-    fi
-    rows+=("nasnet-panel|http://localhost:${app_port}|${api_status}")
-
-    if is_sqlite; then
-        rows+=("SQLite|embedded|${GREEN}● Ready${RESET}")
-    else
-        if systemctl is-active postgresql &>/dev/null; then
-            pg_status="${GREEN}● Running${RESET}"
-        else
-            pg_status="${RED}● Stopped${RESET}"
-        fi
-        rows+=("PostgreSQL|systemd|${pg_status}")
-    fi
-
-    draw_table "Service|Endpoint|Status" "${rows[@]}"
-
-    return 0
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2183,6 +2183,15 @@ SVCEOF
 
 # wizard_write_env <deploy_mode> <header_comment>
 # All WIZ_* variables must be set before calling this.
+wizard_env_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//\$/\\\$}"
+    value="${value//\`/\\\`}"
+    printf '"%s"' "$value"
+}
+
 wizard_write_env() {
     local deploy_mode="$1"
     local header_comment="$2"
@@ -2191,17 +2200,25 @@ wizard_write_env() {
 
     # Standalone runs write into INSTALL_DIR before it exists.
     if [[ ! -w "$PROJECT_DIR" ]]; then
-        sudo mkdir -p "$PROJECT_DIR"
-        sudo chown "$(whoami):" "$PROJECT_DIR" 2>/dev/null || true
+        sudo mkdir -p "$PROJECT_DIR" || return 1
+        sudo chown "$(whoami):" "$PROJECT_DIR" || return 1
     fi
 
-    cat > "$ENV_FILE" << ENVEOF
+    local env_dest="$ENV_FILE" env_tmp
+    env_tmp=$(mktemp "${ENV_FILE}.tmp.XXXXXX") || return 1
+    local ENV_FILE="$env_tmp"
+    cat > "$ENV_FILE" << ENVEOF || { rm -f "$env_tmp"; return 1; }
 # ── nasnet-panel Configuration ──────────────────────────────────────────────────
 # ${header_comment}
 # Mode: ${WIZ_MODE}  |  Deploy: ${deploy_mode}  |  DB: ${db_driver}
 
 # Deployment
 DEPLOY_MODE=${deploy_mode}
+INSTALL_METHOD=${WIZ_INSTALL_METHOD:-${INSTALL_METHOD:-release}}
+INSTALL_SOURCE_DIR=$(wizard_env_quote "$PROJECT_DIR")
+INSTALL_STATUS=${WIZ_INSTALL_STATUS:-${INSTALL_STATUS:-complete}}
+ROUTER_MODE=${WIZ_ROUTER_MODE:-${ROUTER_MODE:-false}}
+PGSQL_SERVICE_NAME=${WIZ_PGSQL_SERVICE_NAME:-${PGSQL_SERVICE_NAME:-postgresql}}
 
 # Application
 APP_ENV=production
@@ -2221,25 +2238,25 @@ ENVEOF
         else
             db_path="/app/data/nasnet_panel.db"
         fi
-        cat >> "$ENV_FILE" << ENVEOF
-DB_PATH=${db_path}
+        cat >> "$ENV_FILE" << ENVEOF || { rm -f "$env_tmp"; return 1; }
+DB_PATH=$(wizard_env_quote "${WIZ_DB_PATH:-${DB_PATH:-$db_path}}")
 ENVEOF
     else
-        cat >> "$ENV_FILE" << ENVEOF
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=${WIZ_DB_PASSWORD}
-DB_NAME=nasnet_panel
-DB_SSL_MODE=disable
+        cat >> "$ENV_FILE" << ENVEOF || { rm -f "$env_tmp"; return 1; }
+DB_HOST=${WIZ_DB_HOST:-${DB_HOST:-localhost}}
+DB_PORT=${WIZ_DB_PORT:-${DB_PORT:-5432}}
+DB_USER=${WIZ_DB_USER:-${DB_USER:-postgres}}
+DB_PASSWORD=$(wizard_env_quote "$WIZ_DB_PASSWORD")
+DB_NAME=${WIZ_DB_NAME:-${DB_NAME:-nasnet_panel}}
+DB_SSL_MODE=${WIZ_DB_SSL_MODE:-${DB_SSL_MODE:-disable}}
 ENVEOF
     fi
 
-    cat >> "$ENV_FILE" << ENVEOF
+    cat >> "$ENV_FILE" << ENVEOF || { rm -f "$env_tmp"; return 1; }
 
 # Telegram Bot
 TELEGRAM_ENABLED=${WIZ_TELEGRAM_ENABLED}
-TELEGRAM_BOT_TOKEN=${WIZ_BOT_TOKEN}
+TELEGRAM_BOT_TOKEN=$(wizard_env_quote "$WIZ_BOT_TOKEN")
 BOT_MODE=polling
 WEBHOOK_URL=
 
@@ -2256,13 +2273,13 @@ LOG_LEVEL=info
 LOG_FORMAT=text
 
 # Admin
-ADMIN_IDS=${WIZ_ADMIN_IDS}
+ADMIN_IDS='${WIZ_ADMIN_IDS}'
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH='${WIZ_ADMIN_HASH}'
 
 # TLS (optional — leave empty for auto ACME, or set paths for custom certs)
-TLS_CERT_FILE=
-TLS_KEY_FILE=
+TLS_CERT_FILE=$(wizard_env_quote "${WIZ_TLS_CERT_FILE-${TLS_CERT_FILE:-}}")
+TLS_KEY_FILE=$(wizard_env_quote "${WIZ_TLS_KEY_FILE-${TLS_KEY_FILE:-}}")
 
 # ACME / Let's Encrypt
 ACME_ENABLED=${WIZ_ACME_ENABLED:-false}
@@ -2291,7 +2308,8 @@ PROMETHEUS_SCRAPE_INTERVAL=5s
 PROMETHEUS_RETENTION=15d
 ENVEOF
 
-    chmod 600 "$ENV_FILE"
+    chmod 600 "$ENV_FILE" || { rm -f "$env_tmp"; return 1; }
+    mv -f "$env_tmp" "$env_dest" || { rm -f "$env_tmp"; return 1; }
     step_ok ".env written (permissions: 600)"
 }
 
@@ -2305,6 +2323,8 @@ ENVEOF
 # Requires: WIZ_APP_PORT to be set
 # Returns 1 if user cancels
 wizard_prompt_access_mode() {
+    WIZ_TLS_CERT_FILE=""
+    WIZ_TLS_KEY_FILE=""
     echo -e "  ${BOLD}How will users access this server?${RESET}"
     echo ""
     echo -e "  ${CYAN}Domain mode${RESET}  — You have a domain pointing to this server"
@@ -2428,6 +2448,29 @@ wizard_prompt_access_mode() {
                     return 1
                 fi
                 WIZ_ACME_ENABLED="true"
+            else
+                local tls_choice
+                arrow_menu "HTTPS termination" tls_choice "Existing reverse proxy" "Existing certificate files" "← Cancel"
+                case "$tls_choice" in
+                    0)
+                        step_info "The reverse proxy must already forward the public URLs to this panel's HTTP port ${WIZ_APP_PORT}"
+                        echo -ne "  ${CYAN}Public API URL${RESET} [https://${WIZ_API_DOMAIN}]: "
+                        read -r override
+                        WIZ_APP_BASE_URL="${override:-https://${WIZ_API_DOMAIN}}"
+                        echo -ne "  ${CYAN}Public panel URL${RESET} [https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}]: "
+                        read -r override
+                        WIZ_SUB_PANEL_URL="${override:-https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}}"
+                        ;;
+                    1)
+                        if [[ "${WIZ_DEPLOY_MODE:-systemd}" == "docker" ]]; then
+                            step_info "Use paths inside the container; bind-mount the certificate and key in Docker Compose before installing"
+                        fi
+                        echo -ne "  ${CYAN}TLS certificate file (absolute path)${RESET}: "; read -r WIZ_TLS_CERT_FILE
+                        echo -ne "  ${CYAN}TLS key file (absolute path)${RESET}: "; read -r WIZ_TLS_KEY_FILE
+                        [[ "$WIZ_TLS_CERT_FILE" == /* && "$WIZ_TLS_KEY_FILE" == /* ]] || return 1
+                        ;;
+                    *) return 1 ;;
+                esac
             fi
         fi
 
@@ -2487,6 +2530,31 @@ wizard_prompt_access_mode() {
         echo ""
     fi
 
+    wizard_validate_access
+}
+
+wizard_validate_access() {
+    local proto="http" authority panel_path
+    [[ "$WIZ_COOKIE_SECURE" == "true" ]] && proto="https"
+    local url
+    for url in "$WIZ_APP_BASE_URL" "$WIZ_SUB_PANEL_URL"; do
+        if [[ ! "$url" =~ ^${proto}://[a-zA-Z0-9.-]+(:[0-9]+)?(/[^[:space:]\?\#]*)?$ ]]; then
+            step_fail "Use valid ${proto} URLs without credentials, query strings or fragments"
+            return 1
+        fi
+    done
+    authority="${WIZ_SUB_PANEL_URL#*://}"
+    panel_path=""
+    [[ "$authority" == */* ]] && panel_path="/${authority#*/}"
+    if [[ "${panel_path%/}" != "${WIZ_BASE_PATH%/}" ]]; then
+        step_fail "The public panel URL must include the configured panel path ${WIZ_BASE_PATH}"
+        return 1
+    fi
+    authority="${WIZ_APP_BASE_URL#*://}"
+    if [[ "$authority" == */* && "${authority#*/}" != "" ]]; then
+        step_fail "The public API URL must not contain a path"
+        return 1
+    fi
     return 0
 }
 
@@ -2494,457 +2562,258 @@ wizard_prompt_access_mode() {
 # Section 6.10: Setup Wizard — Main Flows
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Restore the saved answers for retries. These assignments target the caller's
+# dynamically scoped WIZ_* locals; credentials are never regenerated on retry.
+wizard_restore_saved_config() {
+    WIZ_DEPLOY_MODE="${DEPLOY_MODE:-systemd}"
+    WIZ_DB_DRIVER="${DB_DRIVER:-postgres}"
+    WIZ_INSTALL_METHOD="${INSTALL_METHOD:-release}"
+    WIZ_ROUTER_MODE="${ROUTER_MODE:-false}"
+    WIZ_APP_PORT="${APP_PORT:-9761}"
+    WIZ_APP_BASE_URL="${APP_BASE_URL:-}"
+    WIZ_SUB_PANEL_URL="${SUB_PANEL_URL:-}"
+    WIZ_BASE_PATH="${APP_PANEL_BASE_PATH:-}"
+    WIZ_COOKIE_DOMAIN="${JWT_COOKIE_DOMAIN:-}"
+    WIZ_COOKIE_SECURE="${JWT_COOKIE_SECURE:-false}"
+    WIZ_ACME_ENABLED="${ACME_ENABLED:-false}"
+    WIZ_ACME_STAGING="${ACME_STAGING:-false}"
+    WIZ_ACME_EMAIL="${ACME_EMAIL:-}"
+    WIZ_TLS_CERT_FILE="${TLS_CERT_FILE:-}"
+    WIZ_TLS_KEY_FILE="${TLS_KEY_FILE:-}"
+    WIZ_TELEGRAM_ENABLED="${TELEGRAM_ENABLED:-false}"
+    WIZ_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+    WIZ_ADMIN_IDS="${ADMIN_IDS:-}"
+    WIZ_ADMIN_HASH="${ADMIN_PASSWORD_HASH:-}"
+    WIZ_JWT_SECRET="${JWT_SECRET_KEY:-}"
+    WIZ_DB_PASSWORD="${DB_PASSWORD:-}"
+    WIZ_DB_USER="${DB_USER:-nasnet_panel}"
+    WIZ_DB_HOST="${DB_HOST:-localhost}"
+    WIZ_DB_PORT="${DB_PORT:-5432}"
+    WIZ_DB_NAME="${DB_NAME:-nasnet_panel}"
+    WIZ_DB_SSL_MODE="${DB_SSL_MODE:-disable}"
+    WIZ_DB_PATH="${DB_PATH:-}"
+    WIZ_PGSQL_SERVICE_NAME="${PGSQL_SERVICE_NAME:-postgresql}"
+    [[ "$WIZ_APP_BASE_URL" == https://* ]] && WIZ_MODE="domain" || WIZ_MODE="ip"
+    if [[ -n "${INSTALL_SOURCE_DIR:-}" && -f "${INSTALL_SOURCE_DIR}/go.mod" ]]; then
+        PROJECT_DIR="$INSTALL_SOURCE_DIR"
+        COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+        SQLITE_COMPOSE_FILE="$PROJECT_DIR/docker-compose.sqlite.yml"
+        ACME_COMPOSE_FILE="$PROJECT_DIR/docker-compose.acme.yml"
+    fi
+}
+
+wizard_apply_install() {
+    WIZ_PROVISIONED=false
+    if [[ "$OFFLINE_MODE" != "true" && ( "$WIZ_DEPLOY_MODE" == "docker" || "$WIZ_INSTALL_METHOD" == "source" ) && ! -f "$PROJECT_DIR/go.mod" ]]; then
+        wizard_clone_repo || return 1
+    fi
+    draw_header "Installing prerequisites"
+    if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
+        wizard_prereqs_docker || return 1
+    else
+        wizard_prereqs_systemd "$WIZ_DB_DRIVER" || return 1
+    fi
+
+    # Generate only missing secrets. A failed attempt reuses these values and
+    # the .env saved below, including any existing PostgreSQL volume password.
+    if [[ -z "$WIZ_JWT_SECRET" ]]; then
+        WIZ_JWT_SECRET=$(wizard_gen_secret) || return 1
+    fi
+    if [[ "$WIZ_DB_DRIVER" != "sqlite" && -z "$WIZ_DB_PASSWORD" ]]; then
+        if [[ "$WIZ_DEPLOY_MODE" == "docker" ]] && _docker_pg_volume_exists; then
+            step_warn "An existing PostgreSQL volume needs its original database password"
+            echo -ne "  ${CYAN}Existing database password${RESET}: "
+            read -rs WIZ_DB_PASSWORD; echo ""
+            if [[ -z "$WIZ_DB_PASSWORD" ]]; then
+                step_fail "Password is required; existing database data was kept"
+                return 1
+            fi
+        else
+            WIZ_DB_PASSWORD=$(wizard_gen_password) || return 1
+        fi
+    fi
+    if [[ -z "$WIZ_ADMIN_HASH" ]]; then
+        WIZ_ADMIN_HASH=$(wizard_gen_bcrypt "$WIZ_ADMIN_PASS") || return 1
+        [[ -n "$WIZ_ADMIN_HASH" ]] || { step_fail "Could not hash the admin password"; return 1; }
+    fi
+    local WIZ_ACME_CACHE_DIR="$INSTALL_DIR/data/acme"
+    local WIZ_PROM_TARGET="localhost:${WIZ_APP_PORT}"
+    if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
+        WIZ_ACME_CACHE_DIR="/app/data/acme"
+        WIZ_PROM_TARGET="app:${WIZ_APP_PORT}"
+    fi
+    WIZ_INSTALL_STATUS="pending"
+    wizard_write_env "$WIZ_DEPLOY_MODE" "Reviewed installation; settings retained for retry" || return 1
+    load_env
+
+    if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$WIZ_DB_DRIVER" != "sqlite" ]]; then
+        if [[ "$WIZ_DB_HOST" != "localhost" && "$WIZ_DB_HOST" != "127.0.0.1" ]]; then
+            WIZ_PGSQL_SERVICE_NAME="external"
+        elif [[ "$OFFLINE_MODE" == "true" ]]; then
+            wizard_setup_postgres_offline "$WIZ_DB_USER" "$WIZ_DB_PASSWORD" "$WIZ_DB_NAME" || return 1
+        else
+            wizard_setup_postgres "$WIZ_DB_USER" "$WIZ_DB_PASSWORD" "$WIZ_DB_NAME" || return 1
+        fi
+        # Offline setup may select an existing distro service.
+        wizard_write_env "$WIZ_DEPLOY_MODE" "Reviewed installation; settings retained for retry" || return 1
+        load_env
+    fi
+    wizard_open_firewall "$WIZ_APP_PORT" "$WIZ_ACME_ENABLED"
+    if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
+        wizard_build_start_docker || return 1
+    else
+        wizard_build_start_systemd "$WIZ_APP_PORT" || return 1
+    fi
+}
+
 wizard_install() {
     clear
     draw_box "nasnet-panel Installation Wizard"
+    local WIZ_DEPLOY_MODE="systemd" WIZ_ROUTER_MODE="false" WIZ_DB_DRIVER="postgres"
+    local WIZ_INSTALL_METHOD="release" WIZ_MODE="" WIZ_DOMAIN="" WIZ_BASE_PATH=""
+    local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL="" WIZ_APP_PORT=""
+    local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="false" WIZ_ACME_STAGING="false"
+    local WIZ_ACME_ENABLED="false" WIZ_ACME_EMAIL="" WIZ_TLS_CERT_FILE="" WIZ_TLS_KEY_FILE=""
+    local WIZ_TELEGRAM_ENABLED="false" WIZ_BOT_TOKEN="" WIZ_ADMIN_IDS=""
+    local WIZ_ADMIN_PASS="" WIZ_ADMIN_HASH="" WIZ_JWT_SECRET="" WIZ_DB_PASSWORD=""
+    local WIZ_DB_USER="nasnet_panel" WIZ_DB_NAME="nasnet_panel" WIZ_DB_HOST="localhost" WIZ_DB_PORT="5432"
+    local WIZ_DB_SSL_MODE="disable" WIZ_DB_PATH="" WIZ_PGSQL_SERVICE_NAME="postgresql" WIZ_INSTALL_STATUS="pending"
+    local saved=false choice=-1 WIZ_PROVISIONED=false
 
-    # Ask for sudo once, up front — otherwise the first password prompt
-    # lands in the middle of apt, six questions deep.
-    if [[ $EUID -ne 0 ]]; then
-        step_info "Installation needs sudo."
-        if ! sudo -v; then
-            step_fail "sudo is required to install nasnet-panel"
-            press_any_key
-            return
-        fi
-        step_ok "sudo granted"
-    fi
-
-    # Keep the old DB password around: an existing postgres volume only
-    # honors the password it was initialized with.
-    local WIZ_PREV_DB_PASSWORD=""
     if [[ -f "$ENV_FILE" ]]; then
-        WIZ_PREV_DB_PASSWORD=$(wizard_read_env_value DB_PASSWORD)
-        step_warn "An .env file already exists at ${ENV_FILE}"
-        if ! confirm_action "Overwrite it? (existing secrets will be lost)"; then
-            step_info "Cancelled — use Reconfigure to modify existing config"
-            press_any_key
-            return
+        load_env
+        arrow_menu "Existing configuration at ${ENV_FILE}" choice \
+            "Retry installation with saved settings (recommended)" \
+            "Choose new settings (keep database credentials)" "← Cancel"
+        case "$choice" in
+            0) wizard_restore_saved_config; saved=true ;;
+            1)
+                WIZ_DB_PASSWORD="${DB_PASSWORD:-}"
+                WIZ_DB_USER="${DB_USER:-nasnet_panel}"
+                WIZ_DB_HOST="${DB_HOST:-localhost}"
+                WIZ_DB_PORT="${DB_PORT:-5432}"
+                WIZ_DB_NAME="${DB_NAME:-nasnet_panel}"
+                WIZ_DB_SSL_MODE="${DB_SSL_MODE:-disable}"
+                WIZ_PGSQL_SERVICE_NAME="${PGSQL_SERVICE_NAME:-postgresql}"
+                ;;
+            *) return 1 ;;
+        esac
+    fi
+
+    if ! $saved; then
+        if [[ "$OFFLINE_MODE" != "true" ]]; then
+            arrow_menu "Deployment" choice \
+                "Systemd — release binaries (recommended for Debian/Ubuntu)" \
+                "Docker — build from source" "← Cancel"
+            case "$choice" in 0) WIZ_DEPLOY_MODE="systemd" ;; 1) WIZ_DEPLOY_MODE="docker" ;; *) return 1 ;; esac
         fi
-    fi
-
-    # ── Step 1: Deployment Mode ───────────────────────────────────────────
-    # Offline mode: force systemd, skip deployment choice
-    if [[ "$OFFLINE_MODE" == "true" ]]; then
-        local WIZ_DEPLOY_MODE="systemd"
-        step_info "Offline mode — using systemd deployment"
-    else
-    draw_header "Step 1: Deployment Mode"
-
-    echo -e "  ${BOLD}How do you want to run nasnet-panel?${RESET}"
-    echo ""
-    echo -e "  ${CYAN}Docker${RESET}   — Runs in containers (Docker + Docker Compose required)"
-    echo -e "  ${CYAN}Systemd${RESET}  — Runs natively on this machine (Debian/Ubuntu)"
-    echo ""
-    echo -e "  ${DIM}Router mode (LAN routing, Wi-Fi, DHCP) needs Systemd — Docker can't manage the host network.${RESET}"
-    echo ""
-
-    local deploy_choice
-    arrow_menu "Select deployment" deploy_choice \
-        "Docker (recommended)" \
-        "Systemd (bare-metal)" \
-        "← Cancel"
-
-    [[ $deploy_choice -eq -1 || $deploy_choice -eq 2 ]] && return
-
-    local WIZ_DEPLOY_MODE=""
-    if [[ $deploy_choice -eq 0 ]]; then
-        WIZ_DEPLOY_MODE="docker"
-    else
-        WIZ_DEPLOY_MODE="systemd"
-    fi
-
-    # Docker builds the image from source — a bare curl'd script has none.
-    if [[ "$STANDALONE_MODE" == "true" && "$WIZ_DEPLOY_MODE" == "docker" ]]; then
-        echo ""
-        step_warn "Docker mode builds from source and needs the repository checkout"
-        if confirm_action "Clone it to ~/nasnet-panel-linux and continue there?"; then
-            wizard_clone_repo || { step_fail "Clone failed"; press_any_key; return; }
+        if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
+            step_warn "Router mode lets nasnet manage dnsmasq, hostapd and iwd on this machine"
+            arrow_menu "Machine role" choice "Server (recommended for VPS)" "LAN router" "← Cancel"
+            case "$choice" in 0) ;; 1) WIZ_ROUTER_MODE="true" ;; *) return 1 ;; esac
         fi
-        step_info "Cancelled — pick Systemd for the clone-free install"
-        press_any_key
-        return
-    fi
-    fi  # end offline/online deploy mode selection
-
-    # ── Step 1.5: Router Mode (systemd only) ─────────────────────────────
-    local WIZ_ROUTER_MODE="false"
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
-        draw_header "Router Mode"
-
-        echo -e "  ${BOLD}Will this machine act as your LAN router?${RESET}"
-        echo ""
-        echo -e "  ${CYAN}Server mode${RESET} — plain panel on a VPS/server, host network left alone"
-        echo -e "  ${CYAN}Router mode${RESET} — panel manages the LAN: nftables, DHCP/DNS (dnsmasq), Wi-Fi (hostapd/iwd)"
-        echo ""
-        step_warn "Router mode takes over dnsmasq, hostapd and iwd on this box"
-        echo ""
-
-        local router_choice
-        arrow_menu "Router mode" router_choice \
-            "No — plain server (recommended for VPS)" \
-            "Yes — this box is the LAN router" \
-            "← Cancel"
-
-        [[ $router_choice -eq -1 || $router_choice -eq 2 ]] && return
-        [[ $router_choice -eq 1 ]] && WIZ_ROUTER_MODE="true"
-    fi
-
-    # ── Step 2: Database Engine ──────────────────────────────────────────
-    draw_header "Step 2: Database Engine"
-
-    echo -e "  ${BOLD}Which database engine do you want to use?${RESET}"
-    echo ""
-    echo -e "  ${CYAN}PostgreSQL${RESET}  — Full-featured, best for production"
-    echo -e "  ${CYAN}SQLite${RESET}      — Zero-config, single-file, good for small deployments"
-    echo ""
-
-    local db_engine_choice
-    arrow_menu "Select database engine" db_engine_choice \
-        "PostgreSQL (recommended)" \
-        "SQLite (lightweight)" \
-        "← Cancel"
-
-    [[ $db_engine_choice -eq -1 || $db_engine_choice -eq 2 ]] && return
-
-    local WIZ_DB_DRIVER=""
-    if [[ $db_engine_choice -eq 0 ]]; then
-        WIZ_DB_DRIVER="postgres"
-    else
-        WIZ_DB_DRIVER="sqlite"
-    fi
-
-    # ── Step 2.5: Install Method (systemd only) ──────────────────────────
-    local WIZ_INSTALL_METHOD="release"
-    [[ "$OFFLINE_MODE" == "true" ]] && WIZ_INSTALL_METHOD="offline bundle"
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$OFFLINE_MODE" != "true" ]]; then
-        draw_header "Step 2.5: Install Method"
-
-        echo -e "  ${BOLD}How should the panel binaries be installed?${RESET}"
-        echo ""
-        echo -e "  ${CYAN}Release${RESET} — download prebuilt, checksum-verified binaries (fast, no toolchains)"
-        echo -e "  ${CYAN}Source${RESET}  — build on this machine (installs Go, Node.js, pnpm, build tools)"
-        echo ""
-
-        local method_choice
-        arrow_menu "Select install method" method_choice \
-            "Download release binaries (recommended)" \
-            "Build from source (developer)" \
-            "← Cancel"
-
-        [[ $method_choice -eq -1 || $method_choice -eq 2 ]] && return
-        [[ $method_choice -eq 1 ]] && WIZ_INSTALL_METHOD="source"
-
-        # Source builds need the repo — a bare curl'd script has none.
-        if [[ "$STANDALONE_MODE" == "true" && "$WIZ_INSTALL_METHOD" == "source" ]]; then
-            echo ""
-            step_warn "Building from source needs the repository checkout"
-            if confirm_action "Clone it to ~/nasnet-panel-linux and continue there?"; then
-                wizard_clone_repo || { step_fail "Clone failed"; press_any_key; return; }
+        arrow_menu "Database" choice "PostgreSQL (recommended)" "SQLite (lightweight)" "← Cancel"
+        case "$choice" in 0) WIZ_DB_DRIVER="postgres" ;; 1) WIZ_DB_DRIVER="sqlite" ;; *) return 1 ;; esac
+        if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$OFFLINE_MODE" != "true" ]]; then
+            arrow_menu "Install method" choice "Verified release binaries (recommended)" "Build from source" "← Cancel"
+            case "$choice" in 0) ;; 1) WIZ_INSTALL_METHOD="source" ;; *) return 1 ;; esac
+        fi
+        if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
+            WIZ_INSTALL_METHOD="source"
+            # Docker's existing POSTGRES_USER default remains compatible.
+            [[ -f "$ENV_FILE" ]] || WIZ_DB_USER="postgres"
+        fi
+        WIZ_APP_PORT=$(wizard_random_port)
+        wizard_prompt_access_mode || return 1
+        if confirm_action "Enable Telegram bot?"; then
+            WIZ_TELEGRAM_ENABLED="true"
+            echo -ne "  ${CYAN}Telegram bot token${RESET}: "; read -r WIZ_BOT_TOKEN
+            echo -ne "  ${CYAN}Admin Telegram IDs (comma-separated numbers)${RESET}: "; read -r WIZ_ADMIN_IDS
+            WIZ_ADMIN_IDS="${WIZ_ADMIN_IDS// /}"
+            if [[ -z "$WIZ_BOT_TOKEN" || ! "$WIZ_ADMIN_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+                step_fail "A bot token and numeric Telegram IDs are required"; return 1
             fi
-            step_info "Staying with release binaries"
-            WIZ_INSTALL_METHOD="release"
         fi
+        local pass2
+        while true; do
+            echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "; read -rs WIZ_ADMIN_PASS; echo ""
+            [[ ${#WIZ_ADMIN_PASS} -ge 6 ]] || { step_fail "Password is too short"; continue; }
+            echo -ne "  ${CYAN}Confirm password${RESET}: "; read -rs pass2; echo ""
+            [[ "$WIZ_ADMIN_PASS" == "$pass2" ]] && break
+            step_fail "Passwords do not match"
+        done
+    fi
+    [[ "$OFFLINE_MODE" == "true" ]] && WIZ_INSTALL_METHOD="offline"
+    if $saved && [[ -z "$WIZ_ADMIN_HASH" ]]; then
+        step_fail "Saved configuration has no admin password; choose new settings to set one"
+        return 1
+    fi
+    wizard_validate_access || return 1
+    if [[ -f "$ENV_FILE" && ( "${DEPLOY_MODE:-$WIZ_DEPLOY_MODE}" != "$WIZ_DEPLOY_MODE" || "${DB_DRIVER:-$WIZ_DB_DRIVER}" != "$WIZ_DB_DRIVER" ) ]]; then
+        step_fail "Changing deployment or database engine requires a separate data migration; existing settings kept"
+        return 1
     fi
 
-    # ── Step 3: Prerequisites ─────────────────────────────────────────────
-    draw_header "Step 3: Prerequisites"
-
-    if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
-        if ! wizard_prereqs_docker; then
-            press_any_key
-            return
-        fi
-    else
-        if ! wizard_prereqs_systemd "$WIZ_DB_DRIVER"; then
-            press_any_key
-            return
-        fi
+    draw_header "Review installation"
+    draw_table "Setting|Value" \
+        "Deployment|${WIZ_DEPLOY_MODE}" "Install method|${WIZ_INSTALL_METHOD}" \
+        "Router mode|${WIZ_ROUTER_MODE}" "Database|${WIZ_DB_DRIVER}" \
+        "Database role|${WIZ_DB_USER}" "Database host|${WIZ_DB_HOST}:${WIZ_DB_PORT}" \
+        "Web panel|${WIZ_SUB_PANEL_URL}" "Backend API|${WIZ_APP_BASE_URL}" \
+        "ACME|${WIZ_ACME_ENABLED}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
+        "Config|${ENV_FILE}" "Secrets|Existing values kept; missing values generated during install"
+    step_info "This installs dependencies, writes the configuration, opens the panel firewall port and starts services"
+    if [[ "$WIZ_ROUTER_MODE" == "true" ]]; then
+        step_warn "Router setup stops dnsmasq, hostapd and iwd so nasnet can manage them"
+    fi
+    if [[ "$WIZ_INSTALL_METHOD" == "source" && ! -f "$PROJECT_DIR/go.mod" ]]; then
+        step_info "Source will be cloned to ${HOME}/nasnet-panel-linux"
+    fi
+    if ! confirm_action "Apply this configuration and install?"; then
+        step_info "Cancelled; no installation changes applied"
+        return 1
+    fi
+    if [[ $EUID -ne 0 ]] && ! sudo -v; then
+        step_fail "sudo is required to install nasnet-panel"; return 1
     fi
 
-    echo ""
-
-    # ── Step 4: Access Mode ───────────────────────────────────────────────
-    draw_header "Step 4: Access Mode"
-
-    local WIZ_MODE="" WIZ_DOMAIN="" WIZ_BASE_PATH=""
-    local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL=""
-    local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="" WIZ_ACME_STAGING="" WIZ_ACME_ENABLED="" WIZ_ACME_EMAIL=""
-    local WIZ_APP_PORT
-    WIZ_APP_PORT=$(wizard_random_port)
-    step_info "Generated random port — APP_PORT: ${BOLD}${WIZ_APP_PORT}${RESET}"
-
-    if ! wizard_prompt_access_mode; then
-        press_any_key
-        return
-    fi
-
-    # ── Step 5: Essential Configuration ───────────────────────────────────
-    draw_header "Step 5: Telegram & Admin"
-
-    local WIZ_TELEGRAM_ENABLED="true"
-    local WIZ_BOT_TOKEN=""
-    local WIZ_ADMIN_IDS=""
-
-    if confirm_action "Enable Telegram bot?"; then
-        echo -ne "  ${CYAN}Telegram bot token${RESET} (from @BotFather): "
-        read -r WIZ_BOT_TOKEN
-
-        if [[ -z "$WIZ_BOT_TOKEN" ]]; then
-            step_fail "Bot token is required when Telegram is enabled"
-            press_any_key
-            return
-        fi
-
-        echo -ne "  ${CYAN}Admin Telegram ID${RESET} (your numeric ID): "
-        read -r WIZ_ADMIN_IDS
-
-        if [[ -z "$WIZ_ADMIN_IDS" ]] || ! [[ "$WIZ_ADMIN_IDS" =~ ^[0-9,\ ]+$ ]]; then
-            step_fail "A valid numeric Telegram ID is required"
-            press_any_key
-            return
-        fi
-    else
-        WIZ_TELEGRAM_ENABLED="false"
-        step_ok "Telegram bot disabled — running in web-panel-only mode"
-    fi
-
-    echo ""
-    echo -e "  ${BOLD}Admin panel password${RESET} (for web dashboard login)"
+    local complete=false
     while true; do
-        echo -ne "  ${CYAN}Password${RESET}: "
-        read -rs WIZ_ADMIN_PASS
-        echo ""
-
-        if [[ ${#WIZ_ADMIN_PASS} -lt 6 ]]; then
-            step_fail "Password must be at least 6 characters — try again"
-            continue
-        fi
-
-        echo -ne "  ${CYAN}Confirm password${RESET}: "
-        read -rs WIZ_ADMIN_PASS2
-        echo ""
-
-        if [[ "$WIZ_ADMIN_PASS" != "$WIZ_ADMIN_PASS2" ]]; then
-            step_fail "Passwords do not match — try again"
-            continue
-        fi
-
-        break
+        if wizard_apply_install; then complete=true; break; fi
+        step_fail "Installation is incomplete; your saved settings will be reused"
+        arrow_menu "Retry installation" choice "Retry install/start with the same settings" "Retry access checks only" "Finish later"
+        case "$choice" in
+            0) ;;
+            1)
+                if [[ "$WIZ_PROVISIONED" == "true" ]] && wizard_verify_install; then complete=true; break; fi
+                step_info "Complete installation and service startup before retrying access checks"
+                ;;
+            *) step_info "Resume with: nasnet install (or bash nasnet-tool.sh install)"; return 1 ;;
+        esac
     done
-
-    # ── Step 6: Generate Secrets ──────────────────────────────────────────
-    draw_header "Step 6: Generating Secrets"
-
-    local WIZ_JWT_SECRET
-    WIZ_JWT_SECRET=$(wizard_gen_secret)
-    step_ok "JWT secret key generated (${#WIZ_JWT_SECRET} chars)"
-
-    local WIZ_DB_PASSWORD=""
-    if [[ "$WIZ_DB_DRIVER" != "sqlite" ]]; then
-        if [[ "$WIZ_DEPLOY_MODE" == "docker" ]] && is_docker_running && _docker_pg_volume_exists; then
-            # POSTGRES_PASSWORD only applies on first init — an existing
-            # volume keeps the password it was created with.
-            if [[ -n "${WIZ_PREV_DB_PASSWORD:-}" ]]; then
-                WIZ_DB_PASSWORD="$WIZ_PREV_DB_PASSWORD"
-                step_ok "Existing postgres volume found — reusing its database password"
-            else
-                step_warn "A postgres data volume exists but its password is unknown"
-                local pgvol_choice
-                arrow_menu "Existing postgres volume" pgvol_choice \
-                    "Wipe the old volume (DESTROYS previous data)" \
-                    "Enter the old database password" \
-                    "← Cancel install"
-
-                case $pgvol_choice in
-                    0)
-                        if ! confirm_dangerous "Delete the old postgres volume and all its data?" "WIPE"; then
-                            step_info "Cancelled"
-                            press_any_key
-                            return
-                        fi
-                        _compose_cmd_with_files down 2>/dev/null || true
-                        if docker volume rm "$(_docker_project_name)_postgres_data" 2>/dev/null; then
-                            step_ok "Old postgres volume removed"
-                        else
-                            step_fail "Could not remove the postgres volume"
-                            press_any_key
-                            return
-                        fi
-                        WIZ_DB_PASSWORD=$(wizard_gen_password)
-                        step_ok "Database password generated"
-                        ;;
-                    1)
-                        echo -ne "  ${CYAN}Old database password${RESET}: "
-                        read -rs WIZ_DB_PASSWORD
-                        echo ""
-                        if [[ -z "$WIZ_DB_PASSWORD" ]]; then
-                            step_fail "Password is required"
-                            press_any_key
-                            return
-                        fi
-                        ;;
-                    *)
-                        press_any_key
-                        return
-                        ;;
-                esac
-            fi
+    if $complete; then
+        WIZ_INSTALL_STATUS="complete"
+        local WIZ_ACME_CACHE_DIR="${ACME_CACHE_DIR:-$INSTALL_DIR/data/acme}"
+        local WIZ_PROM_TARGET="${PROMETHEUS_TARGET:-localhost:$WIZ_APP_PORT}"
+        wizard_write_env "$WIZ_DEPLOY_MODE" "Installation verified" || return 1
+        _sync_env_to_install_dir || return 1
+        draw_header "Installation complete"
+        step_ok "Web panel: ${WIZ_SUB_PANEL_URL}"
+        step_info "Log in as admin with your password"
+        step_info "Configuration: ${ENV_FILE}"
+        if [[ -x /usr/local/bin/nasnet ]]; then
+            step_info "Manage: nasnet"
         else
-            WIZ_DB_PASSWORD=$(wizard_gen_password)
-            step_ok "Database password generated"
+            step_info "Manage: bash ${BASH_SOURCE[0]}"
         fi
-    else
-        step_ok "SQLite — no database password needed"
-    fi
-
-    local WIZ_ADMIN_HASH
-    step_info "Generating bcrypt hash for admin password..."
-    WIZ_ADMIN_HASH=$(wizard_gen_bcrypt "$WIZ_ADMIN_PASS")
-
-    if [[ -z "$WIZ_ADMIN_HASH" ]]; then
-        step_fail "Failed to generate bcrypt hash"
-        step_info "Install apache2-utils: apt install apache2-utils"
-        press_any_key
-        return
-    fi
-    step_ok "Admin password hash generated"
-
-    # ── Systemd: set up PostgreSQL database ───────────────────────────────
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$WIZ_DB_DRIVER" != "sqlite" ]]; then
-        echo ""
-        if [[ "$OFFLINE_MODE" == "true" ]]; then
-            if ! wizard_setup_postgres_offline "postgres" "$WIZ_DB_PASSWORD" "nasnet_panel"; then
-                press_any_key
-                return
-            fi
+        if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
+            step_info "Service logs: journalctl -u ${BACKEND_SERVICE} -f"
         else
-            if ! wizard_setup_postgres "postgres" "$WIZ_DB_PASSWORD" "nasnet_panel"; then
-                press_any_key
-                return
-            fi
+            step_info "Service logs: docker compose --project-directory ${PROJECT_DIR} logs -f app"
         fi
-    fi
-
-    # ── Step 7: Review ────────────────────────────────────────────────────
-    draw_header "Step 7: Review Configuration"
-
-    local masked_token
-    if [[ -n "$WIZ_BOT_TOKEN" ]]; then
-        masked_token=$(wizard_mask_secret "$WIZ_BOT_TOKEN" 8)
-    else
-        masked_token="(disabled)"
-    fi
-    local masked_jwt
-    masked_jwt=$(wizard_mask_secret "$WIZ_JWT_SECRET" 8)
-
-    local review_rows=(
-        "Deploy|${WIZ_DEPLOY_MODE}"
-        "DB Engine|${WIZ_DB_DRIVER}"
-        "Mode|${WIZ_MODE}"
-        "APP_BASE_URL|${WIZ_APP_BASE_URL}"
-        "SUB_PANEL_URL|${WIZ_SUB_PANEL_URL}"
-        "Panel Path|${WIZ_BASE_PATH:-(none)}"
-        "JWT_COOKIE_DOMAIN|${WIZ_COOKIE_DOMAIN:-(empty)}"
-        "JWT_COOKIE_SECURE|${WIZ_COOKIE_SECURE}"
-        "ACME_ENABLED|${WIZ_ACME_ENABLED}"
-        "ACME_STAGING|${WIZ_ACME_STAGING}"
-        "ACME_EMAIL|${WIZ_ACME_EMAIL:-(none)}"
-        "TELEGRAM_ENABLED|${WIZ_TELEGRAM_ENABLED}"
-        "BOT_TOKEN|${masked_token}"
-        "ADMIN_IDS|${WIZ_ADMIN_IDS:-(none)}"
-        "ADMIN_USERNAME|admin"
-        "JWT_SECRET|${masked_jwt}"
-    )
-    if [[ "$WIZ_DB_DRIVER" != "sqlite" ]]; then
-        local masked_db_pass
-        masked_db_pass=$(wizard_mask_secret "$WIZ_DB_PASSWORD" 4)
-        review_rows+=("DB_PASSWORD|${masked_db_pass}")
-    fi
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
-        review_rows+=("Router Mode|${WIZ_ROUTER_MODE}")
-        review_rows+=("Install Method|${WIZ_INSTALL_METHOD}")
-    fi
-
-    draw_table "Setting|Value" "${review_rows[@]}"
-
-    echo ""
-    if ! confirm_action "Write this configuration to .env and start services?"; then
-        step_info "Cancelled"
         press_any_key
-        return
     fi
-
-    # ── Step 8: Write .env ────────────────────────────────────────────────
-    draw_header "Step 8: Writing Configuration"
-
-    # Set deployment-specific defaults
-    local WIZ_ACME_CACHE_DIR="/app/data/acme"
-    local WIZ_PROM_TARGET="app:${WIZ_APP_PORT}"
-
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
-        WIZ_ACME_CACHE_DIR="$INSTALL_DIR/data/acme"
-        WIZ_PROM_TARGET="localhost:${WIZ_APP_PORT}"
-    fi
-
-    wizard_write_env "$WIZ_DEPLOY_MODE" "Generated by nasnet-tool.sh wizard on $(date '+%Y-%m-%d %H:%M:%S')"
-
-    # Reload env
-    load_env
-
-    # An install nobody can reach reads as a broken install.
-    wizard_open_firewall "$WIZ_APP_PORT" "$WIZ_ACME_ENABLED"
-
-    # ── Step 9: Build & Start ─────────────────────────────────────────────
-    if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
-        if ! wizard_build_start_docker; then
-            press_any_key
-            return
-        fi
-    else
-        if ! wizard_build_start_systemd "$WIZ_APP_PORT"; then
-            press_any_key
-            return
-        fi
-    fi
-
-    # ── Post-install Summary ──────────────────────────────────────────────
-    echo ""
-    draw_header "Installation Complete!"
-
-    echo -e "  ${BOLD}${GREEN}nasnet-panel is now running!${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Deploy Mode:${RESET} ${CYAN}${WIZ_DEPLOY_MODE}${RESET}"
-    echo -e "  ${BOLD}Web Panel:${RESET}   ${CYAN}${WIZ_SUB_PANEL_URL}${RESET}"
-    echo -e "  ${BOLD}Backend API:${RESET} ${CYAN}${WIZ_APP_BASE_URL}${RESET}"
-    echo -e "  ${BOLD}Login:${RESET}       admin / (your password)"
-    echo ""
-    echo -e "  ${BOLD}Next steps:${RESET}"
-    echo -e "    1. Open the web panel URL above in your browser"
-    echo -e "    2. Log in with admin and the password you set"
-    if [[ "$WIZ_TELEGRAM_ENABLED" == "true" ]]; then
-        echo -e "    3. Send /start to your Telegram bot"
-    fi
-    echo ""
-    if [[ "$WIZ_MODE" == "domain" ]]; then
-        echo -e "  ${DIM}TLS certificates will be auto-provisioned on first request.${RESET}"
-    fi
-    if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
-        echo -e "  ${DIM}Installed to:  ${INSTALL_DIR}${RESET}"
-        echo -e "  ${DIM}Service logs:  journalctl -u ${BACKEND_SERVICE} -f${RESET}"
-        echo -e "  ${DIM}Config: ${INSTALL_DIR}/.env${RESET}"
-    else
-        echo -e "  ${DIM}Config: ${ENV_FILE}${RESET}"
-    fi
-    if [[ -x /usr/local/bin/nasnet ]]; then
-        echo -e "  ${DIM}Manage: run ${RESET}${BOLD}nasnet${RESET}${DIM} from anywhere${RESET}"
-    elif [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$STANDALONE_MODE" == "true" ]]; then
-        echo -e "  ${DIM}Manage: ${INSTALL_DIR}/nasnet-tool.sh${RESET}"
-    else
-        echo -e "  ${DIM}Manage: ./nasnet-tool.sh${RESET}"
-    fi
-
-    press_any_key
+    return 0
 }
 
 wizard_reconfigure() {
@@ -3207,12 +3076,11 @@ action_auto_update() {
         echo "$all_urls" | grep "$1" | head -1
     }
 
-    local hub_url agent_url checksums_url
+    local hub_url checksums_url
     hub_url=$(_get_asset_url "nasnet-panel-linux-${arch}")
-    agent_url=$(_get_asset_url "nasnet-agent-linux-${arch}")
     checksums_url=$(_get_asset_url "checksums.txt")
 
-    if [[ -z "$hub_url" || -z "$agent_url" || -z "$checksums_url" ]]; then
+    if [[ -z "$hub_url" || -z "$checksums_url" ]]; then
         step_fail "Could not find all required assets for linux/${arch} in release ${latest_version}"
         press_any_key
         return
@@ -3231,7 +3099,7 @@ action_auto_update() {
     fi
 
     local dl_ok=true
-    for asset_name in "nasnet-panel-linux-${arch}" "nasnet-agent-linux-${arch}" "checksums.txt"; do
+    for asset_name in "nasnet-panel-linux-${arch}" "checksums.txt"; do
         local url
         url=$(_get_asset_url "$asset_name")
         if run_logged "Downloading ${asset_name}" curl "${dl_args[@]}" -o "${tmp_dir}/${asset_name}" "$url"; then
@@ -3312,19 +3180,14 @@ action_auto_update() {
     local run_group
     run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
-    sudo mkdir -p "$INSTALL_DIR"/{bin/{agent,xray},data/{backups,acme}}
+    sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}}
 
     # Hub binary
     sudo cp "${tmp_dir}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel"
     sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel"
     step_ok "nasnet-panel binary deployed"
 
-    # Agent binary
-    sudo cp "${tmp_dir}/nasnet-agent-linux-${arch}" "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
-    sudo chmod +x "$INSTALL_DIR/bin/agent/nasnet-agent-linux-${arch}"
-    step_ok "nasnet-agent binary deployed"
-
-    # Also on update: a box installed before xray shipped has none.
+    # Ensure the current Xray core is installed before restarting the panel.
     install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
 
     # Write version marker
@@ -3604,12 +3467,6 @@ wizard_update() {
             true
         else
             step_fail "Build failed"
-        fi
-
-        if run_logged "Building agent binaries" bash -c "cd '$PROJECT_DIR' && make build-agent"; then
-            true
-        else
-            step_fail "Agent binary build failed"
         fi
 
         # Stop services before deploying (binary can't be overwritten while running)
@@ -5948,25 +5805,20 @@ action_systemd_rebuild() {
     echo ""
     local rebuild_choice
     arrow_menu "What to rebuild?" rebuild_choice \
-        "Everything (backend + agents + frontend)" \
+        "Everything (backend + frontend)" \
         "Backend only" \
-        "Agents only" \
         "Frontend (rebuild binary with embedded SPA)" \
-        "Backend + Agents" \
         "← Cancel"
 
-    [[ $rebuild_choice -eq -1 || $rebuild_choice -eq 5 ]] && return
+    [[ $rebuild_choice -eq -1 || $rebuild_choice -eq 3 ]] && return
 
     local do_backend=false
-    local do_agents=false
     local do_webpanel=false
 
     case $rebuild_choice in
-        0) do_backend=true; do_agents=true; do_webpanel=true ;;
+        0) do_backend=true; do_webpanel=true ;;
         1) do_backend=true ;;
-        2) do_agents=true ;;
-        3) do_webpanel=true ;;
-        4) do_backend=true; do_agents=true ;;
+        2) do_webpanel=true ;;
     esac
 
     echo ""
@@ -6009,15 +5861,6 @@ action_systemd_rebuild() {
                 step_fail "Backend build failed"
                 build_failed=true
             fi
-        fi
-    fi
-
-    if $do_agents && ! $build_failed; then
-        if run_logged "Building agent binaries" bash -c "cd '$PROJECT_DIR' && make build-agent"; then
-            step_ok "Agent binaries built"
-        else
-            step_fail "Agent binary build failed"
-            build_failed=true
         fi
     fi
 
@@ -6318,8 +6161,8 @@ main() {
             ;;
         install)
             load_env
-            wizard_install
-            exit 0
+            wizard_install && exit 0
+            exit 1
             ;;
         reconfigure)
             load_env
@@ -6344,8 +6187,8 @@ main() {
         --offline)
             OFFLINE_MODE=true
             load_env 2>/dev/null || true
-            wizard_install
-            exit 0
+            wizard_install && exit 0
+            exit 1
             ;;
     esac
 
@@ -6452,4 +6295,6 @@ main() {
     done
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

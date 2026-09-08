@@ -15,6 +15,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  installer:
+    name: Installer
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Shell syntax and mocked installation regressions
+        run: |
+          bash -n nasnet-tool.sh scripts/offline-install.sh scripts/docker-entrypoint.sh
+          bash scripts/test-installer.sh
+
+      - name: Compose installation variants and bcrypt preservation
+        run: python3 scripts/test-installer-compose.py
+
   go:
     name: Go
     runs-on: depot-ubuntu-24.04

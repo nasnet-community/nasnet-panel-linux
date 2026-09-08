@@ -33,6 +33,8 @@ type Config struct {
 	EnvFile           string
 	ComposeFile       string
 	SQLiteComposeFile string
+	ACMEComposeFile   string
+	ACMEEnabled       bool
 	OfflineMode       bool
 	GithubRepo        string
 	GithubToken       string
@@ -67,6 +69,8 @@ func LoadConfig() (*Config, error) {
 		EnvFile:           envFile,
 		ComposeFile:       filepath.Join(scriptDir, "docker-compose.yml"),
 		SQLiteComposeFile: filepath.Join(scriptDir, "docker-compose.sqlite.yml"),
+		ACMEComposeFile:   filepath.Join(scriptDir, "docker-compose.acme.yml"),
+		ACMEEnabled:       os.Getenv("ACME_ENABLED") == "true",
 		OfflineMode:       os.Getenv("OFFLINE_MODE") == "true",
 		GithubRepo:        getEnvDefault("GITHUB_REPO", DefaultGithubRepo),
 		GithubToken:       os.Getenv("GITHUB_TOKEN"),

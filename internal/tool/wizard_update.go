@@ -207,12 +207,6 @@ func WizardUpdate(cfg *Config) {
 			return
 		}
 
-		agentCmd := exec.Command("bash", "-c",
-			fmt.Sprintf("cd '%s' && make build-agent", cfg.ProjectDir))
-		if err := ui.RunLogged("Building agent binaries", agentCmd); err != nil {
-			ui.StepFail("Agent binary build failed")
-		}
-
 		fmt.Println()
 		ui.StepInfo("Stopping services...")
 		exec.Command("sudo", "systemctl", "stop", DefaultBackendService).Run() //nolint:errcheck
@@ -272,12 +266,14 @@ func WizardUpdate(cfg *Config) {
 
 // ─── ActionAutoUpdate (GitHub release update) ─────────────────────────────────
 
+type githubReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
 type githubRelease struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
+	TagName string               `json:"tag_name"`
+	Assets  []githubReleaseAsset `json:"assets"`
 }
 
 // ActionAutoUpdate downloads and installs the latest GitHub release of nasnet-panel.
@@ -364,17 +360,11 @@ func ActionAutoUpdate(cfg *Config) {
 	// ── Find asset URLs ────────────────────────────────────────────────────
 	hubName := "nasnet-panel-linux-" + arch
 	toolName := "nasnet-tool-linux-" + arch
-	agentName := "nasnet-agent-linux-" + arch
 	checksumsName := "checksums.txt"
 
-	hubURL := findAssetURL(rel, hubName)
-	toolURL := findAssetURL(rel, toolName)
-	agentURL := findAssetURL(rel, agentName)
-	checksumsURL := findAssetURL(rel, checksumsName)
-
-	if hubURL == "" || agentURL == "" || checksumsURL == "" {
-		ui.StepFail(fmt.Sprintf("Could not find all required assets for linux/%s in release %s",
-			arch, latestVersion))
+	assets, assetErr := releaseUpdateAssets(rel, arch)
+	if assetErr != nil {
+		ui.StepFail(assetErr.Error())
 		ui.PressAnyKey()
 		return
 	}
@@ -390,24 +380,9 @@ func ActionAutoUpdate(cfg *Config) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	assetMap := map[string]string{
-		hubName:       hubURL,
-		agentName:     agentURL,
-		checksumsName: checksumsURL,
-	}
-	// nasnet-tool is optional (may not exist in older releases)
-	if toolURL != "" {
-		assetMap[toolName] = toolURL
-	}
-
-	downloadOrder := []string{hubName, agentName, checksumsName}
-	if toolURL != "" {
-		downloadOrder = append(downloadOrder[:2], append([]string{toolName}, downloadOrder[2:]...)...)
-	}
-
 	dlFailed := false
-	for _, name := range downloadOrder {
-		url := assetMap[name]
+	for _, asset := range assets {
+		name, url := asset.Name, asset.BrowserDownloadURL
 		outPath := filepath.Join(tmpDir, name)
 
 		curlArgs := []string{"-fL", "-o", outPath, url}
@@ -501,7 +476,6 @@ func ActionAutoUpdate(cfg *Config) {
 	// Create directory structure.
 	for _, dir := range []string{
 		filepath.Join(cfg.InstallDir, "bin"),
-		filepath.Join(cfg.InstallDir, "bin", "agent"),
 		filepath.Join(cfg.InstallDir, "bin", "xray"),
 		filepath.Join(cfg.InstallDir, "data", "backups"),
 		filepath.Join(cfg.InstallDir, "data", "acme"),
@@ -515,13 +489,6 @@ func ActionAutoUpdate(cfg *Config) {
 	exec.Command("sudo", "cp", hubSrc, hubDst).Run()  //nolint:errcheck
 	exec.Command("sudo", "chmod", "+x", hubDst).Run() //nolint:errcheck
 	ui.StepOk("nasnet-panel binary deployed")
-
-	// Deploy agent binary.
-	agentSrc := filepath.Join(tmpDir, agentName)
-	agentDst := filepath.Join(cfg.InstallDir, "bin", "agent", agentName)
-	exec.Command("sudo", "cp", agentSrc, agentDst).Run() //nolint:errcheck
-	exec.Command("sudo", "chmod", "+x", agentDst).Run()  //nolint:errcheck
-	ui.StepOk("nasnet-agent binary deployed")
 
 	// Deploy nasnet-tool binary (if present in release).
 	toolSrc := filepath.Join(tmpDir, toolName)
@@ -653,6 +620,23 @@ func fetchGithubRelease(apiURL, token string, client *http.Client) (*githubRelea
 		return nil, decErr
 	}
 	return &rel, nil
+}
+
+// releaseUpdateAssets selects the panel and checksums for this architecture,
+// plus the management tool when the release includes it.
+func releaseUpdateAssets(rel *githubRelease, arch string) ([]githubReleaseAsset, error) {
+	var assets []githubReleaseAsset
+	for _, name := range []string{"nasnet-panel-linux-" + arch, "nasnet-tool-linux-" + arch, "checksums.txt"} {
+		url := findAssetURL(rel, name)
+		if url == "" {
+			if name == "nasnet-tool-linux-"+arch {
+				continue
+			}
+			return nil, fmt.Errorf("release %s is missing required asset %s", rel.TagName, name)
+		}
+		assets = append(assets, githubReleaseAsset{Name: name, BrowserDownloadURL: url})
+	}
+	return assets, nil
 }
 
 // findAssetURL returns the browser_download_url for the first asset whose name

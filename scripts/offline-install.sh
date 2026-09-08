@@ -147,6 +147,18 @@ preflight() {
 install_postgresql() {
     header "Extracting PostgreSQL Standalone"
 
+    # A retry must never erase the cluster created by an earlier wizard run.
+    # Runtime upgrades belong to --update, which handles stopping the service.
+    if [[ -d "$PGSQL_INSTALL_DIR/data" ]]; then
+        if LD_LIBRARY_PATH="$PGSQL_INSTALL_DIR/lib" "$PGSQL_INSTALL_DIR/bin/pg_ctl" --version &>/dev/null; then
+            ok "Keeping existing PostgreSQL runtime, data and configuration"
+            return 0
+        fi
+        fail "Existing PostgreSQL data found but the runtime is unusable at ${PGSQL_INSTALL_DIR}"
+        fail "Restore the runtime before continuing; the data directory has been preserved"
+        return 1
+    fi
+
     local pgsql_tarball
     pgsql_tarball=$(find "$SCRIPT_DIR/runtime" \( -name 'postgresql-*.tar.gz' -o -name 'pgsql-*.tar.gz' \) -print | head -1)
 
@@ -156,7 +168,6 @@ install_postgresql() {
     fi
 
     info "Extracting PostgreSQL to ${PGSQL_INSTALL_DIR}..."
-    rm -rf "$PGSQL_INSTALL_DIR"
     mkdir -p "$PGSQL_INSTALL_DIR"
 
     # EnterpriseDB tarballs have a top-level pgsql/ directory
@@ -197,17 +208,12 @@ deploy_artifacts() {
     run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
     # Create directory structure
-    mkdir -p "$INSTALL_DIR"/{bin/{agent,xray},data/{backups,acme}}
+    mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}}
 
     # Hub binary
     cp "$SCRIPT_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel"
     chmod +x "$INSTALL_DIR/bin/nasnet-panel"
     ok "nasnet-panel binary"
-
-    # Agent binaries (both arches)
-    cp "$SCRIPT_DIR"/bin/agent/nasnet-agent-* "$INSTALL_DIR/bin/agent/"
-    chmod +x "$INSTALL_DIR"/bin/agent/*
-    ok "Agent binaries (amd64 + arm64)"
 
     # Xray binaries — placed into versioned subdirectory so BinaryManager can find them
     local xray_version
@@ -262,12 +268,10 @@ backup_current() {
     fi
 
     rm -rf "$ROLLBACK_DIR"
-    mkdir -p "$ROLLBACK_DIR"/bin/agent
     mkdir -p "$ROLLBACK_DIR"/bin/xray
 
     # Back up binaries
     [[ -f "$INSTALL_DIR/bin/nasnet-panel" ]] && cp "$INSTALL_DIR/bin/nasnet-panel" "$ROLLBACK_DIR/bin/"
-    cp "$INSTALL_DIR"/bin/agent/nasnet-agent-* "$ROLLBACK_DIR/bin/agent/" 2>/dev/null || true
     cp -r "$INSTALL_DIR"/bin/xray/. "$ROLLBACK_DIR/bin/xray/" 2>/dev/null || true
 
     # Back up PostgreSQL binaries (not data — data is preserved in place)
@@ -443,7 +447,6 @@ do_rollback() {
     # Restore binaries
     header "Restoring Binaries"
     [[ -f "$ROLLBACK_DIR/bin/nasnet-panel" ]] && cp "$ROLLBACK_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" && ok "nasnet-panel binary"
-    cp "$ROLLBACK_DIR"/bin/agent/nasnet-agent-* "$INSTALL_DIR/bin/agent/" 2>/dev/null && ok "Agent binaries" || true
     rm -rf "$INSTALL_DIR/bin/xray" && cp -r "$ROLLBACK_DIR/bin/xray" "$INSTALL_DIR/bin/xray" 2>/dev/null && ok "Xray binaries" || true
 
     # Web panel is embedded in the Go binary — no separate restore needed
@@ -498,11 +501,21 @@ do_install() {
         echo ""
         echo -e "  To update: ${BOLD}sudo ./install.sh --update${RESET}"
         echo ""
-        read -rp "  Continue with fresh install anyway? This will overwrite existing files. [y/N] " confirm
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            info "Cancelled"
-            exit 0
-        fi
+        warn "Panel binaries will be replaced; existing database data and configuration are preserved"
+    fi
+
+    header "Review Offline Deployment"
+    info "Bundle: ${BUNDLE_VERSION} (${BUNDLE_ARCH})"
+    info "Panel binaries and management tools: ${INSTALL_DIR}"
+    info "PostgreSQL runtime: ${PGSQL_INSTALL_DIR} (existing data is kept)"
+    info "File owner and panel service user: ${SUDO_USER:-root}"
+    info "Next: review the panel configuration in the setup wizard before services are configured"
+    echo ""
+    local confirm=""
+    read -rp "  Deploy these bundle files and open the setup wizard? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        info "Cancelled — no files were deployed"
+        return 0
     fi
 
     install_postgresql

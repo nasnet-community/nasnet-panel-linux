@@ -51,8 +51,7 @@ var installCmd = &cobra.Command{
 		if offlineFlag {
 			cfg.OfflineMode = true
 		}
-		tool.WizardInstall(cfg)
-		return nil
+		return tool.WizardInstall(cfg)
 	},
 }
 
