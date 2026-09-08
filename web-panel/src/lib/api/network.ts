@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from "@/lib/config"
 import { ApiError, api, type ApiResponse } from "@/lib/api"
 import type {
     AssignRoleRequest,
@@ -31,7 +32,7 @@ export async function getNetworkInterfaces(): Promise<ApiResponse<NetworkInterfa
 }
 
 export async function getNetworkState(): Promise<ApiResponse<NetworkState>> {
-    return api.get<NetworkState>("/api/v1/network/state")
+    return api.get<NetworkState>("/api/v1/network/state", 4000)
 }
 
 export async function getRouterHealth(): Promise<ApiResponse<RouterHealth>> {
@@ -51,11 +52,11 @@ export async function applyNetworkChange(req: AssignRoleRequest): Promise<ApiRes
 }
 
 export async function confirmNetworkApply(planId: number): Promise<ApiResponse<null>> {
-    return api.post<null>("/api/v1/network/confirm", { plan_id: planId })
+    return api.post<null>("/api/v1/network/confirm", { plan_id: planId }, 5000)
 }
 
-export async function rollbackNetworkApply(): Promise<ApiResponse<null>> {
-    return api.post<null>("/api/v1/network/rollback")
+export async function rollbackNetworkApply(planId?: number): Promise<ApiResponse<null>> {
+    return api.post<null>("/api/v1/network/rollback", planId ? { plan_id: planId } : undefined)
 }
 
 export async function identifyInterface(key: string): Promise<ApiResponse<null>> {
@@ -160,8 +161,8 @@ export function remainingSeconds(deadlineUnix: number): number {
  * The box may re-address itself mid-apply, so confirm goes to both the address
  * the operator is on and the one the plan moves it to. Deduplicated.
  */
-export function confirmUrls(currentOrigin: string, altOrigin: string): string[] {
-    const path = "/api/v1/network/confirm"
+export function confirmUrls(currentOrigin: string, altOrigin: string, basePath = getApiBaseUrl()): string[] {
+    const path = `${basePath.replace(/\/$/, "")}/api/v1/network/confirm`
     const origins =
         altOrigin && altOrigin !== currentOrigin ? [currentOrigin, altOrigin] : [currentOrigin]
     return origins.map((o) => `${o.replace(/\/$/, "")}${path}`)
@@ -186,8 +187,9 @@ export async function confirmWithFallback(
                     credentials: "include",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ plan_id: planId }),
+                    signal: AbortSignal.timeout(Math.min(4000, Math.max(1, remainingSeconds(deadlineUnix) * 1000))),
                 })
-                if (res.ok) return true
+                if (res.ok && (await res.json()).success === true) return true
             } catch {
                 // This origin is unreachable right now — try the other one.
             }

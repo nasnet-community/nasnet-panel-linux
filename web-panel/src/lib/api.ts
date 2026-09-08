@@ -133,8 +133,8 @@ class ApiClient {
         }
     }
 
-    async get<T>(endpoint: string): Promise<ApiResponse<T>> {
-        return this.request<T>(endpoint, { method: "GET" })
+    async get<T>(endpoint: string, timeoutMs?: number): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { method: "GET" }, false, timeoutMs)
     }
 
     /** timeoutMs overrides the 30s default — for endpoints that legitimately

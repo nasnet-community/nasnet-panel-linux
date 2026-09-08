@@ -121,8 +121,8 @@ export function useConfirmNetworkApply() {
 export function useRollbackNetworkApply() {
     const qc = useQueryClient()
     return useMutation({
-        mutationFn: async () => {
-            const res = await rollbackNetworkApply()
+        mutationFn: async (planId?: number) => {
+            const res = await rollbackNetworkApply(planId)
             if (!res.success) throw new Error(res.error || "Failed to roll back")
             return res.data
         },
