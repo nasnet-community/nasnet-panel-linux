@@ -4,7 +4,6 @@ import { Responsive, WidthProvider } from "react-grid-layout/legacy"
 const ResponsiveGridLayout = WidthProvider(Responsive)
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
 import {
     HiOutlineRefresh,
     HiOutlineExclamation,
@@ -141,7 +140,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <AutoRefreshControl onRefresh={handleRefresh} isRefreshing={isLoading} />
+                    <AutoRefreshControl isRefreshing={isLoading} />
                     {/* Edit mode controls - desktop only */}
                     <div className="hidden md:flex items-center gap-2">
                         {isEditMode && (
@@ -162,10 +161,6 @@ export default function DashboardPage() {
                             )}
                         </Button>
                     </div>
-                    <Button variant="outline" size="sm" onClick={handleRefresh}>
-                        <HiOutlineRefresh className={cn("w-3.5 h-3.5 mr-1.5", isLoading && "animate-spin")} />
-                        Refresh
-                    </Button>
                 </div>
             </div>
 

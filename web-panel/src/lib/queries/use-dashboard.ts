@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { getDashboardStats, getOnlineUsers, getOnlineUsersWithIPs, getOnlineUsersHistory, listNodes } from "@/lib/admin-api"
 import { queryKeys } from "./keys"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 
 // Dashboard stats query
 export function useDashboardStats() {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.dashboardStats(),
         queryFn: async () => {
@@ -11,6 +13,8 @@ export function useDashboardStats() {
             if (!res.success) throw new Error(res.error || "Failed to fetch dashboard stats")
             return res.data!
         },
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 

@@ -15,6 +15,7 @@ import {
 } from "@/lib/admin-api"
 import type { User, UserListItem } from "@/lib/types"
 import { queryKeys } from "./keys"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import { toast } from "sonner"
 
 // ==================== Types ====================
@@ -52,6 +53,7 @@ export function useUsers(params: UseUsersParams, options?: { refetchInterval?: n
 
 // Get single user details
 export function useUserDetails(id: number) {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.userDetails(id),
         queryFn: async () => {
@@ -60,11 +62,14 @@ export function useUserDetails(id: number) {
             return res.data!
         },
         enabled: id > 0,
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 
 // Get user's subscriptions
 export function useUserSubscriptions(userId: number) {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.userSubscriptions(userId),
         queryFn: async () => {
@@ -73,6 +78,8 @@ export function useUserSubscriptions(userId: number) {
             return res.data || []
         },
         enabled: userId > 0,
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 

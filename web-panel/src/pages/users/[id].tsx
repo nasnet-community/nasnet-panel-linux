@@ -28,7 +28,6 @@ import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
 import { SubscriptionDetailsSheet } from "@/components/subscription/subscription-details-sheet"
 import { DataLimitDialog } from "@/components/subscription/data-limit-dialog"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
-import { useQueryClient } from "@tanstack/react-query"
 import { useIsMobile } from "@/hooks/use-is-mobile"
 import {
     useUserDetails,
@@ -58,7 +57,6 @@ export default function UserDetailPage() {
     const navigate = useNavigate()
     const userId = Number(params.id)
     const confirmDialog = useConfirm()
-    const queryClient = useQueryClient()
     const { openDetailsSheet, openCreateManualDialog } = useSubscriptionsStore()
     const isMobile = useIsMobile()
     const [searchParams] = useSearchParams()
@@ -99,11 +97,6 @@ export default function UserDetailPage() {
     const [dataLimitSub, setDataLimitSub] = useState<Subscription | null>(null)
 
     // Actions
-    const handleRefresh = () => {
-        queryClient.invalidateQueries({ queryKey: ['users', 'details', userId] })
-        queryClient.invalidateQueries({ queryKey: ['users', 'subscriptions', userId] })
-    }
-
     const handleBan = () => {
         if (!user) return
         banMutation.mutate({ userId: user.id, isBanned: user.is_banned })
@@ -212,7 +205,6 @@ export default function UserDetailPage() {
 
                         <div className="flex items-center gap-2">
                             <AutoRefreshControl
-                                onRefresh={handleRefresh}
                                 isRefreshing={isRefetching}
                                 dataUpdatedAt={dataUpdatedAt}
                             />

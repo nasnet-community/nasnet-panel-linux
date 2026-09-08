@@ -12,7 +12,6 @@ import { DangerZone } from "./danger-zone"
 
 interface SettingsHeaderMobileMenuProps {
     onRestart: () => void
-    onRefresh: () => void
     restarting: boolean
     loading: boolean
     saving: boolean
@@ -20,7 +19,6 @@ interface SettingsHeaderMobileMenuProps {
 
 export function SettingsHeaderMobileMenu({
     onRestart,
-    onRefresh,
     restarting,
     loading,
     saving,
@@ -40,17 +38,6 @@ export function SettingsHeaderMobileMenu({
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem
-                    onSelect={(e) => {
-                        e.preventDefault()
-                        onRefresh()
-                    }}
-                    disabled={disabled}
-                >
-                    <HiOutlineRefresh className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                    Refresh
-                </DropdownMenuItem>
-
                 <SettingsImportExport disabled={disabled} asMenuItem />
 
                 <DropdownMenuItem

@@ -20,7 +20,7 @@ import { SettingsSkeleton } from "@/components/settings/settings-skeleton"
 import type { SettingsGrouped } from "@/lib/domain/setting"
 
 export default function SettingsPage() {
-    const { data: serverSettings, isLoading, refetch, isRefetching } = useSettings()
+    const { data: serverSettings, isLoading, isRefetching } = useSettings()
     const updateSettings = useUpdateSettings()
     const confirmDialog = useConfirm()
 
@@ -255,17 +255,12 @@ export default function SettingsPage() {
                         <HiOutlineRefresh className={`w-4 h-4 mr-2 ${restarting ? "animate-spin" : ""}`} />
                         Restart Server
                     </Button>
-                    <Button variant="outline" onClick={() => refetch()} disabled={saving || loading}>
-                        <HiOutlineRefresh className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                        Refresh
-                    </Button>
                 </div>
 
                 {/* Mobile kebab */}
                 <div className="md:hidden">
                     <SettingsHeaderMobileMenu
                         onRestart={handleRestart}
-                        onRefresh={() => refetch()}
                         restarting={restarting}
                         loading={loading}
                         saving={saving}

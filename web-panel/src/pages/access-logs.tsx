@@ -104,7 +104,7 @@ export default function AccessLogsPage() {
     const { data: nodes = [] } = useNodes()
     const accessLogNodes = useMemo(() => nodes.filter((n: Node) => n.enable_access_log && n.is_online), [nodes])
 
-    const { data: entries = [], isLoading, isFetching, refetch } = useAggregatedAccessLogs({
+    const { data: entries = [], isLoading, isFetching } = useAggregatedAccessLogs({
         nodeIds: selectedNodeIds,
         email: debouncedEmail || undefined,
         limit,
@@ -534,9 +534,6 @@ export default function AccessLogsPage() {
                                 </SelectItem>
                             </SelectContent>
                         </Select>
-                        <Button variant="outline" size="sm" className="h-8" onClick={() => refetch()} disabled={isFetching}>
-                            <HiOutlineRefresh className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
-                        </Button>
                     </div>
 
                     {/* Compact stats bar */}

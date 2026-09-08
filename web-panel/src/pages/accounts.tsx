@@ -47,7 +47,6 @@ import { toast } from "sonner"
 import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
 import { motion, AnimatePresence } from "framer-motion"
 import { useConfirm } from "@/components/ui/confirm-dialog"
-import { useQueryClient } from "@tanstack/react-query"
 
 // Store
 import { useAccountsStore } from "@/store/accounts-store"
@@ -95,7 +94,6 @@ function TableSkeleton() {
 }
 
 export default function AccountsPage() {
-    const queryClient = useQueryClient()
     const confirmDialog = useConfirm()
     const perPage = 20
 
@@ -238,10 +236,6 @@ export default function AccountsPage() {
         )
     }
 
-    const handleRefresh = () => {
-        queryClient.invalidateQueries({ queryKey: ['accounts'] })
-    }
-
     return (
         <TooltipProvider delayDuration={300}>
             <div className="space-y-4 md:space-y-6 animate-in fade-in duration-500">
@@ -263,7 +257,6 @@ export default function AccountsPage() {
                         />
                         <div className="flex-1" />
                         <AutoRefreshControl
-                            onRefresh={handleRefresh}
                             isRefreshing={isRefetching || isLoading}
                             dataUpdatedAt={dataUpdatedAt}
                         />
@@ -993,7 +986,6 @@ export default function AccountsPage() {
                             <div>
                                 <label className="text-xs font-medium text-muted-foreground mb-2 block">Auto Refresh</label>
                                 <AutoRefreshControl
-                                    onRefresh={handleRefresh}
                                     isRefreshing={isRefetching || isLoading}
                                     dataUpdatedAt={dataUpdatedAt}
                                 />

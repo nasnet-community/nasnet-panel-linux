@@ -1,9 +1,8 @@
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useSettingsStore } from "@/store/settings-store"
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
@@ -11,46 +10,19 @@ import {
     DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { HiOutlineRefresh, HiOutlineClock } from "react-icons/hi"
+import { HiOutlineRefresh } from "react-icons/hi"
 import { cn, getRelativeTime } from "@/lib/utils"
 
 interface AutoRefreshControlProps {
-    onRefresh: () => void
     isRefreshing: boolean
     dataUpdatedAt?: number
 }
 
-export function AutoRefreshControl({ onRefresh, isRefreshing, dataUpdatedAt }: AutoRefreshControlProps) {
+// Interval picker only — react-query owns the timer. The hooks behind each page
+// read the same setting via useRefreshInterval().
+export function AutoRefreshControl({ isRefreshing, dataUpdatedAt }: AutoRefreshControlProps) {
     const { refreshInterval, setRefreshInterval } = useSettingsStore()
     const [lastRefreshedLabel, setLastRefreshedLabel] = useState("")
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const [animationKey, setAnimationKey] = useState(0)
-
-    // Stable ref for onRefresh to avoid restarting the timer when callback identity changes
-    const onRefreshRef = useRef(onRefresh)
-    onRefreshRef.current = onRefresh
-
-    // Schedule refresh with a single setTimeout — no interval ticking
-    useEffect(() => {
-        if (refreshInterval === 0) {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current)
-            return
-        }
-
-        const scheduleNext = () => {
-            setAnimationKey(k => k + 1)
-            timeoutRef.current = setTimeout(() => {
-                onRefreshRef.current()
-                scheduleNext()
-            }, refreshInterval * 1000)
-        }
-
-        scheduleNext()
-
-        return () => {
-            if (timeoutRef.current) clearTimeout(timeoutRef.current)
-        }
-    }, [refreshInterval])
 
     // Update "last refreshed" label
     useEffect(() => {
@@ -81,8 +53,9 @@ export function AutoRefreshControl({ onRefresh, isRefreshing, dataUpdatedAt }: A
                     >
                         {refreshInterval > 0 && !isRefreshing && (
                             <div className="absolute bottom-0 left-0 h-0.5 bg-primary/20 w-full">
+                                {/* Re-keyed on each landing, so the bar tracks real fetches. */}
                                 <div
-                                    key={animationKey}
+                                    key={dataUpdatedAt ?? 0}
                                     className="h-full bg-primary"
                                     style={{
                                         width: '100%',

@@ -16,6 +16,7 @@ import {
     type UpdateAccountRequest,
 } from "@/lib/api/accounts"
 import { queryKeys } from "./keys"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import { toast } from "sonner"
 
 // ==================== Types ====================
@@ -34,6 +35,7 @@ export interface UseAccountListParams {
 // ==================== Queries ====================
 
 export function useAccountList(params: UseAccountListParams) {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.accountList(params),
         queryFn: async () => {
@@ -55,6 +57,8 @@ export function useAccountList(params: UseAccountListParams) {
                 total: res.meta?.total ?? 0,
             }
         },
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 

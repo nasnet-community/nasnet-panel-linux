@@ -213,16 +213,6 @@ export default function NodeDetailPage() {
                             </Button>
                         }
                     />
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefresh}
-                        disabled={isLoading || isStatsFetching}
-                        className="h-8 px-2.5 md:px-3"
-                    >
-                        <HiOutlineRefresh className={cn("w-3.5 h-3.5 md:mr-2", (isLoading || isStatsFetching) && "animate-spin")} />
-                        <span className="hidden md:inline">Refresh</span>
-                    </Button>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" className="md:hidden h-8 px-2.5">
