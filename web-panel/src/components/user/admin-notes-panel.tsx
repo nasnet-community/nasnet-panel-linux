@@ -11,7 +11,7 @@ export function AdminNotesPanel({ userId, initialNotes }: AdminNotesPanelProps) 
     const [notes, setNotes] = useState(initialNotes || "")
     const [saved, setSaved] = useState(false)
     const updateNotes = useUpdateUserNotes()
-    const timerRef = useRef<NodeJS.Timeout | null>(null)
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const lastSavedRef = useRef(initialNotes || "")
 
     useEffect(() => {

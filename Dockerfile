@@ -1,6 +1,6 @@
 # Stage: Build frontend
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web-builder
-RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+FROM --platform=$BUILDPLATFORM node:24.20.0-alpine AS web-builder
+RUN npm install --global pnpm@12.3.4
 WORKDIR /web
 COPY web-panel/package.json web-panel/pnpm-lock.yaml web-panel/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -8,7 +8,7 @@ COPY web-panel/ ./
 RUN pnpm build
 
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS builder
 
 WORKDIR /app
 
@@ -17,18 +17,21 @@ RUN apk add --no-cache git
 
 # Copy go mod files
 COPY go.mod go.sum ./
+# Preserve the initialization fix in the pinned Xray library.
+COPY third_party/xray-core/ ./third_party/xray-core/
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 # Copy source code
 COPY . .
 
-# Download Iran geofiles for embedding
+# Pin geodata for reproducible builds (override with --build-arg).
+ARG GEOFILE_RELEASE=202609080903
 RUN mkdir -p pkg/geofiles/embedded && \
     wget -q -O pkg/geofiles/embedded/geoip.dat \
-      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geoip.dat" && \
+      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/download/${GEOFILE_RELEASE}/geoip.dat" && \
     wget -q -O pkg/geofiles/embedded/geosite.dat \
-      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/latest/download/geosite.dat"
+      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/download/${GEOFILE_RELEASE}/geosite.dat"
 
 # Copy built frontend from web-builder stage
 COPY --from=web-builder /web/dist ./web-panel/dist

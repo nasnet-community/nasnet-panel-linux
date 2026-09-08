@@ -46,7 +46,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.14.0
     container_name: nasnet_panel_prometheus
     init: true
     ports:

@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	requiredGoVersion = "1.25"
-	requiredNodeMajor = 22
+	requiredGoVersion   = "1.27.1"
+	requiredNodeMajor   = 24
+	requiredNodeVersion = "24.20.0"
+	requiredPnpmVersion = "12.3.4"
 )
 
 // PrereqsDocker checks that Docker and Docker Compose are installed and running.
@@ -121,7 +123,7 @@ func installDocker() bool {
 }
 
 // PrereqsSystemd checks that all bare-metal (systemd) prerequisites are met:
-// Go >= 1.25, Node.js >= 22, pnpm, and the selected database engine.
+// Go >= 1.27.1, Node.js 24.20.0+ (or 26+), pnpm, and the selected database engine.
 // If anything is missing, it offers to install it. Returns true when all
 // prerequisites are satisfied.
 func PrereqsSystemd(cfg *Config, dbDriver string) bool {
@@ -267,7 +269,7 @@ func ensureGo() bool {
 					ui.StepOk("Go " + fields[2])
 					return true
 				}
-				ui.StepWarn(fmt.Sprintf("Go %s found but %s.x required", fields[2], requiredGoVersion))
+				ui.StepWarn(fmt.Sprintf("Go %s found but %s or newer required", fields[2], requiredGoVersion))
 			}
 		}
 	}
@@ -277,7 +279,7 @@ func ensureGo() bool {
 	// Resolve latest patch version from the Go download API
 	goFull, err := resolveLatestGo(requiredGoVersion)
 	if err != nil || goFull == "" {
-		ui.StepFail(fmt.Sprintf("Failed to resolve latest Go %s.x patch version", requiredGoVersion))
+		ui.StepFail(fmt.Sprintf("Failed to resolve a Go patch release at or above %s", requiredGoVersion))
 		ui.StepInfo("Download manually: https://go.dev/dl/")
 		return false
 	}
@@ -327,7 +329,7 @@ func ensureGo() bool {
 }
 
 // resolveLatestGo calls the Go download API to find the latest patch release
-// for the given major.minor (e.g. "1.25"). Honors OUTBOUND_PROXY_URL env
+// for the given minimum version (e.g. "1.27.1"). Honors OUTBOUND_PROXY_URL env
 // var to route through a SOCKS5 proxy (wizard runs as a separate process
 // and cannot read DB settings reliably; env is the integration point).
 func resolveLatestGo(minorVer string) (string, error) {
@@ -350,9 +352,13 @@ func resolveLatestGo(minorVer string) (string, error) {
 		return "", err
 	}
 
-	prefix := "go" + minorVer + "."
+	parts := strings.Split(minorVer, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid Go version %q", minorVer)
+	}
+	prefix := "go" + strings.Join(parts[:2], ".") + "."
 	for _, r := range releases {
-		if strings.HasPrefix(r.Version, prefix) {
+		if strings.HasPrefix(r.Version, prefix) && goVersionAtLeast(strings.TrimPrefix(r.Version, "go"), minorVer) {
 			return r.Version, nil
 		}
 	}
@@ -379,17 +385,17 @@ func goVersionAtLeast(installed, required string) bool {
 	return true
 }
 
-// ensureNode checks whether Node.js >= requiredNodeMajor is installed.
+// ensureNode checks that the installed Node.js satisfies the frontend engines.
 // If not, it installs via the NodeSource APT repository.
 func ensureNode() bool {
 	if out, err := exec.Command("node", "--version").Output(); err == nil {
 		ver := strings.TrimPrefix(strings.TrimSpace(string(out)), "v")
 		parts := strings.SplitN(ver, ".", 2)
-		if major, convErr := strconv.Atoi(parts[0]); convErr == nil && major >= requiredNodeMajor {
+		if major, convErr := strconv.Atoi(parts[0]); convErr == nil && ((major == requiredNodeMajor && goVersionAtLeast(ver, requiredNodeVersion)) || major >= 26) {
 			ui.StepOk("Node.js v" + ver)
 			return true
 		}
-		ui.StepWarn(fmt.Sprintf("Node.js v%s found but v%d.x required", ver, requiredNodeMajor))
+		ui.StepWarn(fmt.Sprintf("Node.js v%s found but v%s+ (24.x) or v26+ required", ver, requiredNodeVersion))
 	}
 
 	ui.StepInfo(fmt.Sprintf("Installing Node.js %d.x...", requiredNodeMajor))
@@ -413,16 +419,18 @@ func ensureNode() bool {
 	return true
 }
 
-// ensurePnpm checks whether pnpm is installed and installs it via npm if missing.
+// ensurePnpm installs the version used by the frontend lockfile.
 func ensurePnpm() bool {
 	if out, err := exec.Command("pnpm", "--version").Output(); err == nil {
-		ui.StepOk("pnpm " + strings.TrimSpace(string(out)))
-		return true
+		if strings.TrimSpace(string(out)) == requiredPnpmVersion {
+			ui.StepOk("pnpm " + requiredPnpmVersion)
+			return true
+		}
 	}
 
 	ui.StepInfo("Installing pnpm...")
 	if err := ui.RunLogged("Installing pnpm",
-		exec.Command("sudo", "npm", "install", "-g", "pnpm")); err != nil {
+		exec.Command("sudo", "npm", "install", "-g", "pnpm@"+requiredPnpmVersion)); err != nil {
 		ui.StepFail("Failed to install pnpm")
 		return false
 	}

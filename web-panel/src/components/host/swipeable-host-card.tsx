@@ -47,7 +47,7 @@ export const SwipeableHostCard = React.memo(function SwipeableHostCard({
 }: SwipeableHostCardProps) {
     const x = useMotionValue(0)
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const dragEndTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const dragEndTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const touchStart = useRef<{ x: number; y: number } | null>(null)
     const isDragging = useRef(false)
     const isOpen = useRef(false)

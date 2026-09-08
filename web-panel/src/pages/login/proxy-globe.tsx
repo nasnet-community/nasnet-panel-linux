@@ -276,17 +276,14 @@ export default function ProxyGlobe() {
             markerColor: [0.1, 0.8, 1],
             glowColor: [0.15, 0.3, 0.6],
             markers: MARKERS,
-            onRender: (state) => {
-                if (pointerInteracting === null) phi += 0.002
-                state.phi = phi + pointerInteractionMovement
-                state.theta = dynamicTheta
-            },
         })
 
         const ctx = overlay.getContext("2d")!
         let animId: number
 
         function drawArcs() {
+            if (pointerInteracting === null) phi += 0.002
+            globe.update({ phi: phi + pointerInteractionMovement, theta: dynamicTheta })
             ctx.clearRect(0, 0, size, size)
             const currentPhi = phi + pointerInteractionMovement
             const currentTheta = dynamicTheta

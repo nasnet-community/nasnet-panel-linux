@@ -168,7 +168,7 @@ export function useEvents(
     const [status, setStatus] = useState<UseEventsReturn['status']>('disconnected')
     const eventSourceRef = useRef<EventSource | null>(null)
     const handlersRef = useRef(handlers)
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // Keep handlers ref up to date
     useEffect(() => {

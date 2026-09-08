@@ -1,3 +1,5 @@
+// typescript-eslint uses the TypeScript 6 JavaScript API. The typecheck script
+// explicitly runs the separate TypeScript 7 compiler; keep lint coverage intact.
 import js from "@eslint/js"
 import globals from "globals"
 import reactHooks from "eslint-plugin-react-hooks"
@@ -10,7 +12,6 @@ export default tseslint.config(
             "dist",
             "coverage",
             "*.tsbuildinfo",
-            "vite.config.js",
         ],
     },
 

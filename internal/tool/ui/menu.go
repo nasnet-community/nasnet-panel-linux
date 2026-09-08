@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/charmbracelet/huh"
+	"charm.land/huh/v2"
 )
 
 // Menu displays a select menu with the given title and options.

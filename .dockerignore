@@ -15,3 +15,5 @@ docker-compose.yml
 .DS_Store
 ._*
 **/._*
+**/*.tsbuildinfo
+pkg/geofiles/embedded/*.dat

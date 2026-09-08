@@ -2,12 +2,12 @@ package geoip
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
 
-	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/geoip2-golang/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -40,7 +40,7 @@ func InitGeoLite2(path string) error {
 	geolite2Once.Do(func() {
 		// 1. Try embedded database (compiled in with -tags geolite2)
 		if len(embeddedGeoLite2) > 0 {
-			geolite2DB, geolite2Err = geoip2.FromBytes(embeddedGeoLite2)
+			geolite2DB, geolite2Err = geoip2.OpenBytes(embeddedGeoLite2)
 			if geolite2Err == nil {
 				log.Info("GeoLite2 database loaded from embedded binary")
 				return
@@ -87,8 +87,8 @@ func LookupCity(ipStr string) (*CityLocation, error) {
 		return nil, geolite2Err
 	}
 
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
 		return nil, fmt.Errorf("invalid IP address: %s", ipStr)
 	}
 
@@ -98,9 +98,9 @@ func LookupCity(ipStr string) (*CityLocation, error) {
 	}
 
 	loc := &CityLocation{
-		Country:     record.Country.Names["en"],
-		CountryCode: record.Country.IsoCode,
-		City:        record.City.Names["en"],
+		Country:     record.Country.Names.English,
+		CountryCode: record.Country.ISOCode,
+		City:        record.City.Names.English,
 	}
 
 	// Generate flag emoji from 2-letter country code

@@ -60,13 +60,13 @@ interface EventsProviderProps {
 // cannot indefinitely postpone the refresh.
 
 type CoalescedInvalidator = {
-    timers: Map<string, NodeJS.Timeout>
+    timers: Map<string, ReturnType<typeof setTimeout>>
     schedule: (queryClient: QueryClient, queryKey: readonly unknown[], delayMs: number) => void
     cleanup: () => void
 }
 
 function createCoalescedInvalidator(): CoalescedInvalidator {
-    const timers = new Map<string, NodeJS.Timeout>()
+    const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
     return {
         timers,
@@ -93,7 +93,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
     const queryClient = useQueryClient()
     const [status, setStatus] = useState<ConnectionStatus>('disconnected')
     const eventSourceRef = useRef<EventSource | null>(null)
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const isConnectingRef = useRef(false)
 
     // Use ref for queryClient to avoid dependency changes

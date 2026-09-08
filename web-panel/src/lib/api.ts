@@ -129,7 +129,7 @@ class ApiClient {
                 throw error
             }
             const message = error instanceof Error ? error.message : "Network error"
-            throw new Error(message)
+            throw new Error(message, { cause: error })
         }
     }
 
@@ -245,7 +245,7 @@ class ApiClient {
                 throw error
             }
             const message = error instanceof Error ? error.message : "Network error"
-            throw new Error(message)
+            throw new Error(message, { cause: error })
         }
     }
 

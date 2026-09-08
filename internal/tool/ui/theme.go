@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 )
 
 var (
@@ -21,16 +21,18 @@ var (
 	SymbolWarn  = StyleWarning.Render("⚠")
 )
 
-func Theme() *huh.Theme {
-	t := huh.ThemeBase()
+func Theme() huh.Theme {
+	return huh.ThemeFunc(func(isDark bool) *huh.Styles {
+		t := huh.ThemeBase(isDark)
 
-	t.Focused.Title = t.Focused.Title.Foreground(lipgloss.Color("6")).Bold(true)
-	t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(lipgloss.Color("6"))
-	t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(lipgloss.Color("6"))
-	t.Focused.FocusedButton = t.Focused.FocusedButton.Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0"))
-	t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(lipgloss.Color("8"))
+		t.Focused.Title = t.Focused.Title.Foreground(lipgloss.Color("6")).Bold(true)
+		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(lipgloss.Color("6"))
+		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(lipgloss.Color("6"))
+		t.Focused.FocusedButton = t.Focused.FocusedButton.Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0"))
+		t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(lipgloss.Color("8"))
 
-	return t
+		return t
+	})
 }
 
 func StepOk(msg string) {

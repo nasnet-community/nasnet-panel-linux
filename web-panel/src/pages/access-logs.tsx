@@ -1,15 +1,22 @@
 import { useState, useMemo, useCallback } from "react"
 import {
-    useReactTable,
-    getCoreRowModel,
-    getSortedRowModel,
-    getFilteredRowModel,
-    getPaginationRowModel,
+    useTable,
+    tableFeatures,
+    columnFilteringFeature,
+    columnVisibilityFeature,
+    columnSizingFeature,
+    globalFilteringFeature,
+    rowSortingFeature,
+    rowPaginationFeature,
+    createSortedRowModel,
+    createFilteredRowModel,
+    createPaginatedRowModel,
+    filterFns,
+    sortFns,
     createColumnHelper,
     flexRender,
     type SortingState,
     type ColumnFiltersState,
-    type VisibilityState,
 } from "@tanstack/react-table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -44,7 +51,20 @@ import { SubscriptionAutocomplete } from "@/components/ui/subscription-autocompl
 import type { AggregatedAccessLogEntry, Node } from "@/lib/types"
 
 // --- Column Helper ---
-const columnHelper = createColumnHelper<AggregatedAccessLogEntry>()
+const features = tableFeatures({
+    columnFilteringFeature,
+    columnVisibilityFeature,
+    columnSizingFeature,
+    globalFilteringFeature,
+    rowSortingFeature,
+    rowPaginationFeature,
+    filteredRowModel: createFilteredRowModel(),
+    sortedRowModel: createSortedRowModel(),
+    paginatedRowModel: createPaginatedRowModel(),
+    filterFns,
+    sortFns,
+})
+const columnHelper = createColumnHelper<typeof features, AggregatedAccessLogEntry>()
 
 function RelativeTime({ ts }: { ts: number }) {
     const d = new Date(ts * 1000)
@@ -79,7 +99,7 @@ export default function AccessLogsPage() {
     const [refreshInterval, setRefreshInterval] = useState(10_000)
     const [sorting, setSorting] = useState<SortingState>([{ id: "timestamp", desc: true }])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-    const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
         source_ip: false,
         inbound_tag: false,
         outbound_tag: false,
@@ -124,7 +144,7 @@ export default function AccessLogsPage() {
     const localEmails = useMemo(() => [...new Set(entries.map(e => e.email).filter(Boolean))], [entries])
 
     // --- Columns ---
-    const columns = useMemo(() => [
+    const columns = useMemo(() => columnHelper.columns([
         columnHelper.accessor("timestamp", {
             header: ({ column }) => (
                 <SortButton column={column}>Time</SortButton>
@@ -243,10 +263,11 @@ export default function AccessLogsPage() {
             cell: info => <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>,
             size: 100,
         }),
-    ], [])
+    ]), [])
 
     // --- Table ---
-    const table = useReactTable({
+    const table = useTable({
+        features,
         data: entries,
         columns,
         state: { sorting, columnFilters, columnVisibility, globalFilter },
@@ -254,12 +275,8 @@ export default function AccessLogsPage() {
         onColumnFiltersChange: setColumnFilters,
         onColumnVisibilityChange: setColumnVisibility,
         onGlobalFilterChange: setGlobalFilter,
-        getCoreRowModel: getCoreRowModel(),
-        getSortedRowModel: getSortedRowModel(),
-        getFilteredRowModel: getFilteredRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
         initialState: {
-            pagination: { pageSize: 100 },
+            pagination: { pageIndex: 0, pageSize: 100 },
         },
     })
 
@@ -618,12 +635,12 @@ export default function AccessLogsPage() {
                         {table.getPageCount() > 1 && (
                             <div className="flex items-center justify-between px-4 py-2 border-t">
                                 <div className="text-xs text-muted-foreground">
-                                    Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+                                    Page {table.state.pagination.pageIndex + 1} of {table.getPageCount()}
                                     {" "}({table.getFilteredRowModel().rows.length} entries)
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <Select
-                                        value={table.getState().pagination.pageSize.toString()}
+                                        value={table.state.pagination.pageSize.toString()}
                                         onValueChange={v => table.setPageSize(Number(v))}
                                     >
                                         <SelectTrigger className="h-7 w-[75px] text-xs">
@@ -639,6 +656,7 @@ export default function AccessLogsPage() {
                                         variant="outline"
                                         size="icon"
                                         className="h-7 w-7"
+                                        aria-label="Previous page"
                                         onClick={() => table.previousPage()}
                                         disabled={!table.getCanPreviousPage()}
                                     >
@@ -648,6 +666,7 @@ export default function AccessLogsPage() {
                                         variant="outline"
                                         size="icon"
                                         className="h-7 w-7"
+                                        aria-label="Next page"
                                         onClick={() => table.nextPage()}
                                         disabled={!table.getCanNextPage()}
                                     >
