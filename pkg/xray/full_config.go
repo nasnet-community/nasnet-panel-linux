@@ -80,7 +80,7 @@ type OrderedConfig struct {
 	Outbounds        []map[string]interface{} `json:"outbounds,omitempty"`
 	Transport        map[string]interface{}   `json:"transport,omitempty"`
 	Stats            map[string]interface{}   `json:"stats"`
-	Reverse          map[string]interface{}   `json:"reverse,omitempty"`
+	XCoreHub         map[string]interface{}   `json:"xcoreHub,omitempty"`
 	FakeDNS          interface{}              `json:"fakeDns,omitempty"`
 	Metrics          map[string]interface{}   `json:"metrics,omitempty"`
 	Observatory      map[string]interface{}   `json:"observatory,omitempty"`
@@ -121,16 +121,21 @@ func NewFullConfigBuilder(node *nodeDomain.Node) *FullConfigBuilder {
 	for i := range node.BalancingRules {
 		balancing[i] = &node.BalancingRules[i]
 	}
+	reverseProxies := make([]*nodeDomain.ReverseProxy, len(node.ReverseProxies))
+	for i := range node.ReverseProxies {
+		reverseProxies[i] = &node.ReverseProxies[i]
+	}
 
 	return &FullConfigBuilder{
-		node:       node,
-		inbounds:   inbounds,
-		outbounds:  outbounds,
-		routing:    routing,
-		balancing:  balancing,
-		users:      make(map[string][]*User),
-		apiEnabled: true,
-		apiPort:    10085,
+		node:           node,
+		inbounds:       inbounds,
+		outbounds:      outbounds,
+		routing:        routing,
+		balancing:      balancing,
+		users:          make(map[string][]*User),
+		apiEnabled:     true,
+		apiPort:        10085,
+		reverseProxies: reverseProxies,
 	}
 }
 
@@ -188,40 +193,6 @@ func (b *FullConfigBuilder) WithBalancingRules(rules []*nodeDomain.BalancingRule
 	return b
 }
 
-// buildReverse creates the reverse proxy configuration
-func (b *FullConfigBuilder) buildReverse() map[string]interface{} {
-	if len(b.reverseProxies) == 0 {
-		return nil
-	}
-
-	var bridges []map[string]interface{}
-	var portals []map[string]interface{}
-
-	for _, rp := range b.reverseProxies {
-		entry := map[string]interface{}{
-			"tag":    rp.Tag,
-			"domain": rp.Domain,
-		}
-		if rp.Type == "bridge" {
-			bridges = append(bridges, entry)
-		} else {
-			portals = append(portals, entry)
-		}
-	}
-
-	result := map[string]interface{}{}
-	if len(bridges) > 0 {
-		result["bridges"] = bridges
-	}
-	if len(portals) > 0 {
-		result["portals"] = portals
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
 // validateBalancerRefs: every rule that routes to a balancer must have that
 // balancer emitted, or xray refuses the whole config with "app/router:
 // balancer <tag> not found" and the node keeps its stale config. Catch it here
@@ -246,6 +217,9 @@ func (b *FullConfigBuilder) validateBalancerRefs() error {
 
 // Build generates the complete config.json as a string with ordered keys
 func (b *FullConfigBuilder) Build() (string, error) {
+	if err := nodeDomain.ValidateVLESSReverse(b.inbounds, b.outbounds, b.reverseProxies); err != nil {
+		return "", err
+	}
 	if err := b.validateBalancerRefs(); err != nil {
 		return "", err
 	}
@@ -298,8 +272,9 @@ func (b *FullConfigBuilder) buildOrderedConfig() *OrderedConfig {
 	// Add FakeDNS if configured
 	config.FakeDNS = b.buildFakeDNS()
 
-	// Add Reverse if configured
-	config.Reverse = b.buildReverse()
+	// Configure VLESS Reverse; the top-level legacy reverse block was removed.
+	b.applyVLESSReverse(config)
+	b.applyBandwidthRouting(config)
 
 	return config
 }
@@ -429,18 +404,14 @@ func (b *FullConfigBuilder) convertInbound(inb *nodeDomain.Inbound) map[string]i
 				stream["tlsSettings"] = b.buildTLSSettings(tlsSettings)
 			}
 		}
+		b.addStreamOptions(stream, inb.SockoptSettings, inb.FinalMask)
 		cfg["streamSettings"] = stream
 	default:
 		cfg["streamSettings"] = b.buildInboundStreamSettings(inb)
 	}
 
-	// Sniffing — skip for protocols that don't carry user TCP/UDP traffic
-	// in a way xray can sniff (wireguard tunnels its own protocol; dokodemo
-	// already specifies the destination; hysteria2 multiplexes QUIC).
-	switch inb.Protocol {
-	case "wireguard", "dokodemo-door", "hysteria2":
-		// no-op
-	default:
+	// Sniff decoded application traffic, including transparent and Hysteria streams.
+	if inb.Protocol != "wireguard" {
 		cfg["sniffing"] = buildSniffingMap(inb.GetSniffingSettingsOrDefault())
 	}
 
@@ -1152,21 +1123,6 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 		})
 	}
 
-	// Per-tier outbounds: clone default with sockopt.mark for TC rate limiting.
-	activeTierLevels := b.getActiveBandwidthLevels()
-	defaultOutbound := b.findDefaultOutbound(outbounds)
-	for _, tier := range bandwidth.RateLimitedTiers() {
-		tag := tier.OutboundTag()
-		if existingTags[tag] {
-			continue
-		}
-		if !activeTierLevels[tier.Level] {
-			continue
-		}
-		outbounds = append(outbounds, b.cloneOutboundWithMark(defaultOutbound, tag, tier.Mark))
-		existingTags[tag] = true
-	}
-
 	// 3. Add default 'blocked' outbound if not present
 	if !existingTags["blocked"] {
 		outbounds = append(outbounds, map[string]interface{}{
@@ -1228,14 +1184,37 @@ func (b *FullConfigBuilder) convertOutbound(out *nodeDomain.Outbound) map[string
 			hysteriaSettings["udpIdleTimeout"] = hy.UdpIdleTimeout
 		}
 		stream := map[string]interface{}{
-			"network":          "hysteria",
-			"security":         "tls",
-			"hysteriaSettings": hysteriaSettings,
+			"network": "hysteria", "security": "tls", "hysteriaSettings": hysteriaSettings,
+			"tlsSettings": b.buildTLSSettings(out.GetTLSSettingsOrDefault()),
 		}
-		tlsSettings := out.GetTLSSettingsOrDefault()
-		if tlsSettings.ServerName != "" || len(tlsSettings.Certificates) > 0 {
-			stream["tlsSettings"] = b.buildTLSSettings(tlsSettings)
+		b.addStreamOptions(stream, out.SockoptSettings, out.FinalMask)
+		// Preserve saved Hysteria bandwidth controls in the current core format.
+		fm, _ := stream["finalmask"].(map[string]interface{})
+		if fm == nil {
+			fm = map[string]interface{}{}
 		}
+		quic, valid := fm["quicParams"].(map[string]interface{})
+		// Preserve malformed explicit input so core validation can report it.
+		if valid || fm["quicParams"] == nil {
+			if quic == nil {
+				quic = map[string]interface{}{}
+			}
+			for key, value := range map[string]string{"congestion": hy.Congestion, "brutalUp": hy.Up, "brutalDown": hy.Down} {
+				if value != "" && quic[key] == nil {
+					quic[key] = value
+				}
+			}
+			if quic["congestion"] == nil && (hy.Up != "" || hy.Down != "") {
+				quic["congestion"] = "brutal"
+			}
+			if len(quic) > 0 {
+				fm["quicParams"] = quic
+			}
+		}
+		if len(fm) > 0 {
+			stream["finalmask"] = fm
+		}
+
 		cfg["streamSettings"] = stream
 	} else if out.Protocol != "wireguard" && (out.Network != "" || out.Security != "") {
 		cfg["streamSettings"] = b.buildOutboundStreamSettings(out)
@@ -1427,7 +1406,7 @@ func (b *FullConfigBuilder) buildSOCKSOutboundSettings(out *nodeDomain.Outbound)
 
 	s := out.GetSOCKSSettingsOrDefault()
 	// Outbound SOCKS authentication (if we are connecting TO a socks proxy)
-	if len(s.Accounts) > 0 {
+	if s.Auth != "noauth" && len(s.Accounts) > 0 {
 		settings["servers"].([]map[string]interface{})[0]["users"] = []map[string]interface{}{
 			{
 				"user": s.Accounts[0].User,
@@ -1801,23 +1780,18 @@ func (b *FullConfigBuilder) buildRouting() map[string]interface{} {
 		})
 	}
 
-	// Add bandwidth tier routing rules BEFORE other rules so they take priority
-	// over catch-all rules like "network: tcp,udp → outbound"
-	for _, tier := range bandwidth.RateLimitedTiers() {
-		emails := b.getEmailsForLevel(tier.Level)
-		if len(emails) == 0 {
-			continue
+	// VLESS manages its control channel inside the outbound handler. Old
+	// domain-control rules must not be emitted after migration.
+	obsoleteControl := make(map[uint]bool)
+	for _, rp := range b.reverseProxies {
+		if rp.Rule1ID != nil {
+			obsoleteControl[*rp.Rule1ID] = true
 		}
-		rules = append(rules, map[string]interface{}{
-			"type":        "field",
-			"user":        emails,
-			"outboundTag": tier.OutboundTag(),
-		})
 	}
 
 	// Convert domain routing rules (both preset and manual rules from DB)
-	for _, rule := range b.routing {
-		if rule == nil || !rule.Enabled {
+	for _, rule := range nodeDomain.OrderReverseRoutingRules(b.routing, b.reverseProxies) {
+		if rule == nil || !rule.Enabled || obsoleteControl[rule.ID] {
 			continue
 		}
 		rules = append(rules, b.convertRoutingRule(rule))
@@ -1910,70 +1884,20 @@ func (b *FullConfigBuilder) buildObservatory() map[string]interface{} {
 	}
 }
 
-// getActiveBandwidthLevels returns a set of tier levels that have at least one user
-func (b *FullConfigBuilder) getActiveBandwidthLevels() map[uint32]bool {
-	levels := make(map[uint32]bool)
-	for _, users := range b.users {
-		for _, u := range users {
-			if u.Level > 0 {
-				levels[u.Level] = true
-			}
-		}
-	}
-	return levels
-}
-
 // getEmailsForLevel returns all user emails that have the specified Xray level
 func (b *FullConfigBuilder) getEmailsForLevel(level uint32) []string {
 	seen := make(map[string]bool)
 	var emails []string
 	for _, users := range b.users {
 		for _, u := range users {
-			if u.Level == level && !seen[u.Email] {
+			if u.Level == level && u.Email != "" && !seen[u.Email] {
 				emails = append(emails, u.Email)
 				seen[u.Email] = true
 			}
 		}
 	}
+	sort.Strings(emails)
 	return emails
-}
-
-// findDefaultOutbound determines which outbound is the "default" for user traffic.
-// It checks routing rules for a catch-all (network: tcp,udp) and returns the targeted
-// outbound. Falls back to the first non-system outbound, then to a simple freedom outbound.
-func (b *FullConfigBuilder) findDefaultOutbound(outbounds []map[string]interface{}) map[string]interface{} {
-	// Look for a catch-all routing rule (network: tcp,udp) to find the default outbound tag
-	systemTags := map[string]bool{"api": true, "blocked": true, "direct": true}
-	for _, rule := range b.routing {
-		if rule == nil || !rule.Enabled {
-			continue
-		}
-		// A catch-all is a rule with network: [tcp, udp] (or similar) and no domain/IP/user filters
-		if len(rule.NetworkRules) > 0 && len(rule.DomainRules) == 0 && len(rule.GeoIPRules) == 0 &&
-			len(rule.UserEmails) == 0 && len(rule.IPCIDRRules) == 0 && rule.OutboundTag != "" &&
-			!systemTags[rule.OutboundTag] {
-			// Find this outbound in the built outbounds
-			for _, out := range outbounds {
-				if out["tag"] == rule.OutboundTag {
-					return out
-				}
-			}
-		}
-	}
-
-	// Fallback: first non-system outbound
-	for _, out := range outbounds {
-		tag, _ := out["tag"].(string)
-		if !systemTags[tag] && tag != "" {
-			return out
-		}
-	}
-
-	// Final fallback: freedom
-	return map[string]interface{}{
-		"protocol": "freedom",
-		"settings": map[string]interface{}{},
-	}
 }
 
 // cloneOutboundWithMark deep-copies an outbound config and injects sockopt.mark.
@@ -2211,7 +2135,11 @@ func (b *FullConfigBuilder) convertRoutingRule(rule *nodeDomain.RoutingRule) map
 				domains[i] = d.Value
 			} else if d.Type != "" && d.Type != "plain" {
 				// Format: "type:value" for xray (e.g., "domain:google.com", "regexp:.*\.cn$")
-				domains[i] = d.Type + ":" + d.Value
+				prefix := d.Type
+				if prefix == "regex" {
+					prefix = "regexp"
+				}
+				domains[i] = prefix + ":" + d.Value
 			} else {
 				domains[i] = d.Value
 			}
@@ -2556,12 +2484,14 @@ func (b *FullConfigBuilder) buildSockoptSettings(s *nodeDomain.SockoptSettings) 
 		// unparseable (json: cannot unmarshal number into string). Convert.
 		cs := make([]map[string]interface{}, 0, len(s.CustomSockopt))
 		for _, c := range s.CustomSockopt {
-			entry := map[string]interface{}{}
-			if c.Level != 0 {
-				entry["level"] = strconv.Itoa(c.Level)
+			entry := map[string]interface{}{
+				"level": strconv.Itoa(c.Level), "opt": strconv.Itoa(c.OptName), "type": c.ValueType(),
 			}
-			if c.OptName != 0 {
-				entry["opt"] = strconv.Itoa(c.OptName)
+			if c.System != "" {
+				entry["system"] = c.System
+			}
+			if c.Network != "" {
+				entry["network"] = c.Network
 			}
 			if c.OptValue != nil {
 				entry["value"] = fmt.Sprintf("%v", c.OptValue)
@@ -2818,4 +2748,16 @@ func (b *FullConfigBuilder) buildHysteriaOutboundSettings(out *nodeDomain.Outbou
 		settings["port"] = out.Port
 	}
 	return settings
+}
+
+// addStreamOptions applies options shared by every stream transport.
+func (b *FullConfigBuilder) addStreamOptions(stream map[string]interface{}, sock *nodeDomain.SockoptSettings, mask *nodeDomain.FinalMask) {
+	if sock != nil {
+		stream["sockopt"] = b.buildSockoptSettings(sock)
+	}
+	if mask != nil {
+		if fm := buildFinalMaskMap(mask); len(fm) > 0 {
+			stream["finalmask"] = fm
+		}
+	}
 }

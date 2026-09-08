@@ -1582,9 +1582,19 @@ func (r *nodeRepository) DeleteReverseProxiesByNode(ctx context.Context, nodeID 
 
 func (r *nodeRepository) ListReverseProxiesByReferencedTag(ctx context.Context, nodeID uint, tag string) ([]*domain.ReverseProxy, error) {
 	var rps []*domain.ReverseProxy
+	membership := "EXISTS (SELECT 1 FROM json_each(interconnection_tags) WHERE value = ?) OR EXISTS (SELECT 1 FROM json_each(inbound_tags) WHERE value = ?)"
+	arrayArg := tag
+	if r.db.Dialector.Name() == "postgres" {
+		membership = "interconnection_tags @> ?::jsonb OR inbound_tags @> ?::jsonb"
+		encoded, err := json.Marshal([]string{tag})
+		if err != nil {
+			return nil, err
+		}
+		arrayArg = string(encoded)
+	}
 	if err := r.db.WithContext(ctx).
-		Where("node_id = ? AND (interconnection_tag = ? OR outbound_tag = ? OR interconnection_tags LIKE ? OR inbound_tags LIKE ?)",
-			nodeID, tag, tag, `%"`+tag+`"%`, `%"`+tag+`"%`).
+		Where("node_id = ? AND (interconnection_tag = ? OR outbound_tag = ? OR "+membership+")",
+			nodeID, tag, tag, arrayArg, arrayArg).
 		Find(&rps).Error; err != nil {
 		return nil, err
 	}

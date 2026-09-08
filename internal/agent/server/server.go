@@ -691,7 +691,18 @@ func (s *Server) ValidateConfig(ctx context.Context, req *pb.ConfigPayload) (*pb
 
 // AddUser adds a user to an inbound
 func (s *Server) AddUser(ctx context.Context, req *pb.UserPayload) (*pb.CommandResponse, error) {
-	err := s.xrayClient.AddUser(ctx, req.InboundTag, req.Email, req.Uuid, req.Protocol, req.Flow, req.Encryption, req.Level)
+	var reverseTag string
+	if strings.EqualFold(req.Protocol, "vless") {
+		content, err := s.xrayMgr.GetConfigContent()
+		if err != nil {
+			return &pb.CommandResponse{Success: false, Message: "Failed to read reverse permissions: " + err.Error(), ErrorCode: "ADD_USER_FAILED"}, nil
+		}
+		reverseTag, err = agentxray.ReverseTagFromConfig(content, req.InboundTag)
+		if err != nil {
+			return &pb.CommandResponse{Success: false, Message: "Failed to read reverse permissions: " + err.Error(), ErrorCode: "ADD_USER_FAILED"}, nil
+		}
+	}
+	err := s.xrayClient.AddUser(ctx, req.InboundTag, req.Email, req.Uuid, req.Protocol, req.Flow, req.Encryption, req.Level, reverseTag)
 	if err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
