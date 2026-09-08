@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router"
 import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
 import { HealthStrip } from "@/components/router/health-strip"
 import type { RouterHealth, TunnelHealth, UplinkHealth } from "@/lib/types/health"
@@ -39,11 +40,15 @@ let mockQuery: { data?: RouterHealth; isLoading: boolean; isError: boolean }
 function renderStrip(interfaces: NetworkInterfaceView[] = []) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
-        <QueryClientProvider client={qc}>
-            <ConfirmDialogProvider>
-                <HealthStrip interfaces={interfaces} />
-            </ConfirmDialogProvider>
-        </QueryClientProvider>,
+        // The details sheet links to the traffic-flow page, so the strip now
+        // needs a router the way every page that renders it already has one.
+        <MemoryRouter>
+            <QueryClientProvider client={qc}>
+                <ConfirmDialogProvider>
+                    <HealthStrip interfaces={interfaces} />
+                </ConfirmDialogProvider>
+            </QueryClientProvider>
+        </MemoryRouter>,
     )
 }
 
@@ -87,11 +92,14 @@ function uplink(over: Partial<UplinkHealth>): UplinkHealth {
         gateway: "up",
         internet: "up",
         verdict: "up",
+        via: "",
         force_state: "",
         degraded: false,
         loss_pct: 0,
         median_rtt_ms: 40,
         targets: [{ address: "1.1.1.1:443", proto: "tcp", ok: true, rtt_ms: 40 }],
+        rx_bytes: 0,
+        tx_bytes: 0,
         history: [
             { unix: 1, ok_ratio: 1, rtt_ms: 40 },
             { unix: 2, ok_ratio: 1, rtt_ms: 42 },
@@ -155,6 +163,23 @@ describe("the uplink card as the uplink's own card", () => {
         await waitFor(() => expect(setInterfaceLabel).toHaveBeenCalledWith("k1", "LTE backup"))
     })
 
+    // The readout opens the sheet, but the name and the address above it are
+    // controls of their own, and a button cannot hold another button.
+    it("keeps the details target clear of the card's own controls", () => {
+        renderStrip([NAMED, BARE])
+        const details = within(card("eth1")).getByLabelText("Details for eth1")
+        expect(details.querySelector("button")).toBeNull()
+        expect(details.closest("button")).toBe(details)
+    })
+
+    it("opens the details sheet from the readout", async () => {
+        renderStrip([NAMED, BARE])
+        await userEvent.click(within(card("eth1")).getByLabelText("Details for eth1"))
+        await waitFor(() =>
+            expect(document.querySelector('[data-uplink-sheet="eth1"]')).not.toBeNull(),
+        )
+    })
+
     // Health arrives from the probe loop, interfaces from the state query; a
     // card must still render when the two disagree about what exists.
     it("still renders an uplink no interface row matches", () => {
@@ -194,10 +219,45 @@ describe("HealthStrip", () => {
         expect(byLayer["internet"]).toBe("down")
     })
 
-    it("announces an active failover", () => {
+    it("announces riding the pool only when every domestic line is down", () => {
         mockQuery.data = health({ failover_active: true })
         renderStrip()
-        expect(screen.getByText(/riding the VPN/i)).toBeInTheDocument()
+        expect(screen.getByText(/every domestic line is down/i)).toBeInTheDocument()
+        expect(screen.getByText(/riding the VPN pool/i)).toBeInTheDocument()
+    })
+
+    it("says which line a failed domestic is riding, by its label", () => {
+        mockQuery.data = health({
+            uplinks: [
+                uplink({ verdict: "no-internet", internet: "down", via: "eth2" }),
+                uplink({ slot: "domestic2", if_name: "eth2" }),
+            ],
+        })
+        renderStrip([
+            iface({}),
+            iface({ id: 2, if_name: "eth2", key: "k2", slot: "domestic2", label: "Fibre" }),
+        ])
+        expect(within(card("eth0")).getByText(/riding Fibre/)).toBeInTheDocument()
+        expect(within(card("eth2")).queryByText(/riding/)).toBeNull()
+        expect(screen.queryByText(/every domestic line is down/i)).toBeNull()
+    })
+
+    it("says a pool ride on the card too", () => {
+        mockQuery.data = health({
+            failover_active: true,
+            uplinks: [uplink({ verdict: "no-internet", internet: "down", via: "pool" })],
+        })
+        renderStrip()
+        expect(within(card("eth0")).getByText(/riding the VPN pool/i)).toBeInTheDocument()
+    })
+
+    // A domestic2 card that calls itself a secondary WAN is simply wrong.
+    it("calls every domestic slot a domestic WAN", () => {
+        mockQuery.data = health({
+            uplinks: [uplink({ slot: "domestic2", if_name: "eth2" })],
+        })
+        renderStrip([iface({ id: 2, if_name: "eth2", key: "k2", slot: "domestic2" })])
+        expect(within(card("eth2")).getByText(/domestic WAN/)).toBeInTheDocument()
     })
 
     it("fires the force mutation with the chosen state", async () => {
@@ -365,6 +425,23 @@ describe("HealthStrip", () => {
             renderStrip()
             await userEvent.click(screen.getAllByText("force down")[0])
             expect(await screen.findByText(/lose access to this panel/i)).toBeInTheDocument()
+        })
+
+        // With a backup line the panel keeps answering, so the warning shrinks.
+        it("softens the force-down warning when another domestic line exists", async () => {
+            mockQuery = {
+                data: health({
+                    uplinks: [uplink({}), uplink({ slot: "domestic2", if_name: "eth2" })],
+                }),
+                isLoading: false,
+                isError: false,
+            }
+            renderStrip()
+            await userEvent.click(screen.getAllByText("force down")[0])
+            expect(
+                await screen.findByText(/moves to the other domestic line/i),
+            ).toBeInTheDocument()
+            expect(screen.queryByText(/lose access to this panel/i)).toBeNull()
         })
 
         it("does not ask for force up or auto", async () => {

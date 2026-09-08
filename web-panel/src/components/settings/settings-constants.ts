@@ -387,6 +387,8 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
             description: "When a working uplink gets flagged as lossy or slow",
             keys: [
                 "router_degraded_loss_pct",
+                "router_degraded_loss_pct_domestic",
+                "router_degraded_loss_pct_foreign",
                 "router_degraded_rtt_ms_domestic",
                 "router_degraded_rtt_ms_foreign",
             ],
@@ -473,3 +475,10 @@ export const notificationMatrixSections: NotificationMatrixSection[] = [
         ],
     },
 ]
+
+/** Per-line router check keys are edited on the Router page, where the form
+ *  validates them and knows which lines a save reaches. A raw JSON field in
+ *  the Other bucket here would be a foot-gun, so keep them off this page. */
+export function isHiddenSettingKey(key: string): boolean {
+    return /^router_(probe_targets|degraded_rtt_ms|degraded_loss_pct)_slot_/.test(key)
+}

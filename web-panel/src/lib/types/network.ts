@@ -2,6 +2,9 @@ export type InterfaceRole = "unassigned" | "wan" | "lan" | "lan_member" | "mgmt"
 export type UplinkSlot =
     | ""
     | "domestic"
+    | "domestic2"
+    | "domestic3"
+    | "domestic4"
     | "secondary"
     | "secondary2"
     | "secondary3"
@@ -14,7 +17,17 @@ export interface Verdict {
     message: string
 }
 
+export interface WANConfig {
+    method: "dhcp4" | "static" | "rawip"
+    static_address: string
+    static_gateway: string
+    gateway_on_link: boolean
+    dns_mode: "default" | "custom" | "vpn"
+    dns_servers: string[]
+}
+
 export interface NetworkInterfaceView {
+    wan?: WANConfig
     id: number
     if_name: string
     /** The nl80211 radio, "" for wired. Interfaces sharing one cannot hold
@@ -54,6 +67,11 @@ export interface UplinkView {
 }
 
 export interface NetworkState {
+    pending_request_id?: string
+    last_apply_request_id?: string
+    last_apply_id?: number
+    last_apply_phase?: "planned" | "applied" | "confirmed" | "rolled_back" | "failed"
+    last_apply_error?: string
     router_mode: boolean
     takeover_done: boolean
     warnings: string[]
@@ -106,6 +124,8 @@ export interface LANView extends LANConfig {
 }
 
 export interface AssignRoleRequest {
+    wan?: WANConfig
+    request_id?: string
     interface_id: number
     role: InterfaceRole
     slot: UplinkSlot

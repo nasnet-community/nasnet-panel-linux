@@ -1,10 +1,18 @@
+import { useState } from "react"
+import { SlidersHorizontal } from "lucide-react"
 import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
+import {
+    ConnectionChecksDialog,
+    type CheckSibling,
+} from "@/components/router/connection-checks-dialog"
+import { UplinkDetailSheet } from "@/components/router/uplink-detail-sheet"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { PortName } from "@/components/network/port-name"
 import { RttSparkline } from "@/components/router/rtt-sparkline"
 import { cn } from "@/lib/utils"
-import { groupAddresses } from "@/lib/network-labels"
+import { groupAddresses, isDomesticSlot } from "@/lib/network-labels"
 import { useRouterHealth, useSetUplinkForce } from "@/lib/queries/use-router-health"
 import type {
     HealthSample,
@@ -13,7 +21,7 @@ import type {
     UplinkVerdict,
     VPNPoolHealth,
 } from "@/lib/types/health"
-import type { NetworkInterfaceView } from "@/lib/types/network"
+import type { NetworkInterfaceView, UplinkSlot } from "@/lib/types/network"
 
 // Closed over UplinkVerdict so a new verdict is a compile error.
 // Severities match linkTone.
@@ -91,7 +99,17 @@ function Ladder({ carrier, gateway, internet }: { carrier: string; gateway: stri
 
 // Median RTT, last 15 minutes.
 
-function ForceControl({ ifName, force, slot }: { ifName: string; force: string; slot: string }) {
+function ForceControl({
+    ifName,
+    force,
+    slot,
+    hasSibling,
+}: {
+    ifName: string
+    force: string
+    slot: UplinkSlot
+    hasSibling: boolean
+}) {
     const set = useSetUplinkForce()
     const confirm = useConfirm()
     const states = [
@@ -124,10 +142,13 @@ function ForceControl({ ifName, force, slot }: { ifName: string; force: string; 
         const ok = await confirm({
             title: `Force ${ifName} down`,
             description:
-                slot === "domestic"
-                    ? "Its routes are withdrawn until you set it back. This is the uplink " +
-                      "the panel answers on, so you may lose access to this panel and have " +
-                      "to undo it from the console."
+                isDomesticSlot(slot)
+                    ? hasSibling
+                        ? "Its routes are withdrawn until you set it back. Domestic traffic " +
+                          "moves to the other domestic line, and the panel still answers there."
+                        : "Its routes are withdrawn until you set it back. This is the uplink " +
+                          "the panel answers on, so you may lose access to this panel and have " +
+                          "to undo it from the console."
                     : "Its routes are withdrawn until you set it back, and any tunnel riding " +
                       "it stops until it is re-homed or the uplink returns.",
             confirmLabel: "Force it down",
@@ -174,13 +195,39 @@ function StatsRow({ loss, rtt, history }: { loss: number; rtt: number; history: 
 
 // The card is the uplink's own card: health, name, address and the rename in one
 // place, so no summary below the tabs has to repeat any of it.
-function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceView }) {
-    const kind = up.slot === "domestic" ? "domestic WAN" : "secondary WAN"
+function UplinkCard({
+    up,
+    iface,
+    viaLabel,
+    hasSibling,
+    siblings,
+    group,
+    labelOf,
+    vpn,
+    onConfigure,
+}: {
+    onConfigure?: (iface: NetworkInterfaceView) => void
+    up: UplinkHealth
+    iface?: NetworkInterfaceView
+    /** Who is carrying this line right now, already resolved to a label. */
+    viaLabel: string | null
+    hasSibling: boolean
+    /** The other lines a shared check list would also change. */
+    siblings: CheckSibling[]
+    /** Every line in the same group, in slot order, this one included. */
+    group: UplinkHealth[]
+    labelOf: (ifName: string) => string
+    vpn?: VPNPoolHealth | null
+}) {
+    const kind = isDomesticSlot(up.slot) ? "domestic WAN" : "secondary WAN"
     const { primary } = groupAddresses(iface?.addrs)
+    const [checksOpen, setChecksOpen] = useState(false)
+    const [detailOpen, setDetailOpen] = useState(false)
+    const lineLabel = iface?.label || up.if_name
     return (
         <div
             data-uplink={up.if_name}
-            className="bg-surface-2 border-border flex flex-col gap-3 rounded-lg border p-4"
+            className="bg-surface-2 border-border hover:border-border-strong flex flex-col gap-3 rounded-lg border p-4 transition-colors"
         >
             <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -199,13 +246,73 @@ function UplinkCard({ up, iface }: { up: UplinkHealth; iface?: NetworkInterfaceV
                         <p className="text-text-tertiary mt-1 text-xs">no address</p>
                     )}
                 </div>
-                <VerdictBadge verdict={up.verdict} />
+                <div className="flex flex-col items-end gap-1">
+                    <VerdictBadge verdict={up.verdict} />
+                    {viaLabel && (
+                        <span
+                            data-via={up.via}
+                            className={cn(
+                                "rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
+                                TONE_WARN,
+                            )}
+                        >
+                            riding {viaLabel}
+                        </span>
+                    )}
+                </div>
             </div>
-            <Ladder carrier={up.carrier} gateway={up.gateway} internet={up.internet} />
-            {/* A diagnosis, not an event, so it sits here rather than in a toast. */}
-            {up.note && <p className="text-text-tertiary text-xs">{up.note}</p>}
-            <StatsRow loss={up.loss_pct} rtt={up.median_rtt_ms} history={up.history} />
-            <ForceControl ifName={up.if_name} force={up.force_state} slot={up.slot} />
+            {/* Only the readout: the name and the address above it are their own
+                controls, and a button cannot hold another button. */}
+            <button
+                type="button"
+                aria-label={`Details for ${lineLabel}`}
+                onClick={() => setDetailOpen(true)}
+                className="focus-visible:ring-ring -m-1 flex flex-col gap-3 rounded-md p-1 text-left focus-visible:ring-2 focus-visible:outline-none"
+            >
+                <Ladder carrier={up.carrier} gateway={up.gateway} internet={up.internet} />
+                {/* A diagnosis, not an event, so it sits here rather than in a toast. */}
+                {up.note && <p className="text-text-tertiary text-xs">{up.note}</p>}
+                <StatsRow loss={up.loss_pct} rtt={up.median_rtt_ms} history={up.history} />
+            </button>
+            <div className="flex items-center justify-between gap-2">
+                <ForceControl
+                    ifName={up.if_name}
+                    force={up.force_state}
+                    slot={up.slot}
+                    hasSibling={hasSibling}
+                />
+                <div className="flex items-center gap-1">
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        aria-label={`Connection checks for ${lineLabel}`}
+                        onClick={() => setChecksOpen(true)}
+                    >
+                        <SlidersHorizontal className="h-3 w-3" />
+                        Checks
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={() => setDetailOpen(true)}>
+                        Details
+                    </Button>
+                </div>
+            </div>
+            <ConnectionChecksDialog
+                open={checksOpen}
+                onOpenChange={setChecksOpen}
+                slot={up.slot}
+                lineLabel={lineLabel}
+                siblings={siblings}
+            />
+            <UplinkDetailSheet
+                open={detailOpen}
+                onOpenChange={setDetailOpen}
+                up={up}
+                iface={iface}
+                group={group}
+                labelOf={labelOf}
+                vpn={vpn}
+                onConfigure={onConfigure && iface && !iface.source.startsWith("wwan_") && iface.wan?.method !== "rawip" ? () => { setDetailOpen(false); onConfigure(iface) } : undefined}
+            />
         </div>
     )
 }
@@ -265,7 +372,7 @@ function PoolCard({ vpn }: { vpn: VPNPoolHealth }) {
 }
 
 // Reads the same loop the failover acts on: what you see is what it decided from.
-export function HealthStrip({ interfaces = [] }: { interfaces?: NetworkInterfaceView[] }) {
+export function HealthStrip({ interfaces = [], onConfigure }: { interfaces?: NetworkInterfaceView[]; onConfigure?: (iface: NetworkInterfaceView) => void }) {
     const health = useRouterHealth()
     const byIfName = new Map(interfaces.map((i) => [i.if_name, i]))
 
@@ -283,6 +390,26 @@ export function HealthStrip({ interfaces = [] }: { interfaces?: NetworkInterface
     // No uplinks serialises as null, not [].
     const { vpn, failover_active } = health.data
     const uplinks = health.data.uplinks ?? []
+    const domesticCount = uplinks.filter((u) => isDomesticSlot(u.slot)).length
+    const labelOf = (ifName: string): string =>
+        ifName ? byIfName.get(ifName)?.label || ifName : ""
+
+    // Both the sheet and the checks dialog talk about the whole group: one
+    // shows the backup order, the other says which lines a save reaches.
+    const groupOf = (self: UplinkHealth): UplinkHealth[] =>
+        uplinks.filter((u) => isDomesticSlot(u.slot) === isDomesticSlot(self.slot))
+
+    const siblingsOf = (self: UplinkHealth): CheckSibling[] =>
+        groupOf(self)
+            .filter((u) => u.if_name !== self.if_name)
+            .map((u) => ({ slot: u.slot, label: labelOf(u.if_name) }))
+
+    // The operator's name for the carrier beats its kernel name.
+    const viaLabel = (via: string): string | null => {
+        if (!via) return null
+        if (via === "pool") return "the VPN pool"
+        return byIfName.get(via)?.label || via
+    }
     return (
         <section aria-label="Uplink health" className="space-y-3">
             <div className="flex items-baseline justify-between gap-4">
@@ -291,12 +418,24 @@ export function HealthStrip({ interfaces = [] }: { interfaces?: NetworkInterface
             </div>
             {failover_active && (
                 <div className="bg-status-warning-soft text-status-warning rounded-md px-3 py-2 text-sm font-medium">
-                    Domestic internet is down — traffic is riding the VPN pool until it recovers.
+                    Every domestic line is down — traffic is riding the VPN pool until one
+                    recovers.
                 </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {uplinks.map((up) => (
-                    <UplinkCard key={up.if_name} up={up} iface={byIfName.get(up.if_name)} />
+                    <UplinkCard
+                        key={up.if_name}
+                        up={up}
+                        iface={byIfName.get(up.if_name)}
+                        viaLabel={viaLabel(up.via)}
+                        hasSibling={isDomesticSlot(up.slot) && domesticCount > 1}
+                        siblings={siblingsOf(up)}
+                        group={groupOf(up)}
+                        labelOf={labelOf}
+                        vpn={vpn}
+                        onConfigure={onConfigure}
+                    />
                 ))}
                 {vpn?.present && <PoolCard vpn={vpn} />}
             </div>

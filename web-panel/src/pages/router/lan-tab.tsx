@@ -24,6 +24,7 @@ import {
 import { LanDevices } from "@/components/network/lan-devices"
 import { useLAN, useUpdateLAN } from "@/lib/queries/use-network"
 import { verdictsFromError } from "@/lib/api/network"
+import { isDomesticSlot } from "@/lib/network-labels"
 import type { LANConfig, NetworkState, Verdict } from "@/lib/types/network"
 
 interface Props {
@@ -38,17 +39,26 @@ type Draft = Pick<
     "enabled" | "cidr" | "dhcp_range_low" | "dhcp_range_high" | "lease_hours" | "input_firewall"
 >
 
-// The foreign side can be several uplinks now, so name the first and count.
-function uplinkLabel(state: NetworkState | undefined, want: "domestic" | "secondary"): string {
+// The domestic side is a failover chain and the foreign side a pool, so the
+// two sentences differ on purpose.
+export function uplinkLabel(state: NetworkState | undefined, want: "domestic" | "secondary"): string {
     const all = state?.uplinks ?? []
     const matches =
         want === "domestic"
-            ? all.filter((x) => x.slot === "domestic")
+            ? all.filter((x) => isDomesticSlot(x.slot))
             : all.filter((x) => x.slot.startsWith("secondary"))
+    // The API lists uplinks by interface name, but slot order is failover order.
+    matches.sort((a, b) => a.slot.localeCompare(b.slot))
     const u = matches[0]
     if (!u) return want === "domestic" ? "the domestic uplink" : "the secondary uplink"
     const name = u.label || u.if_name
-    return matches.length > 1 ? `${name} and ${matches.length - 1} more` : name
+    if (matches.length === 1) return name
+    if (want === "secondary") return `${name} and ${matches.length - 1} more`
+    if (matches.length === 2) {
+        const backup = matches[1]
+        return `${name}, or ${backup.label || backup.if_name} on failover`
+    }
+    return `${name}, or ${matches.length - 1} backups on failover`
 }
 
 export function LanTab({ state, armed, onApplied }: Props) {
@@ -240,7 +250,7 @@ export function LanTab({ state, armed, onApplied }: Props) {
                         </Label>
                         <p className="text-text-secondary mt-0.5 text-xs">
                             Drops anything arriving on an uplink that isn't the panel, a VPN inbound
-                            or a port forward. The panel is kept open on {domestic} only.
+                            or a port forward. The panel is kept open on {domestic}.
                         </p>
                     </div>
                     <Switch

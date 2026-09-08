@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
     attachmentLabel,
     groupAddresses,
+    isDomesticSlot,
     linkLabel,
     linkTone,
     missingRoleHint,
@@ -52,7 +53,8 @@ describe("attachmentLabel", () => {
 
 describe("roleLabel", () => {
     it("names the uplink by its slot", () => {
-        expect(roleLabel("wan", "domestic")).toBe("Domestic ISP")
+        expect(roleLabel("wan", "domestic")).toBe("Domestic 1")
+        expect(roleLabel("wan", "domestic4")).toBe("Domestic 4")
         expect(roleLabel("wan", "secondary")).toBe("Secondary 1")
         expect(roleLabel("wan", "secondary4")).toBe("Secondary 4")
     })
@@ -60,6 +62,17 @@ describe("roleLabel", () => {
     it("uses the role for everything slotless", () => {
         expect(roleLabel("lan_member", "")).toBe("LAN member")
         expect(roleLabel("unassigned", "")).toBe("Unassigned")
+    })
+})
+
+describe("isDomesticSlot", () => {
+    it("covers every domestic slot and nothing else", () => {
+        for (const s of ["domestic", "domestic2", "domestic3", "domestic4"] as const) {
+            expect(isDomesticSlot(s)).toBe(true)
+        }
+        for (const s of ["", "secondary", "secondary4"] as const) {
+            expect(isDomesticSlot(s)).toBe(false)
+        }
     })
 })
 

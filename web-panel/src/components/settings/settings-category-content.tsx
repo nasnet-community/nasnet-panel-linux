@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { HiOutlineSave, HiOutlineCog, HiOutlineExclamation, HiOutlineTrash } from "react-icons/hi"
 import { Loader2 } from "lucide-react"
-import { categoryMeta, categorySubGroups, getCategoryLabel, notificationChannels, notificationMatrixSections } from "./settings-constants"
+import { categoryMeta, categorySubGroups, getCategoryLabel, isHiddenSettingKey, notificationChannels, notificationMatrixSections } from "./settings-constants"
 import { SettingField } from "./setting-field"
 import { NotificationMatrix } from "./notification-matrix"
 import { HttpsModeSelector } from "./https-mode-selector"
@@ -115,7 +115,7 @@ export function SettingsCategoryContent({
 
         // Collect ungrouped settings
         const ungrouped = settings
-            .filter(s => !usedKeys.has(s.key))
+            .filter(s => !usedKeys.has(s.key) && !isHiddenSettingKey(s.key))
             .map(setting => ({
                 setting,
                 isModified: serverSettings?.find(s => s.key === setting.key)?.value !== setting.value,
