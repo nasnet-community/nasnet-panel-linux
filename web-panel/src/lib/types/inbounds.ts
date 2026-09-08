@@ -352,7 +352,7 @@ export interface SockoptSettings {
     addressPortStrategy?: string
     trustedXForwardedFor?: string[]
     happyEyeballs?: { tryDelay?: number; maxConcurrency?: number } | null
-    customSockopt?: { level?: number; optName?: number; optValue?: unknown }[]
+    customSockopt?: { level?: number; optName?: number; optValue?: unknown; type?: "int" | "str"; system?: string; network?: string }[]
 }
 
 // FinalMask for packet masking. Each section is a JSON object (or unset).

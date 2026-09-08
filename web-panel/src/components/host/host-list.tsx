@@ -20,9 +20,11 @@ interface HostListProps {
     /** The inbound these hosts belong to — lets the settings dialog show only
      *  the override fields this protocol/transport actually uses. */
     inbound?: Inbound
+    /** Off when a tab already names the section — the count lives in the tab. */
+    showHeader?: boolean
 }
 
-export function HostList({ inboundId, initialHosts, inbound }: HostListProps) {
+export function HostList({ inboundId, initialHosts, inbound, showHeader = true }: HostListProps) {
     const queryClient = useQueryClient()
     const [hosts, setHosts] = useState<Host[]>(initialHosts || [])
     const [loading, setLoading] = useState(!initialHosts)
@@ -93,25 +95,27 @@ export function HostList({ inboundId, initialHosts, inbound }: HostListProps) {
 
     return (
         <div className="space-y-2">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        Hosts
-                    </span>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
-                        {hosts.length}
-                    </Badge>
+            {showHeader && (
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Hosts
+                        </span>
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                            {hosts.length}
+                        </Badge>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={openCreate}
+                    >
+                        <HiOutlinePlus className="h-3.5 w-3.5" />
+                        Add Host
+                    </Button>
                 </div>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    onClick={openCreate}
-                >
-                    <HiOutlinePlus className="h-3.5 w-3.5" />
-                    Add Host
-                </Button>
-            </div>
+            )}
 
             {loading && hosts.length === 0 && (
                 <div className="text-xs text-muted-foreground py-2 text-center">Loading...</div>
@@ -209,6 +213,13 @@ export function HostList({ inboundId, initialHosts, inbound }: HostListProps) {
                     </div>
                 </div>
             ))}
+
+            {!showHeader && (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={openCreate}>
+                    <HiOutlinePlus className="h-3.5 w-3.5" />
+                    Add Host
+                </Button>
+            )}
 
             <HostSettingsDialog
                 open={dialogOpen}

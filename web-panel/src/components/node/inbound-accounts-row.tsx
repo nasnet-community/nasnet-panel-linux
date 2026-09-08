@@ -31,6 +31,12 @@ import {
     HiDotsVertical,
     HiOutlineSortAscending,
     HiOutlineSortDescending,
+    HiOutlineSearch,
+    HiOutlinePlus,
+    HiOutlineExternalLink,
+    HiOutlineChevronLeft,
+    HiOutlineChevronRight,
+    HiOutlineX,
 } from "react-icons/hi"
 import { cn, formatBytes, formatDataLimit, getExpiryInfo, copyToClipboard } from "@/lib/utils"
 import { toast } from "sonner"
@@ -40,6 +46,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { QRCodeSVG } from "qrcode.react"
 import { Link } from "react-router"
 import { AccountMigrationDialog } from "./account-migration-dialog"
+import { CreateAccountDialog } from "./create-account-dialog"
+import { Input } from "@/components/ui/input"
 
 import { HiArrowRightOnRectangle } from "react-icons/hi2"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
@@ -51,7 +59,22 @@ interface InboundAccountsRowProps {
     nodeId: number
     isOnline: boolean
     onAccountChange?: () => void
+    /** Set when the list is scoped to one inbound: enables "+ Client" prefill. */
+    inboundId?: number
 }
+
+type StatusFilter = "all" | "online" | "active" | "disabled" | "expired"
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "online", label: "Online" },
+    { value: "active", label: "Active" },
+    { value: "disabled", label: "Disabled" },
+    { value: "expired", label: "Expired" },
+]
+
+// Small enough that an expanded inbound never buries the ones below it.
+const PAGE_SIZE = 8
 
 type InboundSortField = "client" | "traffic" | "duration" | "status"
 type SortDir = "asc" | "desc"
@@ -140,7 +163,7 @@ function isAccountOnline(lastActivityAt?: string): boolean {
     return (Date.now() - new Date(lastActivityAt).getTime()) < 10_000
 }
 
-export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange }: InboundAccountsRowProps) {
+export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange, inboundId }: InboundAccountsRowProps) {
     const queryClient = useQueryClient()
     const { openDetailsSheet: openSubscriptionSheet } = useSubscriptionsStore()
     const { openDetailsSheet: openAccountDetails } = useAccountsStore()
@@ -161,6 +184,8 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
     const [sortField, setSortField] = useState<InboundSortField>("traffic")
     const [sortDir, setSortDir] = useState<SortDir>("desc")
 
+    // Every list-shaping change sends you back to page 1; safePage below covers
+    // the rest (a row deleted off the end of the last page).
     const toggleSort = (field: InboundSortField) => {
         if (sortField === field) {
             setSortDir(d => d === "asc" ? "desc" : "asc")
@@ -168,6 +193,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
             setSortField(field)
             setSortDir("desc")
         }
+        setPage(1)
     }
 
     // Max data usage among unlimited accounts (for relative bar scaling)
@@ -230,6 +256,44 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
             return sortDir === "asc" ? cmp : -cmp
         })
     }, [accounts, sortField, sortDir])
+
+    const [query, setQuery] = useState("")
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+    const [createOpen, setCreateOpen] = useState(false)
+    const [page, setPage] = useState(1)
+
+    const visibleAccounts = useMemo(() => {
+        const q = query.trim().toLowerCase()
+        return sortedAccounts.filter(a => {
+            const user = a.subscription?.user
+            if (q) {
+                const haystack = [
+                    a.email,
+                    user?.username,
+                    user?.first_name,
+                    a.subscription_id ? `sub #${a.subscription_id}` : "",
+                ].filter(Boolean).join(" ").toLowerCase()
+                if (!haystack.includes(q)) return false
+            }
+            if (statusFilter === "all") return true
+            const limit = a.subscription
+                ? (a.subscription.custom_data_limit ?? a.subscription.data_limit ?? a.data_limit)
+                : a.data_limit
+            const used = a.subscription ? (a.subscription.data_used ?? a.data_used) : a.data_used
+            const exhausted = limit > 0 && used >= limit
+            switch (statusFilter) {
+                case "online": return isAccountOnline(a.last_activity_at)
+                case "active": return a.status === "active" && !exhausted
+                case "disabled": return a.status === "disabled"
+                case "expired": return a.status === "expired" || exhausted
+            }
+        })
+    }, [sortedAccounts, query, statusFilter])
+
+    const pageCount = Math.max(1, Math.ceil(visibleAccounts.length / PAGE_SIZE))
+    const safePage = Math.min(page, pageCount)
+    const pageAccounts = visibleAccounts.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
 
     const setLoading = (id: number, loading: boolean) => {
         setLoadingStates(prev => ({ ...prev, [id]: loading }))
@@ -300,17 +364,118 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
 
     if (accounts.length === 0) {
         return (
-            <div className="py-6 px-4 text-center text-sm text-muted-foreground bg-muted/30 rounded-lg">
-                No accounts on this inbound
+            <div className="flex flex-col items-center gap-3 py-8 px-4 text-center bg-muted/30 rounded-lg border border-dashed">
+                <p className="text-sm text-muted-foreground">No clients on this inbound</p>
+                {inboundId !== undefined && (
+                    <>
+                        <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}>
+                            <HiOutlinePlus className="w-4 h-4 mr-2" />
+                            Add Client
+                        </Button>
+                        <CreateAccountDialog
+                            nodeId={nodeId}
+                            defaultInboundId={inboundId}
+                            open={createOpen}
+                            onOpenChange={setCreateOpen}
+                            onSuccess={onAccountChange}
+                        />
+                    </>
+                )}
             </div>
         )
     }
 
+    const sortLabels: Record<InboundSortField, string> = {
+        client: "Client",
+        traffic: "Traffic",
+        duration: "Expiry",
+        status: "Status",
+    }
+
     return (
         <TooltipProvider delayDuration={300}>
+            {/* Toolbar — 93 clients is a list you search, not one you scroll. */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="relative flex-1 min-w-[180px] max-w-[280px]">
+                    <HiOutlineSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                        value={query}
+                        onChange={(e) => { setQuery(e.target.value); setPage(1) }}
+                        placeholder="Search clients"
+                        aria-label="Search clients"
+                        className="h-8 pl-8 pr-8 text-sm"
+                    />
+                    {query && (
+                        <button
+                            type="button"
+                            aria-label="Clear search"
+                            onClick={() => { setQuery(""); setPage(1) }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                            <HiOutlineX className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </div>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                            Status
+                            <span className="text-muted-foreground">
+                                {STATUS_FILTERS.find(f => f.value === statusFilter)?.label}
+                            </span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                        {STATUS_FILTERS.map(f => (
+                            <DropdownMenuItem key={f.value} onClick={() => { setStatusFilter(f.value); setPage(1) }}>
+                                {f.label}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 gap-1.5 md:hidden">
+                            Sort
+                            <span className="text-muted-foreground">{sortLabels[sortField]}</span>
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                        {(Object.keys(sortLabels) as InboundSortField[]).map(f => (
+                            <DropdownMenuItem key={f} onClick={() => toggleSort(f)}>
+                                {sortLabels[f]}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <div className="flex-1" />
+
+                {inboundId !== undefined && (
+                    <Button variant="outline" size="sm" className="h-8" onClick={() => setCreateOpen(true)}>
+                        <HiOutlinePlus className="w-4 h-4 mr-1.5" />
+                        Client
+                    </Button>
+                )}
+                <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground" asChild>
+                    <Link to={`/nodes/${nodeId}?tab=users`}>
+                        Open in Accounts
+                        <HiOutlineExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                    </Link>
+                </Button>
+            </div>
+
+            {visibleAccounts.length === 0 && (
+                <div className="py-8 text-center text-sm text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
+                    No clients match this filter
+                </div>
+            )}
+
             {/* Mobile card view */}
-            <div className="md:hidden divide-y divide-border/50 rounded-lg border bg-card/50 overflow-hidden">
-                {sortedAccounts.map((account) => {
+            <div className={cn("md:hidden divide-y divide-border/50 rounded-lg border bg-card/50 overflow-hidden", visibleAccounts.length === 0 && "hidden")}>
+                {pageAccounts.map((account) => {
                     const isShared = !!account.subscription
                     const dataLimit = isShared
                         ? (account.subscription?.custom_data_limit ?? account.subscription?.data_limit ?? account.data_limit)
@@ -441,7 +606,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
             </div>
 
             {/* Desktop table view */}
-            <div className="hidden md:block rounded-lg border bg-card/50 overflow-hidden">
+            <div className={cn("hidden md:block rounded-lg border bg-card/50 overflow-hidden", visibleAccounts.length === 0 && "md:hidden")}>
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -469,7 +634,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {sortedAccounts.map((account) => {
+                        {pageAccounts.map((account) => {
                             // Data usage
                             const isShared = !!account.subscription
                             const dataLimit = isShared
@@ -735,6 +900,51 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
             </div>
 
 
+
+            {visibleAccounts.length > 0 && (
+                <div className="flex items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
+                    <span>
+                        Showing{" "}
+                        <span className="text-foreground tabular-nums">
+                            {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, visibleAccounts.length)}
+                        </span>{" "}
+                        of <span className="text-foreground tabular-nums">{visibleAccounts.length}</span>
+                    </span>
+                    {pageCount > 1 && (
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Previous page"
+                                disabled={safePage <= 1}
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                            >
+                                <HiOutlineChevronLeft className="w-4 h-4" />
+                            </Button>
+                            <span className="px-2 tabular-nums">Page {safePage} of {pageCount}</span>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Next page"
+                                disabled={safePage >= pageCount}
+                                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                            >
+                                <HiOutlineChevronRight className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {inboundId !== undefined && (
+                <CreateAccountDialog
+                    nodeId={nodeId}
+                    defaultInboundId={inboundId}
+                    open={createOpen}
+                    onOpenChange={setCreateOpen}
+                    onSuccess={onAccountChange}
+                />
+            )}
 
             {/* Migrate Dialog */}
             <AccountMigrationDialog

@@ -12,6 +12,7 @@ interface SwipeableInboundRowProps {
     inbound: Inbound
     accountCount: number
     onlineCount: number
+    expiredCount: number
     totalTraffic: number
     isSelected: boolean
     isMultiSelectMode: boolean
@@ -37,6 +38,7 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
     inbound,
     accountCount,
     onlineCount,
+    expiredCount,
     totalTraffic,
     isSelected,
     isMultiSelectMode,
@@ -233,19 +235,26 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                         ) : (
                             <span className="relative flex h-2.5 w-2.5">
                                 {hasOnline && (
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                                 )}
                                 <span className={cn(
                                     "relative inline-flex rounded-full h-2.5 w-2.5",
-                                    hasOnline ? "bg-green-500" : accountCount > 0 ? "bg-amber-500/60" : "bg-zinc-500/40"
+                                    inbound.is_disabled
+                                        ? "border-[1.5px] border-muted-foreground/50"
+                                        : "bg-emerald-500"
                                 )} />
                             </span>
                         )}
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                        <span className="font-mono font-semibold text-sm">{inbound.tag}</span>
-                        <span className="font-mono text-primary font-bold text-sm">:{inbound.port}</span>
+                    <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
+                        <span className={cn("font-mono font-semibold text-sm truncate", inbound.is_disabled && "text-muted-foreground")}>
+                            {inbound.tag}
+                        </span>
+                        <span className="font-mono text-sm text-muted-foreground shrink-0">:{inbound.port}</span>
+                        {inbound.is_disabled && (
+                            <span className="text-[11px] text-muted-foreground shrink-0">Disabled</span>
+                        )}
                     </div>
 
                     <div className="shrink-0">
@@ -257,48 +266,24 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                     </div>
                 </div>
 
-                {/* Line 2: Protocol + Network + Security badges */}
-                <div className="flex items-center gap-1 mt-1.5 ml-[34px]">
+                {/* One meta line: protocol, who is on, how much, what lapsed. */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 ml-[34px] font-mono text-[11px] text-muted-foreground tabular-nums">
                     <Badge
                         variant="outline"
                         className={cn(
                             "font-mono text-[10px] px-1.5 py-0 h-5",
-                            protocolColors[inbound.protocol.toLowerCase()] || ""
+                            protocolColors[inbound.protocol.toLowerCase()] || "",
+                            inbound.is_disabled && "opacity-60"
                         )}
                     >
                         {inbound.protocol.toUpperCase()}
                     </Badge>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-zinc-500/10 border-zinc-500/20">
-                        {(inbound.network || "tcp").toUpperCase()}
-                    </Badge>
-                    <Badge
-                        variant="outline"
-                        className={cn(
-                            "text-[10px] px-1.5 py-0 h-5",
-                            inbound.security === "reality" && "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-400 border-cyan-500/30",
-                            inbound.security === "tls" && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-                            (!inbound.security || inbound.security === "none") && "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"
-                        )}
-                    >
-                        {(inbound.security || "none").toUpperCase()}
-                    </Badge>
-                </div>
-
-                {/* Line 3: Account stats */}
-                <div className="flex items-center gap-3 mt-1.5 ml-[34px] text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                        <HiOutlineUsers className="w-3.5 h-3.5" />
-                        <span className="font-mono">{accountCount}</span>
-                    </div>
-                    {onlineCount > 0 && (
-                        <div className="flex items-center gap-1 text-green-500">
-                            <HiOutlineStatusOnline className="w-3.5 h-3.5" />
-                            <span className="font-mono">{onlineCount}</span>
-                        </div>
-                    )}
-                    {totalTraffic > 0 && (
-                        <span className="font-mono text-violet-400">{formatBytes(totalTraffic)}</span>
-                    )}
+                    <span>
+                        <span className={cn(onlineCount > 0 && "text-emerald-500 font-semibold")}>{onlineCount}</span>
+                        /{accountCount} online
+                    </span>
+                    {totalTraffic > 0 && <span>{formatBytes(totalTraffic)}</span>}
+                    {expiredCount > 0 && <span className="text-red-500">{expiredCount} expired</span>}
                 </div>
             </motion.div>
 
