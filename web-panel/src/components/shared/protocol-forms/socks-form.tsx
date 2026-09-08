@@ -29,7 +29,7 @@ export function SOCKSForm({ settings, onChange }: SOCKSFormProps) {
                     <Label>Authentication</Label>
                     <Select
                         value={data.auth || "noauth"}
-                        onValueChange={(value) => onChange({ ...data, auth: value as SOCKSSettings["auth"] })}
+                        onValueChange={(value) => onChange({ ...data, auth: value as SOCKSSettings["auth"], accounts: value === "noauth" ? [] : data.accounts })}
                     >
                         <SelectTrigger className="w-full">
                             <SelectValue />

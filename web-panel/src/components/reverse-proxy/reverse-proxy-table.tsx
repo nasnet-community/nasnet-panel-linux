@@ -25,7 +25,7 @@ export function ReverseProxyTable({
             <div className="flex items-center justify-between mb-4">
                 <div>
                     <h3 className="text-lg font-semibold">Reverse Proxies</h3>
-                    <p className="text-sm text-muted-foreground">Configure bridge and portal reverse proxy entries</p>
+                    <p className="text-sm text-muted-foreground">Configure VLESS Reverse bridge and portal entries</p>
                 </div>
                 <Button size="sm" onClick={onCreate}>
                     <HiOutlinePlus className="w-4 h-4 mr-2" />
@@ -42,7 +42,6 @@ export function ReverseProxyTable({
                                     <TableHead className="w-10 text-center">#</TableHead>
                                     <TableHead className="w-[90px]">Type</TableHead>
                                     <TableHead className="max-w-[140px]">Tag</TableHead>
-                                    <TableHead className="max-w-[180px]">Domain</TableHead>
                                     <TableHead className="max-w-[180px]">Interconnection</TableHead>
                                     <TableHead className="max-w-[180px]">Target</TableHead>
                                     <TableHead className="w-[80px]"></TableHead>
@@ -72,11 +71,6 @@ export function ReverseProxyTable({
                                         {/* Tag */}
                                         <TableCell className="max-w-[140px]">
                                             <span className="font-mono text-sm truncate block">{rp.tag}</span>
-                                        </TableCell>
-
-                                        {/* Domain */}
-                                        <TableCell className="max-w-[180px]">
-                                            <span className="font-mono text-xs text-muted-foreground truncate block">{rp.domain}</span>
                                         </TableCell>
 
                                         {/* Interconnection */}

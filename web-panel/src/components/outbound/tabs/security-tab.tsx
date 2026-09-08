@@ -8,7 +8,8 @@ interface SecurityTabProps {
 }
 
 export function SecurityTab({ form }: SecurityTabProps) {
-    const security = form.watch("security")
+    const protocol = form.watch("protocol")
+    const security = protocol === "hysteria2" ? "tls" : form.watch("security")
     const tlsSettings = form.watch("tls_settings")
     const realitySettings = form.watch("reality_settings")
 

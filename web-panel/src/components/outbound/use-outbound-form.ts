@@ -81,7 +81,7 @@ export function useOutboundForm(
                 address: outbound.address || "",
                 port: outbound.port || 0,
                 network: outbound.network || "tcp",
-                security: outbound.security || "none",
+                security: outbound.protocol === "hysteria2" ? "tls" : outbound.security || "none",
                 tls_settings: outbound.tls_settings,
                 reality_settings: outbound.reality_settings,
                 transport_settings: outbound.transport_settings,
@@ -119,6 +119,9 @@ export function useOutboundForm(
         if (!open) {
             lastProtocolRef.current = undefined
             return
+        }
+        if (protocol === "hysteria2") {
+            setValue("security", "tls")
         }
         if (lastProtocolRef.current === undefined) {
             lastProtocolRef.current = protocol

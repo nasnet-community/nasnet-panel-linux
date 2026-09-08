@@ -22,6 +22,8 @@ interface ReverseProxyDialogProps {
     reverseProxy: ReverseProxy | null
     inboundTags: string[]
     outboundTags: string[]
+    vlessInboundTags: string[]
+    vlessOutboundTags: string[]
     existingCount: number
     onSave: (data: Partial<ReverseProxy>) => void
 }
@@ -33,6 +35,8 @@ export function ReverseProxyDialog({
     reverseProxy,
     inboundTags,
     outboundTags,
+    vlessInboundTags,
+    vlessOutboundTags,
     existingCount,
     onSave,
 }: ReverseProxyDialogProps) {
@@ -49,7 +53,7 @@ export function ReverseProxyDialog({
         defaultValues: {
             type: "bridge",
             tag: `reverse-${existingCount}`,
-            domain: "reverse.xui",
+            domain: "",
             interconnection_tag: "",
             outbound_tag: "",
             interconnection_tags: [],
@@ -76,7 +80,7 @@ export function ReverseProxyDialog({
                 reset({
                     type: "bridge",
                     tag: `reverse-${existingCount}`,
-                    domain: "reverse.xui",
+                    domain: "",
                     interconnection_tag: "",
                     outbound_tag: "",
                     interconnection_tags: [],
@@ -120,7 +124,7 @@ export function ReverseProxyDialog({
             open={open}
             onOpenChange={onOpenChange}
             title={mode === "create" ? "Add Reverse Proxy" : "Edit Reverse Proxy"}
-            description="Configure a bridge or portal reverse proxy entry"
+            description="Configure VLESS Reverse through a bridge or portal"
             onSave={handleSubmit(onSubmit)}
             saveLabel={isSubmitting ? "Saving..." : mode === "create" ? "Add Reverse" : "Save Changes"}
             saveDisabled={isSubmitting}
@@ -165,27 +169,15 @@ export function ReverseProxyDialog({
                     <p className="text-xs text-muted-foreground">Unique identifier for this reverse proxy</p>
                 </div>
 
-                {/* Domain */}
-                <div className="space-y-2">
-                    <Label>Domain</Label>
-                    <Input
-                        {...register("domain")}
-                        placeholder="reverse.xui"
-                    />
-                    {errors.domain && (
-                        <p className="text-xs text-destructive">{errors.domain.message}</p>
-                    )}
-                </div>
-
                 {/* Bridge-specific fields */}
                 {proxyType === "bridge" && (
                     <>
                         {/* Interconnection (outbound) */}
                         <div className="space-y-2">
                             <Label>Interconnection</Label>
-                            {outboundTags.length === 0 ? (
+                            {vlessOutboundTags.length === 0 ? (
                                 <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">
-                                    No outbounds configured
+                                    No enabled VLESS outbounds configured
                                 </p>
                             ) : (
                                 <Controller
@@ -197,10 +189,10 @@ export function ReverseProxyDialog({
                                             onValueChange={field.onChange}
                                         >
                                             <SelectTrigger className="w-full">
-                                                <SelectValue placeholder="Select outbound..." />
+                                                <SelectValue placeholder="Select VLESS outbound..." />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {outboundTags.map((tag) => (
+                                                {vlessOutboundTags.map((tag) => (
                                                     <SelectItem key={tag} value={tag}>
                                                         {tag}
                                                     </SelectItem>
@@ -213,7 +205,7 @@ export function ReverseProxyDialog({
                             {errors.interconnection_tag && (
                                 <p className="text-xs text-destructive">{errors.interconnection_tag.message}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">Outbound used for the interconnection tunnel</p>
+                            <p className="text-xs text-muted-foreground">VLESS outbound authenticated as a user on the remote portal interconnection inbound</p>
                         </div>
 
                         {/* Outbound */}
@@ -249,7 +241,7 @@ export function ReverseProxyDialog({
                             {errors.outbound_tag && (
                                 <p className="text-xs text-destructive">{errors.outbound_tag.message}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">Outbound to forward traffic to</p>
+                            <p className="text-xs text-muted-foreground">Outbound to forward traffic to. For Freedom targets, add an Allow Final Rule for the intended destination in Outbound settings.</p>
                         </div>
                     </>
                 )}
@@ -260,9 +252,9 @@ export function ReverseProxyDialog({
                         {/* Interconnection (inbound multi-select) */}
                         <div className="space-y-2">
                             <Label>Interconnection</Label>
-                            {inboundTags.length === 0 ? (
+                            {vlessInboundTags.length === 0 ? (
                                 <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">
-                                    No inbounds configured
+                                    No enabled VLESS inbounds configured
                                 </p>
                             ) : (
                                 <Controller
@@ -270,7 +262,7 @@ export function ReverseProxyDialog({
                                     name="interconnection_tags"
                                     render={({ field }) => (
                                         <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
-                                            {inboundTags.map((tag) => (
+                                            {vlessInboundTags.map((tag) => (
                                                 <div key={tag} className="flex items-center gap-2">
                                                     <Checkbox
                                                         id={`interconnection-${tag}`}
@@ -298,7 +290,7 @@ export function ReverseProxyDialog({
                             {errors.interconnection_tags && (
                                 <p className="text-xs text-destructive">{errors.interconnection_tags.message}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">Inbounds used for the interconnection tunnel</p>
+                            <p className="text-xs text-muted-foreground">Use dedicated VLESS inbounds. Every user on these inbounds can establish this reverse tunnel.</p>
                         </div>
 
                         {/* Inbound (multi-select) */}

@@ -1207,7 +1207,7 @@ function buildXrayFragment(data: Partial<RoutingRule>, targetKind: "outbound" | 
     const { geoip, ipcidr } = splitGeoIPCIDR(data.geoip_rules || [])
     const fragment: Record<string, unknown> = { type: "field", ruleTag: data.rule_tag || "" }
     if (data.domain_rules?.length) {
-        fragment.domain = data.domain_rules.map(d => (d.type === "plain" ? d.value : `${d.type}:${d.value}`))
+        fragment.domain = data.domain_rules.map(d => (d.type === "plain" ? d.value : `${d.type === "regex" ? "regexp" : d.type}:${d.value}`))
     }
     const ip = [...geoip, ...ipcidr]
     if (ip.length) fragment.ip = ip

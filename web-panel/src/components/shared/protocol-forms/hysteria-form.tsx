@@ -51,6 +51,11 @@ export function HysteriaForm({ settings, onChange, isOutbound = false }: Hysteri
                 </div>
             </div>
             {isOutbound && (
+                <p className="text-xs text-muted-foreground">
+                    Upload and download rates apply to Brutal congestion. Explicit Advanced → FinalMask QUIC Params take precedence.
+                </p>
+            )}
+            {isOutbound && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label>Upload Bandwidth</Label>
