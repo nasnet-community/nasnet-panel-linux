@@ -2,6 +2,7 @@ package agent
 
 // SystemStats holds system resource statistics from the agent.
 type SystemStats struct {
+	CollectedAtUnixMs   int64 // observation time of the completed sample
 	CPUUsagePercent     float64
 	MemoryTotalBytes    uint64
 	MemoryUsedBytes     uint64
@@ -239,4 +240,10 @@ type NetInterface struct {
 	USBSpeedMbit int      `json:"usb_speed_mbit"`
 	Assignable   bool     `json:"assignable"`
 	Addrs        []string `json:"addrs"` // CIDR form
+}
+
+// OnlineIPSnapshot preserves the time of a completed embedded-agent sweep.
+type OnlineIPSnapshot struct {
+	Users             map[string]map[string]int64
+	CollectedAtUnixMs int64
 }

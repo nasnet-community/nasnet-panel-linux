@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -30,6 +31,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/ssh"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/stats"
 	agenttc "github.com/nasnet-community/nasnet-panel-linux/internal/agent/tc"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/telemetry"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/traffic"
 	agentxray "github.com/nasnet-community/nasnet-panel-linux/internal/agent/xray"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
@@ -55,7 +57,8 @@ type Server struct {
 	cfg          *config.Config
 	xrayMgr      *process.XrayManager
 	sshMgr       *ssh.Manager
-	statsCollect *stats.Collector
+	statsCollect *telemetry.Sampler[*stats.SystemStats]
+	onlineIPs    *telemetry.Sampler[map[string]map[string]int64]
 	xrayClient   *agentxray.LocalClient
 	grpcServer   *grpc.Server
 	listener     net.Listener
@@ -124,7 +127,8 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		cfg:           cfg,
 		xrayMgr:       xrayMgr,
 		sshMgr:        sshMgr,
-		statsCollect:  statsCollect,
+		statsCollect:  telemetry.NewSampler(statsCollect.Collect, 5*time.Second, 4*time.Second, 15*time.Second),
+		onlineIPs:     telemetry.NewSampler(xrayClient.CollectOnlineIPs, 15*time.Second, 10*time.Second, 30*time.Second),
 		xrayClient:    xrayClient,
 		deniedSerials: make(map[string]bool),
 		nftManager:    nft.NewManager(nft.NewCmdApplier("")),
@@ -173,9 +177,15 @@ func NewServer(cfg *config.Config) (*Server, error) {
 func (s *Server) NftManager() *nft.Manager { return s.nftManager }
 
 // StartBackgroundServices starts the background services (xray auto-start, TC setup,
-// traffic collector, access log collector). It is called by Start() and can also be
-// called independently in reverse mode before the gRPC server is set up.
+// traffic collector, access log collector, and telemetry samplers). StartLocal
+// starts the same collectors without opening a gRPC listener.
 func (s *Server) StartBackgroundServices(ctx context.Context) {
+	if s.statsCollect != nil {
+		s.statsCollect.Start()
+	}
+	if s.onlineIPs != nil {
+		s.onlineIPs.Start()
+	}
 	// Auto-start xray if a config file exists (handles agent restart, self-update, reboot)
 	if _, err := os.Stat(s.xrayMgr.ConfigPath()); err == nil {
 		logrus.Info("Auto-starting xray process")
@@ -251,9 +261,18 @@ func (s *Server) StartLocal(ctx context.Context) error {
 
 // Stop stops the agent server
 func (s *Server) Stop(ctx context.Context) {
+	if s.statsCollect != nil {
+		s.statsCollect.Stop()
+	}
+	if s.onlineIPs != nil {
+		s.onlineIPs.Stop()
+	}
 	// Stop traffic collector and flush store
 	if s.trafficCollector != nil {
 		s.trafficCollector.Stop()
+	}
+	if s.xrayClient != nil {
+		_ = s.xrayClient.Close()
 	}
 	if s.trafficStore != nil {
 		if err := s.trafficStore.Close(); err != nil {
@@ -639,10 +658,10 @@ func (s *Server) UpdateXrayAPIConfig(ctx context.Context, req *pb.XrayAPIConfigP
 	}
 
 	// Update Xray client
-	s.xrayClient = agentxray.NewLocalClient(
-		s.cfg.Xray.APIAddr,
-		time.Duration(s.cfg.Xray.APITimeout)*time.Second,
-	)
+	s.xrayClient.SetAddress(req.ApiAddr)
+	if s.onlineIPs != nil {
+		s.onlineIPs.Invalidate()
+	}
 
 	return &pb.CommandResponse{
 		Success: true,
@@ -760,14 +779,15 @@ func (s *Server) ListUsers(ctx context.Context, req *pb.InboundSelector) (*pb.Us
 
 // GetSystemStats returns system resource statistics
 func (s *Server) GetSystemStats(ctx context.Context, _ *pb.Empty) (*pb.SystemStats, error) {
-	sysStats, err := s.statsCollect.Collect(ctx)
+	sysStats, at, err := s.statsCollect.Snapshot(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect system stats: %w", err)
 	}
 
 	return &pb.SystemStats{
+		CollectedAtUnixMs:    at.UnixMilli(),
 		CpuUsagePercent:      sysStats.CPUUsagePercent,
-		CpuPerCore:           sysStats.CPUPerCore,
+		CpuPerCore:           append([]float64(nil), sysStats.CPUPerCore...),
 		MemoryTotalBytes:     sysStats.MemoryTotalBytes,
 		MemoryUsedBytes:      sysStats.MemoryUsedBytes,
 		MemoryAvailableBytes: sysStats.MemoryAvailableBytes,
@@ -2159,31 +2179,18 @@ func (s *Server) GetUserOnlineIPs(ctx context.Context, req *pb.UserEmailRequest)
 	return &pb.OnlineIPsResponse{Ips: ips}, nil
 }
 
-// GetAllUsersOnlineIPs returns IP→timestamp map for every online user in
-// one RPC (collapses the hub↔agent N+1; agent still hits xray stats per
-// user on localhost). Per-user xray errors are swallowed — bad user
-// just absent from the map.
+// GetAllUsersOnlineIPs returns the last completed background sweep. Startup,
+// expired or failed-to-initialize snapshots are unavailable, never empty data.
 func (s *Server) GetAllUsersOnlineIPs(ctx context.Context, _ *pb.Empty) (*pb.AllOnlineIPsResponse, error) {
-	emails, err := s.xrayClient.GetAllOnlineUsers(ctx)
+	data, at, err := s.onlineIPs.Snapshot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list online users: %w", err)
+		return nil, err
 	}
-	users := make(map[string]*pb.OnlineIPMap, len(emails))
-	for _, email := range emails {
-		if ctx.Err() != nil {
-			break
-		}
-		ips, err := s.xrayClient.GetUserOnlineIPs(ctx, email)
-		if err != nil {
-			logrus.WithError(err).WithField("email", email).Debug("GetAllUsersOnlineIPs: per-user fetch failed")
-			continue
-		}
-		if ips == nil {
-			ips = make(map[string]int64)
-		}
-		users[email] = &pb.OnlineIPMap{Ips: ips}
+	users := make(map[string]*pb.OnlineIPMap, len(data))
+	for email, ips := range data {
+		users[email] = &pb.OnlineIPMap{Ips: maps.Clone(ips)}
 	}
-	return &pb.AllOnlineIPsResponse{Users: users}, nil
+	return &pb.AllOnlineIPsResponse{Users: users, CollectedAtUnixMs: at.UnixMilli()}, nil
 }
 
 // ===== Tools =====

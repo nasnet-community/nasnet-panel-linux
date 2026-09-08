@@ -15,6 +15,7 @@ type SubscriptionIPRecord struct {
 	SubscriptionID uint
 	IP             string
 	NodeID         uint
+	SeenAt         time.Time // zero keeps legacy receipt-time behavior
 }
 
 // SubscriptionIPRepository manages subscription IP persistence
@@ -22,8 +23,8 @@ type SubscriptionIPRepository interface {
 	UpsertSubscriptionIP(ctx context.Context, subscriptionID uint, ip string, nodeID uint) error
 	// BulkUpsertSubscriptionIPs collapses the stats-sweep per-IP loop
 	// into a single CreateInBatches + ON CONFLICT upsert against the
-	// existing idx_sub_ip unique index. On conflict last_seen + node_id
-	// update so we keep tracking where a given IP was last seen.
+	// existing per-node unique index. On conflict only a newer observation
+	// updates last_seen, so delayed or repeated samples cannot refresh it.
 	BulkUpsertSubscriptionIPs(ctx context.Context, records []SubscriptionIPRecord) error
 	GetSubscriptionIPs(ctx context.Context, subscriptionID uint) ([]domain.SubscriptionIP, error)
 	GetSubscriptionActiveIPs(ctx context.Context, subscriptionID uint, since time.Time) ([]domain.SubscriptionIP, error)
@@ -51,6 +52,9 @@ func (r *subscriptionIPRepository) UpsertSubscriptionIP(ctx context.Context, sub
 	return database.GetExecutor(r.db, ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "subscription_id"}, {Name: "ip"}, {Name: "node_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"last_seen", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{clause.Expr{
+			SQL: "subscription_ips.last_seen IS NULL OR excluded.last_seen > subscription_ips.last_seen",
+		}}},
 	}).Create(&record).Error
 }
 
@@ -59,7 +63,7 @@ func (r *subscriptionIPRepository) UpsertSubscriptionIP(ctx context.Context, sub
 const bulkUpsertChunk = 500
 
 // BulkUpsertSubscriptionIPs inserts all records; rows colliding on
-// idx_sub_ip update their last_seen, node_id, updated_at columns.
+// idx_sub_ip_node update last_seen and updated_at only for newer observations.
 // Empty input is a no-op.
 func (r *subscriptionIPRepository) BulkUpsertSubscriptionIPs(ctx context.Context, records []SubscriptionIPRecord) error {
 	if len(records) == 0 {
@@ -67,16 +71,38 @@ func (r *subscriptionIPRepository) BulkUpsertSubscriptionIPs(ctx context.Context
 	}
 	now := time.Now()
 	rows := make([]domain.SubscriptionIP, 0, len(records))
+	type key struct {
+		sub  uint
+		ip   string
+		node uint
+	}
+	positions := make(map[key]int, len(records))
 	for _, rec := range records {
 		if rec.SubscriptionID == 0 || rec.IP == "" {
 			continue
 		}
+		seenAt := rec.SeenAt
+		if seenAt.IsZero() || seenAt.After(now) {
+			seenAt = now
+		}
+		seenAt = seenAt.UTC()
+		k := key{rec.SubscriptionID, rec.IP, rec.NodeID}
+		if index, exists := positions[k]; exists {
+			if seenAt.After(rows[index].LastSeen) {
+				rows[index].LastSeen = seenAt
+			}
+			if seenAt.Before(rows[index].FirstSeen) {
+				rows[index].FirstSeen = seenAt
+			}
+			continue
+		}
+		positions[k] = len(rows)
 		rows = append(rows, domain.SubscriptionIP{
 			SubscriptionID: rec.SubscriptionID,
 			IP:             rec.IP,
 			NodeID:         rec.NodeID,
-			FirstSeen:      now,
-			LastSeen:       now,
+			FirstSeen:      seenAt,
+			LastSeen:       seenAt,
 		})
 	}
 	if len(rows) == 0 {
@@ -85,6 +111,9 @@ func (r *subscriptionIPRepository) BulkUpsertSubscriptionIPs(ctx context.Context
 	return database.GetExecutor(r.db, ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "subscription_id"}, {Name: "ip"}, {Name: "node_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"last_seen", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{clause.Expr{
+			SQL: "subscription_ips.last_seen IS NULL OR excluded.last_seen > subscription_ips.last_seen",
+		}}},
 	}).CreateInBatches(rows, bulkUpsertChunk).Error
 }
 

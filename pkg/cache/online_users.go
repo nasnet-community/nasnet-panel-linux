@@ -8,11 +8,14 @@ import (
 
 // OnlineUsersCache tracks online users with their last seen timestamps
 type OnlineUsersCache struct {
-	mu        sync.RWMutex
-	users     map[string]time.Time          // email -> last seen time
-	nodeUsers map[uint]map[string]time.Time // nodeID -> email -> last seen time
-	userIPs   map[string]map[string]int64   // email -> {ip -> timestamp}
-	maxAge    time.Duration                 // how long to consider a user "online" after last activity
+	mu              sync.RWMutex
+	users           map[string]time.Time          // email -> last seen time
+	nodeUsers       map[uint]map[string]time.Time // nodeID -> email -> last seen time
+	userIPs         map[string]map[string]int64   // email -> {ip -> timestamp}
+	userIPsAt       map[string]time.Time          // latest IP observation, including empty maps
+	nodeSnapshotsAt map[uint]time.Time            // completed per-node snapshot observation
+	nodeSnapshotIDs map[uint]int64                // original source timestamp, including future clock skew
+	maxAge          time.Duration                 // how long to consider a user "online" after last activity
 }
 
 // Global instance
@@ -21,10 +24,77 @@ var (
 		users:     make(map[string]time.Time),
 		nodeUsers: make(map[uint]map[string]time.Time),
 		userIPs:   make(map[string]map[string]int64),
-		maxAge:    15 * time.Second, // Consider online for 15 seconds after last activity (3× the 5s stats poll, matches inbound-row threshold)
+		maxAge:    40 * time.Second, // Outlive the online-IP sweep, including missed cycles.
 	}
 	cleanupOnce sync.Once
 )
+
+// ApplyNodeOnlineIPSnapshot applies a completed sweep at its observation time.
+// Re-reading the same cached sample cannot refresh online TTLs. Newer data from
+// another node also cannot be overwritten by a delayed older sweep.
+// Nil means collection failed/skipped; an empty map is a completed empty sweep.
+// The returned time is stable for repeated source IDs, even if a future source
+// timestamp was clamped to receipt time. Callers use it for IP last_seen too.
+func ApplyNodeOnlineIPSnapshot(nodeID uint, users map[string]map[string]int64, observedAt time.Time, sourceID int64) time.Time {
+	if users == nil {
+		return observedAt
+	}
+	onlineUsers.mu.Lock()
+	defer onlineUsers.mu.Unlock()
+	now := time.Now()
+	if sourceID > 0 && onlineUsers.nodeSnapshotIDs[nodeID] == sourceID {
+		return onlineUsers.nodeSnapshotsAt[nodeID]
+	}
+	if observedAt.IsZero() || observedAt.After(now) {
+		observedAt = now
+	}
+	if now.Sub(observedAt) > onlineUsers.maxAge {
+		return observedAt
+	}
+	if onlineUsers.nodeSnapshotsAt == nil {
+		onlineUsers.nodeSnapshotsAt = make(map[uint]time.Time)
+	}
+	if !observedAt.After(onlineUsers.nodeSnapshotsAt[nodeID]) {
+		return observedAt
+	}
+	onlineUsers.nodeSnapshotsAt[nodeID] = observedAt
+	if onlineUsers.nodeSnapshotIDs == nil {
+		onlineUsers.nodeSnapshotIDs = make(map[uint]int64)
+	}
+	onlineUsers.nodeSnapshotIDs[nodeID] = sourceID
+	if onlineUsers.userIPsAt == nil {
+		onlineUsers.userIPsAt = make(map[string]time.Time)
+	}
+	if onlineUsers.nodeUsers[nodeID] == nil {
+		onlineUsers.nodeUsers[nodeID] = make(map[string]time.Time)
+	}
+	for email, ips := range users {
+		if !observedAt.Before(onlineUsers.nodeUsers[nodeID][email]) {
+			if len(ips) == 0 {
+				delete(onlineUsers.nodeUsers[nodeID], email)
+			} else {
+				onlineUsers.nodeUsers[nodeID][email] = observedAt
+			}
+		}
+		if len(ips) > 0 && observedAt.After(onlineUsers.users[email]) {
+			onlineUsers.users[email] = observedAt
+		}
+		if observedAt.Before(onlineUsers.userIPsAt[email]) || observedAt.Before(onlineUsers.users[email]) {
+			continue
+		}
+		onlineUsers.userIPsAt[email] = observedAt
+		if len(ips) == 0 {
+			delete(onlineUsers.userIPs, email)
+			continue
+		}
+		copyIPs := make(map[string]int64, len(ips))
+		for ip, timestamp := range ips {
+			copyIPs[ip] = timestamp
+		}
+		onlineUsers.userIPs[email] = copyIPs
+	}
+	return observedAt
+}
 
 // StartCleanup launches a background goroutine that periodically removes expired entries.
 // Safe to call multiple times; the goroutine is only started once.
@@ -186,6 +256,13 @@ func CleanExpired() {
 			delete(onlineUsers.nodeUsers, nodeID)
 		}
 	}
+	for email, at := range onlineUsers.userIPsAt {
+		if now.Sub(at) > onlineUsers.maxAge {
+			delete(onlineUsers.userIPsAt, email)
+		}
+	}
+	// Keep the latest per-node source ID/time after TTL expiry. Otherwise a
+	// repeated future-clock snapshot could be clamped anew and revive sessions.
 }
 
 // SetUserOnlineIPs updates the cache with IPs for a specific user

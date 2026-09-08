@@ -43,6 +43,7 @@ func TestReversePermissionForAPIAddedUsers(t *testing.T) {
 	hs.RegisterHandlerServiceServer(server, capture)
 	go server.Serve(listener)
 	client := NewLocalClient(listener.Addr().String(), time.Second)
+	defer client.Close()
 	if err = client.AddUser(context.Background(), "tunnel", "user@test", "test-user", "vless", "", "", 0, tag); err != nil {
 		t.Fatal(err)
 	}

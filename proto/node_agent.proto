@@ -356,6 +356,9 @@ message SystemStats {
   uint64 tcp_conns = 21;
   uint64 udp_conns = 22;
   uint64 fd_count = 23;
+
+  // Start of the completed background sample; zero on legacy agents.
+  int64 collected_at_unix_ms = 24;
 }
 
 message StatsRequest {
@@ -543,6 +546,8 @@ message OnlineIPsResponse {
 // same IP→timestamp map shape as OnlineIPsResponse.
 message AllOnlineIPsResponse {
   map<string, OnlineIPMap> users = 1;
+  // Start of the completed background sweep; zero on legacy agents.
+  int64 collected_at_unix_ms = 2;
 }
 
 message OnlineIPMap {

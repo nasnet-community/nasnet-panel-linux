@@ -193,6 +193,7 @@ func (c *EmbeddedClient) GetSystemStats(ctx context.Context) (*SystemStats, erro
 		return nil, err
 	}
 	return &SystemStats{
+		CollectedAtUnixMs:   resp.CollectedAtUnixMs,
 		CPUUsagePercent:     resp.CpuUsagePercent,
 		MemoryTotalBytes:    resp.MemoryTotalBytes,
 		MemoryUsedBytes:     resp.MemoryUsedBytes,
@@ -536,6 +537,14 @@ func (c *EmbeddedClient) GetUserOnlineIPs(ctx context.Context, email string) (ma
 }
 
 func (c *EmbeddedClient) GetAllUsersOnlineIPs(ctx context.Context) (map[string]map[string]int64, error) {
+	snapshot, err := c.GetOnlineIPSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Users, nil
+}
+
+func (c *EmbeddedClient) GetOnlineIPSnapshot(ctx context.Context) (*OnlineIPSnapshot, error) {
 	resp, err := c.srv.GetAllUsersOnlineIPs(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
@@ -548,7 +557,7 @@ func (c *EmbeddedClient) GetAllUsersOnlineIPs(ctx context.Context) (map[string]m
 		}
 		out[email] = entry.Ips
 	}
-	return out, nil
+	return &OnlineIPSnapshot{Users: out, CollectedAtUnixMs: resp.CollectedAtUnixMs}, nil
 }
 
 // ===== Buffered Traffic =====

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	handlerService "github.com/xtls/xray-core/app/proxyman/command"
@@ -15,13 +16,17 @@ import (
 	"github.com/xtls/xray-core/proxy/vless"
 	"github.com/xtls/xray-core/proxy/vmess"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 // LocalClient wraps communication with the local xray-core gRPC API
 type LocalClient struct {
+	mu      sync.Mutex
 	addr    string
 	timeout time.Duration
+	conn    *grpc.ClientConn
+	closed  bool
 }
 
 // NewLocalClient creates a new client to talk to local xray-core API
@@ -35,21 +40,71 @@ func NewLocalClient(addr string, timeout time.Duration) *LocalClient {
 	}
 }
 
-// dial establishes a connection to the local xray API
+// dial reuses one HTTP/2 connection. gRPC reconnects it after Xray restarts.
+// Readiness waits remain bounded by the caller and the configured dial timeout.
 func (c *LocalClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-
-	conn, err := grpc.DialContext(
-		dialCtx,
-		c.addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to local xray API at %s: %w", c.addr, err)
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("local xray client is closed")
 	}
-	return conn, nil
+	if c.conn == nil {
+		conn, err := grpc.NewClient(c.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			c.mu.Unlock()
+			return nil, err
+		}
+		c.conn = conn
+	}
+	conn, addr := c.conn, c.addr
+	c.mu.Unlock()
+	for {
+		if err := dialCtx.Err(); err != nil {
+			return nil, fmt.Errorf("connect to local xray API at %s: %w", addr, err)
+		}
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return conn, nil
+		}
+		if state == connectivity.Shutdown {
+			return nil, fmt.Errorf("local xray connection closed")
+		}
+		if state == connectivity.Idle {
+			conn.Connect()
+		}
+		if !conn.WaitForStateChange(dialCtx, state) {
+			return nil, fmt.Errorf("connect to local xray API at %s: %w", addr, dialCtx.Err())
+		}
+	}
+}
+
+// SetAddress updates the shared client in place, including traffic collectors
+// holding this pointer, and releases the previous endpoint's connection.
+func (c *LocalClient) SetAddress(addr string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.addr == addr {
+		return
+	}
+	c.addr = addr
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+	}
+}
+
+func (c *LocalClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closed = true
+	if c.conn != nil {
+		err := c.conn.Close()
+		c.conn = nil
+		return err
+	}
+	return nil
 }
 
 // AddUser adds a user to an inbound handler
@@ -58,7 +113,6 @@ func (c *LocalClient) AddUser(ctx context.Context, inboundTag, email, uuid, prot
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	client := handlerService.NewHandlerServiceClient(conn)
 
@@ -117,7 +171,6 @@ func (c *LocalClient) RemoveUser(ctx context.Context, inboundTag, email string) 
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	client := handlerService.NewHandlerServiceClient(conn)
 
@@ -149,7 +202,6 @@ func (c *LocalClient) GetInboundUsers(ctx context.Context, inboundTag string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	client := handlerService.NewHandlerServiceClient(conn)
 
@@ -186,7 +238,6 @@ func (c *LocalClient) GetUserStats(ctx context.Context, email string, reset bool
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	client := statsService.NewStatsServiceClient(conn)
 
@@ -237,7 +288,6 @@ func (c *LocalClient) QueryStats(ctx context.Context, pattern string, reset bool
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	client := statsService.NewStatsServiceClient(conn)
 
@@ -307,11 +357,10 @@ func (c *LocalClient) QueryStats(ctx context.Context, pattern string, reset bool
 
 // Ping checks if the local xray API is reachable
 func (c *LocalClient) Ping(ctx context.Context) error {
-	conn, err := c.dial(ctx)
+	_, err := c.dial(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	// Just establishing a connection is enough for a ping
 	return nil
@@ -330,7 +379,6 @@ func (c *LocalClient) GetAllOnlineUsers(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	client := statsService.NewStatsServiceClient(conn)
 
@@ -394,7 +442,6 @@ func (c *LocalClient) GetUserOnlineIPs(ctx context.Context, email string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	client := statsService.NewStatsServiceClient(conn)
 

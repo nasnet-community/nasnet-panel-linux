@@ -1380,11 +1380,13 @@ type SystemStats struct {
 	// System uptime
 	SystemUptimeSeconds int64 `protobuf:"varint,18,opt,name=system_uptime_seconds,json=systemUptimeSeconds,proto3" json:"system_uptime_seconds,omitempty"`
 	// Network details
-	TcpConns      uint64 `protobuf:"varint,21,opt,name=tcp_conns,json=tcpConns,proto3" json:"tcp_conns,omitempty"`
-	UdpConns      uint64 `protobuf:"varint,22,opt,name=udp_conns,json=udpConns,proto3" json:"udp_conns,omitempty"`
-	FdCount       uint64 `protobuf:"varint,23,opt,name=fd_count,json=fdCount,proto3" json:"fd_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TcpConns uint64 `protobuf:"varint,21,opt,name=tcp_conns,json=tcpConns,proto3" json:"tcp_conns,omitempty"`
+	UdpConns uint64 `protobuf:"varint,22,opt,name=udp_conns,json=udpConns,proto3" json:"udp_conns,omitempty"`
+	FdCount  uint64 `protobuf:"varint,23,opt,name=fd_count,json=fdCount,proto3" json:"fd_count,omitempty"`
+	// Start of the completed background sample; zero on legacy agents.
+	CollectedAtUnixMs int64 `protobuf:"varint,24,opt,name=collected_at_unix_ms,json=collectedAtUnixMs,proto3" json:"collected_at_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *SystemStats) Reset() {
@@ -1574,6 +1576,13 @@ func (x *SystemStats) GetUdpConns() uint64 {
 func (x *SystemStats) GetFdCount() uint64 {
 	if x != nil {
 		return x.FdCount
+	}
+	return 0
+}
+
+func (x *SystemStats) GetCollectedAtUnixMs() int64 {
+	if x != nil {
+		return x.CollectedAtUnixMs
 	}
 	return 0
 }
@@ -3018,10 +3027,12 @@ func (x *OnlineIPsResponse) GetIps() map[string]int64 {
 // online user. The outer map is keyed by email; each value is the
 // same IP→timestamp map shape as OnlineIPsResponse.
 type AllOnlineIPsResponse struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Users         map[string]*OnlineIPMap `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState  `protogen:"open.v1"`
+	Users map[string]*OnlineIPMap `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Start of the completed background sweep; zero on legacy agents.
+	CollectedAtUnixMs int64 `protobuf:"varint,2,opt,name=collected_at_unix_ms,json=collectedAtUnixMs,proto3" json:"collected_at_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AllOnlineIPsResponse) Reset() {
@@ -3059,6 +3070,13 @@ func (x *AllOnlineIPsResponse) GetUsers() map[string]*OnlineIPMap {
 		return x.Users
 	}
 	return nil
+}
+
+func (x *AllOnlineIPsResponse) GetCollectedAtUnixMs() int64 {
+	if x != nil {
+		return x.CollectedAtUnixMs
+	}
+	return 0
 }
 
 type OnlineIPMap struct {
@@ -5021,7 +5039,7 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x05level\x18\x05 \x01(\x05R\x05level\x12\x1e\n" +
 	"\n" +
 	"encryption\x18\x06 \x01(\tR\n" +
-	"encryption\"\xb0\a\n" +
+	"encryption\"\xe1\a\n" +
 	"\vSystemStats\x12*\n" +
 	"\x11cpu_usage_percent\x18\x01 \x01(\x01R\x0fcpuUsagePercent\x12 \n" +
 	"\fcpu_per_core\x18\x02 \x03(\x01R\n" +
@@ -5049,7 +5067,8 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x15system_uptime_seconds\x18\x12 \x01(\x03R\x13systemUptimeSeconds\x12\x1b\n" +
 	"\ttcp_conns\x18\x15 \x01(\x04R\btcpConns\x12\x1b\n" +
 	"\tudp_conns\x18\x16 \x01(\x04R\budpConns\x12\x19\n" +
-	"\bfd_count\x18\x17 \x01(\x04R\afdCount\">\n" +
+	"\bfd_count\x18\x17 \x01(\x04R\afdCount\x12/\n" +
+	"\x14collected_at_unix_ms\x18\x18 \x01(\x03R\x11collectedAtUnixMs\">\n" +
 	"\fStatsRequest\x12\x14\n" +
 	"\x05reset\x18\x01 \x01(\bR\x05reset\x12\x18\n" +
 	"\apattern\x18\x02 \x01(\tR\apattern\"\xe9\x03\n" +
@@ -5202,9 +5221,10 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x03ips\x18\x01 \x03(\v2%.nodeagent.OnlineIPsResponse.IpsEntryR\x03ips\x1a6\n" +
 	"\bIpsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xaa\x01\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xdb\x01\n" +
 	"\x14AllOnlineIPsResponse\x12@\n" +
-	"\x05users\x18\x01 \x03(\v2*.nodeagent.AllOnlineIPsResponse.UsersEntryR\x05users\x1aP\n" +
+	"\x05users\x18\x01 \x03(\v2*.nodeagent.AllOnlineIPsResponse.UsersEntryR\x05users\x12/\n" +
+	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x1aP\n" +
 	"\n" +
 	"UsersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +

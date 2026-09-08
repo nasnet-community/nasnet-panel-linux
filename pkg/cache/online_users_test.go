@@ -13,6 +13,9 @@ func resetForTest() {
 	onlineUsers.users = make(map[string]time.Time)
 	onlineUsers.nodeUsers = make(map[uint]map[string]time.Time)
 	onlineUsers.userIPs = make(map[string]map[string]int64)
+	onlineUsers.userIPsAt = make(map[string]time.Time)
+	onlineUsers.nodeSnapshotsAt = make(map[uint]time.Time)
+	onlineUsers.nodeSnapshotIDs = make(map[uint]int64)
 	onlineUsers.maxAge = 15 * time.Second
 }
 
