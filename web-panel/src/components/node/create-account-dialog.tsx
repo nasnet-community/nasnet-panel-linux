@@ -39,16 +39,18 @@ interface CreateAccountDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     onSuccess?: () => void
+    /** Preselects the inbound when opened from that inbound's client list. */
+    defaultInboundId?: number
 }
 
-export function CreateAccountDialog({ nodeId, open, onOpenChange, onSuccess }: CreateAccountDialogProps) {
+export function CreateAccountDialog({ nodeId, open, onOpenChange, onSuccess, defaultInboundId }: CreateAccountDialogProps) {
     const { data: inbounds, isLoading: isLoadingInbounds } = useNodeInbounds(nodeId)
     const createMutation = useCreateAccount(nodeId)
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            inbound_id: "",
+            inbound_id: defaultInboundId ? String(defaultInboundId) : "",
             email: "",
             uuid: "",
             flow: "",
@@ -62,6 +64,13 @@ export function CreateAccountDialog({ nodeId, open, onOpenChange, onSuccess }: C
         }
     }, [open, form])
 
+    // Reopening from an inbound's client list should land on that inbound.
+    useEffect(() => {
+        if (open && defaultInboundId) {
+            form.setValue("inbound_id", String(defaultInboundId))
+        }
+    }, [open, defaultInboundId, form])
+
     function onSubmit(values: z.infer<typeof formSchema>) {
         createMutation.mutate({
             inbound_id: parseInt(values.inbound_id),
@@ -72,6 +81,7 @@ export function CreateAccountDialog({ nodeId, open, onOpenChange, onSuccess }: C
             onSuccess: () => {
                 form.reset()
                 form.setValue("uuid", uuidv4()) // Reset UUID for next time
+                if (defaultInboundId) form.setValue("inbound_id", String(defaultInboundId))
                 onOpenChange(false)
                 onSuccess?.()
             }

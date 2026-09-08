@@ -3,16 +3,32 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import {
-    Tooltip, TooltipContent, TooltipTrigger,
-} from "@/components/ui/tooltip"
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
-    HiChevronRight, HiOutlineCog, HiOutlineSwitchHorizontal,
-    HiOutlineTrash, HiOutlineBan, HiOutlineStatusOnline,
-    HiOutlineUsers, HiOutlineClock, HiOutlineArrowsExpand,
+    HiChevronRight,
+    HiOutlineCog,
+    HiOutlineSwitchHorizontal,
+    HiOutlineTrash,
+    HiOutlineBan,
+    HiOutlineStatusOnline,
+    HiOutlineDotsHorizontal,
+    HiOutlineClipboardCopy,
 } from "react-icons/hi"
 import { protocolColors } from "@/components/node/protocol-badge"
 import type { Inbound } from "@/lib/types"
 import { toast } from "sonner"
+import { INBOUND_GRID, EXPIRED_CELL } from "./inbound-grid"
+
+export interface InboundDetail {
+    label: string
+    value: string
+}
 
 interface DesktopInboundRowProps {
     inbound: Inbound
@@ -20,9 +36,11 @@ interface DesktopInboundRowProps {
     isSelected: boolean
     accountCount: number
     onlineCount: number
-    hasOnline: boolean
-    counts: { online: number; disabled: number; expired: number; trafficBytes: number } | undefined
-    details: { label: string; value: string }[]
+    expiredCount: number
+    trafficBytes: number
+    /** Path / SNI / Host and friends. The first one rides in the row; the rest
+     *  live in the panel's Details tab. */
+    details: InboundDetail[]
     onToggleExpand: () => void
     onToggleSelect: () => void
     onToggleDisabled: () => void
@@ -34,262 +52,187 @@ interface DesktopInboundRowProps {
 
 export function DesktopInboundRow(props: DesktopInboundRowProps) {
     const {
-        inbound, isExpanded, isSelected, accountCount, onlineCount, hasOnline,
-        counts, details, onToggleExpand, onToggleSelect,
-        onToggleDisabled, onEdit, onMigrate, onDelete, expandedContent,
+        inbound, isExpanded, isSelected, accountCount, onlineCount, expiredCount,
+        trafficBytes, details, onToggleExpand, onToggleSelect, onToggleDisabled,
+        onEdit, onMigrate, onDelete, expandedContent,
     } = props
+
+    const panelId = `inbound-panel-${inbound.id}`
+    const primary = details[0]
+    const disabled = inbound.is_disabled
 
     return (
         <div
             className={cn(
-                "group relative rounded-xl border bg-card/60 backdrop-blur-sm overflow-hidden transition-all duration-200",
-                "hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5",
-                isSelected && "border-primary/50 bg-primary/5",
-                inbound.is_disabled && "saturate-50",
-                isExpanded && "shadow-md shadow-primary/10 border-primary/20",
+                "border-t border-border first:border-t-0 transition-colors",
+                isSelected ? "bg-primary/5" : "hover:bg-muted/40",
             )}
         >
-            {/* Left rail — animated chevron gutter */}
-            <button
-                type="button"
-                aria-label={isExpanded ? "Collapse details" : "Expand details"}
-                aria-expanded={isExpanded}
-                onClick={onToggleExpand}
-                className={cn(
-                    "absolute inset-y-0 left-0 w-8 flex items-center justify-center",
-                    "bg-gradient-to-r from-muted/30 to-transparent",
-                    "text-muted-foreground/50 hover:text-foreground hover:bg-muted/40",
-                    "focus-visible:outline-none focus-visible:bg-muted/60 focus-visible:text-foreground",
-                    "transition-colors",
-                )}
-            >
-                <HiChevronRight
-                    className={cn(
-                        "w-4 h-4 transition-transform duration-300 ease-out",
-                        isExpanded && "rotate-90",
-                    )}
-                />
-            </button>
-
+            {/* Header. The div carries the click target; the chevron carries the
+                name and state for anyone not using a mouse. */}
             <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={isExpanded}
-                aria-label={`Inbound ${inbound.tag} on port ${inbound.port}`}
                 onClick={onToggleExpand}
-                onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
-                        e.preventDefault(); onToggleExpand()
-                    }
-                }}
-                className="pl-10 pr-3 py-3 grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1.2fr)_auto_auto] gap-x-4 items-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+                className={cn(INBOUND_GRID, "min-h-14 pl-2 pr-3 cursor-pointer")}
             >
-                {/* Col 1: Checkbox + status dot */}
-                <div className="flex items-center gap-2.5 shrink-0">
-                    <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={onToggleSelect}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Select inbound ${inbound.tag}`}
-                        className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                    />
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden>
-                                {hasOnline && (
-                                    <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                                )}
-                                <span className={cn(
-                                    "relative inline-flex rounded-full h-2.5 w-2.5",
-                                    hasOnline ? "bg-green-500" : accountCount > 0 ? "bg-amber-500/60" : "bg-zinc-500/40",
-                                )} />
-                            </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            {hasOnline ? `${onlineCount} online` : accountCount > 0 ? "No active users" : "No accounts"}
-                        </TooltipContent>
-                    </Tooltip>
-                </div>
+                <button
+                    type="button"
+                    aria-label={isExpanded ? `Collapse ${inbound.tag}` : `Expand ${inbound.tag}`}
+                    aria-expanded={isExpanded}
+                    aria-controls={panelId}
+                    onClick={(e) => { e.stopPropagation(); onToggleExpand() }}
+                    className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                    <HiChevronRight className={cn("w-4 h-4 transition-transform duration-200", isExpanded && "rotate-90")} />
+                </button>
 
-                {/* Col 2: Identity */}
-                <div className="min-w-0">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                        <span className="font-mono font-semibold text-sm truncate" title={inbound.tag}>{inbound.tag}</span>
-                        <span className="font-mono text-primary font-bold text-sm shrink-0">:{inbound.port}</span>
-                        {inbound.is_disabled && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/20 shrink-0">
-                                Disabled
-                            </Badge>
-                        )}
-                    </div>
-                    {inbound.remark && (
-                        <p className="text-[11px] text-muted-foreground/70 truncate mt-0.5" title={inbound.remark}>
-                            {inbound.remark}
-                        </p>
-                    )}
-                </div>
+                <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={onToggleSelect}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select inbound ${inbound.tag}`}
+                />
 
-                {/* Col 3: Badges + details */}
-                <div className="min-w-0 flex flex-col gap-1.5">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className={cn("font-mono text-[10px] px-1.5 py-0 h-5", protocolColors[inbound.protocol.toLowerCase()] || "")}>
-                            {inbound.protocol.toUpperCase()}
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-zinc-500/10 border-zinc-500/20">
-                            {(inbound.network || "tcp").toUpperCase()}
-                        </Badge>
-                        <Badge
-                            variant="outline"
+                {/* Enabled or not. Idle is not a warning, so there is no amber here. */}
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span
                             className={cn(
-                                "text-[10px] px-1.5 py-0 h-5",
-                                inbound.security === "reality" && "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-400 border-cyan-500/30",
-                                inbound.security === "tls" && "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-                                (!inbound.security || inbound.security === "none") && "bg-zinc-500/15 text-muted-foreground border-zinc-500/30",
+                                "w-2.5 h-2.5 rounded-full shrink-0",
+                                disabled
+                                    ? "border-[1.5px] border-muted-foreground/50"
+                                    : "bg-emerald-500 ring-4 ring-emerald-500/15",
                             )}
+                        />
+                    </TooltipTrigger>
+                    <TooltipContent>{disabled ? "Disabled" : "Enabled"}</TooltipContent>
+                </Tooltip>
+
+                {/* Name */}
+                <div className="min-w-0">
+                    <div className="flex items-baseline gap-1.5 min-w-0">
+                        <span
+                            className={cn("font-mono font-semibold text-sm truncate", disabled && "text-muted-foreground")}
+                            title={inbound.tag}
                         >
-                            {(inbound.security || "none").toUpperCase()}
-                        </Badge>
-                        {inbound.sniffing_settings?.enabled && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 border-blue-500/30 text-blue-400 bg-blue-500/10">
-                                SNIFF
-                            </Badge>
+                            {inbound.tag}
+                        </span>
+                        <span className="font-mono text-sm text-muted-foreground shrink-0">:{inbound.port}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground truncate">
+                        {disabled && <span className="font-medium text-foreground/70 shrink-0">Disabled</span>}
+                        {disabled && <span className="text-muted-foreground/50 shrink-0">·</span>}
+                        <span className="shrink-0">{inbound.listen || "0.0.0.0"}</span>
+                        {primary && (
+                            <>
+                                <span className="text-muted-foreground/50 shrink-0">·</span>
+                                <span className="truncate" title={`${primary.label}: ${primary.value}`}>{primary.value}</span>
+                            </>
                         )}
                     </div>
-                    {details.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] font-mono text-muted-foreground/80">
-                            {details.map((d, idx) => (
-                                <Tooltip key={idx}>
-                                    <TooltipTrigger asChild>
-                                        <button
-                                            type="button"
-                                            className="flex items-center gap-1 hover:text-foreground transition-colors truncate max-w-[240px] focus-visible:outline-none focus-visible:text-foreground"
-                                            onClick={async (e) => {
-                                                e.stopPropagation()
-                                                await copyToClipboard(d.value)
-                                                toast.success(`${d.label} copied`)
-                                            }}
-                                        >
-                                            <span className="text-muted-foreground/50 uppercase tracking-wider">{d.label}</span>
-                                            <span className="truncate">{d.value}</span>
-                                        </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Click to copy: {d.value}</TooltipContent>
-                                </Tooltip>
-                            ))}
-                        </div>
-                    )}
                 </div>
 
-                {/* Col 4: Stats — fixed-width chip lane */}
-                <div className="flex items-center gap-1.5 shrink-0 min-w-[220px] justify-end">
-                    {(counts?.trafficBytes || 0) > 0 && (
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <div className="flex items-center gap-1 px-1.5 h-6 rounded-md bg-violet-500/10 border border-violet-500/20 cursor-help">
-                                    <HiOutlineArrowsExpand className="w-3 h-3 text-violet-400" />
-                                    <span className="text-[10px] font-mono font-medium text-violet-400 tabular-nums">
-                                        {formatBytes(counts!.trafficBytes)}
-                                    </span>
-                                </div>
-                            </TooltipTrigger>
-                            <TooltipContent>All-time Traffic — {accountCount} accounts</TooltipContent>
-                        </Tooltip>
-                    )}
-                    {accountCount > 0 && (
-                        <>
-                            <StatPill count={accountCount} Icon={HiOutlineUsers} color="emerald" title="Total" />
-                            {(counts?.disabled || 0) > 0 && <StatPill count={counts!.disabled} Icon={HiOutlineBan} color="zinc" title="Disabled" />}
-                            {(counts?.expired || 0) > 0 && <StatPill count={counts!.expired} Icon={HiOutlineClock} color="red" title="Expired" />}
-                            {onlineCount > 0 && <StatPill count={onlineCount} Icon={HiOutlineStatusOnline} color="blue" title="Online" />}
-                        </>
-                    )}
+                {/* Protocol. Colour marks the protocol; transport and security are plain text. */}
+                <div className="flex items-center gap-2 min-w-0">
+                    <Badge
+                        variant="outline"
+                        className={cn(
+                            "font-mono text-[10px] px-1.5 py-0 h-5 shrink-0",
+                            protocolColors[inbound.protocol.toLowerCase()] || "",
+                            disabled && "opacity-60",
+                        )}
+                    >
+                        {inbound.protocol.toUpperCase()}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-muted-foreground truncate">
+                        {(inbound.network || "tcp").toUpperCase()}
+                        {inbound.security && inbound.security !== "none" && ` · ${inbound.security.toUpperCase()}`}
+                    </span>
                 </div>
 
-                {/* Col 5: Actions */}
-                <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                    <ActionBtn label={inbound.is_disabled ? "Enable" : "Disable"} onClick={onToggleDisabled} color={inbound.is_disabled ? "emerald" : "amber"}>
-                        {inbound.is_disabled ? <HiOutlineStatusOnline className="w-4 h-4" /> : <HiOutlineBan className="w-4 h-4" />}
-                    </ActionBtn>
-                    <ActionBtn label="Edit" onClick={onEdit}>
-                        <HiOutlineCog className="w-4 h-4" />
-                    </ActionBtn>
-                    <ActionBtn label="Migrate" onClick={onMigrate} color="blue">
-                        <HiOutlineSwitchHorizontal className="w-4 h-4" />
-                    </ActionBtn>
-                    <ActionBtn label="Delete" onClick={onDelete} color="red">
-                        <HiOutlineTrash className="w-4 h-4" />
-                    </ActionBtn>
+                {/* Clients */}
+                <div className="text-right">
+                    <div className="font-mono text-sm tabular-nums">
+                        <span className={cn(onlineCount > 0 ? "text-emerald-600 dark:text-emerald-400 font-semibold" : "text-muted-foreground")}>
+                            {onlineCount}
+                        </span>
+                        <span className="text-muted-foreground/50"> / </span>
+                        <span className={cn(accountCount === 0 && "text-muted-foreground")}>{accountCount}</span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">online</div>
                 </div>
+
+                {/* Traffic */}
+                <div className="text-right font-mono text-sm tabular-nums text-muted-foreground">
+                    {trafficBytes > 0 ? formatBytes(trafficBytes) : <span className="text-muted-foreground/40">—</span>}
+                </div>
+
+                {/* Expired */}
+                <div className={cn(EXPIRED_CELL, "text-right font-mono text-sm tabular-nums")}>
+                    {expiredCount > 0
+                        ? <span className="text-red-600 dark:text-red-400">{expiredCount}</span>
+                        : <span className="text-muted-foreground/40">—</span>}
+                </div>
+
+                {/* Actions. Edit is the frequent one; Delete is last and alone in red. */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Actions for ${inbound.tag}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                        >
+                            <HiOutlineDotsHorizontal className="w-4 h-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuItem onClick={onEdit}>
+                            <HiOutlineCog className="w-4 h-4 mr-2" />
+                            Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={async () => {
+                                await copyToClipboard(`${inbound.tag}:${inbound.port}`)
+                                toast.success("Copied")
+                            }}
+                        >
+                            <HiOutlineClipboardCopy className="w-4 h-4 mr-2" />
+                            Copy tag:port
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={onToggleDisabled}>
+                            {disabled
+                                ? <><HiOutlineStatusOnline className="w-4 h-4 mr-2" />Enable</>
+                                : <><HiOutlineBan className="w-4 h-4 mr-2" />Disable</>}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={onMigrate}>
+                            <HiOutlineSwitchHorizontal className="w-4 h-4 mr-2" />
+                            Migrate clients…
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={onDelete} className="text-red-500 focus:text-red-500">
+                            <HiOutlineTrash className="w-4 h-4 mr-2" />
+                            Delete…
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
-            {/* Expanded content — CSS grid animation for height */}
+            {/* Panel — grid rows animate the height without measuring it. */}
             <div
+                id={panelId}
                 className={cn(
-                    "grid transition-[grid-template-rows] duration-300 ease-out",
+                    "grid transition-[grid-template-rows] duration-200 ease-out",
                     isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                 )}
             >
                 <div className="overflow-hidden">
-                    <div className="border-t border-white/5 bg-muted/5 p-4 space-y-4">
+                    <div className="border-t border-border bg-muted/30 px-4 pt-3 pb-4">
                         {expandedContent}
                     </div>
                 </div>
             </div>
         </div>
-    )
-}
-
-function StatPill({ count, Icon, color, title }: {
-    count: number
-    Icon: React.ComponentType<{ className?: string }>
-    color: "emerald" | "zinc" | "red" | "blue"
-    title: string
-}) {
-    const map = {
-        emerald: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
-        zinc: "text-muted-foreground bg-zinc-500/10 border-zinc-500/20",
-        red: "text-red-500 bg-red-500/10 border-red-500/20",
-        blue: "text-blue-500 bg-blue-500/10 border-blue-500/20",
-    } as const
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <div className={cn("flex items-center gap-1 px-1.5 h-6 rounded-md border cursor-help min-w-[36px] justify-center", map[color])}>
-                    <Icon className="w-3 h-3" />
-                    <span className="text-[10px] font-mono font-medium tabular-nums">{count}</span>
-                </div>
-            </TooltipTrigger>
-            <TooltipContent>{title}: {count}</TooltipContent>
-        </Tooltip>
-    )
-}
-
-function ActionBtn({ children, label, onClick, color }: {
-    children: React.ReactNode
-    label: string
-    onClick: () => void
-    color?: "emerald" | "amber" | "blue" | "red"
-}) {
-    const colorMap = {
-        emerald: "text-green-500 hover:text-green-600 hover:bg-green-500/10",
-        amber: "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10",
-        blue: "text-blue-500 hover:text-blue-600 hover:bg-blue-500/10",
-        red: "text-red-500 hover:text-red-600 hover:bg-red-500/10",
-    } as const
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("h-8 w-8", color && colorMap[color])}
-                    onClick={(e) => { e.stopPropagation(); onClick() }}
-                    aria-label={label}
-                >
-                    {children}
-                </Button>
-            </TooltipTrigger>
-            <TooltipContent>{label}</TooltipContent>
-        </Tooltip>
     )
 }

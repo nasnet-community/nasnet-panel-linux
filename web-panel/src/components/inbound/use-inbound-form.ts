@@ -192,7 +192,7 @@ export function useInboundForm(
 
     // Derived visibility
     const needsTransport = ["vless", "vmess", "trojan", "shadowsocks"].includes(protocol)
-    const needsSecurity = ["vless", "vmess", "trojan", "hysteria2"].includes(protocol)
+    const needsSecurity = ["vless", "vmess", "trojan", "shadowsocks", "hysteria2"].includes(protocol)
     // Trojan needs Fallbacks; Dokodemo-door needs destination address/port;
     // Hysteria2 needs auth/timeout. Mixed reuses the SOCKS settings form.
     // VMess has no per-inbound form because its clients are managed

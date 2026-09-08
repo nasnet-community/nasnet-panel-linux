@@ -80,8 +80,6 @@ import { listNodeInbounds } from "@/lib/admin-api"
 import { NodeXrayConfigEditor } from "./node-xray-config-editor"
 import { NodeSettingsXray } from "./settings/node-settings-xray"
 import { HiOutlineCode, HiOutlineAdjustments } from "react-icons/hi"
-import { InboundAccountsRow } from "./inbound-accounts-row"
-import { HostList } from "@/components/host/host-list"
 import { useAccountsByNode } from "@/lib/queries/use-accounts"
 import { type Account as NodeAccount } from "@/lib/api/accounts"
 import { ProtocolBadge, protocolColors } from "./protocol-badge"
@@ -95,6 +93,10 @@ import { OutboundTestResultDialog } from "@/components/outbound/outbound-test-re
 import { OutboundTestSettingsCard } from "@/components/outbound/outbound-test-settings-card"
 import { BulkActionBar } from "./network/bulk-action-bar"
 import { DesktopInboundRow } from "./network/desktop-inbound-row"
+import { InboundListHeader, type InboundSortField, type SortDir } from "./network/inbound-list-header"
+import { InboundSectionHeader, type InboundSummary } from "./network/inbound-section-header"
+import { InboundDetailPanel } from "./network/inbound-detail-panel"
+import { buildInboundDetails } from "./network/inbound-details"
 import { HiOutlineCheckCircle, HiOutlineXCircle } from "react-icons/hi"
 import { Lock, Power, Loader2 } from "lucide-react"
 
@@ -299,7 +301,63 @@ export function NodeNetworkConfig({
     const getOnlineCount = (id: number) => inboundCounts.get(id)?.online || 0
     const hasOnlineAccounts = (id: number) => getOnlineCount(id) > 0
 
-    // Toggle expand/collapse for inbound row
+    // Inbound list sort. Null field keeps the server's order, which is the one
+    // people already know; a header click opts into something else.
+    const [inboundSort, setInboundSort] = useState<{ field: InboundSortField | null; dir: SortDir }>({
+        field: null,
+        dir: "desc",
+    })
+
+    const handleInboundSort = (field: InboundSortField) => {
+        setInboundSort(prev => prev.field === field
+            ? { field, dir: prev.dir === "asc" ? "desc" : "asc" }
+            : { field, dir: field === "name" ? "asc" : "desc" })
+    }
+
+    const sortedInbounds = useMemo(() => {
+        const field = inboundSort.field
+        if (!field) return inbounds
+        const key = (i: Inbound): string | number => {
+            switch (field) {
+                case "name": return i.tag.toLowerCase()
+                case "clients": return accountsByInbound.get(i.id)?.length ?? 0
+                case "traffic": return inboundCounts.get(i.id)?.trafficBytes ?? 0
+                case "expired": return inboundCounts.get(i.id)?.expired ?? 0
+            }
+        }
+        return [...inbounds].sort((a, b) => {
+            const ka = key(a), kb = key(b)
+            const cmp = typeof ka === "string" && typeof kb === "string"
+                ? ka.localeCompare(kb)
+                : (ka as number) - (kb as number)
+            return inboundSort.dir === "asc" ? cmp : -cmp
+        })
+    }, [inbounds, inboundSort, accountsByInbound, inboundCounts])
+
+    // The header line: what the old "Manage incoming connection endpoints" never said.
+    const inboundSummary = useMemo<InboundSummary>(() => {
+        let clients = 0, online = 0, expired = 0, trafficBytes = 0
+        let lastChangedAt: string | null = null
+        inbounds.forEach(i => {
+            const c = inboundCounts.get(i.id)
+            clients += accountsByInbound.get(i.id)?.length ?? 0
+            online += c?.online ?? 0
+            expired += c?.expired ?? 0
+            trafficBytes += c?.trafficBytes ?? 0
+            if (i.updated_at && (!lastChangedAt || i.updated_at > lastChangedAt)) lastChangedAt = i.updated_at
+        })
+        return {
+            total: inbounds.length,
+            disabled: inbounds.filter(i => i.is_disabled).length,
+            clients, online, expired, trafficBytes, lastChangedAt,
+        }
+    }, [inbounds, inboundCounts, accountsByInbound])
+
+    // Toggle expand/collapse for inbound row. Panels mount on first open and
+    // stay mounted, so a collapsed list does not build six client tables and the
+    // close animation still has something to animate.
+    const [mountedPanels, setMountedPanels] = useState<Set<number>>(new Set())
+
     const toggleExpand = (inboundId: number) => {
         setExpandedRows(prev => {
             const next = new Set(prev)
@@ -307,6 +365,7 @@ export function NodeNetworkConfig({
             else next.add(inboundId)
             return next
         })
+        setMountedPanels(prev => prev.has(inboundId) ? prev : new Set(prev).add(inboundId))
     }
 
     // Dialog States
@@ -808,98 +867,16 @@ export function NodeNetworkConfig({
                 <TabsContent value="inbounds" className="animate-in fade-in-50 duration-300">
                     <TooltipProvider delayDuration={200}>
                         <div className="space-y-4">
-                            {/* Mobile compact header */}
-                            <div className="flex md:hidden items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    {inbounds.length > 0 && (
-                                        <>
-                                            <Checkbox
-                                                id="select-all-inbounds-mobile"
-                                                checked={selectedInbounds.size === inbounds.length && inbounds.length > 0}
-                                                onCheckedChange={toggleAllInbounds}
-                                                className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                                            />
-                                            <label htmlFor="select-all-inbounds-mobile" className="text-sm font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap">
-                                                {selectedInbounds.size > 0 ? `${selectedInbounds.size} selected` : "Select All"}
-                                            </label>
-                                        </>
-                                    )}
-                                </div>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                                            <HiOutlineDotsVertical className="w-4 h-4" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={handleDiscover} disabled={actionLoading === "discover"}>
-                                            <HiOutlineDownload className="w-4 h-4 mr-2" />
-                                            Discover
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem onClick={handleSync} disabled={actionLoading === "sync"}>
-                                            <HiOutlineUpload className="w-4 h-4 mr-2" />
-                                            Sync
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            </div>
+                            <InboundSectionHeader
+                                summary={inboundSummary}
+                                actionLoading={actionLoading}
+                                onDiscover={handleDiscover}
+                                onSync={handleSync}
+                                onAdd={() => setInboundDialog({ open: true, mode: "create", inbound: null })}
+                            />
 
-                            {/* Desktop header with actions */}
-                            <div className="hidden md:flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
-                                <div>
-                                    <h3 className="text-lg font-semibold">Inbound Connections</h3>
-                                    <p className="text-sm text-muted-foreground">
-                                        Manage incoming connection endpoints
-                                        {inbounds.length > 0 && <span className="text-muted-foreground/60"> • {inbounds.length} total</span>}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {inbounds.length > 0 && (
-                                        <div className="flex items-center gap-2 mr-2 px-2">
-                                            <Checkbox
-                                                id="select-all-inbounds"
-                                                checked={selectedInbounds.size === inbounds.length && inbounds.length > 0}
-                                                onCheckedChange={toggleAllInbounds}
-                                                className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                                            />
-                                            <label htmlFor="select-all-inbounds" className="text-sm font-medium text-muted-foreground cursor-pointer select-none whitespace-nowrap">
-                                                Select All
-                                            </label>
-                                        </div>
-                                    )}
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={handleDiscover}
-                                        disabled={actionLoading === "discover"}
-                                    >
-                                        <HiOutlineDownload className={cn("w-4 h-4 mr-2", actionLoading === "discover" && "animate-spin")} />
-                                        Discover
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={handleSync}
-                                        disabled={actionLoading === "sync"}
-                                    >
-                                        <HiOutlineUpload className={cn("w-4 h-4 mr-2", actionLoading === "sync" && "animate-spin")} />
-                                        Sync
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => setInboundDialog({ open: true, mode: "create", inbound: null })}
-                                    >
-                                        <HiOutlinePlus className="w-4 h-4 mr-2" />
-                                        Add Inbound
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Inbounds List */}
                             {inbounds.length > 0 ? (
                                 <div className="space-y-3">
-
-
                                     <BulkActionBar
                                         count={selectedInbounds.size}
                                         onCancel={clearSelection}
@@ -909,22 +886,30 @@ export function NodeNetworkConfig({
                                         actionLoading={actionLoading}
                                     />
 
-                                    {/* Mobile Inbound List */}
+                                    {/* Mobile list — swipe for actions, tap to expand */}
                                     <div className="md:hidden divide-y rounded-xl border overflow-hidden">
-                                        {inbounds.map((inbound) => {
+                                        <div className="flex items-center justify-between px-3 py-2 bg-muted/50">
+                                            <label className="flex items-center gap-2.5 text-sm text-muted-foreground cursor-pointer select-none">
+                                                <Checkbox
+                                                    checked={selectedInbounds.size === inbounds.length && inbounds.length > 0}
+                                                    onCheckedChange={toggleAllInbounds}
+                                                    aria-label="Select all inbounds"
+                                                />
+                                                {selectedInbounds.size > 0 ? `${selectedInbounds.size} selected` : "Select all"}
+                                            </label>
+                                        </div>
+                                        {sortedInbounds.map((inbound) => {
                                             const inboundAccounts = accountsByInbound.get(inbound.id) || []
                                             const counts = inboundCounts.get(inbound.id)
-                                            const accountCount = inboundAccounts.length
-                                            const onlineCount = counts?.online || 0
-                                            const totalTraffic = counts?.trafficBytes || 0
 
                                             return (
                                                 <SwipeableInboundRow
                                                     key={inbound.id}
                                                     inbound={inbound}
-                                                    accountCount={accountCount}
-                                                    onlineCount={onlineCount}
-                                                    totalTraffic={totalTraffic}
+                                                    accountCount={inboundAccounts.length}
+                                                    onlineCount={counts?.online || 0}
+                                                    expiredCount={counts?.expired || 0}
+                                                    totalTraffic={counts?.trafficBytes || 0}
                                                     isSelected={selectedInbounds.has(inbound.id)}
                                                     isMultiSelectMode={selectedInbounds.size > 0}
                                                     shouldClose={openSwipeRowId !== null && openSwipeRowId !== inbound.id}
@@ -938,97 +923,83 @@ export function NodeNetworkConfig({
                                                     onToggleDisabled={handleToggleInbound}
                                                     onDelete={handleDeleteInbound}
                                                     onMigrate={handleMigrateInbound}
-                                                    expandedContent={
-                                                        <div className="space-y-4">
-                                                            <HostList
-                                                                inboundId={inbound.id}
-                                                                initialHosts={inbound.hosts}
-                                                                inbound={inbound}
-                                                            />
-                                                            <InboundAccountsRow
-                                                                accounts={inboundAccounts}
-                                                                nodeId={nodeId}
-                                                                isOnline={isOnline}
-                                                                onAccountChange={refetchAccounts}
-                                                            />
-                                                        </div>
-                                                    }
+                                                    expandedContent={mountedPanels.has(inbound.id) ? (
+                                                        <InboundDetailPanel
+                                                            inbound={inbound}
+                                                            accounts={inboundAccounts}
+                                                            details={buildInboundDetails(inbound)}
+                                                            nodeId={nodeId}
+                                                            isOnline={isOnline}
+                                                            onAccountChange={refetchAccounts}
+                                                        />
+                                                    ) : null}
                                                 />
                                             )
                                         })}
                                     </div>
 
-                                    {/* Desktop Inbound Cards */}
-                                    <div className="hidden md:block space-y-3">
-                                        {inbounds.map((inbound) => {
-                                            // Build details
-                                            const details: { label: string; value: string }[] = []
-                                            if (inbound.security === "tls" && inbound.tls_settings?.serverName) {
-                                                details.push({ label: "SNI", value: inbound.tls_settings.serverName })
-                                            }
-                                            if (inbound.security === "reality" && inbound.reality_settings?.serverNames?.[0]) {
-                                                details.push({ label: "SNI", value: inbound.reality_settings.serverNames[0] })
-                                            }
-                                            if (inbound.transport_settings?.host) {
-                                                details.push({ label: "Host", value: inbound.transport_settings.host })
-                                            }
-                                            if (inbound.transport_settings?.path) {
-                                                details.push({ label: "Path", value: inbound.transport_settings.path })
-                                            }
-                                            if (inbound.transport_settings?.serviceName) {
-                                                details.push({ label: "Service", value: inbound.transport_settings.serviceName })
-                                            }
-
-                                            const inboundAccounts = accountsByInbound.get(inbound.id) || []
-                                            const counts = inboundCounts.get(inbound.id)
-                                            const isExpanded = expandedRows.has(inbound.id)
-                                            const isSelected = selectedInbounds.has(inbound.id)
-                                            const accountCount = inboundAccounts.length
-                                            const onlineCount = counts?.online || 0
-                                            const hasOnline = onlineCount > 0
-
-                                            return (
-                                                <DesktopInboundRow
-                                                    key={inbound.id}
-                                                    inbound={inbound}
-                                                    isExpanded={isExpanded}
-                                                    isSelected={isSelected}
-                                                    accountCount={accountCount}
-                                                    onlineCount={onlineCount}
-                                                    hasOnline={hasOnline}
-                                                    counts={counts}
-                                                    details={details}
-                                                    onToggleExpand={() => toggleExpand(inbound.id)}
-                                                    onToggleSelect={() => toggleInboundSelection(inbound.id)}
-                                                    onToggleDisabled={() => handleToggleInbound(inbound)}
-                                                    onEdit={() => setInboundDialog({ open: true, mode: "edit", inbound })}
-                                                    onMigrate={() => handleMigrateInbound(inbound)}
-                                                    onDelete={() => handleDeleteInbound(inbound)}
-                                                    expandedContent={
-                                                        <>
-                                                            <HostList inboundId={inbound.id} initialHosts={inbound.hosts} inbound={inbound} />
-                                                            <InboundAccountsRow
-                                                                accounts={inboundAccounts}
-                                                                nodeId={nodeId}
-                                                                isOnline={isOnline}
-                                                                onAccountChange={refetchAccounts}
-                                                            />
-                                                        </>
-                                                    }
+                                    {/* Desktop list — one table, so columns line up down the page.
+                                        Density follows the list's own width: the two side navs
+                                        leave it far narrower than the viewport suggests. */}
+                                    <div className="hidden md:block @container">
+                                        <div className="rounded-xl border bg-card overflow-x-auto">
+                                            <div className="min-w-[520px]">
+                                                <InboundListHeader
+                                                    allSelected={selectedInbounds.size === inbounds.length && inbounds.length > 0}
+                                                    someSelected={selectedInbounds.size > 0 && selectedInbounds.size < inbounds.length}
+                                                    onToggleAll={toggleAllInbounds}
+                                                    sortField={inboundSort.field}
+                                                    sortDir={inboundSort.dir}
+                                                    onSort={handleInboundSort}
                                                 />
-                                            )
-                                        })}
+                                                {sortedInbounds.map((inbound) => {
+                                                    const inboundAccounts = accountsByInbound.get(inbound.id) || []
+                                                    const counts = inboundCounts.get(inbound.id)
+                                                    const details = buildInboundDetails(inbound)
+
+                                                    return (
+                                                        <DesktopInboundRow
+                                                            key={inbound.id}
+                                                            inbound={inbound}
+                                                            isExpanded={expandedRows.has(inbound.id)}
+                                                            isSelected={selectedInbounds.has(inbound.id)}
+                                                            accountCount={inboundAccounts.length}
+                                                            onlineCount={counts?.online || 0}
+                                                            expiredCount={counts?.expired || 0}
+                                                            trafficBytes={counts?.trafficBytes || 0}
+                                                            details={details}
+                                                            onToggleExpand={() => toggleExpand(inbound.id)}
+                                                            onToggleSelect={() => toggleInboundSelection(inbound.id)}
+                                                            onToggleDisabled={() => handleToggleInbound(inbound)}
+                                                            onEdit={() => setInboundDialog({ open: true, mode: "edit", inbound })}
+                                                            onMigrate={() => handleMigrateInbound(inbound)}
+                                                            onDelete={() => handleDeleteInbound(inbound)}
+                                                            expandedContent={mountedPanels.has(inbound.id) ? (
+                                                                <InboundDetailPanel
+                                                                    inbound={inbound}
+                                                                    accounts={inboundAccounts}
+                                                                    details={details}
+                                                                    nodeId={nodeId}
+                                                                    isOnline={isOnline}
+                                                                    onAccountChange={refetchAccounts}
+                                                                />
+                                                            ) : null}
+                                                        />
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground rounded-2xl border-2 border-dashed bg-muted/5">
                                     <HiOutlineGlobeAlt className="w-12 h-12 opacity-50 mb-4" />
                                     <h3 className="text-lg font-medium text-foreground mb-1">No Inbounds Configured</h3>
-                                    <p className="text-sm mb-4">Create an inbound or discover from Xray</p>
+                                    <p className="text-sm mb-4">Create an inbound or import the ones Xray already runs</p>
                                     <div className="flex gap-2">
                                         <Button variant="outline" size="sm" onClick={handleDiscover}>
                                             <HiOutlineDownload className="w-4 h-4 mr-2" />
-                                            Discover
+                                            Import from Xray
                                         </Button>
                                         <Button size="sm" onClick={() => setInboundDialog({ open: true, mode: "create", inbound: null })}>
                                             <HiOutlinePlus className="w-4 h-4 mr-2" />
@@ -1563,8 +1534,10 @@ export function NodeNetworkConfig({
                 onOpenChange={(open) => !open && setReverseProxyDialog({ open: false, mode: "create", reverseProxy: null })}
                 mode={reverseProxyDialog.mode}
                 reverseProxy={reverseProxyDialog.reverseProxy}
-                inboundTags={inbounds.map(i => i.tag)}
-                outboundTags={outbounds.map(o => o.tag)}
+                inboundTags={inbounds.filter(i => !i.is_disabled).map(i => i.tag)}
+                outboundTags={outbounds.filter(o => !o.managed && !o.is_disabled).map(o => o.tag)}
+                vlessInboundTags={inbounds.filter(i => i.protocol === "vless" && !i.is_disabled).map(i => i.tag)}
+                vlessOutboundTags={outbounds.filter(o => o.protocol === "vless" && !o.is_disabled).map(o => o.tag)}
                 existingCount={reverseProxies.length}
                 onSave={handleSaveReverseProxy}
             />
