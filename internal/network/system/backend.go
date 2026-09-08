@@ -35,6 +35,7 @@ type Nexthop struct {
 
 // Route is one route in one table. Dest "default" -> 0.0.0.0/0.
 type Route struct {
+	OnLink  bool // the gateway is directly reachable even outside the address prefix
 	Table   int
 	Dest    string
 	Gateway string

@@ -75,7 +75,9 @@ type flowState struct {
 	uplinks   []Uplink
 	domestic  *Uplink
 	secondary *Uplink
-	// Every secondary, in slot order. secondary is the first of these.
+	// Every domestic in slot order; domestic is the first of these. Same for
+	// the secondaries.
+	domestics   []Uplink
 	secondaries []Uplink
 	healthy     map[string]bool
 	routes      map[int][]system.Route
@@ -104,18 +106,22 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 		wgStatus:  map[string]*system.WGStatus{},
 	}
 	for i := range uplinks {
-		switch uplinks[i].Slot {
-		case domain.SlotDomestic:
-			st.domestic = &uplinks[i]
-		default:
-			if uplinks[i].Slot.IsSecondary() {
-				st.secondaries = append(st.secondaries, uplinks[i])
-			}
+		switch {
+		case uplinks[i].Slot.IsDomestic():
+			st.domestics = append(st.domestics, uplinks[i])
+		case uplinks[i].Slot.IsSecondary():
+			st.secondaries = append(st.secondaries, uplinks[i])
 		}
 	}
+	sort.Slice(st.domestics, func(a, b int) bool {
+		return st.domestics[a].UplinkIndex < st.domestics[b].UplinkIndex
+	})
 	sort.Slice(st.secondaries, func(a, b int) bool {
 		return st.secondaries[a].UplinkIndex < st.secondaries[b].UplinkIndex
 	})
+	if len(st.domestics) > 0 {
+		st.domestic = &st.domestics[0]
+	}
 	if len(st.secondaries) > 0 {
 		st.secondary = &st.secondaries[0]
 	}
@@ -124,6 +130,11 @@ func (u *networkUsecase) FlowGraph(ctx context.Context) (*FlowView, error) {
 	// finding, so it lands in Mismatches rather than a 500.
 	liveRules, rulesErr := u.Backend.RuleList(ctx)
 	tables := []int{201, 202, system.WGTable}
+	for _, d := range st.domestics {
+		if d.Table != 201 {
+			tables = append(tables, d.Table)
+		}
+	}
 	for _, s := range st.secondaries {
 		if s.Table != 202 {
 			tables = append(tables, s.Table)
@@ -469,8 +480,8 @@ func (u *networkUsecase) uplinkNode(st flowState, slot domain.UplinkSlot) FlowNo
 
 	u.healthMu.Lock()
 	l := u.ladders[up.IfName]
-	failover := u.failoverActive
 	u.healthMu.Unlock()
+	poolFailover := u.poolFailoverActive()
 
 	switch l.Verdict {
 	case "":
@@ -504,9 +515,9 @@ func (u *networkUsecase) uplinkNode(st flowState, slot domain.UplinkSlot) FlowNo
 	default:
 		n.Status = "down"
 	}
-	if failover && slot == domain.SlotDomestic {
+	if slot == domain.SlotDomestic && poolFailover {
 		n.Status = "warn"
-		n.Hint = "Domestic internet is down — traffic is riding the tunnel until it recovers."
+		n.Hint = "Every domestic line is down — traffic is riding the tunnel until one recovers."
 	}
 
 	lines := []string{
@@ -514,14 +525,62 @@ func (u *networkUsecase) uplinkNode(st flowState, slot domain.UplinkSlot) FlowNo
 		fmt.Sprintf("table: %d", up.Table),
 		fmt.Sprintf("pin mark: %s", netmark.Hex(netmark.PinMark(up.UplinkIndex))),
 	}
-	// One node stands for every secondary, so name the rest here rather than
+	// One node stands for the whole group, so name the rest here rather than
 	// letting the page imply this box has one.
-	for _, s := range st.secondaries {
+	others := st.secondaries
+	if slot == domain.SlotDomestic {
+		others = st.domestics
+	}
+	for _, s := range others {
 		if s.IfName == up.IfName {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf("also: %s, table %d, pin mark %s",
 			s.IfName, s.Table, netmark.Hex(netmark.PinMark(s.UplinkIndex))))
+	}
+	if slot == domain.SlotDomestic {
+		u.healthMu.Lock()
+		verdicts := make(map[string]string, len(st.domestics))
+		for _, d := range st.domestics {
+			verdicts[d.IfName] = u.ladders[d.IfName].Verdict
+		}
+		u.healthMu.Unlock()
+		vias := make(map[string]string, len(st.domestics))
+		delivering, riding := false, false
+		for _, d := range st.domestics {
+			vias[d.IfName] = u.viaOf(d.IfName)
+			if via := vias[d.IfName]; via != "" && via != "pool" {
+				riding = true
+			}
+			switch verdicts[d.IfName] {
+			case "up", "degraded", "forced-up":
+				delivering = true
+			}
+		}
+		for _, d := range st.domestics {
+			via := vias[d.IfName]
+			switch {
+			case via != "" && via != "pool":
+				lines = append(lines, fmt.Sprintf("%s riding %s", d.IfName, via))
+				// The group is still delivering, so a carried member is a
+				// warning on the group node, never an outage.
+				n.Status = "warn"
+				n.Hint = fmt.Sprintf("%s has no internet — its traffic is riding %s.", d.IfName, via)
+			case via == "" && deadVerdict(verdicts[d.IfName]):
+				// Only claim the walk-on when something is left to walk to.
+				down := d.IfName + " down"
+				if delivering {
+					down += ", the group rule walks on"
+				}
+				lines = append(lines, down)
+				// Same fault, same colour, whichever slot it sits in — unless
+				// the pool or a ride has already explained the group.
+				if !poolFailover && !riding && delivering {
+					n.Status = "warn"
+					n.Hint = fmt.Sprintf("%s is down — the other domestic lines are still carrying.", d.IfName)
+				}
+			}
+		}
 	}
 	var health []string
 	for _, r := range l.Results {
@@ -576,9 +635,19 @@ func (u *networkUsecase) dnsNode(ctx context.Context, st flowState) FlowNode {
 		n.Hint = "dnsmasq is not running — clients cannot resolve anything."
 	}
 	fdns := poolForeignDNS(st.pool)
-	lines := []string{
-		fmt.Sprintf("domestic: %s via %s (%s)", system.DefaultDomesticDNS,
-			ifNameOr(st.domestic, "no uplink"), DomesticSuffix),
+	var lines []string
+	for _, d := range st.domestics {
+		srv := d.DNSServer
+		if srv == "" {
+			srv = system.DefaultDomesticDNS
+		}
+		lines = append(lines, fmt.Sprintf("domestic: %s via %s (%s)", srv, d.IfName, DomesticSuffix))
+		if d.DNSServer2 != "" {
+			lines = append(lines, fmt.Sprintf("domestic: %s via %s (%s)", d.DNSServer2, d.IfName, DomesticSuffix))
+		}
+	}
+	if len(st.domestics) == 0 {
+		lines = append(lines, fmt.Sprintf("domestic: %s via no uplink (%s)", system.DefaultDomesticDNS, DomesticSuffix))
 	}
 	if len(fdns) == 0 {
 		lines = append(lines, "foreign: none — no tunnel to send queries through")
@@ -733,6 +802,15 @@ func extractChain(text, name string) []string {
 	return out
 }
 
+// The verdicts that mean a line carries nothing of its own.
+func deadVerdict(v string) bool {
+	switch v {
+	case "no-carrier", "no-gateway", "no-internet", "forced-down":
+		return true
+	}
+	return false
+}
+
 func contains(list []string, want string) bool {
 	for _, s := range list {
 		if s == want {
@@ -740,11 +818,4 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func ifNameOr(u *Uplink, fallback string) string {
-	if u == nil {
-		return fallback
-	}
-	return u.IfName
 }

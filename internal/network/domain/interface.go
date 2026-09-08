@@ -52,14 +52,31 @@ func (n NetworkInterface) Phy() string { return n.PhyName }
 type UplinkSlot string
 
 const (
-	SlotNone      UplinkSlot = ""
-	SlotDomestic  UplinkSlot = "domestic"
+	SlotNone     UplinkSlot = ""
+	SlotDomestic UplinkSlot = "domestic"
+	// Backup domestic lines. The slot number is the failover priority.
+	SlotDomestic2 UplinkSlot = "domestic2"
+	SlotDomestic3 UplinkSlot = "domestic3"
+	SlotDomestic4 UplinkSlot = "domestic4"
 	SlotSecondary UplinkSlot = "secondary" // Starlink
 	// More transport legs for the pool to spread over.
 	SlotSecondary2 UplinkSlot = "secondary2"
 	SlotSecondary3 UplinkSlot = "secondary3"
 	SlotSecondary4 UplinkSlot = "secondary4"
 )
+
+func (s UplinkSlot) IsDomestic() bool {
+	switch s {
+	case SlotDomestic, SlotDomestic2, SlotDomestic3, SlotDomestic4:
+		return true
+	}
+	return false
+}
+
+// DomesticSlots is the failover order.
+func DomesticSlots() []UplinkSlot {
+	return []UplinkSlot{SlotDomestic, SlotDomestic2, SlotDomestic3, SlotDomestic4}
+}
 
 func (s UplinkSlot) IsSecondary() bool {
 	switch s {
@@ -121,6 +138,8 @@ type NetworkInterface struct {
 	Method        AddressMethod `gorm:"not null;default:'dhcp4'" json:"method"`
 	StaticAddress string        `json:"static_address"` // CIDR, e.g. 192.168.1.34/24
 	StaticGateway string        `json:"static_gateway"`
+	GatewayOnLink bool          `gorm:"not null;default:false" json:"gateway_on_link"`
+	DNSServer2    string        `gorm:"not null;default:''" json:"dns_server_2"`
 	DNSServer     string        `json:"dns_server"`  // per link DNS= for resolved
 	DNSDomains    string        `json:"dns_domains"` // per link Domains=, e.g. "~ir" or "~."
 	RouteTable    int           `gorm:"not null;default:0" json:"route_table"`

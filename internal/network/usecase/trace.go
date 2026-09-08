@@ -77,9 +77,16 @@ func (u *networkUsecase) TraceFlow(ctx context.Context, req TraceRequest) (*Trac
 		return nil, fmt.Errorf("read routing rules: %w", err)
 	}
 	routes := map[int][]system.Route{}
-	for _, t := range []int{201, 202, system.WGTable, 254} {
-		if rs, rerr := u.Backend.RouteList(ctx, t); rerr == nil && len(rs) > 0 {
-			routes[t] = rs
+	// Read every table the policy can walk, including backup WANs and pool
+	// slices. The live rules are the authority for which tables participate.
+	seen := map[int]bool{}
+	for _, rule := range rules {
+		if rule.Blackhole || rule.Table <= 0 || isStockRule(rule.Pref) || seen[rule.Table] {
+			continue
+		}
+		seen[rule.Table] = true
+		if rs, rerr := u.Backend.RouteList(ctx, rule.Table); rerr == nil {
+			routes[rule.Table] = rs
 		}
 	}
 
@@ -308,7 +315,7 @@ func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNod
 	case system.IsWGLink(route.OifName) || len(route.Nexthops) > 0:
 		nodes = append(nodes, "table-203", "wg", "table-202", "uplink-secondary", "world-foreign")
 		v.FinalVerdict = "delivered-vpn"
-	case table == 202:
+	case isSecondaryTable(table):
 		// Out the secondary uplink in the clear: the kill switch stops this.
 		nodes = append(nodes, "table-202", "killswitch")
 		v.Steps = append(v.Steps, TraceStep{
@@ -321,7 +328,10 @@ func (u *networkUsecase) finishTrace(ctx context.Context, v *TraceView, startNod
 		})
 		v.FinalVerdict = "dropped"
 	default:
-		if table > 0 {
+		if isDomesticTable(table) {
+			// The graph uses one domestic table node for the whole group.
+			nodes = append(nodes, "table-201")
+		} else if table > 0 {
 			nodes = append(nodes, fmt.Sprintf("table-%d", table))
 		}
 		// By the interface the route actually names, not by assuming domestic.

@@ -88,6 +88,30 @@ func (f *poolProbeFixture) tickPool(ctx context.Context) {
 	f.uc.probePool(ctx, DefaultHealthConfig())
 }
 
+func TestPoolDegradedLossUsesForeignGroupOverride(t *testing.T) {
+	f := newPoolProbeFixture(t, 1)
+	cfg := DefaultHealthConfig()
+	cfg.DegradedLossPct = 10
+	cfg.DegradedLossPctDomestic = 10
+	cfg.DegradedLossPctForeign = 60
+	cfg.DegradedLossPctBySlot[domain.SlotSecondary] = 10
+	// 25% loss exceeds the legacy, domestic and per-line thresholds, but not
+	// the foreign group's. The pool has no individual secondary's settings.
+	for i := 0; i < 20; i++ {
+		f.prober.set(system.WGLinkName, i%4 != 0)
+		f.uc.probePool(t.Context(), cfg)
+	}
+	if f.uc.degradedNow[system.WGLinkName] {
+		t.Fatal("pool used a threshold outside its foreign group")
+	}
+	cfg.DegradedLossPctForeign = 20
+	f.prober.set(system.WGLinkName, false)
+	f.uc.probePool(t.Context(), cfg)
+	if !f.uc.degradedNow[system.WGLinkName] {
+		t.Fatal("pool ignored its foreign group threshold")
+	}
+}
+
 func (f *poolProbeFixture) poolDefault(t *testing.T) []system.Nexthop {
 	t.Helper()
 	routes, err := f.be.RouteList(context.Background(), system.WGTable)
@@ -188,7 +212,7 @@ func TestApplyPoolRoutes_MirrorsIntoTheDomesticTableDuringFailover(t *testing.T)
 	f.uc.IfRepo = &stubIfRepo{rows: []domain.NetworkInterface{
 		{ID: 1, IfName: "eth0", Key: "eth0", Role: domain.RoleWAN, Slot: domain.SlotDomestic, Present: true},
 	}}
-	f.uc.failoverActive = true
+	f.uc.viaByIf = map[string]string{"eth0": "pool"}
 
 	f.prober.set("nasnet-wg0", true)
 	f.prober.set("nasnet-wg1", false)

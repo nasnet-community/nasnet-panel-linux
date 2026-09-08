@@ -237,6 +237,16 @@ func isSecondaryTable(table int) bool {
 	return false
 }
 
+// Every domestic shares the one table node the graph draws for the group.
+func isDomesticTable(table int) bool {
+	for _, s := range domain.DomesticSlots() {
+		if tableFor(s) == table {
+			return true
+		}
+	}
+	return false
+}
+
 // nodeForRulePref pins a policy-rule finding to the node whose stage it serves.
 func nodeForRulePref(r system.Rule) string {
 	switch {
@@ -248,13 +258,13 @@ func nodeForRulePref(r system.Rule) string {
 		// Foreign selection, refined; same node in the graph.
 		return "mark-foreign"
 	case r.Pref >= RulePrefPinBase && r.Pref < 110:
-		if r.Table == 201 {
+		if isDomesticTable(r.Table) {
 			return "uplink-domestic"
 		}
 		return "uplink-secondary"
 	case r.Table == system.WGTable, isVPNViaTable(r.Table):
 		return "table-203"
-	case r.Table == 201:
+	case isDomesticTable(r.Table):
 		return "table-201"
 	case isSecondaryTable(r.Table):
 		return "table-202"

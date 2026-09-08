@@ -25,6 +25,8 @@ type Verdict struct {
 
 // ChangeRequest is one role assignment.
 type ChangeRequest struct {
+	RequestID   string        `json:"request_id,omitempty"`
+	WAN         *WANConfig    `json:"wan,omitempty"`
 	InterfaceID uint          `json:"interface_id"`
 	Role        InterfaceRole `json:"role"`
 	Slot        UplinkSlot    `json:"slot"`
@@ -48,9 +50,10 @@ type ChangeRequest struct {
 
 // ValidationInput is the whole world a validation needs
 type ValidationInput struct {
-	Rows []NetworkInterface
-	Req  ChangeRequest
-	LAN  *LANConfig
+	LiveAddresses map[string][]string
+	Rows          []NetworkInterface
+	Req           ChangeRequest
+	LAN           *LANConfig
 	// MgmtCIDR is the frozen management subnet, "" when no mgmt role exists.
 	MgmtCIDR string
 	// PeerIfName is the interface carrying the live admin session, from
@@ -104,6 +107,11 @@ func Validate(in ValidationInput) []Verdict {
 	byID := map[uint]*NetworkInterface{}
 	for i := range in.Rows {
 		byID[in.Rows[i].ID] = &in.Rows[i]
+	}
+
+	if len(in.Req.RequestID) > 64 {
+		reject("WAN_request", "Request identifier is too long.")
+		return vs
 	}
 
 	// V1  the target row exists, is ours, and is present.
@@ -277,9 +285,57 @@ func Validate(in ValidationInput) []Verdict {
 		}
 	}
 
+	// Validate the proposed configuration, not the row it replaces.
+	proposed := append([]NetworkInterface(nil), in.Rows...)
+	for i := range proposed {
+		row := &proposed[i]
+		if in.Req.EvictID != nil && row.ID == *in.Req.EvictID {
+			row.Role, row.Slot = RoleUnassigned, SlotNone
+		}
+		if row.ID != target.ID {
+			continue
+		}
+		row.Role, row.Slot = in.Req.Role, in.Req.Slot
+		if cfg := in.Req.WANChange(*target); cfg != nil {
+			if in.Req.Role != RoleWAN {
+				reject("WAN_role", "WAN configuration requires a WAN role.")
+				return vs
+			}
+			vs = append(vs, ValidateWAN(*cfg, in.Req.Slot, source)...)
+			if Rejected(vs) {
+				return vs
+			}
+			row.SetWAN(*cfg)
+		}
+	}
+
+	if cfg := in.Req.WANChange(*target); cfg != nil && cfg.Method == MethodStatic {
+		if in.MgmtCIDR != "" && overlaps(cfg.StaticAddress, in.MgmtCIDR) {
+			reject("WAN_overlap", "WAN address overlaps the reserved management subnet %s", in.MgmtCIDR)
+		}
+		for _, other := range proposed {
+			if other.ID == target.ID || other.Role != RoleWAN {
+				continue
+			}
+			addresses := in.LiveAddresses[other.IfName]
+			if other.Method == MethodStatic {
+				addresses = []string{other.StaticAddress}
+			}
+			for _, address := range addresses {
+				if overlaps(cfg.StaticAddress, address) {
+					reject("WAN_overlap", "WAN subnet overlaps %s (%s); use different subnets for each WAN", other.IfName, address)
+					break
+				}
+			}
+		}
+		if Rejected(vs) {
+			return vs
+		}
+	}
+
 	// V14 — LAN CIDR overlaps.
 	if in.LAN != nil {
-		if lanVs := ValidateLANConfig(*in.LAN, in.Rows, in.MgmtCIDR); Rejected(lanVs) {
+		if lanVs := ValidateLANConfig(*in.LAN, proposed, in.MgmtCIDR); Rejected(lanVs) {
 			return append(vs, lanVs...)
 		}
 	}
@@ -293,8 +349,8 @@ func Validate(in ValidationInput) []Verdict {
 
 	// V20 the slot picks the routing table and the unit filename
 	if in.Req.Role == RoleWAN {
-		if in.Req.Slot != SlotDomestic && !in.Req.Slot.IsSecondary() {
-			reject("V20", "%s must be assigned to the domestic slot or a secondary slot", target.IfName)
+		if !in.Req.Slot.IsDomestic() && !in.Req.Slot.IsSecondary() {
+			reject("V20", "%s must be assigned to a domestic slot or a secondary slot", target.IfName)
 			return vs
 		}
 	} else if in.Req.Slot != SlotNone {

@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 )
 
@@ -81,6 +82,41 @@ func routesByTable(routes []system.Route) map[int][]system.Route {
 		out[r.Table] = append(out[r.Table], r)
 	}
 	return out
+}
+
+func TestTraceDomesticBackupsAfterPrimaryWithdrawal(t *testing.T) {
+	for _, slot := range domain.DomesticSlots()[1:] {
+		for _, source := range []string{"lan", "router"} {
+			t.Run(string(slot)+"/"+source, func(t *testing.T) {
+				u := newTraceFixture(t, traceOpts{})
+				repo := u.IfRepo.(*flowIfRepo)
+				repo.rows = append(repo.rows, domain.NetworkInterface{ID: 3, IfName: "eth2", Key: "eth2",
+					Role: domain.RoleWAN, Slot: slot, Present: true, Healthy: true})
+				be := u.Backend.(*system.FakeBackend)
+				ups, _ := u.uplinks(t.Context())
+				be.Rules = AllRules(flowGroups(), ups, VPNRouteState{})
+				be.Routes = []system.Route{{Table: tableFor(slot), Dest: "default", Gateway: "198.51.100.1", OifName: "eth2"}}
+				v, err := u.TraceFlow(t.Context(), TraceRequest{Dest: "5.144.128.1", Source: source})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if v.FinalVerdict != "delivered-domestic" {
+					t.Fatalf("working backup reported %q: %+v", v.FinalVerdict, v.Steps)
+				}
+				for _, step := range v.Steps {
+					if step.Verdict == "warn" || step.Verdict == "drop" {
+						t.Fatalf("trace disagrees with routing: %+v", step)
+					}
+				}
+				if !contains(v.PathNodes, "table-201") || contains(v.PathNodes, fmt.Sprintf("table-%d", tableFor(slot))) {
+					t.Fatalf("backup must use the graph's domestic group node: %v", v.PathNodes)
+				}
+				if !contains(v.PathEdges, "e-201-updom") {
+					t.Fatalf("missing domestic graph edge: %v", v.PathEdges)
+				}
+			})
+		}
+	}
 }
 
 func TestTraceForeignIPGoesThroughVPN(t *testing.T) {

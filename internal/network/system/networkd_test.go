@@ -1,6 +1,7 @@
 package system
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,8 +62,6 @@ func TestRenderUplink_DHCPSecondaryKeepsMainEmpty(t *testing.T) {
 		"RouteTable=202",
 		"UseDNS=no",
 		"UseNTP=no",
-		"DNS=1.1.1.1",
-		"Domains=~.",
 		// Dish API sits outside 100.64.0.0/10 and needs its own route.
 		"Destination=192.168.100.0/24",
 	} {
@@ -216,15 +215,15 @@ func TestRenderUplink_CarriesPerLinkDNS(t *testing.T) {
 	}
 }
 
-// Set one anyway and you get it — still subject to the kill switch.
-func TestRenderUplink_SecondaryKeepsAnExplicitResolver(t *testing.T) {
+// Secondary DNS stays in the VPN, including stale pre-editor overrides.
+func TestRenderUplink_SecondaryDoesNotLeakAnExplicitResolver(t *testing.T) {
 	got := RenderUplink(domain.NetworkInterface{
 		IfName: "enp2s0", PermMAC: "aa:bb:cc:dd:ee:02",
 		Role: domain.RoleWAN, Slot: domain.SlotSecondary, Method: domain.MethodDHCP4,
 		DNSServer: "9.9.9.9",
 	}, 202).Content
-	if !strings.Contains(got, "DNS=9.9.9.9") {
-		t.Errorf("an explicitly set resolver was dropped:\n%s", got)
+	if strings.Contains(got, "\nDNS=") || strings.Contains(got, "\nDomains=") {
+		t.Errorf("secondary carries plaintext DNS:\n%s", got)
 	}
 }
 
@@ -235,7 +234,7 @@ func TestRenderUplink_OperatorDNSOverridesTheDefault(t *testing.T) {
 		Role: domain.RoleWAN, Slot: domain.SlotDomestic, Method: domain.MethodDHCP4,
 		DNSServer: "10.0.0.53", DNSDomains: "~corp",
 	}, 201).Content
-	if !strings.Contains(got, "DNS=10.0.0.53") || !strings.Contains(got, "Domains=~corp") {
+	if !strings.Contains(got, "DNS=10.0.0.53") || !strings.Contains(got, "Domains=~ir") {
 		t.Errorf("operator DNS was ignored:\n%s", got)
 	}
 	if strings.Contains(got, DefaultDomesticDNS) {
@@ -264,5 +263,23 @@ func TestRenderSysctlWithLAN_DisablesIPv6OnTheBridge(t *testing.T) {
 	got := RenderSysctlWithLAN([]string{"enp1s0"}, "lan0")
 	if !strings.Contains(got, "net.ipv6.conf.lan0.disable_ipv6 = 1") {
 		t.Errorf("the bridge keeps IPv6:\n%s", got)
+	}
+}
+
+// A backup ISP resolves the domestic suffix over its own link too.
+func TestRenderUplink_EveryDomesticSlotGetsTheDomesticResolver(t *testing.T) {
+	for i, slot := range domain.DomesticSlots() {
+		f := RenderUplink(domain.NetworkInterface{
+			IfName: fmt.Sprintf("enp%ds0", i+1), Role: domain.RoleWAN, Slot: slot,
+			Method: domain.MethodDHCP4,
+		}, 201)
+		for _, want := range []string{"DNS=" + DefaultDomesticDNS, "Domains=~ir"} {
+			if !strings.Contains(f.Content, want) {
+				t.Errorf("%s: missing %q", slot, want)
+			}
+		}
+		if f.Name != "10-nasnet-wan-"+string(slot)+".network" {
+			t.Errorf("%s: unit named %q", slot, f.Name)
+		}
 	}
 }

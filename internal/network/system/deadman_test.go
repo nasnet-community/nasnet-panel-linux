@@ -59,3 +59,16 @@ func TestMarker_Expired(t *testing.T) {
 		t.Error("a past deadline reported unexpired")
 	}
 }
+
+// Miss a table and a revert leaves a stale default inside it.
+func TestSnapshotCoversEveryUplinkTable(t *testing.T) {
+	have := map[int]bool{}
+	for _, tb := range tablesToSnapshot {
+		have[tb] = true
+	}
+	for _, want := range []int{201, 211, 212, 213, 202, 204, 205, 206, WGTable, 207, 208, 209, 210} {
+		if !have[want] {
+			t.Errorf("table %d is not snapshotted", want)
+		}
+	}
+}

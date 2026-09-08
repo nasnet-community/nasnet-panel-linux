@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ const mgmtFileName = "40-nasnet-mgmt.network"
 
 // InterfaceView is one NIC as the UI sees
 type InterfaceView struct {
+	WAN domain.WANConfig `json:"wan"`
 	agent.NetInterface
 	ID       uint             `json:"id"`
 	Role     string           `json:"role"`
@@ -51,12 +53,17 @@ type UplinkView struct {
 }
 
 type StateView struct {
-	RouterMode          bool         `json:"router_mode"`
-	TakeoverDone        bool         `json:"takeover_done"`
-	Warnings            []string     `json:"warnings"`
-	Uplinks             []UplinkView `json:"uplinks"`
-	PendingPlanID       uint         `json:"pending_plan_id"`
-	ConfirmDeadlineUnix int64        `json:"confirm_deadline_unix"`
+	PendingRequestID    string            `json:"pending_request_id,omitempty"`
+	LastApplyRequestID  string            `json:"last_apply_request_id,omitempty"`
+	LastApplyID         uint              `json:"last_apply_id"`
+	LastApplyPhase      domain.ApplyPhase `json:"last_apply_phase"`
+	LastApplyError      string            `json:"last_apply_error,omitempty"`
+	RouterMode          bool              `json:"router_mode"`
+	TakeoverDone        bool              `json:"takeover_done"`
+	Warnings            []string          `json:"warnings"`
+	Uplinks             []UplinkView      `json:"uplinks"`
+	PendingPlanID       uint              `json:"pending_plan_id"`
+	ConfirmDeadlineUnix int64             `json:"confirm_deadline_unix"`
 	// Kept out of the uplink's Healthy: that loop withdraws routes, and a dead
 	// tunnel is the wrong reason to.
 	VPN VPNStateView `json:"vpn"`
@@ -87,6 +94,7 @@ type NetworkUsecase interface {
 	Apply(ctx context.Context, req domain.ChangeRequest) (*ApplyView, error)
 	Confirm(ctx context.Context, planID uint) error
 	Rollback(ctx context.Context) error
+	RollbackPlan(ctx context.Context, planID uint) error
 	Reconcile(ctx context.Context) error
 	StartHealthLoop(ctx context.Context, interval time.Duration)
 	// SetHealthConfig swaps the probe config; live-reloaded from settings.
@@ -223,6 +231,7 @@ type Deps struct {
 }
 
 type networkUsecase struct {
+	reconfigureWAN func(context.Context, string) error
 	Deps
 	applier *system.Applier
 	health  *HealthMonitor
@@ -255,15 +264,24 @@ type networkUsecase struct {
 	resolverStatus func(context.Context) system.DNSMasqStatus
 
 	// Everything the probe ladder knows, keyed by interface name.
-	healthMu       sync.Mutex
-	healthCfg      HealthConfig
-	inetStates     map[string]*internetState
-	bootTicks      map[string]int
-	rings          map[string]*healthRing
-	ladders        map[string]uplinkLadder
-	degradedNow    map[string]bool
-	lastEffective  map[string]bool
-	failoverActive bool
+	healthMu      sync.Mutex
+	healthCfg     HealthConfig
+	inetStates    map[string]*internetState
+	bootTicks     map[string]int
+	rings         map[string]*healthRing
+	ladders       map[string]uplinkLadder
+	degradedNow   map[string]bool
+	lastEffective map[string]bool
+	// When each line last crossed between working and not, so a card can say
+	// how long it has been that way.
+	effectiveSince map[string]time.Time
+	// Read once per tick so the view stays pure assembly: cumulative counters
+	// and each line's own routing table as the kernel reports it.
+	linkBytes  map[string]system.LinkStat
+	routesByIf map[string][]string
+	// viaByIf is where each domestic table's default points: "" its own
+	// gateway, a sibling's if_name, or "pool". A change is a failover event.
+	viaByIf map[string]string
 	// lastTransport is the deal as applied, so a tick only re-marks what moved.
 	lastTransport map[string]string
 	// A challenger has to hold fastestHoldTicks, or a blinking probe moves
@@ -321,10 +339,21 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 		ladders:           map[string]uplinkLadder{},
 		degradedNow:       map[string]bool{},
 		lastEffective:     map[string]bool{},
+		effectiveSince:    map[string]time.Time{},
+		linkBytes:         map[string]system.LinkStat{},
+		routesByIf:        map[string][]string{},
 		tunnelWasUp:       map[string]bool{},
 		tunnelLastResolve: map[string]time.Time{},
 	}
 	snap := &system.Snapshotter{Backend: d.Backend, Nft: d.Nft, Paths: d.Paths}
+	if d.IfRepo != nil {
+		snap.CaptureInterfaces = func(ctx context.Context) ([]domain.InterfaceIntent, error) {
+			return repository.CaptureInterfaceIntent(ctx, d.IfRepo.DB())
+		}
+		snap.RestoreInterfaces = func(ctx context.Context, rows []domain.InterfaceIntent) error {
+			return repository.RestoreInterfaceIntent(ctx, d.IfRepo.DB(), rows)
+		}
+	}
 	if d.LANRepo != nil {
 		snap.CaptureLAN = func(ctx context.Context) (*domain.LANConfig, error) {
 			return d.LANRepo.Get(ctx)
@@ -347,6 +376,7 @@ func NewNetworkUsecase(d Deps) NetworkUsecase {
 			return d.WifiRepo.ReplaceAll(ctx, cfgs)
 		}
 	}
+	u.reconfigureWAN = system.ReconfigureWAN
 	u.hostapd = system.NewHostapd(d.Paths)
 	if d.RouterMode {
 		if u.RadioProber == nil {
@@ -422,7 +452,7 @@ func (u *networkUsecase) Reconcile(ctx context.Context) error {
 	// endpoint that will not resolve used to abort the whole reconcile ahead of
 	// this line, and the secondary uplink spent that time carrying in the clear.
 	if err := ApplyKillSwitchState(ctx, u.Nft, uplinks, secondaryGateways(uplinks, rows),
-		u.healthConfigSnapshot().probeExemptIPs()); err != nil {
+		u.healthConfigSnapshot().probeExemptIPsBySlot()); err != nil {
 		return err
 	}
 	// Devices next: the rules below look up a table whose routes name links.
@@ -636,7 +666,8 @@ func (u *networkUsecase) uplinks(ctx context.Context) ([]Uplink, error) {
 		out = append(out, Uplink{
 			IfName: r.IfName, Key: r.Key, Table: tableFor(r.Slot),
 			UplinkIndex: uplinkIndexFor(r.Slot), Slot: r.Slot,
-			GroupIndex: groupIndexFor(r.Slot),
+			GroupIndex: groupIndexFor(r.Slot), DNSServer: r.DNSServer, DNSServer2: r.DNSServer2,
+			GatewayOnLink: r.Method == domain.MethodStatic && r.GatewayOnLink,
 		})
 	}
 	return out, nil
@@ -664,7 +695,7 @@ func (u *networkUsecase) Enumerate(ctx context.Context) ([]InterfaceView, error)
 			continue
 		}
 		v := InterfaceView{
-			ID: r.ID, Role: string(r.Role), Slot: string(r.Slot), Label: r.Label,
+			ID: r.ID, Role: string(r.Role), Slot: string(r.Slot), Label: r.Label, WAN: r.WANConfig(),
 			Present: r.Present, Healthy: r.Healthy,
 		}
 		if in, ok := live[r.Key]; ok {
@@ -710,7 +741,7 @@ func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
 		u.healthMu.Unlock()
 		v := UplinkView{
 			IfName: up.IfName, Slot: string(up.Slot), Label: r.Label,
-			Table: up.Table, Gateway: r.StaticGateway,
+			Table: up.Table, Gateway: gatewayOf(r),
 			Healthy: r.Healthy, Verdict: verdict, ForceState: r.ForceState,
 		}
 		for _, a := range addrs {
@@ -722,7 +753,12 @@ func (u *networkUsecase) State(ctx context.Context) (*StateView, error) {
 	}
 
 	if m, err := system.ReadMarker(u.Paths); err == nil && m != nil {
-		st.PendingPlanID, st.ConfirmDeadlineUnix = m.PlanID, m.DeadlineUnix
+		st.PendingPlanID, st.ConfirmDeadlineUnix, st.PendingRequestID = m.PlanID, m.DeadlineUnix, m.RequestID
+	}
+	if u.ApplyRepo != nil {
+		if rec, err := u.ApplyRepo.Latest(ctx); err == nil && rec != nil {
+			st.LastApplyID, st.LastApplyPhase, st.LastApplyError, st.LastApplyRequestID = rec.ID, rec.Phase, rec.Error, rec.RequestID
+		}
 	}
 	// Enough for a chip on the secondary uplink's card; the detail is a tab away.
 	if pool := u.vpnPoolNow(ctx); pool.Active() {
@@ -788,6 +824,14 @@ func (u *networkUsecase) validationInput(ctx context.Context, req domain.ChangeR
 		HostapdInstalled: binaryExists("hostapd"),
 		IWDInstalled:     binaryExists("iwd"),
 	}
+	if u.Backend != nil {
+		if addrs, err := u.Backend.Addrs(ctx); err == nil {
+			in.LiveAddresses = map[string][]string{}
+			for _, a := range addrs {
+				in.LiveAddresses[a.IfName] = append(in.LiveAddresses[a.IfName], a.CIDR)
+			}
+		}
+	}
 	// With no prober the maps stay nil and V11/V12 read every radio as
 	// incapable, which is the right answer for "unknown".
 	if u.RadioProber != nil {
@@ -808,7 +852,7 @@ func (u *networkUsecase) validationInput(ctx context.Context, req domain.ChangeR
 // buildPlan turns a validated request into ops. The first apply carries the
 // netplan takeover.
 func (u *networkUsecase) buildPlan(ctx context.Context, req domain.ChangeRequest) (system.Plan, error) {
-	var plan system.Plan
+	plan := system.Plan{RequestID: req.RequestID}
 
 	if !system.TakeoverDone(u.Paths) {
 		plan.Ops = append(plan.Ops, system.TakeoverOps(u.Paths)...)
@@ -824,10 +868,34 @@ func (u *networkUsecase) buildPlan(ctx context.Context, req domain.ChangeRequest
 						return err
 					}
 				}
-				return u.IfRepo.SetRoleTx(ctx, tx, req.InterfaceID, req.Role, req.Slot)
+				var row domain.NetworkInterface
+				if err := tx.First(&row, req.InterfaceID).Error; err != nil {
+					return err
+				}
+				if err := u.IfRepo.SetRoleTx(ctx, tx, req.InterfaceID, req.Role, req.Slot); err != nil {
+					return err
+				}
+				cfg := req.WANChange(row)
+				row.Role, row.Slot = req.Role, req.Slot
+				if cfg != nil {
+					row.SetWAN(*cfg)
+				} else if req.Role == domain.RoleWAN && req.Slot.IsSecondary() {
+					row.DNSServer, row.DNSServer2, row.DNSDomains = "", "", ""
+				}
+				return repository.SaveWANIntent(ctx, tx, row)
 			})
 		},
 	})
+
+	if req.WAN != nil || req.Method != "" {
+		plan.Ops = append(plan.Ops, system.Op{Desc: "replace this WAN's address, gateway and DNS settings", Do: func(ctx context.Context) error {
+			var row domain.NetworkInterface
+			if err := u.IfRepo.DB().WithContext(ctx).First(&row, req.InterfaceID).Error; err != nil {
+				return err
+			}
+			return u.clearWANRoutes(ctx, row.IfName)
+		}})
+	}
 
 	plan.Ops = append(plan.Ops, system.Op{
 		Desc: "render networkd units, rt_tables and the sysctl drop-in",
@@ -839,6 +907,19 @@ func (u *networkUsecase) buildPlan(ctx context.Context, req domain.ChangeRequest
 		Do:   func(ctx context.Context) error { return u.Reconcile(ctx) },
 	})
 
+	if req.WAN != nil || req.Method != "" {
+		plan.Ops = append(plan.Ops, system.Op{Desc: "activate the new settings on this WAN", Do: func(ctx context.Context) error {
+			var row domain.NetworkInterface
+			if err := u.IfRepo.DB().WithContext(ctx).First(&row, req.InterfaceID).Error; err != nil {
+				return err
+			}
+			reconfigure := u.reconfigureWAN
+			if reconfigure == nil {
+				reconfigure = system.ReconfigureWAN
+			}
+			return reconfigure(ctx, row.IfName)
+		}})
+	}
 	return plan, nil
 }
 
@@ -937,19 +1018,34 @@ func (u *networkUsecase) renderAll(ctx context.Context) error {
 }
 
 func (u *networkUsecase) Apply(ctx context.Context, req domain.ChangeRequest) (*ApplyView, error) {
+	u.planMu.Lock()
+	defer u.planMu.Unlock()
+	in, err := u.validationInput(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range domain.Validate(in) {
+		if v.Level == domain.LevelReject || (v.Level == domain.LevelConfirm && !req.Confirmed) {
+			return nil, fmt.Errorf("%s: %s", v.Rule, v.Message)
+		}
+	}
+	// The request connection may disappear as its own WAN is reconfigured.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 75*time.Second)
+	defer cancel()
 	plan, err := u.buildPlan(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	takeover := !system.TakeoverDone(u.Paths)
-	before := u.rolesOf(ctx, req.InterfaceID, req.EvictID)
 
 	rec, err := u.applier.Apply(ctx, plan, takeover)
 	if err != nil {
-		// The snapshot covers files, rules and nft, not the database. Without
-		// this the role would stick after a failed apply, so the next attempt
-		// would look like it worked and the box would disagree with the UI.
-		u.restoreRoles(ctx, before)
+		// A failed apply restores database intent as well as files and routes.
+		if marker, readErr := system.ReadMarker(u.Paths); readErr == nil && marker == nil {
+			recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+			defer cancel()
+			_ = u.Reconcile(recovery)
+		}
 		return nil, err
 	}
 	ops := rec.Ops
@@ -974,6 +1070,11 @@ func shouldReconcileAfterRollback(rec *domain.ApplyRecord, lastSeen uint) bool {
 // its own process, so the restored intent would otherwise sit in the database
 // with nothing acting on it — a reverted LAN change left dnsmasq down.
 func (u *networkUsecase) watchForRollback(ctx context.Context) {
+	unlock, err := u.lockHealthNetwork()
+	if err != nil {
+		return
+	}
+	defer unlock()
 	if u.ApplyRepo == nil {
 		return
 	}
@@ -981,12 +1082,13 @@ func (u *networkUsecase) watchForRollback(ctx context.Context) {
 	if err != nil || !shouldReconcileAfterRollback(rec, u.lastRolledBack) {
 		return
 	}
-	u.lastRolledBack = rec.ID
 	if err := u.Reconcile(ctx); err != nil {
 		u.emit(events.EventWANApplyRolledBack, map[string]any{
 			"plan_id": rec.ID, "error": err.Error(),
 		})
+		return // Retry on the next tick, including restoring the LAN resolver.
 	}
+	u.lastRolledBack = rec.ID
 }
 
 // roleSnapshot is what a role change has to be able to undo.
@@ -1028,24 +1130,56 @@ func (u *networkUsecase) restoreRoles(ctx context.Context, snaps []roleSnapshot)
 }
 
 func (u *networkUsecase) Confirm(ctx context.Context, planID uint) error {
+	u.planMu.Lock()
+	defer u.planMu.Unlock()
 	return u.applier.Confirm(ctx, planID)
 }
 
 func (u *networkUsecase) Rollback(ctx context.Context) error {
-	_, err := u.applier.Rollback(ctx, false)
+	return u.RollbackPlan(ctx, 0)
+}
+
+func (u *networkUsecase) RollbackPlan(ctx context.Context, planID uint) error {
+	u.planMu.Lock()
+	defer u.planMu.Unlock()
+	did, err := u.applier.RollbackPlan(context.WithoutCancel(ctx), false, planID)
+	if err == nil && did {
+		return u.Reconcile(context.WithoutCancel(ctx))
+	}
 	return err
 }
 
-// IngressUplinkIfName is the uplink clients arrive on, i.e. the domestic one.
+// IngressUplinkIfName is the first domestic line, for the one consumer that
+// takes a single name. Clients may arrive on any domestic.
 func (u *networkUsecase) IngressUplinkIfName() string {
+	names := u.ingressUplinkIfNames(context.Background())
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
+}
+
+// ingressUplinkIfNames lists every present domestic uplink in slot order.
+func (u *networkUsecase) ingressUplinkIfNames(ctx context.Context) []string {
 	if !u.RouterMode {
-		return ""
+		return nil
 	}
-	row, err := u.IfRepo.GetBySlot(context.Background(), domain.SlotDomestic)
-	if err != nil || row == nil || !row.Present {
-		return ""
+	uplinks, err := u.uplinks(ctx)
+	if err != nil {
+		return nil
 	}
-	return row.IfName
+	var doms []Uplink
+	for _, up := range uplinks {
+		if up.Slot.IsDomestic() {
+			doms = append(doms, up)
+		}
+	}
+	sort.Slice(doms, func(i, j int) bool { return doms[i].UplinkIndex < doms[j].UplinkIndex })
+	names := make([]string, 0, len(doms))
+	for _, d := range doms {
+		names = append(names, d.IfName)
+	}
+	return names
 }
 
 // StartHealthLoop probes each uplink and applies one route operation per change.
@@ -1067,6 +1201,11 @@ func (u *networkUsecase) StartHealthLoop(ctx context.Context, interval time.Dura
 }
 
 func (u *networkUsecase) probeOnce(ctx context.Context) {
+	unlock, err := u.lockHealthNetwork()
+	if err != nil {
+		return
+	}
+	defer unlock()
 	uplinks, err := u.uplinks(ctx)
 	if err != nil {
 		return
@@ -1078,9 +1217,25 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 	gwByIf, forceByIf, idByIf := map[string]string{}, map[string]string{}, map[string]uint{}
 	learnedByIf := map[string]string{}
 	for _, r := range rows {
-		gwByIf[r.IfName], forceByIf[r.IfName], idByIf[r.IfName] = r.StaticGateway, r.ForceState, r.ID
+		gwByIf[r.IfName], forceByIf[r.IfName], idByIf[r.IfName] = "", r.ForceState, r.ID
+		if r.Method == domain.MethodStatic {
+			gwByIf[r.IfName] = r.StaticGateway
+		}
 		learnedByIf[r.IfName] = r.LearnedGateway
 	}
+
+	// Measured first, routed second: the domestic group decides as one.
+	type observed struct {
+		up                Uplink
+		gw, force         string
+		gatewayUp, inetUp bool
+		inetKnown         bool
+		results           []ProbeResult
+		routeErr          error
+	}
+	cfg := u.healthConfigSnapshot()
+	u.cacheLinkFacts(ctx, uplinks)
+	obs := make([]observed, 0, len(uplinks))
 
 	for _, up := range uplinks {
 		gw := gwByIf[up.IfName]
@@ -1089,7 +1244,7 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 			// it, because failover deletes the route we read it from.
 			if routes, err := u.Backend.RouteList(ctx, up.Table); err == nil {
 				for _, r := range routes {
-					if r.Dest == "default" && r.Gateway != "" {
+					if r.Dest == "default" && r.Gateway != "" && r.OifName == up.IfName {
 						gw = r.Gateway
 					}
 				}
@@ -1113,7 +1268,7 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 						}
 					}
 					_ = ApplyKillSwitchState(ctx, u.Nft, uplinks, gws,
-						u.healthConfigSnapshot().probeExemptIPs())
+						u.healthConfigSnapshot().probeExemptIPsBySlot())
 				}
 			}
 			if gw == "" {
@@ -1127,7 +1282,6 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 			continue
 		}
 
-		cfg := u.healthConfigSnapshot()
 		targets := cfg.targetsFor(up.Slot)
 		var mark uint32
 		if up.Slot.IsSecondary() {
@@ -1140,28 +1294,49 @@ func (u *networkUsecase) probeOnce(ctx context.Context) {
 		inetKnown := len(targets) > 0 && gatewayUp && force == ""
 		if inetKnown {
 			inetUp, _ = u.inetState(up.IfName).observe(anyUp(results), defaultInternetLimits(), time.Now())
-		}
-		if inetKnown {
 			u.ring(up.IfName).push(tickSample(time.Now(), results))
 		}
 		u.observeDegraded(up, cfg, u.ring(up.IfName))
 
-		routeErr := u.applyRouteState(ctx, up, gw, routeStateFor(routeInputs{
-			Slot: up.Slot, GatewayUp: gatewayUp, InternetUp: inetUp,
-			FailoverOn: cfg.FailoverToVPN, VPNUp: u.poolConnectedNow(ctx),
-		}))
+		o := observed{up: up, gw: gw, force: force, gatewayUp: gatewayUp,
+			inetUp: inetUp, inetKnown: inetKnown, results: results}
+		if up.Slot.IsSecondary() {
+			o.routeErr = u.applyRouteState(ctx, up, gw, secondaryRouteState(gatewayUp))
+		}
+		obs = append(obs, o)
+	}
 
-		u.storeLadder(ctx, up, force, gatewayUp, inetUp, inetKnown, results)
+	var dom []domesticObs
+	for _, o := range obs {
+		if o.up.Slot.IsDomestic() {
+			dom = append(dom, domesticObs{Up: o.up, Gateway: o.gw, GatewayUp: o.gatewayUp,
+				InternetUp: o.inetUp, ForcedDown: o.force == "down"})
+		}
+	}
+	if len(dom) > 0 {
+		for _, r := range domesticRoutePlan(dom, cfg.FailoverToVPN, u.poolConnectedNow(ctx)) {
+			err := u.applyDomesticRoute(ctx, r)
+			for i := range obs {
+				if obs[i].up.IfName == r.Up.IfName {
+					obs[i].routeErr = err
+				}
+			}
+		}
+	}
+	u.pruneVia(uplinks)
+
+	for _, o := range obs {
+		u.storeLadder(ctx, o.up, o.force, o.gatewayUp, o.inetUp, o.inetKnown, o.results)
 		// Kernel refused the route op: recording a recovery would be a lie.
-		effective := gatewayUp && inetUp && routeErr == nil
-		if u.effectiveChanged(up.IfName, effective) {
-			_ = u.IfRepo.SetHealth(ctx, idByIf[up.IfName], effective)
+		effective := o.gatewayUp && o.inetUp && o.routeErr == nil
+		if u.effectiveChanged(o.up.IfName, effective) {
+			_ = u.IfRepo.SetHealth(ctx, idByIf[o.up.IfName], effective)
 			t := events.EventWANDown
 			if effective {
 				t = events.EventWANUp
 			}
-			u.emit(t, map[string]any{"if_name": up.IfName, "slot": string(up.Slot),
-				"gateway": gatewayUp, "internet": inetUp})
+			u.emit(t, map[string]any{"if_name": o.up.IfName, "slot": string(o.up.Slot),
+				"gateway": o.gatewayUp, "internet": o.inetUp})
 		}
 	}
 

@@ -19,8 +19,9 @@ const (
 
 // ApplyRecord is the audit trail and the takeover flag.
 type ApplyRecord struct {
-	ID     uint `gorm:"primarykey" json:"id"`
-	NodeID uint `gorm:"index;not null;default:1" json:"node_id"`
+	RequestID string `gorm:"index;size:64" json:"request_id,omitempty"`
+	ID        uint   `gorm:"primarykey" json:"id"`
+	NodeID    uint   `gorm:"index;not null;default:1" json:"node_id"`
 
 	Phase ApplyPhase `gorm:"index;not null" json:"phase"`
 	// Ops is the human readable operation list shown before applying

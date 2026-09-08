@@ -46,28 +46,13 @@ func probeFixture(t *testing.T, reachable bool) (*networkUsecase, *gwRecorder, *
 	return u, repo, be
 }
 
-func defaultsIn(t *testing.T, be *system.FakeBackend, table int) int {
-	t.Helper()
-	rs, err := be.RouteList(context.Background(), table)
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := 0
-	for _, r := range rs {
-		if r.Dest == "default" {
-			n++
-		}
-	}
-	return n
-}
-
 // Damping needs several successes before an uplink counts as up. Withdrawing the
 // route in the meantime is unrecoverable: the gateway lives only in that route.
 func TestProbeOnce_KeepsTheRouteUntilTheUplinkHasBeenHealthyOnce(t *testing.T) {
 	u, _, be := probeFixture(t, true)
 
 	u.probeOnce(context.Background())
-	if got := defaultsIn(t, be, 201); got != 1 {
+	if got := len(defaultsIn(t, be, 201)); got != 1 {
 		t.Fatalf("default route withdrawn before the uplink was ever up (defaults=%d)", got)
 	}
 }
@@ -79,7 +64,7 @@ func TestProbeOnce_ColdUnreachableUplinkKeepsItsRoute(t *testing.T) {
 	for range 5 {
 		u.probeOnce(context.Background())
 	}
-	if got := defaultsIn(t, be, 201); got != 1 {
+	if got := len(defaultsIn(t, be, 201)); got != 1 {
 		t.Fatalf("a never-healthy uplink lost its route (defaults=%d)", got)
 	}
 }
@@ -90,6 +75,21 @@ func TestProbeOnce_RemembersTheDHCPGateway(t *testing.T) {
 	u.probeOnce(context.Background())
 	if got := repo.learned[1]; got != "10.0.2.2" {
 		t.Fatalf("learned gateway = %q, want 10.0.2.2 — failover cannot restore the route without it", got)
+	}
+}
+
+// A mirrored default belongs to the sibling, so learning it as ours would
+// poison the kill-switch exemption and every later recovery.
+func TestProbeOnce_NeverLearnsAMirroredGateway(t *testing.T) {
+	u, repo, be := probeFixture(t, true)
+	// Only the sibling's mirror is left in the table; nothing points out eth0.
+	be.Routes = []system.Route{
+		{Table: 201, Dest: "default", Gateway: "198.51.100.1", OifName: "eth2"},
+	}
+
+	u.probeOnce(context.Background())
+	if got := repo.learned[1]; got == "198.51.100.1" {
+		t.Fatalf("learned the sibling's gateway %q as eth0's own", got)
 	}
 }
 

@@ -6,23 +6,37 @@ import (
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 )
 
 type TargetStatusView struct {
 	Address string `json:"address"`
 	Proto   string `json:"proto"`
-	OK      bool   `json:"ok"`
-	RTTms   int    `json:"rtt_ms"`
-	Error   string `json:"error,omitempty"`
+	// The operator's name for it, when they gave it one.
+	Label string `json:"label,omitempty"`
+	OK    bool   `json:"ok"`
+	RTTms int    `json:"rtt_ms"`
+	Error string `json:"error,omitempty"`
+}
+
+// RecoveryView is what the internet damper still wants before it hands the
+// line its own traffic back.
+type RecoveryView struct {
+	Passes           int `json:"passes"`
+	Needed           int `json:"needed"`
+	DwellSecondsLeft int `json:"dwell_seconds_left"`
 }
 
 type UplinkHealthView struct {
-	Slot        string             `json:"slot"`
-	IfName      string             `json:"if_name"`
-	Carrier     string             `json:"carrier"`
-	Gateway     string             `json:"gateway"`
-	Internet    string             `json:"internet"`
-	Verdict     string             `json:"verdict"`
+	Slot     string `json:"slot"`
+	IfName   string `json:"if_name"`
+	Carrier  string `json:"carrier"`
+	Gateway  string `json:"gateway"`
+	Internet string `json:"internet"`
+	Verdict  string `json:"verdict"`
+	// Via is who carries this line's traffic: "" itself, a sibling's if_name,
+	// or "pool".
+	Via         string             `json:"via"`
 	ForceState  string             `json:"force_state"`
 	Degraded    bool               `json:"degraded"`
 	LossPct     int                `json:"loss_pct"`
@@ -32,6 +46,18 @@ type UplinkHealthView struct {
 	// Note names a state the ladder can see but not explain, empty when there
 	// is nothing to say.
 	Note string `json:"note,omitempty"`
+	// GatewayIP is the address the gateway rung dials: configured when static,
+	// learned from DHCP otherwise. Empty before the first lease.
+	GatewayIP string `json:"gateway_ip,omitempty"`
+	// SinceUnix is when this line last crossed between working and not.
+	SinceUnix int64 `json:"since_unix,omitempty"`
+	// Recovery is present only while the internet damper is holding the line
+	// down.
+	Recovery *RecoveryView `json:"recovery,omitempty"`
+	RxBytes  uint64        `json:"rx_bytes"`
+	TxBytes  uint64        `json:"tx_bytes"`
+	// Routes is this line's own table, one entry per route.
+	Routes []string `json:"routes,omitempty"`
 }
 
 type TunnelHealthView struct {
@@ -71,7 +97,7 @@ func targetViews(results []ProbeResult) []TargetStatusView {
 	out := make([]TargetStatusView, 0, len(results))
 	for _, r := range results {
 		out = append(out, TargetStatusView{
-			Address: r.Target.Address, Proto: r.Target.Proto,
+			Address: r.Target.Address, Proto: r.Target.Proto, Label: r.Target.Label,
 			OK: r.OK, RTTms: int(r.RTT.Milliseconds()), Error: r.Err,
 		})
 	}
@@ -85,11 +111,19 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 		return nil, err
 	}
 	forceByIf, sourceByIf := map[string]string{}, map[string]string{}
+	gwByIf := map[string]string{}
 	if u.IfRepo != nil {
 		if rows, err := u.IfRepo.GetByRole(ctx, domain.RoleWAN); err == nil {
 			for _, r := range rows {
 				forceByIf[r.IfName] = r.ForceState
 				sourceByIf[r.IfName] = r.Source
+				// A static gateway is the intent; a learned one is all a DHCP
+				// line ever has.
+				if r.StaticGateway != "" {
+					gwByIf[r.IfName] = r.StaticGateway
+				} else {
+					gwByIf[r.IfName] = r.LearnedGateway
+				}
 			}
 		}
 	}
@@ -98,27 +132,53 @@ func (u *networkUsecase) HealthState(ctx context.Context) (*HealthView, error) {
 	view := &HealthView{GeneratedUnix: time.Now().Unix(), Uplinks: []UplinkHealthView{}}
 	u.healthMu.Lock()
 	u.ensureHealthMaps()
-	view.FailoverActive = u.failoverActive
 	ladders := make(map[string]uplinkLadder, len(u.ladders))
 	for k, v := range u.ladders {
 		ladders[k] = v
 	}
+	vias := make(map[string]string, len(u.viaByIf))
+	for k, v := range u.viaByIf {
+		vias[k] = v
+	}
+	since := make(map[string]time.Time, len(u.effectiveSince))
+	for k, v := range u.effectiveSince {
+		since[k] = v
+	}
+	bytesByIf := make(map[string]system.LinkStat, len(u.linkBytes))
+	for k, v := range u.linkBytes {
+		bytesByIf[k] = v
+	}
+	routes := make(map[string][]string, len(u.routesByIf))
+	for k, v := range u.routesByIf {
+		routes[k] = append([]string(nil), v...)
+	}
 	u.healthMu.Unlock()
+	view.FailoverActive = u.poolFailoverActive()
 
 	for _, up := range uplinks {
 		l := ladders[up.IfName]
 		// The page only draws 15 minutes.
 		samples := window(u.ring(up.IfName).snapshot(), 180)
 		_, everUp := u.inetState(up.IfName).snapshot()
-		view.Uplinks = append(view.Uplinks, UplinkHealthView{
+		v := UplinkHealthView{
 			Slot: string(up.Slot), IfName: up.IfName,
 			Carrier: l.Carrier, Gateway: l.Gateway, Internet: l.Internet,
-			Verdict: l.Verdict, ForceState: forceByIf[up.IfName],
+			Verdict: l.Verdict, Via: vias[up.IfName], ForceState: forceByIf[up.IfName],
 			Degraded: l.Degraded, LossPct: lossPct(samples, 20),
 			MedianRTTms: medianRTT(samples, 20),
 			Targets:     targetViews(l.Results), History: samples,
-			Note: uplinkNote(sourceByIf[up.IfName], l.Gateway, l.Internet, everUp),
-		})
+			Note:      uplinkNote(sourceByIf[up.IfName], l.Gateway, l.Internet, everUp),
+			GatewayIP: gwByIf[up.IfName],
+			Recovery:  u.recoveryFor(up.IfName),
+			Routes:    routes[up.IfName],
+		}
+		if t, ok := since[up.IfName]; ok {
+			v.SinceUnix = t.Unix()
+		}
+		if b, ok := bytesByIf[up.IfName]; ok {
+			v.RxBytes, v.TxBytes = b.RxBytes, b.TxBytes
+		}
+		view.Uplinks = append(view.Uplinks, v)
 	}
 
 	if pool := u.vpnPoolNow(ctx); pool.Active() {

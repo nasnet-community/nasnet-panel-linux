@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 )
 
@@ -19,6 +21,7 @@ const ConfirmWindow = 90 * time.Second
 
 // Marker is the arm state. Panel only writes/deletes it. (systemd timer acts, panel goes down)
 type Marker struct {
+	RequestID    string `json:"request_id,omitempty"`
 	PlanID       uint   `json:"plan_id"`
 	Snapshot     string `json:"snapshot"`
 	DeadlineUnix int64  `json:"deadline_unix"`
@@ -29,7 +32,7 @@ type Marker struct {
 // A snapshot that cannot be restored fails the same way every ten seconds.
 const MaxRollbackAttempts = 3
 
-func (m Marker) Expired(now time.Time) bool { return now.Unix() > m.DeadlineUnix }
+func (m Marker) Expired(now time.Time) bool { return now.Unix() >= m.DeadlineUnix }
 
 func MarkerPath(p Paths) string { return filepath.Join(p.StateDir, "net-pending.json") }
 
@@ -80,8 +83,9 @@ type Op struct {
 
 // Plan is a dry run; the UI shows Descriptions() first.
 type Plan struct {
-	Ops      []Op
-	Verdicts []domain.Verdict
+	RequestID string
+	Ops       []Op
+	Verdicts  []domain.Verdict
 }
 
 func (p Plan) Descriptions() []string {
@@ -113,8 +117,9 @@ type Applier struct {
 }
 
 // Routing tables this feature owns. Miss one and a revert leaves a stale
-// default inside it. 207-210 are the pool's per-WAN slices.
-var tablesToSnapshot = []int{201, 202, WGTable, 204, 205, 206, 207, 208, 209, 210}
+// default inside it. 207-210 are the pool's per-WAN slices, 211-213 the
+// backup domestic lines.
+var tablesToSnapshot = []int{201, 202, WGTable, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213}
 
 func (a *Applier) now() time.Time {
 	if a.Now == nil {
@@ -125,6 +130,11 @@ func (a *Applier) now() time.Time {
 
 // Apply snapshots, runs ops in order, reloads, arms. A failing op restores now, not in 90s.
 func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*domain.ApplyRecord, error) {
+	unlock, err := TryNetworkLock(a.Paths)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	// One armed change at a time: a second apply orphans the first snapshot.
 	m, err := ReadMarker(a.Paths)
 	if err != nil {
@@ -136,6 +146,7 @@ func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*d
 
 	rec := &domain.ApplyRecord{
 		NodeID:            1,
+		RequestID:         p.RequestID,
 		Phase:             domain.PhasePlanned,
 		Ops:               p.Descriptions(),
 		PerformedTakeover: performedTakeover,
@@ -156,37 +167,40 @@ func (a *Applier) Apply(ctx context.Context, p Plan, performedTakeover bool) (*d
 	}
 	rec.SnapshotPath = snapPath
 
-	for _, op := range p.Ops {
-		if err := op.Do(ctx); err != nil {
-			applyErr := fmt.Errorf("op %q: %w", op.Desc, err)
-			if rerr := a.Snap.Restore(ctx, snap); rerr != nil {
-				applyErr = fmt.Errorf("%w (restore also failed: %v)", applyErr, rerr)
-			}
-			// Nothing to disarm: the marker is written after the ops.
-			_ = a.Repo.SetPhase(ctx, rec.ID, domain.PhaseFailed, applyErr.Error())
-			return nil, applyErr
-		}
-	}
-
-	if a.Reload != nil {
-		if err := a.Reload(ctx); err != nil {
-			reloadErr := fmt.Errorf("networkctl reload: %w", err)
-			if rerr := a.Snap.Restore(ctx, snap); rerr != nil {
-				reloadErr = fmt.Errorf("%w (restore also failed: %v)", reloadErr, rerr)
-			}
-			_ = a.Repo.SetPhase(ctx, rec.ID, domain.PhaseFailed, reloadErr.Error())
-			return nil, reloadErr
-		}
-	}
-
+	// Arm before the first mutation: a crash or severed request during apply
+	// must leave the standalone timer enough information to restore intent.
 	deadline := a.now().Add(ConfirmWindow)
-	if err := WriteMarker(a.Paths, Marker{
-		PlanID: rec.ID, Snapshot: snapPath, DeadlineUnix: deadline.Unix(),
-	}); err != nil {
-		// Nothing would undo this now. Revert.
-		_ = a.Snap.Restore(ctx, snap)
+	marker := Marker{PlanID: rec.ID, RequestID: rec.RequestID, Snapshot: snapPath, DeadlineUnix: deadline.Unix()}
+	if err := WriteMarker(a.Paths, marker); err != nil {
 		_ = a.Repo.SetPhase(ctx, rec.ID, domain.PhaseFailed, err.Error())
 		return nil, fmt.Errorf("arm dead-man: %w", err)
+	}
+	restoreFailure := func(cause error) (*domain.ApplyRecord, error) {
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if err := a.Snap.Restore(recovery, snap); err != nil {
+			cause = fmt.Errorf("%w (restore also failed; automatic recovery remains armed: %v)", cause, err)
+		} else if err := DeleteMarker(a.Paths); err != nil {
+			cause = fmt.Errorf("%w (disarm: %v)", cause, err)
+		}
+		_ = a.Repo.SetPhase(recovery, rec.ID, domain.PhaseFailed, cause.Error())
+		return nil, cause
+	}
+	for _, op := range p.Ops {
+		if err := op.Do(ctx); err != nil {
+			return restoreFailure(fmt.Errorf("op %q: %w", op.Desc, err))
+		}
+	}
+	if a.Reload != nil {
+		if err := a.Reload(ctx); err != nil {
+			return restoreFailure(fmt.Errorf("networkctl reload: %w", err))
+		}
+	}
+	// Give the operator the full window once all operations have finished.
+	deadline = a.now().Add(ConfirmWindow)
+	marker.DeadlineUnix = deadline.Unix()
+	if err := WriteMarker(a.Paths, marker); err != nil {
+		return restoreFailure(fmt.Errorf("update dead-man: %w", err))
 	}
 
 	rec.Deadline = &deadline
@@ -219,6 +233,11 @@ func (a *Applier) restoreFailed(ctx context.Context, m *Marker, cause error) err
 }
 
 func (a *Applier) Confirm(ctx context.Context, planID uint) error {
+	unlock, err := TryNetworkLock(a.Paths)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := ReadMarker(a.Paths)
 	if err != nil {
 		return err
@@ -229,17 +248,39 @@ func (a *Applier) Confirm(ctx context.Context, planID uint) error {
 	if planID != 0 && m.PlanID != planID {
 		return fmt.Errorf("marker is for plan %d, not %d", m.PlanID, planID)
 	}
-	if err := DeleteMarker(a.Paths); err != nil {
+	if m.Expired(a.now()) {
+		return fmt.Errorf("confirmation window expired; waiting for rollback")
+	}
+	if err := a.Repo.SetPhase(ctx, m.PlanID, domain.PhaseConfirmed, ""); err != nil {
 		return err
 	}
-	return a.Repo.SetPhase(ctx, m.PlanID, domain.PhaseConfirmed, "")
+	return DeleteMarker(a.Paths)
 }
 
 // Rollback restores the armed snapshot. ifExpired no-ops before the deadline.
 func (a *Applier) Rollback(ctx context.Context, ifExpired bool) (bool, error) {
-	m, err := ReadMarker(a.Paths)
-	if err != nil || m == nil {
+	return a.RollbackPlan(ctx, ifExpired, 0)
+}
+
+// RollbackPlan prevents an old browser's Revert button undoing a newer plan.
+func (a *Applier) RollbackPlan(ctx context.Context, ifExpired bool, planID uint) (bool, error) {
+	unlock, err := TryNetworkLock(a.Paths)
+	if err != nil {
 		return false, err
+	}
+	defer unlock()
+	m, err := ReadMarker(a.Paths)
+	if err != nil {
+		return false, err
+	}
+	if m == nil {
+		if planID != 0 {
+			return false, fmt.Errorf("plan %d is no longer pending; refresh to check its result", planID)
+		}
+		return false, nil
+	}
+	if planID != 0 && m.PlanID != planID {
+		return false, fmt.Errorf("marker is for plan %d, not %d", m.PlanID, planID)
 	}
 	if ifExpired && !m.Expired(a.now()) {
 		return false, nil
@@ -276,4 +317,21 @@ func ReloadNetworkd(ctx context.Context) error {
 		return fmt.Errorf("networkctl reload: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// TryNetworkLock coordinates the panel, health reconciliation and standalone timer.
+// flock is released by the kernel if either process dies.
+func TryNetworkLock(paths Paths) (func(), error) {
+	if err := os.MkdirAll(paths.StateDir, 0o750); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(filepath.Join(paths.StateDir, "net-apply.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("another network operation is in progress: %w", err)
+	}
+	return func() { _ = unix.Flock(int(f.Fd()), unix.LOCK_UN); _ = f.Close() }, nil
 }

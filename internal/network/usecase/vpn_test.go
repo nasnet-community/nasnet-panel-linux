@@ -893,7 +893,7 @@ func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	m := nft.NewManager(&nft.FakeApplier{})
 	if err := ApplyKillSwitchState(ctx, m, twoUplinks(),
 		map[string]string{"enp2s0": "100.64.0.1"},
-		DefaultHealthConfig().probeExemptIPs()); err != nil {
+		DefaultHealthConfig().probeExemptIPsBySlot()); err != nil {
 		t.Fatal(err)
 	}
 	k := m.Snapshot().KillSwitch
@@ -915,8 +915,12 @@ func TestApplyKillSwitchState_ArmsOnTheSecondaryUplink(t *testing.T) {
 	if k.ProbeMark != netmark.PinMark(netmark.PinProbe) {
 		t.Errorf("probe mark = 0x%08x, want the probe pin", k.ProbeMark)
 	}
-	if len(k.ProbeIPs) != 2 || k.ProbeIPs[0] != "1.1.1.1" || k.ProbeIPs[1] != "8.8.8.8" {
-		t.Errorf("probe set = %v, want the default foreign targets", k.ProbeIPs)
+	ips := k.Legs[0].ProbeIPs
+	if len(ips) != 2 || ips[0] != "1.1.1.1" || ips[1] != "8.8.8.8" {
+		t.Errorf("probe set = %v, want the default foreign targets", ips)
+	}
+	if k.Legs[0].ProbeSet != nft.ProbeSetName(2) {
+		t.Errorf("probe set name = %q, want the secondary's own", k.Legs[0].ProbeSet)
 	}
 }
 
@@ -1226,5 +1230,49 @@ func TestApplyViaRoutes_EmptyPoolClearsEverySlice(t *testing.T) {
 	}
 	if routes, _ := f.be.RouteList(ctx, 207); len(routes) != 0 {
 		t.Errorf("stale slice survived: %+v", routes)
+	}
+}
+
+// Two secondaries with different check lists must end up with two different
+// exemption sets, not one shared list either of them could reach.
+func TestApplyKillSwitchState_EachSecondaryGetsItsOwnProbeSet(t *testing.T) {
+	ctx := context.Background()
+	m := nft.NewManager(&nft.FakeApplier{})
+	ups := []Uplink{
+		{IfName: "enp1s0", Table: 201, UplinkIndex: 1, Slot: domain.SlotDomestic, GroupIndex: 1},
+		{IfName: "dish0", Table: 202, UplinkIndex: 2, Slot: domain.SlotSecondary, GroupIndex: 2},
+		{IfName: "lte0", Table: 204, UplinkIndex: 3, Slot: domain.SlotSecondary2, GroupIndex: 2},
+	}
+	cfg := ParseHealthConfig(func(k string) (string, error) {
+		if k == ProbeTargetsSlotKey(domain.SlotSecondary2) {
+			return `[{"address":"9.9.9.9:443","proto":"tcp"}]`, nil
+		}
+		return "", nil
+	})
+	gws := map[string]string{"dish0": "100.64.0.1", "lte0": "10.0.0.1"}
+	if err := ApplyKillSwitchState(ctx, m, ups, gws, cfg.probeExemptIPsBySlot()); err != nil {
+		t.Fatal(err)
+	}
+
+	k := m.Snapshot().KillSwitch
+	if k == nil || len(k.Legs) != 2 {
+		t.Fatalf("want one leg per secondary, got %+v", k)
+	}
+	dish, lte := k.Legs[0], k.Legs[1]
+	if dish.ProbeSet == lte.ProbeSet {
+		t.Fatalf("both legs share set %q, so either could reach the other's targets", dish.ProbeSet)
+	}
+	if len(dish.ProbeIPs) != 2 || dish.ProbeIPs[0] != "1.1.1.1" {
+		t.Errorf("dish0 = %v, want the shared foreign list", dish.ProbeIPs)
+	}
+	if len(lte.ProbeIPs) != 1 || lte.ProbeIPs[0] != "9.9.9.9" {
+		t.Errorf("lte0 = %v, want only its own target", lte.ProbeIPs)
+	}
+	out := m.Snapshot().Render()
+	if !strings.Contains(out, `oifname "lte0" meta mark and 0xf000000 == 0xf000000 ip daddr @`+lte.ProbeSet) {
+		t.Fatalf("lte0's exemption is not bound to its own set:\n%s", out)
+	}
+	if strings.Contains(out, `oifname "dish0" meta mark and 0xf000000 == 0xf000000 ip daddr @`+lte.ProbeSet) {
+		t.Fatalf("dish0 can reach lte0's targets:\n%s", out)
 	}
 }

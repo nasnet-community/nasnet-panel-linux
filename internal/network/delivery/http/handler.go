@@ -1,6 +1,8 @@
 package http
 
 import (
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -204,7 +206,14 @@ func (h *Handler) Confirm(c *gin.Context) {
 }
 
 func (h *Handler) Rollback(c *gin.Context) {
-	if err := h.uc.Rollback(c.Request.Context()); err != nil {
+	var body struct {
+		PlanID uint `json:"plan_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		fail(c, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.uc.RollbackPlan(c.Request.Context(), body.PlanID); err != nil {
 		fail(c, http.StatusBadRequest, err)
 		return
 	}

@@ -358,3 +358,178 @@ func TestSecondaryTablesBelongToTheUplinkNotTheRouter(t *testing.T) {
 		}
 	}
 }
+
+func TestDomesticTablesBelongToTheDomesticNodes(t *testing.T) {
+	for _, table := range []int{201, 211, 212, 213} {
+		if got := nodeForRulePref(system.Rule{Pref: 32000, Table: table}); got != "table-201" {
+			t.Fatalf("table %d filed under %q, want the domestic table node", table, got)
+		}
+		if got := nodeForRulePref(system.Rule{Pref: RulePrefPinBase, Table: table}); got != "uplink-domestic" {
+			t.Fatalf("pin into table %d filed under %q, want the domestic uplink node", table, got)
+		}
+	}
+}
+
+// A second domestic must not vanish from the page whose job is "what is my
+// network", and the dns node must name each ISP's resolver on its own link.
+func TestFlowGraphNamesEveryDomestic(t *testing.T) {
+	f := newVPNFixture(t)
+	f.uc.IfRepo = &stubIfRepo{rows: []domain.NetworkInterface{
+		{ID: 1, Key: "k-adsl0", IfName: "adsl0", Role: domain.RoleWAN, Slot: domain.SlotDomestic,
+			Present: true, LearnedGateway: "192.0.2.1"},
+		{ID: 2, Key: "k-fiber0", IfName: "fiber0", Role: domain.RoleWAN, Slot: domain.SlotDomestic2,
+			Present: true, LearnedGateway: "198.51.100.1", DNSServer: "10.202.10.10"},
+		{ID: 3, Key: "k-dish0", IfName: "dish0", Role: domain.RoleWAN, Slot: domain.SlotSecondary,
+			Present: true, LearnedGateway: "100.64.0.1"},
+	}}
+	f.uc.LANRepo = &stubLANRepo{cfg: &domain.LANConfig{
+		BridgeName: "lan0", CIDR: "10.77.0.1/24", Enabled: true,
+		DHCPRangeLow: "10.77.0.100", DHCPRangeHigh: "10.77.0.200", LeaseHours: 12,
+	}}
+
+	view, err := f.uc.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-domestic")
+	joined := n.Sublabel
+	for _, d := range n.Detail {
+		joined += " " + strings.Join(d.Lines, " ")
+	}
+	for _, want := range []string{"adsl0", "fiber0", "table 211"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("the domestic node never mentions %s: %q", want, joined)
+		}
+	}
+	dns := nodeByID(t, view, "dns")
+	var dnsLines string
+	for _, d := range dns.Detail {
+		dnsLines += " " + strings.Join(d.Lines, " ")
+	}
+	for _, want := range []string{"217.218.127.127 via adsl0", "10.202.10.10 via fiber0"} {
+		if !strings.Contains(dnsLines, want) {
+			t.Fatalf("dns node lacks %q: %q", want, dnsLines)
+		}
+	}
+}
+
+// One node for the group, so a sibling ride shows up as a line on it.
+func TestFlowGraphSaysWhichLineIsRidingWhich(t *testing.T) {
+	u, prober := twoDomesticFixture(t)
+	tick(u, 7)
+	prober.setDown("eth0", true)
+	tick(u, 6)
+	view, err := u.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-domestic")
+	var joined string
+	for _, d := range n.Detail {
+		joined += " " + strings.Join(d.Lines, " ")
+	}
+	if !strings.Contains(joined, "eth0 riding eth2") {
+		t.Fatalf("no ride line on the domestic node: %q (status %s, hint %q)", joined, n.Status, n.Hint)
+	}
+	if n.Status != "warn" {
+		t.Fatalf("a group with a dead member is warn, got %s", n.Status)
+	}
+}
+
+// Carrier and gateway per interface, so one line can be unplugged on its own.
+type unpluggedProbe struct{ down map[string]bool }
+
+func (p *unpluggedProbe) Carrier(_ context.Context, ifName string) (bool, error) {
+	return !p.down[ifName], nil
+}
+
+func (p *unpluggedProbe) GatewayReachable(_ context.Context, ifName, _ string) (bool, error) {
+	return !p.down[ifName], nil
+}
+
+// An unplugged primary withdraws and the kernel walks on, so the group is not
+// down and the page must not say it is.
+func TestFlowGraphGroupOutlivesADeadPrimary(t *testing.T) {
+	u, _ := twoDomesticFixture(t)
+	u.health = NewHealthMonitor(u.Backend, &unpluggedProbe{down: map[string]bool{"eth0": true}},
+		DefaultDamping())
+	tick(u, 7)
+	if via := u.viaOf("eth0"); via != "" {
+		t.Fatalf("eth0 via %q, want a withdrawn table", via)
+	}
+	view, err := u.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-domestic")
+	if n.Status != "warn" {
+		t.Fatalf("a group still carrying is %s, want warn (hint %q)", n.Status, n.Hint)
+	}
+	if !strings.Contains(n.Hint, "eth0") {
+		t.Fatalf("the hint does not name the dead line: %q", n.Hint)
+	}
+	var joined string
+	for _, d := range n.Detail {
+		joined += " " + strings.Join(d.Lines, " ")
+	}
+	for _, want := range []string{"eth0 down", "eth2"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("the domestic node never mentions %s: %q", want, joined)
+		}
+	}
+}
+
+// Nothing "rides" the pool: that is one hint for the whole group.
+func TestFlowGraphPoolRideIsAGroupHintNotARideLine(t *testing.T) {
+	u, prober := twoDomesticFixture(t)
+	tick(u, 7)
+	prober.setDown("eth0", true)
+	prober.setDown("eth2", true)
+	tick(u, 6)
+	view, err := u.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-domestic")
+	if n.Status != "warn" || !strings.Contains(n.Hint, "Every domestic line is down") {
+		t.Fatalf("group node = %s / %q", n.Status, n.Hint)
+	}
+	for _, d := range n.Detail {
+		for _, l := range d.Lines {
+			if strings.Contains(l, "riding") {
+				t.Fatalf("a pool ride printed a per-line ride: %q", l)
+			}
+		}
+	}
+}
+
+// The same fault in the backup slot must draw the same colour as in the first.
+func TestFlowGraphGroupWarnsWhenABackupLineIsDead(t *testing.T) {
+	u, _ := twoDomesticFixture(t)
+	u.health = NewHealthMonitor(u.Backend, &unpluggedProbe{down: map[string]bool{"eth2": true}},
+		DefaultDamping())
+	tick(u, 7)
+	if via := u.viaOf("eth2"); via != "" {
+		t.Fatalf("eth2 via %q, want a withdrawn table", via)
+	}
+	view, err := u.FlowGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodeByID(t, view, "uplink-domestic")
+	if n.Status != "warn" {
+		t.Fatalf("a group with a dead backup is %s, want warn (hint %q)", n.Status, n.Hint)
+	}
+	if !strings.Contains(n.Hint, "eth2") {
+		t.Fatalf("the hint does not name the dead line: %q", n.Hint)
+	}
+	var joined string
+	for _, d := range n.Detail {
+		joined += " " + strings.Join(d.Lines, " ")
+	}
+	for _, want := range []string{"eth2 down", "eth0"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("the domestic node never mentions %s: %q", want, joined)
+		}
+	}
+}

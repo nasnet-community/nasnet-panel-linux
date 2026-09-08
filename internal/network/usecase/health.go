@@ -163,7 +163,7 @@ func (h *HealthMonitor) EverUp(ifName string) bool {
 
 // ApplyRoute is the whole failover mechanism
 func (h *HealthMonitor) ApplyRoute(ctx context.Context, u Uplink, gateway string, up bool) error {
-	route := system.Route{Table: u.Table, Dest: "default", Gateway: gateway, OifName: u.IfName}
+	route := system.Route{Table: u.Table, Dest: "default", Gateway: gateway, OifName: u.IfName, OnLink: u.GatewayOnLink}
 	if up {
 		if err := h.Backend.RouteReplace(ctx, route); err != nil {
 			return fmt.Errorf("bring up %s: %w", u.IfName, err)

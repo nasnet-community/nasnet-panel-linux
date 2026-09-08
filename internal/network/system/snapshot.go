@@ -55,8 +55,10 @@ func DefaultPaths() Paths {
 
 // Snapshot is everything needed to put the box back as it was
 type Snapshot struct {
-	Version int       `json:"version"`
-	TakenAt time.Time `json:"taken_at"`
+	InterfacesCaptured bool                     `json:"interfaces_captured,omitempty"`
+	Interfaces         []domain.InterfaceIntent `json:"interfaces,omitempty"`
+	Version            int                      `json:"version"`
+	TakenAt            time.Time                `json:"taken_at"`
 
 	NetworkdFiles     map[string][]byte `json:"networkd_files"`
 	NetworkdConfFiles map[string][]byte `json:"networkd_conf_files"`
@@ -107,9 +109,11 @@ type Snapshot struct {
 }
 
 type Snapshotter struct {
-	Backend Backend
-	Nft     *nft.Manager
-	Paths   Paths
+	CaptureInterfaces func(context.Context) ([]domain.InterfaceIntent, error)
+	RestoreInterfaces func(context.Context, []domain.InterfaceIntent) error
+	Backend           Backend
+	Nft               *nft.Manager
+	Paths             Paths
 	// Restart is swapped in tests. A reload re-reads the files but leaves a link
 	// running under the one it was moved to, so a restore that changed a
 	// .network file has to restart.
@@ -173,6 +177,13 @@ func (s *Snapshotter) Capture(ctx context.Context, tables []int) (*Snapshot, err
 		rs := s.Nft.Snapshot()
 		snap.NftRuleset = rs.Render()
 		snap.NftState = &rs
+	}
+	if s.CaptureInterfaces != nil {
+		rows, err := s.CaptureInterfaces(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("capture interface intent: %w", err)
+		}
+		snap.Interfaces, snap.InterfacesCaptured = rows, true
 	}
 	// Fail rather than look like an older snapshot: a rollback trusts this.
 	if s.CaptureLAN != nil {
@@ -288,6 +299,13 @@ func (s *Snapshotter) Restore(ctx context.Context, snap *Snapshot) error {
 		}
 	}
 
+	if snap.InterfacesCaptured {
+		if s.RestoreInterfaces == nil {
+			errs = append(errs, "interface intent restore is unavailable")
+		} else if err := s.RestoreInterfaces(ctx, snap.Interfaces); err != nil {
+			errs = append(errs, fmt.Sprintf("restore interface intent: %v", err))
+		}
+	}
 	if snap.LANConfig != nil && s.RestoreLAN != nil {
 		if err := s.RestoreLAN(ctx, snap.LANConfig); err != nil {
 			errs = append(errs, fmt.Sprintf("restore the LAN row: %v", err))

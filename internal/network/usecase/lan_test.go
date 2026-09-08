@@ -172,8 +172,8 @@ func TestApplyLANNftState_DisableRemovesLANRulesOnly(t *testing.T) {
 // Domestic suffix on the domestic uplink, the default on the tunnel.
 func TestLANDNSConfig_MapsServersToTheRightUplinks(t *testing.T) {
 	c := LANDNSConfig(testLAN(), twoUplinks(), "217.218.127.127", []system.ForeignServer{{Server: "1.1.1.1", IfName: system.WGLinkName}}, "ir", true)
-	if c.DomesticIfName != "enp1s0" {
-		t.Errorf("DomesticIfName = %q, want the domestic uplink", c.DomesticIfName)
+	if len(c.Domestic) != 1 || c.Domestic[0].IfName != "enp1s0" || c.Domestic[0].Server != "217.218.127.127" {
+		t.Errorf("Domestic = %+v, want one line on the domestic uplink", c.Domestic)
 	}
 	if len(c.Foreign) != 1 || c.Foreign[0].IfName != system.WGLinkName {
 		t.Errorf("Foreign = %+v, want one line bound to the tunnel", c.Foreign)
@@ -187,11 +187,36 @@ func TestLANDNSConfig_MapsServersToTheRightUplinks(t *testing.T) {
 // edge, so with no domestic uplink the suffix server is dropped entirely.
 func TestLANDNSConfig_NoDomesticUplinkDropsTheSuffixServer(t *testing.T) {
 	c := LANDNSConfig(testLAN(), twoUplinks()[1:], "217.218.127.127", []system.ForeignServer{{Server: "1.1.1.1", IfName: system.WGLinkName}}, "ir", true)
-	if c.DomesticServer != "" || c.DomesticSuffix != "" {
+	if len(c.Domestic) != 0 || c.DomesticSuffix != "" {
 		t.Errorf("kept the domestic server with no domestic uplink: %+v", c)
 	}
 	if len(c.Foreign) != 1 || c.Foreign[0].IfName != system.WGLinkName {
 		t.Errorf("Foreign = %+v, want one line bound to the tunnel", c.Foreign)
+	}
+}
+
+// Slot order, the row's own resolver when it has one, the default otherwise.
+func TestLANDNSConfig_OneDomesticLinePerDomesticUplink(t *testing.T) {
+	ups := []Uplink{
+		{IfName: "enp4s0", Table: 211, UplinkIndex: 6, Slot: domain.SlotDomestic2, GroupIndex: 1, DNSServer: "10.202.10.10"},
+		{IfName: "enp1s0", Table: 201, UplinkIndex: 1, Slot: domain.SlotDomestic, GroupIndex: 1},
+		{IfName: "enp2s0", Table: 202, UplinkIndex: 2, Slot: domain.SlotSecondary, GroupIndex: 2, DNSServer: "9.9.9.9"},
+	}
+	c := LANDNSConfig(testLAN(), ups, "217.218.127.127", nil, "ir", true)
+	want := []system.DomesticServer{
+		{Server: "217.218.127.127", IfName: "enp1s0"},
+		{Server: "10.202.10.10", IfName: "enp4s0"},
+	}
+	if len(c.Domestic) != len(want) {
+		t.Fatalf("Domestic = %+v, want %+v", c.Domestic, want)
+	}
+	for i := range want {
+		if c.Domestic[i] != want[i] {
+			t.Errorf("Domestic[%d] = %+v, want %+v", i, c.Domestic[i], want[i])
+		}
+	}
+	if c.DomesticSuffix != "ir" {
+		t.Errorf("suffix = %q", c.DomesticSuffix)
 	}
 }
 

@@ -9,10 +9,10 @@ import (
 
 func filterSpec() FilterInputSpec {
 	return FilterInputSpec{
-		Uplinks:          uplinksWithKeys(),
-		LocalIfNames:     []string{"lo", "lan0", "enp3s0"},
-		PanelPort:        9761,
-		AdvertisedIfName: "enp1s0",
+		Uplinks:           uplinksWithKeys(),
+		LocalIfNames:      []string{"lo", "lan0", "enp3s0"},
+		PanelPort:         9761,
+		AdvertisedIfNames: []string{"enp1s0"},
 		Inbounds: []InboundSpec{
 			{Tag: "vless-tcp", Proto: "tcp", Port: 443, Enabled: true},
 			{Tag: "wg", Proto: "udp", Port: 51820, Enabled: true},
@@ -50,7 +50,7 @@ func TestDeriveFilterInput_AcceptsExactlyTheEnabledInbounds(t *testing.T) {
 
 // The panel port is accepted on the advertised uplink only, not on the secondary
 // one. Closing it on Starlink is half the point of this task.
-func TestDeriveFilterInput_PanelPortOnTheAdvertisedUplinkOnly(t *testing.T) {
+func TestDeriveFilterInput_PanelPortOnTheAdvertisedUplinksOnly(t *testing.T) {
 	f := DeriveFilterInput(filterSpec())
 	a := acceptFor(f, "tcp", 9761)
 	if a == nil {
@@ -58,6 +58,33 @@ func TestDeriveFilterInput_PanelPortOnTheAdvertisedUplinkOnly(t *testing.T) {
 	}
 	if len(a.IfNames) != 1 || a.IfNames[0] != "enp1s0" {
 		t.Errorf("panel accept covers %v, want only the advertised uplink", a.IfNames)
+	}
+}
+
+// Every domestic line is one the operator may dial in on.
+func TestDeriveFilterInput_PanelOpenOnEveryDomestic(t *testing.T) {
+	spec := filterSpec()
+	spec.Uplinks = append(spec.Uplinks,
+		Uplink{IfName: "enp4s0", Key: "aa:bb:cc:dd:ee:04", Table: 211, UplinkIndex: 6, Slot: domain.SlotDomestic2, GroupIndex: 1})
+	spec.AdvertisedIfNames = []string{"enp1s0", "enp4s0"}
+	a := acceptFor(DeriveFilterInput(spec), "tcp", 9761)
+	if a == nil || len(a.IfNames) != 2 || a.IfNames[0] != "enp1s0" || a.IfNames[1] != "enp4s0" {
+		t.Fatalf("panel accept = %+v, want both domestic lines and nothing else", a)
+	}
+}
+
+// Deliberate, not a lock-out: one live domestic still keeps the accept, and the
+// panel was never meant to answer on a secondary.
+func TestDeriveFilterInput_PanelOpenOnABackupDomesticAlone(t *testing.T) {
+	spec := filterSpec()
+	spec.Uplinks = []Uplink{
+		{IfName: "enp4s0", Key: "aa:bb:cc:dd:ee:04", Table: 211, UplinkIndex: 6, Slot: domain.SlotDomestic2, GroupIndex: 1},
+		{IfName: "enp2s0", Key: "aa:bb:cc:dd:ee:02", Table: 202, UplinkIndex: 2, Slot: domain.SlotSecondary, GroupIndex: 2},
+	}
+	spec.AdvertisedIfNames = []string{"enp4s0"}
+	a := acceptFor(DeriveFilterInput(spec), "tcp", 9761)
+	if a == nil || len(a.IfNames) != 1 || a.IfNames[0] != "enp4s0" {
+		t.Fatalf("panel accept = %+v, want the backup domestic alone", a)
 	}
 }
 
@@ -107,7 +134,7 @@ func TestDeriveFilterInput_TwoWANNoLANStillKeepsThePanelReachable(t *testing.T) 
 // recoverable; being unreachable is not.
 func TestDeriveFilterInput_NoAdvertisedUplinkFallsBackToAll(t *testing.T) {
 	spec := filterSpec()
-	spec.AdvertisedIfName = ""
+	spec.AdvertisedIfNames = nil
 	a := acceptFor(DeriveFilterInput(spec), "tcp", 9761)
 	if a == nil || len(a.IfNames) != 2 {
 		t.Fatalf("panel accept = %+v, want every uplink", a)

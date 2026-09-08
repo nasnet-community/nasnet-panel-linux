@@ -13,9 +13,15 @@ import (
 type HealthConfig struct {
 	TargetsDomestic []ProbeTarget
 	TargetsForeign  []ProbeTarget
-	DegradedLossPct int
-	DegradedRTTms   map[domain.UplinkSlot]int
-	FailoverToVPN   bool
+	// Per-line overrides. A slot missing here uses its group's list above.
+	TargetsBySlot           map[domain.UplinkSlot][]ProbeTarget
+	DegradedLossPct         int // legacy default, inherited by groups without an override
+	DegradedLossPctDomestic int
+	DegradedLossPctForeign  int
+	// Per-line override; a slot missing here uses its group's threshold.
+	DegradedLossPctBySlot map[domain.UplinkSlot]int
+	DegradedRTTms         map[domain.UplinkSlot]int
+	FailoverToVPN         bool
 	// PortMapEnabled turns the upstream port mapper on. Off by default: it
 	// transmits to the upstream router and opens inbound ports.
 	PortMapEnabled bool
@@ -33,7 +39,9 @@ func DefaultHealthConfig() HealthConfig {
 			{Address: "1.1.1.1:443", Proto: "tcp"},
 			{Address: "8.8.8.8:443", Proto: "tcp"},
 		},
-		DegradedLossPct: 25,
+		TargetsBySlot:         map[domain.UplinkSlot][]ProbeTarget{},
+		DegradedLossPct:       25,
+		DegradedLossPctBySlot: map[domain.UplinkSlot]int{},
 		// Starlink's RTT floor is high, and every secondary may be a dish.
 		DegradedRTTms: degradedRTTDefaults(),
 		FailoverToVPN: true,
@@ -42,21 +50,65 @@ func DefaultHealthConfig() HealthConfig {
 }
 
 func (c HealthConfig) targetsFor(slot domain.UplinkSlot) []ProbeTarget {
-	if slot == domain.SlotDomestic {
+	if own := c.TargetsBySlot[slot]; len(own) > 0 {
+		return own
+	}
+	if slot.IsDomestic() {
 		return c.TargetsDomestic
 	}
 	return c.TargetsForeign
 }
 
-// Only probes out the secondary uplink ever meet the kill switch.
-func (c HealthConfig) probeExemptIPs() []string {
-	var out []string
-	for _, t := range c.TargetsForeign {
-		if host, _, err := net.SplitHostPort(t.Address); err == nil {
-			out = append(out, host)
+func (c HealthConfig) degradedLossFor(slot domain.UplinkSlot) int {
+	if n, ok := c.DegradedLossPctBySlot[slot]; ok && n > 0 {
+		return n
+	}
+	return c.degradedGroupLossFor(slot)
+}
+
+func (c HealthConfig) degradedGroupLossFor(slot domain.UplinkSlot) int {
+	n := c.DegradedLossPctForeign
+	if slot.IsDomestic() {
+		n = c.DegradedLossPctDomestic
+	}
+	if n > 0 {
+		return n
+	}
+	return c.DegradedLossPct
+}
+
+// Only probes out a secondary uplink ever meet the kill switch, and each leg
+// now has its own list, so the exemption is per slot rather than one set.
+func (c HealthConfig) probeExemptIPsBySlot() map[domain.UplinkSlot][]string {
+	out := map[domain.UplinkSlot][]string{}
+	for _, s := range domain.SecondarySlots() {
+		var ips []string
+		for _, t := range c.targetsFor(s) {
+			if host, _, err := net.SplitHostPort(t.Address); err == nil {
+				ips = append(ips, host)
+			}
 		}
+		out[s] = ips
 	}
 	return out
+}
+
+// Settings keys for one line's own checks. The group keys keep their old
+// names, so these carry a slot_ segment to stay clear of them.
+func ProbeTargetsSlotKey(slot domain.UplinkSlot) string {
+	return "router_probe_targets_slot_" + string(slot)
+}
+
+func DegradedRTTSlotKey(slot domain.UplinkSlot) string {
+	return "router_degraded_rtt_ms_slot_" + string(slot)
+}
+
+func DegradedLossSlotKey(slot domain.UplinkSlot) string {
+	return "router_degraded_loss_pct_slot_" + string(slot)
+}
+
+func allUplinkSlots() []domain.UplinkSlot {
+	return append(domain.DomesticSlots(), domain.SecondarySlots()...)
 }
 
 // One bad set element aborts the whole nft table load, so v4 literals only.
@@ -107,15 +159,47 @@ func ParseHealthConfig(get func(string) (string, error)) HealthConfig {
 			cfg.DegradedLossPct = n
 		}
 	}
+	for _, group := range []struct {
+		key       string
+		threshold *int
+	}{
+		{"router_degraded_loss_pct_domestic", &cfg.DegradedLossPctDomestic},
+		{"router_degraded_loss_pct_foreign", &cfg.DegradedLossPctForeign},
+	} {
+		if v, err := get(group.key); err == nil {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+				*group.threshold = n
+			}
+		}
+	}
 	if v, err := get("router_degraded_rtt_ms_domestic"); err == nil {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cfg.DegradedRTTms[domain.SlotDomestic] = n
+			for _, s := range domain.DomesticSlots() {
+				cfg.DegradedRTTms[s] = n
+			}
 		}
 	}
 	if v, err := get("router_degraded_rtt_ms_foreign"); err == nil {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			for _, s := range domain.SecondarySlots() {
 				cfg.DegradedRTTms[s] = n
+			}
+		}
+	}
+	for _, slot := range allUplinkSlots() {
+		if v, err := get(ProbeTargetsSlotKey(slot)); err == nil && v != "" {
+			if ts := parseTargets(v); len(ts) > 0 {
+				cfg.TargetsBySlot[slot] = ts
+			}
+		}
+		if v, err := get(DegradedRTTSlotKey(slot)); err == nil && v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				cfg.DegradedRTTms[slot] = n
+			}
+		}
+		if v, err := get(DegradedLossSlotKey(slot)); err == nil && v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+				cfg.DegradedLossPctBySlot[slot] = n
 			}
 		}
 	}
@@ -138,31 +222,16 @@ type routeState int
 
 const (
 	routeUp routeState = iota
-	routeFailover
 	routeWithdraw
 )
 
-type routeInputs struct {
-	Slot       domain.UplinkSlot
-	GatewayUp  bool
-	InternetUp bool
-	FailoverOn bool
-	VPNUp      bool
-}
-
-// The whole failover policy, pure so tests can enumerate it.
-func routeStateFor(in routeInputs) routeState {
-	if in.GatewayUp && in.InternetUp {
+// A secondary carries tunnels only, so its policy is one line: a dead gateway
+// withdraws, anything else keeps the route so the probe can see a recovery.
+func secondaryRouteState(gatewayUp bool) routeState {
+	if gatewayUp {
 		return routeUp
 	}
-	if in.Slot == domain.SlotDomestic && in.FailoverOn && in.VPNUp {
-		return routeFailover
-	}
-	if !in.GatewayUp {
-		return routeWithdraw
-	}
-	// Gateway alive: keep the route, or the probe can't see the recovery.
-	return routeUp
+	return routeWithdraw
 }
 
 // The pool ladder has one rung. everAnswered is the evidence: the damper starts
@@ -215,7 +284,10 @@ func verdictFor(force string, carrier, gwKnown, gatewayUp, inetUp, inetKnown, de
 }
 
 func degradedRTTDefaults() map[domain.UplinkSlot]int {
-	out := map[domain.UplinkSlot]int{domain.SlotDomestic: 300}
+	out := map[domain.UplinkSlot]int{}
+	for _, s := range domain.DomesticSlots() {
+		out[s] = 300
+	}
 	for _, s := range domain.SecondarySlots() {
 		out[s] = 800
 	}

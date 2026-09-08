@@ -10,8 +10,9 @@ func lanDNSConfig() DNSMasqConfig {
 	return DNSMasqConfig{
 		BridgeName: "lan0", ListenAddr: "10.77.0.1",
 		RangeLow: "10.77.0.100", RangeHigh: "10.77.0.200", LeaseHours: 12,
-		DomesticServer: "217.218.127.127", DomesticSuffix: "ir", DomesticIfName: "enp1s0",
-		Foreign: []ForeignServer{{Server: "1.1.1.1", IfName: "enp2s0"}},
+		Domestic:       []DomesticServer{{Server: "217.218.127.127", IfName: "enp1s0"}},
+		DomesticSuffix: "ir",
+		Foreign:        []ForeignServer{{Server: "1.1.1.1", IfName: "enp2s0"}},
 	}
 }
 
@@ -125,14 +126,34 @@ func TestNftSetSupported_FeatureDetects(t *testing.T) {
 
 func TestRenderDNSMasq_MissingUplinkOmitsItsServer(t *testing.T) {
 	c := lanDNSConfig()
-	c.DomesticIfName = ""
-	c.DomesticServer = ""
+	c.Domestic = nil
 	got := RenderDNSMasq(c)
 	if strings.Contains(got, "server=/ir/") {
 		t.Errorf("emitted a domestic server with no domestic uplink:\n%s", got)
 	}
 	if !strings.Contains(got, "server=1.1.1.1@enp2s0") {
 		t.Error("the foreign server disappeared")
+	}
+}
+
+// Each ISP's resolver is reached over its own link; some refuse off-net queries.
+func TestRenderDNSMasq_OneDomesticServerPerUplink(t *testing.T) {
+	c := lanDNSConfig()
+	c.Domestic = []DomesticServer{
+		{Server: "217.218.127.127", IfName: "enp1s0"},
+		{Server: "10.202.10.10", IfName: "enp4s0"},
+	}
+	got := RenderDNSMasq(c)
+	for _, want := range []string{
+		"server=/ir/217.218.127.127@enp1s0",
+		"server=/ir/10.202.10.10@enp4s0",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "@enp4s0") > strings.Index(got, "server=1.1.1.1") {
+		t.Error("a suffix-scoped server landed after the default")
 	}
 }
 
