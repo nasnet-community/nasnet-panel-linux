@@ -250,9 +250,10 @@ func (h *Handler) ListAll(c *gin.Context) {
 		return
 	}
 
-	// Populate SubscriptionURL
+	// Populate SubscriptionURL using one settings read per response.
+	baseURL := h.getBaseURL(c.Request.Context())
 	for _, sub := range subs {
-		sub.SubscriptionURL = h.getBaseURL(c.Request.Context()) + "/sub/" + sub.GetLinkKey()
+		sub.SubscriptionURL = baseURL + "/sub/" + sub.GetLinkKey()
 	}
 
 	totalPages := int(total) / filter.Limit
@@ -321,9 +322,10 @@ func (h *Handler) ListByUserID(c *gin.Context) {
 		return
 	}
 
-	// Populate SubscriptionURL
+	// Populate SubscriptionURL using one settings read per response.
+	baseURL := h.getBaseURL(c.Request.Context())
 	for _, sub := range subs {
-		sub.SubscriptionURL = h.getBaseURL(c.Request.Context()) + "/sub/" + sub.GetLinkKey()
+		sub.SubscriptionURL = baseURL + "/sub/" + sub.GetLinkKey()
 	}
 
 	httputil.OK(c, subs)
@@ -341,9 +343,10 @@ func (h *Handler) GetActiveByUserID(c *gin.Context) {
 		return
 	}
 
-	// Populate SubscriptionURL
+	// Populate SubscriptionURL using one settings read per response.
+	baseURL := h.getBaseURL(c.Request.Context())
 	for _, sub := range subs {
-		sub.SubscriptionURL = h.getBaseURL(c.Request.Context()) + "/sub/" + sub.GetLinkKey()
+		sub.SubscriptionURL = baseURL + "/sub/" + sub.GetLinkKey()
 	}
 
 	httputil.OK(c, subs)

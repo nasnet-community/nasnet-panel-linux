@@ -204,33 +204,39 @@ func (r *userRepository) ListAllEnriched(ctx context.Context, search, filter, so
 	case "created_at":
 		sortColumn = "u.created_at"
 	case "active_subscriptions":
-		sortColumn = "active_subscriptions"
+		sortColumn = "COALESCE(s.active_count, 0)"
 		needsJoinForSort = true
 	case "total_subscriptions":
-		sortColumn = "total_subscriptions"
+		sortColumn = "COALESCE(s.total_count, 0)"
 		needsJoinForSort = true
 	case "last_active_at":
 		sortColumn = "a.last_active_at"
 		needsJoinForSort = true
 	}
 
-	subQueryCountFilter := database.CountFilter("status = 'active'")
-	subsJoin := fmt.Sprintf(`LEFT JOIN (
-			SELECT user_id,
-				COUNT(*) as total_count,
-				%s as active_count
-			FROM subscriptions
-			WHERE deleted_at IS NULL AND user_id IS NOT NULL
-			GROUP BY user_id
-		) s ON s.user_id = u.id`, subQueryCountFilter)
-
-	activityJoin := `LEFT JOIN (
-			SELECT sub.user_id, MAX(acc.last_activity_at) as last_active_at
-			FROM accounts acc
-			JOIN subscriptions sub ON sub.id = acc.subscription_id AND sub.deleted_at IS NULL
-			WHERE acc.deleted_at IS NULL AND sub.user_id IS NOT NULL
-			GROUP BY sub.user_id
-		) a ON a.user_id = u.id`
+	// An empty ID list aggregates all users for global computed-column ordering.
+	// Once the page is known, limit both aggregates before their GROUP BY.
+	subscriptionCounts := func(ids []uint) *gorm.DB {
+		q := r.db.WithContext(ctx).Table("subscriptions").
+			Select("user_id, COUNT(*) as total_count, " + database.CountFilter("status = 'active'") + " as active_count").
+			Where("deleted_at IS NULL AND user_id IS NOT NULL").
+			Group("user_id")
+		if len(ids) > 0 {
+			q = q.Where("user_id IN ?", ids)
+		}
+		return q
+	}
+	userActivity := func(ids []uint) *gorm.DB {
+		q := r.db.WithContext(ctx).Table("accounts acc").
+			Select("sub.user_id, MAX(acc.last_activity_at) as last_active_at").
+			Joins("JOIN subscriptions sub ON sub.id = acc.subscription_id AND sub.deleted_at IS NULL").
+			Where("acc.deleted_at IS NULL AND sub.user_id IS NOT NULL").
+			Group("sub.user_id")
+		if len(ids) > 0 {
+			q = q.Where("sub.user_id IN ?", ids)
+		}
+		return q
+	}
 
 	orderExpr := database.NullsLast(fmt.Sprintf("%s %s", sortColumn, sortOrder))
 
@@ -242,8 +248,8 @@ func (r *userRepository) ListAllEnriched(ctx context.Context, search, filter, so
 		idQuery := r.db.WithContext(ctx).
 			Table("users u").
 			Select("u.id").
-			Joins(subsJoin).
-			Joins(activityJoin).
+			Joins("LEFT JOIN (?) s ON s.user_id = u.id", subscriptionCounts(nil)).
+			Joins("LEFT JOIN (?) a ON a.user_id = u.id", userActivity(nil)).
 			Where("u.deleted_at IS NULL")
 		idQuery = applyUserFilters(idQuery, "u")
 		if err := idQuery.Order(orderExpr).Offset(offset).Limit(limit).Pluck("u.id", &userIDs).Error; err != nil {
@@ -290,8 +296,8 @@ func (r *userRepository) ListAllEnriched(ctx context.Context, search, filter, so
 	mainQuery := r.db.WithContext(ctx).
 		Table("users u").
 		Select(selectFields).
-		Joins(subsJoin).
-		Joins(activityJoin).
+		Joins("LEFT JOIN (?) s ON s.user_id = u.id", subscriptionCounts(userIDs)).
+		Joins("LEFT JOIN (?) a ON a.user_id = u.id", userActivity(userIDs)).
 		Where("u.id IN ? AND u.deleted_at IS NULL", userIDs).
 		Order(orderExpr)
 

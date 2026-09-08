@@ -113,6 +113,10 @@ func (u *subscriptionUsecase) ReconcileUsers(ctx context.Context) (*ReconcileSta
 				continue
 			}
 			stats.TotalXrayUsers += len(xrayUsers)
+			xrayEmails := make(map[string]struct{}, len(xrayUsers))
+			for _, xu := range xrayUsers {
+				xrayEmails[xu.Email] = struct{}{}
+			}
 
 			// Get authorized accounts for this inbound
 			inboundAccounts := authMap[inbound.ID]
@@ -159,13 +163,7 @@ func (u *subscriptionUsecase) ReconcileUsers(ctx context.Context) (*ReconcileSta
 			}
 
 			for email, acc := range inboundAccounts {
-				exists := false
-				for _, xu := range xrayUsers {
-					if xu.Email == email {
-						exists = true
-						break
-					}
-				}
+				_, exists := xrayEmails[email]
 
 				if !exists {
 					var pType xray.Protocol
