@@ -127,10 +127,8 @@ func (c *Config) Validate() *ValidationResult {
 		}
 	}
 
-	// Conditional: ACME email format
-	if c.ACME.Email != "" && !strings.Contains(c.ACME.Email, "@") {
-		r.addError("ACME.Email", fmt.Sprintf("invalid email format: %q", c.ACME.Email))
-	}
+	// Admin credentials and ACME settings are validated during startup after
+	// applying persisted settings, which can override environment values.
 
 	// Conditional: proxy enabled requires host + port (only when Telegram is enabled)
 	if c.Telegram.Enabled && c.Telegram.Proxy.Enabled {

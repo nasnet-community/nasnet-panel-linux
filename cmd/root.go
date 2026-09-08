@@ -2,12 +2,10 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -47,7 +45,6 @@ import (
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
 	wireguardDomain "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/domain"
 	wireguardNodebridge "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/nodebridge"
-	"github.com/nasnet-community/nasnet-panel-linux/pkg/acme"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/cache"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/conversation"
@@ -279,6 +276,19 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// Repositories
 	repos := initRepositories(db)
+	// Keep deployment values for seeding and backup-restore reseeding. Saved
+	// settings resolve into the running config, not the environment baseline.
+	envCfg := *cfg
+	getStartupSetting := func(key string) (string, error) {
+		s, err := repos.Setting.GetByKey(bgCtx, key)
+		if err != nil {
+			return "", err
+		}
+		return s.Value, nil
+	}
+	if err := resolveStartupConfig(cfg, getStartupSetting); err != nil {
+		log.WithError(err).Fatal("Invalid startup configuration")
+	}
 
 	// Outbound proxy factory (early, ACME needs it). Empty until seeded
 	// post-usecase-init. Snapshot consumers use LiveClient for live reloads.
@@ -287,39 +297,15 @@ func runServe(cmd *cobra.Command, args []string) {
 		return httpFactory.ClientFor(httpclient.FeatureGeoIP, httpclient.EgressForeign, 3*time.Second)
 	})
 
-	// ACME settings from database first, then environment config
-	acmeEnabled := cfg.ACME.Enabled
-	acmeEmail := cfg.ACME.Email
-	acmeStaging := cfg.ACME.Staging
-	if s, err := repos.Setting.GetByKey(context.Background(), "acme_enabled"); err == nil {
-		acmeEnabled = s.Value == "true"
-	}
-	if s, err := repos.Setting.GetByKey(context.Background(), "acme_email"); err == nil && s.Value != "" {
-		acmeEmail = s.Value
-	}
-	if s, err := repos.Setting.GetByKey(context.Background(), "acme_staging"); err == nil {
-		acmeStaging = s.Value == "true"
-	}
-
-	var certManager *acme.CertManager
-	if acmeEnabled {
-		if acmeEmail != "" {
-			// LiveClient routes LE API calls through the factory transport;
-			// proxy_use_acme toggle is live. DNS-01 still uses system resolver.
-			acmeClient := httpFactory.LiveClient(httpclient.FeatureACME, httpclient.EgressAdvertised, 30*time.Second)
-			certManager, err = acme.NewCertManager(acmeEmail, cfg.ACME.CacheDir, acmeStaging, acmeClient)
-			if err != nil {
-				log.WithError(err).Warn("Failed to initialize ACME CertManager - certificate issuance disabled")
-				certManager = nil
-			}
-		} else {
-			log.Warn("ACME_ENABLED is true but ACME_EMAIL not set - certificate issuance disabled")
-			certManager = nil
-		}
+	// LiveClient applies the saved outbound proxy settings once usecases load.
+	acmeClient := httpFactory.LiveClient(httpclient.FeatureACME, httpclient.EgressAdvertised, 30*time.Second)
+	certManager, err := initACMEManager(cfg, acmeClient)
+	if err != nil {
+		log.WithError(err).Fatal("Cannot initialize requested TLS; refusing to start plain HTTP")
 	}
 
 	// Usecases
-	uc := initUsecases(db, cfg, repos, grpcClient, providerFactory, certManager, eventBus)
+	uc := initUsecases(db, &envCfg, repos, grpcClient, providerFactory, certManager, eventBus)
 
 	// Wire NodeClient callback so the provider can reach both direct and reverse-mode nodes
 	xrayProv.SetNodeClientFunc(uc.Node.GetNodeClient)
@@ -731,52 +717,20 @@ func runServe(cmd *cobra.Command, args []string) {
 			SubRepository:  repos.Subscription,
 		},
 	})
+	// A restored database may have just had its deployment settings reseeded.
+	// Resolve manual certificate paths again against the environment baseline.
+	cfg.App.TLSCertFile = envCfg.App.TLSCertFile
+	cfg.App.TLSKeyFile = envCfg.App.TLSKeyFile
+	if err := resolveStartupTLSFiles(cfg, getStartupSetting); err != nil {
+		log.WithError(err).Fatal("Cannot resolve panel TLS settings")
+	}
+	tlsCfg, err := prepareServerTLS(bgCtx, cfg, certManager)
+	if err != nil {
+		log.WithError(err).Fatal("Cannot initialize requested TLS; refusing to start plain HTTP")
+	}
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.App.Port)
-
-		// TLS only if manual cert files or ACME enabled; behind reverse
-		// proxy, APP_BASE_URL can be HTTPS while app listens plain HTTP.
-		// Prefer DB settings (panel-editable) for cert/key paths.
-		tlsCertFile := cfg.App.TLSCertFile
-		tlsKeyFile := cfg.App.TLSKeyFile
-		if s, err := repos.Setting.GetByKey(context.Background(), "tls_cert_file"); err == nil && s.Value != "" {
-			tlsCertFile = s.Value
-		}
-		if s, err := repos.Setting.GetByKey(context.Background(), "tls_key_file"); err == nil && s.Value != "" {
-			tlsKeyFile = s.Value
-		}
-		hasManualCerts := tlsCertFile != "" && tlsKeyFile != ""
-
-		if hasManualCerts {
-			cert, err := tls.LoadX509KeyPair(tlsCertFile, tlsKeyFile)
-			if err != nil {
-				log.WithError(err).Warn("Failed to load TLS cert files, falling back to plain HTTP")
-				goto plainHTTP
-			}
-			tlsCfg := &tls.Config{
-				MinVersion:   tls.VersionTLS12,
-				Certificates: []tls.Certificate{cert},
-			}
-			log.Info("TLS configured with manual certificate files")
-			log.WithField("address", addr).Info("HTTPS server starting")
-			if err := server.RunTLS(addr, tlsCfg); err != nil && err != http.ErrServerClosed {
-				log.WithError(err).Fatal("HTTPS server failed")
-			}
-			return
-		} else if certManager != nil {
-			parsed, err := url.Parse(cfg.App.BaseURL)
-			if err != nil {
-				log.WithError(err).Warn("Failed to parse APP_BASE_URL, falling back to plain HTTP")
-				goto plainHTTP
-			}
-			domain := parsed.Hostname()
-			if err := certManager.EnsureServerCert(bgCtx, domain); err != nil {
-				log.WithError(err).Warn("Failed to obtain ACME server cert, falling back to plain HTTP")
-				goto plainHTTP
-			}
-			tlsCfg := certManager.ServerTLSConfig()
-			certManager.StartServerCertRenewal(bgCtx, domain)
-			log.WithField("domain", domain).Info("TLS configured with ACME auto-certificate")
+		if tlsCfg != nil {
 			log.WithField("address", addr).Info("HTTPS server starting")
 			if err := server.RunTLS(addr, tlsCfg); err != nil && err != http.ErrServerClosed {
 				log.WithError(err).Fatal("HTTPS server failed")
@@ -784,7 +738,6 @@ func runServe(cmd *cobra.Command, args []string) {
 			return
 		}
 
-	plainHTTP:
 		log.WithField("address", addr).Info("HTTP server starting")
 		if err := server.Run(addr); err != nil && err != http.ErrServerClosed {
 			log.WithError(err).Fatal("HTTP server failed")
