@@ -212,6 +212,7 @@ func newSyncSingleNodeTestUsecaseWithSub(repo *fakeStatsNodeRepo, sr *fakeStatsS
 func newSyncSingleNodeTestUsecaseWithAccount(repo *fakeStatsNodeRepo, sr *fakeStatsSubRepo, ar *fakeStatsAccountRepo, client agent.NodeClient) *nodeUsecase {
 	u := &nodeUsecase{
 		nodeRepo:             repo,
+		tm:                   statsPassthroughTM{},
 		subRepo:              sr,
 		accountRepo:          ar,
 		eventBus:             events.NewEventBus(),
@@ -572,4 +573,38 @@ func TestSyncSingleNode_SingleInboundGetsFullBytes(t *testing.T) {
 	if calls[0].id != 301 || calls[0].bytes != 1000 {
 		t.Errorf("expected AddDataUsed(301, 1000), got AddDataUsed(%d, %d)", calls[0].id, calls[0].bytes)
 	}
+}
+
+// In-memory attribution fixtures do not need SQL; integration tests use a real TM.
+type statsPassthroughTM struct{}
+
+func (statsPassthroughTM) Do(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+func (r *fakeStatsSubRepo) AddUsageDeltas(ctx context.Context, ds []subRepo.UsageDelta) error {
+	for _, d := range ds {
+		if err := r.AddUsageDelta(ctx, d.SubscriptionID, d.Upload, d.Download, d.LastActive); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (r *fakeStatsSubRepo) AddDailyUsageSplits(ctx context.Context, ds []subRepo.DailyUsageDelta) error {
+	for _, d := range ds {
+		if err := r.AddDailyUsageSplit(ctx, d.SubscriptionID, d.Date, d.Upload, d.Download); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (r *fakeStatsAccountRepo) AddUsageDeltas(ctx context.Context, ds []accountRepo.UsageDelta) error {
+	for _, d := range ds {
+		if err := r.AddDataUsed(ctx, d.AccountID, d.Bytes); err != nil {
+			return err
+		}
+		if err := r.UpdateLastActive(ctx, d.AccountID, d.LastActive); err != nil {
+			return err
+		}
+	}
+	return nil
 }

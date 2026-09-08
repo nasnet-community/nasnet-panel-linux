@@ -699,3 +699,20 @@ var _ contract.AccountManager = (*mockAccountMgr)(nil)
 var _ contract.NodeSyncer = (*mockNodeSyncer)(nil)
 var _ contract.AccountReader = (*mockAccountReader)(nil)
 var _ nodeRepo.NodeRepository = (*mockNodeRepo)(nil)
+
+func (m *mockSubscriptionRepo) AddUsageDeltas(ctx context.Context, deltas []repository.UsageDelta) error {
+	for _, delta := range deltas {
+		if err := m.AddUsageDelta(ctx, delta.SubscriptionID, delta.Upload, delta.Download, delta.LastActive); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (m *mockSubscriptionRepo) AddDailyUsageSplits(ctx context.Context, deltas []repository.DailyUsageDelta) error {
+	for _, delta := range deltas {
+		if err := m.AddDailyUsageSplit(ctx, delta.SubscriptionID, delta.Date, delta.Upload, delta.Download); err != nil {
+			return err
+		}
+	}
+	return nil
+}

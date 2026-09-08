@@ -16,6 +16,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/shared/contract"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
@@ -38,8 +39,7 @@ type WGRenderPeer struct {
 // Set via SetWGPeerSource; nil when WG selling is off.
 type WGPeerSource interface {
 	ActivePeersByInbound(ctx context.Context, inboundID uint) ([]WGRenderPeer, error)
-	AddPeerUsage(ctx context.Context, peerID uint, up, down int64) error
-	TouchPeerLastSeen(ctx context.Context, peerID uint, t time.Time) error
+	AddPeerUsageBatch(ctx context.Context, deltas []contract.WGUsageDelta) error
 }
 
 // SetWGPeerSource injects the managed WireGuard peer source.

@@ -24,7 +24,7 @@ func NewTransactionManager(db *gorm.DB) TransactionManager {
 
 // Do executes the given function within a database transaction
 func (tm *transactionManager) Do(ctx context.Context, fn func(ctx context.Context) error) error {
-	return tm.db.Transaction(func(tx *gorm.DB) error {
+	return tm.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		ctxWithTx := context.WithValue(ctx, txKey{}, tx)
 		return fn(ctxWithTx)
 	})
@@ -34,7 +34,7 @@ func (tm *transactionManager) Do(ctx context.Context, fn func(ctx context.Contex
 // It ensures that repository methods use the active transaction if one exists
 func GetExecutor(defaultDB *gorm.DB, ctx context.Context) *gorm.DB {
 	if tx, ok := ctx.Value(txKey{}).(*gorm.DB); ok {
-		return tx
+		return tx.WithContext(ctx)
 	}
 	return defaultDB.WithContext(ctx)
 }

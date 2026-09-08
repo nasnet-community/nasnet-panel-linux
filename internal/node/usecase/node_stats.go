@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -493,12 +492,8 @@ func (u *nodeUsecase) agentVersions(ctx context.Context, client agent.NodeClient
 }
 
 const (
-	// onlineIPsSyncInterval: this sweep is what refreshes the online-user
-	// cache, whose entries expire after 15s (cache.maxAge). Refreshing on
-	// that same period would let them lapse between passes — the sweep
-	// reaches this step only after its DB work — and the online counts
-	// would flap to zero. Stay comfortably inside the window while still
-	// skipping every other 5s tick.
+	// Online-IP reads run inside the online cache's 40s validity window.
+	// The embedded collector samples independently every 15 seconds.
 	onlineIPsSyncInterval = 10 * time.Second
 	// accessLogSyncInterval: summaries are hourly buckets; 60s keeps the
 	// panel fresh at a fraction of the old per-tick fetch rate.
@@ -506,9 +501,11 @@ const (
 	// heartbeatStatusFreshness: heartbeat pongs arrive every ~2s; a status
 	// older than this means the stream is struggling — ask the agent then.
 	heartbeatStatusFreshness = 10 * time.Second
+	// Absorb sub-tick scheduler drift without delaying an entire 5s tick.
+	cadenceSlack = time.Second
 )
 
-// statsCadenceDue reports whether interval has elapsed since the node's last
+// statsCadenceDue allows cadenceSlack for scheduler drift since the node's last
 // stamped run in m, stamping now when due. m points at one of the usecase's
 // cadence maps (lazy-initialised here so test fixtures built as bare struct
 // literals keep working); access is serialized by statsCadenceMu.
@@ -517,6 +514,9 @@ func (u *nodeUsecase) statsCadenceDue(m *map[uint]time.Time, nodeID uint, interv
 	defer u.statsCadenceMu.Unlock()
 	if *m == nil {
 		*m = make(map[uint]time.Time)
+	}
+	if interval > cadenceSlack {
+		interval -= cadenceSlack
 	}
 	if time.Since((*m)[nodeID]) < interval {
 		return false
@@ -530,6 +530,11 @@ func (u *nodeUsecase) statsCadenceDue(m *map[uint]time.Time, nodeID uint, interv
 // may be nil (single-node path); totals publish as zero then.
 func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, accountCounts map[uint]accountRepo.NodeAccountCount) {
 	log := logger.GetLogger().WithField("node", node.Name)
+	release, err := u.acquireStatsSync(ctx, node.ID)
+	if err != nil {
+		return
+	}
+	defer release()
 
 	// Variables for SSE payload
 	var (
@@ -542,13 +547,6 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 
 	// 1. Collect System Stats & Xray Traffic
 	var sysStats *domain.NodeStat
-	var userTraffic map[string]int64  // email -> total bytes (up + down)
-	var userUplink map[string]int64   // email -> upload bytes
-	var userDownlink map[string]int64 // email -> download bytes
-	var lastRecordTimestamp int64     // timestamp of the last buffered record processed
-	persistedOutboundTraffic := false
-	persistedNodeTraffic := false
-	persistError := false
 
 	client, err := u.getAgentClientForStats(ctx, node)
 	if err != nil {
@@ -585,6 +583,7 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	} else {
 		sysStats = &domain.NodeStat{
 			NodeID:      node.ID,
+			CreatedAt:   telemetrySampleTime(agentSysStats.CollectedAtUnixMs, time.Now()),
 			CPU:         agentSysStats.CPUUsagePercent,
 			Memory:      agentSysStats.MemoryUsagePercent,
 			Disk:        agentSysStats.DiskUsagePercent,
@@ -686,291 +685,23 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		}
 	}
 
-	// trafficSubs: per-email subscription cache, populated lazily once
-	// userTraffic is known. Avoids N round-trips for the three per-email loops.
-	var trafficSubs map[string]*subDomain.Subscription
-
-	// Inbound tags with any traffic this cycle. Per-inbound totals
-	// tell us which inbounds saw traffic; xray's per-email stats
-	// can't attribute bytes to a specific inbound on multi-inbound emails.
-	activeInboundTags := make(map[string]bool)
-
+	// Commit the whole buffered batch before acknowledging it. Failed attribution
+	// or any failed counter write leaves all rows unchanged for the next retry.
 	if bufferedStats != nil && len(bufferedStats.Records) > 0 {
-		userTraffic = make(map[string]int64)
-		userUplink = make(map[string]int64)
-		userDownlink = make(map[string]int64)
-
-		// Per-day user traffic for retroactive daily usage attribution
-		// dayUserTraffic[dateStr][email] = combined bytes (kept for fallback logging)
-		dayUserTraffic := make(map[string]map[string]int64)
-		dayUserUplink := make(map[string]map[string]int64)
-		dayUserDownlink := make(map[string]map[string]int64)
-
-		// Node/outbound totals aggregated across all buffered records so
-		// persistence below is one UPDATE per target instead of one per record.
-		var nodeUp, nodeDown int64
-		dailyNodeTraffic := make(map[time.Time][2]int64) // UTC day -> {up, down}
-		outboundTotals := make(map[string][2]int64)      // tag -> {up, down}
-
-		for _, record := range bufferedStats.Records {
-			for tag, bytes := range record.InboundUplink {
-				if bytes > 0 {
-					activeInboundTags[tag] = true
-				}
-			}
-			for tag, bytes := range record.InboundDownlink {
-				if bytes > 0 {
-					activeInboundTags[tag] = true
-				}
-			}
-			if record.Timestamp > lastRecordTimestamp {
-				lastRecordTimestamp = record.Timestamp
-			}
-
-			recordDay := time.Unix(record.Timestamp, 0).UTC().Format("2006-01-02")
-
-			// Aggregate user traffic
-			for email, bytes := range record.UserUplink {
-				userTraffic[email] += bytes
-				userUplink[email] += bytes
-				if dayUserTraffic[recordDay] == nil {
-					dayUserTraffic[recordDay] = make(map[string]int64)
-					dayUserUplink[recordDay] = make(map[string]int64)
-					dayUserDownlink[recordDay] = make(map[string]int64)
-				}
-				dayUserTraffic[recordDay][email] += bytes
-				dayUserUplink[recordDay][email] += bytes
-			}
-			for email, bytes := range record.UserDownlink {
-				userTraffic[email] += bytes
-				userDownlink[email] += bytes
-				if dayUserTraffic[recordDay] == nil {
-					dayUserTraffic[recordDay] = make(map[string]int64)
-					dayUserUplink[recordDay] = make(map[string]int64)
-					dayUserDownlink[recordDay] = make(map[string]int64)
-				}
-				dayUserTraffic[recordDay][email] += bytes
-				dayUserDownlink[recordDay][email] += bytes
-			}
-
-			// Accumulate node-level and per-outbound traffic in memory;
-			// flushed once after the record loop.
-			if record.TotalUplink > 0 || record.TotalDownlink > 0 {
-				nodeUp += record.TotalUplink
-				nodeDown += record.TotalDownlink
-				recordDate := time.Unix(record.Timestamp, 0).UTC().Truncate(24 * time.Hour)
-				d := dailyNodeTraffic[recordDate]
-				d[0] += record.TotalUplink
-				d[1] += record.TotalDownlink
-				dailyNodeTraffic[recordDate] = d
-			}
-			for tag, bytes := range record.OutboundUplink {
-				if bytes > 0 {
-					o := outboundTotals[tag]
-					o[0] += bytes
-					outboundTotals[tag] = o
-				}
-			}
-			for tag, bytes := range record.OutboundDownlink {
-				if bytes > 0 {
-					o := outboundTotals[tag]
-					o[1] += bytes
-					outboundTotals[tag] = o
-				}
-			}
-		}
-
-		// Flush aggregated node totals: one AddNodeTraffic per pass, one
-		// AddNodeDailyTraffic per distinct UTC day (normally one).
-		if nodeUp > 0 || nodeDown > 0 {
-			if err := u.nodeRepo.AddNodeTraffic(ctx, node.ID, nodeUp, nodeDown); err != nil {
-				log.Warnf("Failed to accumulate node traffic: %v", err)
-				persistError = true
-			} else {
-				persistedNodeTraffic = true
-			}
-			for recordDate, d := range dailyNodeTraffic {
-				if err := u.nodeRepo.AddNodeDailyTraffic(ctx, node.ID, recordDate, d[0], d[1]); err != nil {
-					log.Warnf("Failed to record daily traffic: %v", err)
-					persistError = true
-				} else {
-					persistedNodeTraffic = true
-				}
-			}
-		}
-
-		// Flush aggregated outbound totals: one UPDATE per tag.
-		for tag, o := range outboundTotals {
-			if err := u.nodeRepo.AddOutboundTraffic(ctx, node.ID, tag, o[0], o[1]); err != nil {
-				log.Warnf("Failed to accumulate outbound %s traffic: %v", tag, err)
-				persistError = true
-			} else {
-				persistedOutboundTraffic = true
-			}
-		}
-
-		// Pre-fetch subscriptions for all emails with traffic this
-		// cycle; one IN(...) query serves daily-attribution + persist.
-		if len(userTraffic) > 0 {
-			emails := make([]string, 0, len(userTraffic))
-			for email := range userTraffic {
-				emails = append(emails, email)
-			}
-			if subs, err := u.subRepo.FindByConfigEmails(ctx, emails); err != nil {
-				log.WithError(err).Warn("FindByConfigEmails batch failed; per-email DB fallback will still run")
-			} else {
-				trafficSubs = subs
-			}
-		}
-
-		// Retroactive daily usage attribution: distribute traffic
-		// to the correct days. Uses trafficSubs so each email
-		// resolves via a map hit instead of a DB round-trip.
-		for dateStr, emailTraffic := range dayUserTraffic {
-			date, parseErr := time.Parse("2006-01-02", dateStr)
-			if parseErr != nil {
-				log.Warnf("Failed to parse date %s for daily usage: %v", dateStr, parseErr)
-				continue
-			}
-			upByEmail := dayUserUplink[dateStr]
-			dnByEmail := dayUserDownlink[dateStr]
-			for email := range emailTraffic {
-				sub, ok := trafficSubs[email]
-				if !ok {
-					continue
-				}
-				up := upByEmail[email]
-				dn := dnByEmail[email]
-				if up == 0 && dn == 0 {
-					continue
-				}
-				if err := u.subRepo.AddDailyUsageSplit(ctx, sub.ID, date, up, dn); err != nil {
-					log.WithField("email", email).Warnf("Failed to add daily usage split for %s: %v", dateStr, err)
-					persistError = true
-				}
+		through, persistErr := u.persistBufferedTraffic(ctx, node, bufferedStats.Records)
+		if persistErr != nil {
+			log.WithError(persistErr).Warn("Failed to persist buffered traffic")
+		} else if through > 0 {
+			if ackErr := client.AckBufferedTraffic(ctx, through); ackErr != nil {
+				log.WithError(ackErr).Warn("Failed to acknowledge committed traffic")
 			}
 		}
 	}
-
-	// Starlink stats collection (if enabled on this node)
 	u.syncStarlinkStats(ctx, node, client)
-
 	client.Close()
-
-	// 2. Save System Stats
 	if sysStats != nil {
 		if err := u.nodeRepo.CreateNodeStat(ctx, sysStats); err != nil {
-			log.Warnf("Failed to save node stats: %v", err)
-		}
-	}
-
-	// WG per-peer attribution: synthetic emails (wg:<tag>:<ip>) -> peer/sub.
-	// Feeds the sub's quota + per-device counters. The main loop below skips
-	// these (no config-email match), so no double count. No daily split yet.
-	if u.wgPeerSource != nil && len(userTraffic) > 0 {
-		peersByTag := map[string][]WGRenderPeer{}
-		for _, in := range node.Inbounds {
-			if !strings.EqualFold(in.Protocol, "wireguard") {
-				continue
-			}
-			if ps, err := u.wgPeerSource.ActivePeersByInbound(ctx, in.ID); err == nil {
-				peersByTag[in.Tag] = ps
-			}
-		}
-		wgIndex := buildWGIndex(peersByTag)
-		for email := range userTraffic {
-			if ref, ok := wgIndex[email]; ok {
-				u.persistWGPeerTraffic(ctx, ref, userTraffic[email], userUplink[email], userDownlink[email], log)
-			}
-		}
-	}
-
-	// 3. Process User Traffic
-	persistedTraffic := false
-	if len(userTraffic) > 0 {
-		// Account attribution index: one projection query replaces the old
-		// per-(email, inbound) FindByEmailAndInbound lookups. nil map (load
-		// failure or no repo wired) skips account attribution this cycle;
-		// subscription-level usage above still persists.
-		var accountRefs map[string]map[uint]uint // email -> inboundID -> accountID
-		if u.accountRepo != nil && len(node.Inbounds) > 0 {
-			if refs, refErr := u.accountRepo.ListTrafficRefsByNode(ctx, node.ID); refErr != nil {
-				log.WithError(refErr).Warn("ListTrafficRefsByNode failed; skipping account attribution this cycle")
-			} else {
-				accountRefs = make(map[string]map[uint]uint, len(refs))
-				for _, ref := range refs {
-					byInbound := accountRefs[ref.Email]
-					if byInbound == nil {
-						byInbound = make(map[uint]uint)
-						accountRefs[ref.Email] = byInbound
-					}
-					byInbound[ref.InboundID] = ref.ID
-				}
-			}
-		}
-
-		for email, bytes := range userTraffic {
-			if bytes <= 0 {
-				continue
-			}
-
-			// Use pre-fetched batch; per-email fallback if batch failed.
-			var sub *subDomain.Subscription
-			if trafficSubs != nil {
-				sub = trafficSubs[email]
-				if sub == nil {
-					log.WithField("email", email).Debug("Traffic for unknown user")
-					continue
-				}
-			} else {
-				var err error
-				sub, err = u.subRepo.FindByConfigEmail(ctx, email)
-				if err != nil {
-					log.WithField("email", email).Debug("Traffic for unknown user")
-					continue
-				}
-			}
-
-			// All subscription counters (used/lifetime totals, up/down
-			// splits, last_active_at) in one UPDATE.
-			now := time.Now()
-			if err := u.subRepo.AddUsageDelta(ctx, sub.ID, userUplink[email], userDownlink[email], now); err != nil {
-				log.WithField("email", email).Warnf("Failed to add usage delta: %v", err)
-				persistError = true
-			}
-
-			// Update account data usage. Equal-split bytes across accounts
-			// on inbounds that saw traffic (xray's per-email stats can't
-			// attribute bytes to a specific inbound).
-			var matched []uint
-			if byInbound := accountRefs[email]; byInbound != nil {
-				for _, inbound := range node.Inbounds {
-					if !activeInboundTags[inbound.Tag] {
-						continue
-					}
-					if accountID, ok := byInbound[inbound.ID]; ok {
-						matched = append(matched, accountID)
-					}
-				}
-			}
-
-			if len(matched) > 0 {
-				share := bytes / int64(len(matched))
-				for _, accountID := range matched {
-					if err := u.accountRepo.AddDataUsed(ctx, accountID, share); err != nil {
-						log.WithField("email", email).Warnf("Failed to update account data usage: %v", err)
-						persistError = true
-					}
-					if err := u.accountRepo.UpdateLastActive(ctx, accountID, now); err != nil {
-						log.WithField("email", email).Warnf("Failed to update account last active: %v", err)
-					}
-				}
-			}
-		}
-
-		log.Infof("Synced traffic for %d users", len(userTraffic))
-		if !persistError {
-			persistedTraffic = true
+			log.WithError(err).Warn("Failed to save node stats")
 		}
 	}
 
@@ -982,18 +713,16 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	if u.statsCadenceDue(&u.lastOnlineIPsAt, node.ID, onlineIPsSyncInterval) {
 		client, err := u.getAgentClientForStats(ctx, node)
 		if err == nil {
-			if bulkIPs, bulkErr := client.GetAllUsersOnlineIPs(ctx); bulkErr == nil {
+			if snapshot, bulkErr := getOnlineIPSnapshot(ctx, client); bulkErr == nil && snapshot != nil {
+				bulkIPs := snapshot.Users
+				observedAt := telemetrySampleTime(snapshot.CollectedAtUnixMs, time.Now())
+				observedAt = cache.ApplyNodeOnlineIPSnapshot(node.ID, bulkIPs, observedAt, snapshot.CollectedAtUnixMs)
 				emails := make([]string, 0, len(bulkIPs))
 				for email, ips := range bulkIPs {
 					if len(ips) == 0 {
-						cache.ClearNodeOnlineUser(node.ID, email)
 						continue
 					}
 					emails = append(emails, email)
-				}
-				if len(emails) > 0 {
-					cache.SetNodeOnlineUsers(node.ID, emails)
-					cache.SetOnlineUsers(emails)
 				}
 
 				// Pre-fetch subscriptions for every online email in
@@ -1009,7 +738,6 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 				// per-(email,IP) round-trips on busy nodes.
 				var ipRecords []subRepo.SubscriptionIPRecord
 				for email, ips := range bulkIPs {
-					cache.SetUserOnlineIPs(email, ips)
 					if u.subIPRepo != nil && len(ips) > 0 {
 						var subID uint
 						if onlineSubs != nil {
@@ -1030,6 +758,7 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 								SubscriptionID: subID,
 								IP:             ip,
 								NodeID:         node.ID,
+								SeenAt:         observedAt,
 							})
 						}
 					}
@@ -1041,18 +770,6 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 				}
 			} else {
 				log.WithError(bulkErr).Debug("GetAllUsersOnlineIPs failed; leaving online cache untouched this cycle")
-			}
-			client.Close()
-		}
-	}
-
-	// Acknowledge buffered traffic after successful persist
-	if !persistError && (persistedTraffic || persistedOutboundTraffic || persistedNodeTraffic) && lastRecordTimestamp > 0 {
-		client, err := u.getAgentClientForStats(ctx, node)
-		if err == nil {
-			ackErr := client.AckBufferedTraffic(ctx, lastRecordTimestamp)
-			if ackErr != nil {
-				log.Warnf("Failed to ack buffered traffic (agent will re-send on next sync): %v", ackErr)
 			}
 			client.Close()
 		}

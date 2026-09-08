@@ -19,9 +19,12 @@ type NodeAccountCount struct {
 // AccountTrafficRef is the minimal projection the stats sweep needs to
 // attribute per-email traffic to accounts — no relation preloads.
 type AccountTrafficRef struct {
-	ID        uint
-	Email     string
-	InboundID uint
+	ID             uint
+	Email          string
+	InboundID      uint
+	SubscriptionID uint
+	Source         string
+	CreatedAt      time.Time
 }
 
 // AccountFilter defines criteria for listing accounts
@@ -51,7 +54,7 @@ type AccountRepository interface {
 	FindBySubscriptionIDs(ctx context.Context, subIDs []uint) ([]*domain.Account, error)
 	ListByInboundID(ctx context.Context, inboundID uint) ([]*domain.Account, error)
 	ListByNodeID(ctx context.Context, nodeID uint) ([]*domain.Account, error)
-	// ListTrafficRefsByNode returns (id, email, inbound_id) for every
+	// ListTrafficRefsByNode returns attribution fields for every
 	// account on the node in one query — replaces the stats sweep's
 	// per-(email, inbound) FindByEmailAndInbound lookups.
 	ListTrafficRefsByNode(ctx context.Context, nodeID uint) ([]AccountTrafficRef, error)
@@ -68,6 +71,8 @@ type AccountRepository interface {
 	UpdateStatus(ctx context.Context, id uint, status domain.AccountStatus) error
 	UpdateDataUsed(ctx context.Context, id uint, dataUsed int64) error
 	AddDataUsed(ctx context.Context, id uint, bytes int64) error
+	// AddUsageDeltas applies counters and activity for many accounts in bounded batches.
+	AddUsageDeltas(ctx context.Context, deltas []UsageDelta) error
 	Delete(ctx context.Context, id uint) error
 	ForceDelete(ctx context.Context, id uint) error
 	ForceDeleteBySubscriptionID(ctx context.Context, subID uint) error
@@ -289,7 +294,7 @@ func (r *accountRepository) ListTrafficRefsByNode(ctx context.Context, nodeID ui
 	var refs []AccountTrafficRef
 	err := database.GetExecutor(r.db, ctx).
 		Model(&domain.Account{}).
-		Select("accounts.id, accounts.email, accounts.inbound_id").
+		Select("accounts.id, accounts.email, accounts.inbound_id, accounts.subscription_id, accounts.source, accounts.created_at").
 		Joins("JOIN inbounds ON inbounds.id = accounts.inbound_id").
 		Where("inbounds.node_id = ?", nodeID).
 		Scan(&refs).Error

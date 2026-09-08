@@ -7,6 +7,7 @@ import (
 	"time"
 
 	nodeUC "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/shared/contract"
 	wgDomain "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/domain"
 	wgRepo "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
@@ -95,4 +96,8 @@ func (s *PeerSource) AddPeerUsage(ctx context.Context, peerID uint, up, down int
 
 func (s *PeerSource) TouchPeerLastSeen(ctx context.Context, peerID uint, t time.Time) error {
 	return s.peers.TouchLastSeen(ctx, peerID, t)
+}
+
+func (s *PeerSource) AddPeerUsageBatch(ctx context.Context, deltas []contract.WGUsageDelta) error {
+	return s.peers.AddUsageBatch(ctx, deltas)
 }

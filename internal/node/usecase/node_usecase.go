@@ -343,6 +343,8 @@ type configPushState struct {
 }
 
 type nodeUsecase struct {
+	statsSyncMu sync.Mutex
+	statsSyncs  map[uint]*nodeStatsSyncGate
 	nodeRepo    repository.NodeRepository
 	subRepo     subRepo.SubscriptionRepository
 	subIPRepo   subRepo.SubscriptionIPRepository

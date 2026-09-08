@@ -81,6 +81,8 @@ type SubscriptionRepository interface {
 	// single UPDATE: data_used/lifetime totals, upload/download splits
 	// (current + lifetime) and last_active_at.
 	AddUsageDelta(ctx context.Context, id uint, upload, download int64, lastActive time.Time) error
+	AddUsageDeltas(ctx context.Context, deltas []UsageDelta) error
+	AddDailyUsageSplits(ctx context.Context, deltas []DailyUsageDelta) error
 	UpdateDataWarningLevel(ctx context.Context, id uint, level int) error
 	ListApproachingDataLimit(ctx context.Context, thresholdPercent float64) ([]*domain.Subscription, error)
 	ResetDataWarningLevel(ctx context.Context, id uint) error

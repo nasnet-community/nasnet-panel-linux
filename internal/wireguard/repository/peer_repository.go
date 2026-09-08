@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/shared/contract"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"gorm.io/gorm"
@@ -23,6 +24,7 @@ type WGPeerRepository interface {
 	SetStatusBySubscription(ctx context.Context, subID uint, status domain.WGPeerStatus) error
 
 	AddUsage(ctx context.Context, id uint, up, down int64) error
+	AddUsageBatch(ctx context.Context, deltas []contract.WGUsageDelta) error
 	TouchLastSeen(ctx context.Context, id uint, t time.Time) error
 }
 

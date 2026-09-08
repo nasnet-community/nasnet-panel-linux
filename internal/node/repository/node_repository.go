@@ -612,14 +612,14 @@ func (r *nodeRepository) DeleteBalancingRulesByNode(ctx context.Context, nodeID 
 // === Traffic Accumulation ===
 
 func (r *nodeRepository) AddNodeTraffic(ctx context.Context, nodeID uint, uplink, downlink int64) error {
-	return r.db.WithContext(ctx).Model(&domain.Node{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
+	return database.GetExecutor(r.db, ctx).WithContext(ctx).Model(&domain.Node{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
 		"total_uplink":   gorm.Expr("total_uplink + ?", uplink),
 		"total_downlink": gorm.Expr("total_downlink + ?", downlink),
 	}).Error
 }
 
 func (r *nodeRepository) AddOutboundTraffic(ctx context.Context, nodeID uint, tag string, uplink, downlink int64) error {
-	return r.db.WithContext(ctx).Model(&domain.Outbound{}).
+	return database.GetExecutor(r.db, ctx).WithContext(ctx).Model(&domain.Outbound{}).
 		Where("node_id = ? AND tag = ?", nodeID, tag).
 		Updates(map[string]interface{}{
 			"uplink":   gorm.Expr("uplink + ?", uplink),
@@ -1367,7 +1367,7 @@ func applyAccessLogFilter(query *gorm.DB, filter AccessLogSummaryFilter) *gorm.D
 // === Daily Traffic Operations ===
 
 func (r *nodeRepository) AddNodeDailyTraffic(ctx context.Context, nodeID uint, date time.Time, uplink, downlink int64) error {
-	return r.db.WithContext(ctx).Exec(`
+	return database.GetExecutor(r.db, ctx).WithContext(ctx).Exec(`
 		INSERT INTO node_daily_traffics (node_id, date, uplink, downlink, created_at)
 		VALUES (?, ?, ?, ?, `+database.Now()+`)
 		ON CONFLICT (node_id, date) DO UPDATE SET
