@@ -62,6 +62,15 @@ func (u *nodeUsecase) UpdateReverseProxy(ctx context.Context, rp *domain.Reverse
 		return fmt.Errorf("reverse proxy not found: %w", err)
 	}
 	rp.NodeID = existing.NodeID // Ensure node ID cannot change
+	if rp.Tag != existing.Tag {
+		kind := "outbound"
+		if existing.Type == "bridge" {
+			kind = "inbound"
+		}
+		if err := u.rejectReferencedTagRename(ctx, rp.NodeID, existing.Tag, kind, existing); err != nil {
+			return err
+		}
+	}
 
 	if err := u.validateReverseProxy(ctx, rp); err != nil {
 		return err
@@ -85,7 +94,9 @@ func (u *nodeUsecase) UpdateReverseProxy(ctx context.Context, rp *domain.Reverse
 
 	// Wrap in transaction: delete old rules + update + generate new rules
 	if err := u.nodeRepo.Transaction(ctx, func(txRepo repository.NodeRepository) error {
-		u.deleteReverseProxyRulesWithRepo(ctx, txRepo, existing)
+		if err := u.deleteReverseProxyRulesWithRepo(ctx, txRepo, existing); err != nil {
+			return err
+		}
 		if err := txRepo.UpdateReverseProxy(ctx, rp); err != nil {
 			return fmt.Errorf("failed to update reverse proxy: %w", err)
 		}
@@ -123,7 +134,9 @@ func (u *nodeUsecase) DeleteReverseProxy(ctx context.Context, id uint) error {
 
 	// Wrap in transaction: delete rules + delete reverse proxy
 	if err := u.nodeRepo.Transaction(ctx, func(txRepo repository.NodeRepository) error {
-		u.deleteReverseProxyRulesWithRepo(ctx, txRepo, rp)
+		if err := u.deleteReverseProxyRulesWithRepo(ctx, txRepo, rp); err != nil {
+			return err
+		}
 		return txRepo.DeleteReverseProxy(ctx, id)
 	}); err != nil {
 		return err
@@ -152,8 +165,9 @@ func (u *nodeUsecase) validateReverseProxy(ctx context.Context, rp *domain.Rever
 	if strings.TrimSpace(rp.Tag) == "" {
 		return fmt.Errorf("tag is required")
 	}
-	if strings.TrimSpace(rp.Domain) == "" {
-		return fmt.Errorf("domain is required")
+
+	if domain.IsGeneratedXrayTag(rp.Tag) {
+		return fmt.Errorf("tag %q is reserved for generated Xray handlers", rp.Tag)
 	}
 
 	// Check tag uniqueness within node (across reverse proxies, inbounds, outbounds)
@@ -171,17 +185,10 @@ func (u *nodeUsecase) validateReverseProxy(ctx context.Context, rp *domain.Rever
 	if err != nil {
 		return fmt.Errorf("failed to check outbound tags: %w", err)
 	}
-	outboundTagSet := make(map[string]bool, len(outbounds))
 	for _, out := range outbounds {
-		outboundTagSet[out.Tag] = true
 		if out.Tag == rp.Tag {
 			return fmt.Errorf("tag '%s' conflicts with an existing outbound tag", rp.Tag)
 		}
-	}
-
-	inboundTagSet := make(map[string]bool, len(inbounds))
-	for _, in := range inbounds {
-		inboundTagSet[in.Tag] = true
 	}
 
 	// Check tag uniqueness among other reverse proxies
@@ -195,128 +202,63 @@ func (u *nodeUsecase) validateReverseProxy(ctx context.Context, rp *domain.Rever
 		}
 	}
 
-	// Type-specific validation
-	if rp.Type == "bridge" {
-		if strings.TrimSpace(rp.InterconnectionTag) == "" {
-			return fmt.Errorf("interconnection outbound tag is required for bridge")
-		}
-		if !outboundTagSet[rp.InterconnectionTag] {
-			return fmt.Errorf("interconnection outbound '%s' does not exist", rp.InterconnectionTag)
-		}
-		if strings.TrimSpace(rp.OutboundTag) == "" {
-			return fmt.Errorf("outbound tag is required for bridge")
-		}
-		if !outboundTagSet[rp.OutboundTag] {
-			return fmt.Errorf("outbound '%s' does not exist", rp.OutboundTag)
-		}
-	} else {
-		if len(rp.InterconnectionTags) == 0 {
-			return fmt.Errorf("at least one interconnection inbound tag is required for portal")
-		}
-		for _, tag := range rp.InterconnectionTags {
-			if !inboundTagSet[tag] {
-				return fmt.Errorf("interconnection inbound '%s' does not exist", tag)
-			}
-		}
-		if len(rp.InboundTags) == 0 {
-			return fmt.Errorf("at least one inbound tag is required for portal")
-		}
-		for _, tag := range rp.InboundTags {
-			if !inboundTagSet[tag] {
-				return fmt.Errorf("inbound '%s' does not exist", tag)
-			}
+	// Validate the protocol and ownership constraints against all entries.
+	candidates := make([]*domain.ReverseProxy, 0, len(existingRPs)+1)
+	for _, other := range existingRPs {
+		if other.ID != rp.ID {
+			candidates = append(candidates, other)
 		}
 	}
-
-	return nil
+	candidates = append(candidates, rp)
+	return domain.ValidateVLESSReverse(inbounds, outbounds, candidates)
 }
 
-// generateReverseProxyRulesWithRepo creates the 2 auto-generated routing rules using the provided repo (for transaction support).
-// When oldPriorities are provided (exactly 2 values), they override the defaults (9000, 9001).
+// generateReverseProxyRulesWithRepo stores the data route. VLESS handles tunnel
+// control internally; the old domain-control rule is no longer needed.
 func (u *nodeUsecase) generateReverseProxyRulesWithRepo(ctx context.Context, repo repository.NodeRepository, rp *domain.ReverseProxy, oldPriorities ...int) error {
-	remark := "[reverse] " + rp.Tag
-
-	priority1, priority2 := 9000, 9001
-	if len(oldPriorities) >= 2 {
-		priority1 = oldPriorities[0]
-		priority2 = oldPriorities[1]
+	priority := 9000
+	if len(oldPriorities) > 1 {
+		priority = oldPriorities[1]
 	}
-
-	var rule1, rule2 domain.RoutingRule
-
+	rule := &domain.RoutingRule{NodeID: rp.NodeID, RuleTag: "reverse-" + rp.Tag + "-traffic", Remark: "[reverse] " + rp.Tag, Priority: priority, Enabled: true}
 	if rp.Type == "bridge" {
-		// Rule 1: domain-matching tunnel control -> interconnection outbound
-		rule1 = domain.RoutingRule{
-			NodeID:      rp.NodeID,
-			RuleTag:     fmt.Sprintf("reverse-%s-tunnel", rp.Tag),
-			Remark:      remark,
-			Priority:    priority1,
-			Enabled:     true,
-			OutboundTag: rp.InterconnectionTag,
-			InboundTags: []string{rp.Tag},
-			DomainRules: domain.DomainMatcherSlice{
-				{Type: domain.DomainTypeFull, Value: rp.Domain},
-			},
-		}
-		// Rule 2: catch-all for bridge tag -> user traffic outbound
-		rule2 = domain.RoutingRule{
-			NodeID:      rp.NodeID,
-			RuleTag:     fmt.Sprintf("reverse-%s-traffic", rp.Tag),
-			Remark:      remark,
-			Priority:    priority2,
-			Enabled:     true,
-			OutboundTag: rp.OutboundTag,
-			InboundTags: []string{rp.Tag},
-		}
+		rule.InboundTags = []string{rp.Tag}
+		rule.OutboundTag = rp.OutboundTag
 	} else {
-		// Portal rule 1: interconnection inbound traffic matching the internal domain -> portal tag
-		rule1 = domain.RoutingRule{
-			NodeID:      rp.NodeID,
-			RuleTag:     fmt.Sprintf("reverse-%s-interconn", rp.Tag),
-			Remark:      remark,
-			Priority:    priority1,
-			Enabled:     true,
-			OutboundTag: rp.Tag,
-			InboundTags: rp.InterconnectionTags,
-			DomainRules: domain.DomainMatcherSlice{
-				{Type: domain.DomainTypeFull, Value: rp.Domain},
-			},
-		}
-		rule2 = domain.RoutingRule{
-			NodeID:      rp.NodeID,
-			RuleTag:     fmt.Sprintf("reverse-%s-external", rp.Tag),
-			Remark:      remark,
-			Priority:    priority2,
-			Enabled:     true,
-			OutboundTag: rp.Tag,
-			InboundTags: rp.InboundTags,
-		}
+		rule.InboundTags = rp.InboundTags
+		rule.OutboundTag = rp.Tag
 	}
-
-	if err := repo.CreateRoutingRule(ctx, &rule1); err != nil {
-		return fmt.Errorf("failed to create rule 1: %w", err)
+	if err := repo.CreateRoutingRule(ctx, rule); err != nil {
+		return fmt.Errorf("failed to create reverse traffic rule: %w", err)
 	}
-	if err := repo.CreateRoutingRule(ctx, &rule2); err != nil {
-		return fmt.Errorf("failed to create rule 2: %w", err)
+	rp.Rule1ID = nil
+	rp.Rule2ID = &rule.ID
+	if err := repo.UpdateReverseProxy(ctx, rp); err != nil {
+		return err
 	}
-
-	// Store rule IDs on the reverse proxy
-	rp.Rule1ID = &rule1.ID
-	rp.Rule2ID = &rule2.ID
-	return repo.UpdateReverseProxy(ctx, rp)
+	rules, err := repo.ListRoutingRulesByNode(ctx, rp.NodeID)
+	if err != nil {
+		return fmt.Errorf("failed to load routing order: %w", err)
+	}
+	ordered := domain.OrderReverseRoutingRules(rules, []*domain.ReverseProxy{rp})
+	ids := make([]uint, len(ordered))
+	for i, rule := range ordered {
+		ids[i] = rule.ID
+	}
+	return repo.ReorderRoutingRules(ctx, rp.NodeID, ids)
 }
 
 // deleteReverseProxyRulesWithRepo removes the auto-generated routing rules using the provided repo.
-func (u *nodeUsecase) deleteReverseProxyRulesWithRepo(ctx context.Context, repo repository.NodeRepository, rp *domain.ReverseProxy) {
-	log := logger.GetLogger()
+func (u *nodeUsecase) deleteReverseProxyRulesWithRepo(ctx context.Context, repo repository.NodeRepository, rp *domain.ReverseProxy) error {
 	if rp.Rule1ID != nil {
 		if err := repo.DeleteRoutingRule(ctx, *rp.Rule1ID); err != nil {
-			log.Warnf("Failed to delete reverse proxy rule 1 (ID %d): %v", *rp.Rule1ID, err)
+			return fmt.Errorf("failed to delete reverse proxy rule %d: %w", *rp.Rule1ID, err)
 		}
 	}
 	if rp.Rule2ID != nil {
 		if err := repo.DeleteRoutingRule(ctx, *rp.Rule2ID); err != nil {
-			log.Warnf("Failed to delete reverse proxy rule 2 (ID %d): %v", *rp.Rule2ID, err)
+			return fmt.Errorf("failed to delete reverse proxy rule %d: %w", *rp.Rule2ID, err)
 		}
 	}
+	return nil
 }

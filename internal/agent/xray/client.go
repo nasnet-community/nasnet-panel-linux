@@ -53,7 +53,7 @@ func (c *LocalClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 }
 
 // AddUser adds a user to an inbound handler
-func (c *LocalClient) AddUser(ctx context.Context, inboundTag, email, uuid, protocolType, flow, encryption string, level int32) error {
+func (c *LocalClient) AddUser(ctx context.Context, inboundTag, email, uuid, protocolType, flow, encryption string, level int32, reverseTags ...string) error {
 	conn, err := c.dial(ctx)
 	if err != nil {
 		return err
@@ -70,11 +70,15 @@ func (c *LocalClient) AddUser(ctx context.Context, inboundTag, email, uuid, prot
 
 	switch strings.ToLower(protocolType) {
 	case "vless":
-		user.Account = serial.ToTypedMessage(&vless.Account{
+		account := &vless.Account{
 			Id:         uuid,
 			Flow:       flow,
 			Encryption: encryption,
-		})
+		}
+		if len(reverseTags) > 0 && reverseTags[0] != "" {
+			account.Reverse = &vless.Reverse{Tag: reverseTags[0]}
+		}
+		user.Account = serial.ToTypedMessage(account)
 	case "vmess":
 		user.Account = serial.ToTypedMessage(&vmess.Account{
 			Id: uuid,
