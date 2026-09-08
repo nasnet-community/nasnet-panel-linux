@@ -246,17 +246,9 @@ export function TLSForm({
             )}
 
             {isOutbound && (
-                <div className="flex items-center justify-between">
-                    <div>
-                        <Label>Allow Insecure</Label>
-                        <p className="text-xs text-muted-foreground">Skip TLS certificate verification (self-signed certs)</p>
-                        <p className="text-xs text-amber-500">Deprecated: will be removed from xray-core after June 2026</p>
-                    </div>
-                    <Switch
-                        checked={data.allowInsecure ?? false}
-                        onCheckedChange={(checked) => onChange({ ...data, allowInsecure: checked })}
-                    />
-                </div>
+                <p className="text-xs text-muted-foreground">
+                    For a self-signed server, configure Pinned Peer Certificate SHA256 below.
+                </p>
             )}
 
             <div className="flex items-center justify-between">

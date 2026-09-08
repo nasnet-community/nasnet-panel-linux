@@ -224,10 +224,10 @@ function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onCha
 
     const addCustomSockopt = () => {
         const current = data.customSockopt || []
-        onChange({ ...data, customSockopt: [...current, { level: 0, optName: 0, optValue: "" }] })
+        onChange({ ...data, customSockopt: [...current, { level: 6, optName: 1, optValue: "", type: "int" }] })
     }
 
-    const updateCustomSockopt = (index: number, updates: Partial<{ level: number; optName: number; optValue: unknown }>) => {
+    const updateCustomSockopt = (index: number, updates: Partial<NonNullable<SockoptSettings["customSockopt"]>[number]>) => {
         const current = [...(data.customSockopt || [])]
         current[index] = { ...current[index], ...updates }
         onChange({ ...data, customSockopt: current })
@@ -353,6 +353,19 @@ function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onCha
                                         onChange={(e) => updateCustomSockopt(index, { optName: parseInt(e.target.value) || 0 })}
                                         placeholder="1"
                                     />
+                                </div>
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-xs">Value Type</Label>
+                                    <Select
+                                        value={opt.type || (/^-?\d+$/.test(String(opt.optValue)) ? "int" : "str")}
+                                        onValueChange={(type) => updateCustomSockopt(index, { type: type as "int" | "str", optValue: String(opt.optValue ?? "") })}
+                                    >
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="int">Integer</SelectItem>
+                                            <SelectItem value="str">String</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                                 <div className="flex-1 space-y-1">
                                     <Label className="text-xs">OptValue</Label>
