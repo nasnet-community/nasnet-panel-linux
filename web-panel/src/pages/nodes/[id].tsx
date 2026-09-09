@@ -12,7 +12,6 @@ import {
     HiOutlineCog,
     HiOutlineTerminal,
     HiOutlineGlobeAlt,
-    HiOutlineUsers,
     HiOutlineDotsVertical,
 } from "react-icons/hi"
 import {
@@ -37,7 +36,6 @@ import { NodeSettings } from "@/components/node/node-settings"
 import { NodeLogs } from "@/components/node/node-logs"
 import { NodeAccessLogs } from "@/components/node/node-access-logs"
 import { NodeTerminal } from "@/components/node/node-terminal"
-import { NodeAccountsList } from "@/components/node/node-accounts-list"
 import { GeofilesDialog } from "@/components/node/geofiles-dialog"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { AccountDetailsSheet } from "@/components/accounts/account-details-sheet"
@@ -46,7 +44,6 @@ import { StarlinkDashboard } from "@/components/node/starlink/starlink-dashboard
 const nodeTabs = [
     { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
     { value: "network", label: "Network", description: "Inbounds & Outbounds", icon: HiOutlineGlobeAlt },
-    { value: "users", label: "Accounts", description: "User Management", icon: HiOutlineUsers },
     { value: "starlink", label: "Starlink", description: "Satellite Link", icon: Satellite },
     { value: "settings", label: "Settings", description: "Server Configuration", icon: HiOutlineCog },
     { value: "access-logs", label: "Access Logs", description: "Destinations & Domains", icon: HiOutlineGlobeAlt },
@@ -73,7 +70,14 @@ export default function NodeDetailPage() {
 
     // Tab state from URL
     const rawTab = searchParams.get("tab") || "overview"
-    const activeTab = node?.is_stealth && ["access-logs", "terminal"].includes(rawTab) ? "overview" : rawTab
+    const resolvedTab = rawTab === "users" || rawTab === "accounts" ? "network" : rawTab
+    const activeTab = node?.is_stealth && ["access-logs", "terminal"].includes(resolvedTab) ? "overview" : resolvedTab
+    useEffect(() => {
+        if (rawTab !== "users" && rawTab !== "accounts") return
+        const next = new URLSearchParams(searchParams)
+        next.set("tab", "network")
+        navigate(`${pathname}?${next.toString()}`, { replace: true })
+    }, [rawTab, searchParams, pathname, navigate])
     const [isLoading, setIsLoading] = useState(true)
 
     const isTerminalWorkspace = activeTab === "terminal"
@@ -448,14 +452,6 @@ export default function NodeDetailPage() {
                             />
                         </TabsContent>
                     )}
-                    <TabsContent value="users" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        {activeTab === "users" && (
-                            <NodeAccountsList
-                                nodeId={nodeId}
-                                isOnline={node?.is_online || false}
-                            />
-                        )}
-                    </TabsContent>
                 </main>
             </Tabs>
             <Dialog open={pendingSettingsNavigation !== null} onOpenChange={(open) => { if (!open) setPendingSettingsNavigation(null) }}>

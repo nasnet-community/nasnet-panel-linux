@@ -30,9 +30,8 @@ vi.mock("@/components/node/node-terminal", () => ({
 vi.mock("@/components/node/node-overview", () => ({ NodeOverview: () => <div>Overview content</div> }))
 vi.mock("@/components/node/node-logs", () => ({ NodeLogs: () => <div>Logs content</div> }))
 vi.mock("@/components/node/node-settings", () => ({ NodeSettings: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => <button onClick={() => onDirtyChange(true)}>Edit settings</button> }))
-vi.mock("@/components/node/node-network-config", () => ({ NodeNetworkConfig: () => null }))
+vi.mock("@/components/node/node-network-config", () => ({ NodeNetworkConfig: () => <div>Network content</div> }))
 vi.mock("@/components/node/node-access-logs", () => ({ NodeAccessLogs: () => null }))
-vi.mock("@/components/node/node-accounts-list", () => ({ NodeAccountsList: () => null }))
 vi.mock("@/components/node/starlink/starlink-dashboard", () => ({ StarlinkDashboard: () => null }))
 vi.mock("@/components/node/geofiles-dialog", () => ({ GeofilesDialog: () => null }))
 vi.mock("@/components/accounts/account-details-sheet", () => ({ AccountDetailsSheet: () => null }))
@@ -51,6 +50,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("local server workspace", () => {
+    it("omits the retired Accounts section", async () => {
+        mount()
+        await screen.findByText("Overview content")
+        expect(screen.queryByRole("tab", { name: /^Accounts/ })).not.toBeInTheDocument()
+        expect(screen.getByRole("tab", { name: /^Network/ })).toBeVisible()
+    })
+    it.each(["users", "accounts"])("opens Network for the old %s tab", async tab => {
+        mount(tab)
+        expect(await screen.findByText("Network content")).toBeVisible()
+        expect(screen.getByRole("tab", { name: /^Network/ })).toHaveAttribute("data-state", "active")
+        expect(screen.queryByRole("tab", { name: /^Accounts/ })).not.toBeInTheDocument()
+    })
     it("opens the terminal lazily and retains the same shell while visiting logs", async () => {
         const user = userEvent.setup()
         mount()

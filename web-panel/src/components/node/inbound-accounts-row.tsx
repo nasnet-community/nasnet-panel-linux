@@ -460,7 +460,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                     </Button>
                 )}
                 <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground" asChild>
-                    <Link to={`/nodes/${nodeId}?tab=users`}>
+                    <Link to="/accounts">
                         Open in Accounts
                         <HiOutlineExternalLink className="w-3.5 h-3.5 ml-1.5" />
                     </Link>

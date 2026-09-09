@@ -2,10 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
     getAccountsByNode,
     createAccount,
-    deleteAccount,
-    disableAccount,
-    enableAccount,
-    getAccountLink,
     getAccountsBySubscription,
     type CreateAccountRequest
 } from "@/lib/api/accounts"
@@ -34,60 +30,6 @@ export function useCreateAccount(nodeId: number) {
         },
         onError: (error: Error) => {
             toast.error(`Failed to create account: ${error.message}`)
-        }
-    })
-}
-
-export function useDeleteAccount(nodeId: number) {
-    const queryClient = useQueryClient()
-
-    return useMutation({
-        mutationFn: (id: number) => deleteAccount(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["accounts", "node", nodeId] })
-            toast.success("Account deleted successfully")
-        },
-        onError: (error: Error) => {
-            toast.error(`Failed to delete account: ${error.message}`)
-        }
-    })
-}
-
-export function useDisableAccount(nodeId: number) {
-    const queryClient = useQueryClient()
-
-    return useMutation({
-        mutationFn: (id: number) => disableAccount(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["accounts", "node", nodeId] })
-            toast.success("Account disabled")
-        },
-        onError: (error: Error) => {
-            toast.error(`Failed to disable account: ${error.message}`)
-        }
-    })
-}
-
-export function useEnableAccount(nodeId: number) {
-    const queryClient = useQueryClient()
-
-    return useMutation({
-        mutationFn: (id: number) => enableAccount(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["accounts", "node", nodeId] })
-            toast.success("Account enabled")
-        },
-        onError: (error: Error) => {
-            toast.error(`Failed to enable account: ${error.message}`)
-        }
-    })
-}
-
-export function useAccountLink() {
-    return useMutation({
-        mutationFn: (id: number) => getAccountLink(id),
-        onError: (error: Error) => {
-            toast.error(`Failed to get link: ${error.message}`)
         }
     })
 }
