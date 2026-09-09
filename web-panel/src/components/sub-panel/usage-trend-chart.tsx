@@ -15,7 +15,6 @@ export function UsageTrendChart({ uuid }: Props) {
   const c = useChartPalette()
   const UPLOAD_COLOR = c.chart5
   const DOWNLOAD_COLOR = c.success
-  const LEGACY_COLOR = c.neutral
   const [range, setRange] = useState<UsageTrendRange>("7d")
   const reducedMotion = useReducedMotion()
   const { data, isLoading, isFetching, error } = useUsageTrend(uuid, range)
@@ -26,7 +25,6 @@ export function UsageTrendChart({ uuid }: Props) {
     return buildChartPoints(data.points, rangeDays)
   }, [data, rangeDays])
 
-  const hasLegacy = points.some(p => p.isLegacy)
   const unit = data?.unit_hint ?? "MB"
 
   return (
@@ -63,7 +61,6 @@ export function UsageTrendChart({ uuid }: Props) {
             <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: DOWNLOAD_COLOR }} />
             ▼ Download
           </span>
-          {hasLegacy && <LegendDot color={LEGACY_COLOR} label="split unavailable" />}
         </div>
       </CardContent>
     </Card>
@@ -93,15 +90,6 @@ function RangeToggle({ range, onChange }: { range: UsageTrendRange; onChange: (r
   )
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-      {label}
-    </span>
-  )
-}
-
 // theme-aware axis tick — uses CSS class instead of hardcoded fill
 function AxisTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
   return (
@@ -125,7 +113,6 @@ function ChartBody({
   const c = useChartPalette()
   const UPLOAD_COLOR = c.chart5
   const DOWNLOAD_COLOR = c.success
-  const LEGACY_COLOR = c.neutral
 
   if (loading) {
     return <div role="status" aria-label="Loading traffic chart" className="h-[140px] rounded-md bg-muted/30 animate-pulse" />
@@ -160,7 +147,6 @@ function ChartBody({
           <Tooltip content={<ChartTooltip unit={unit} />} cursor={{ fill: "currentColor", fillOpacity: 0.06 }} />
           <Bar dataKey="download" stackId="t" fill={DOWNLOAD_COLOR} isAnimationActive={!reducedMotion} />
           <Bar dataKey="upload" stackId="t" fill="url(#sub-upload-hatch)" isAnimationActive={!reducedMotion} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="legacyTotal" stackId="t" fill={LEGACY_COLOR} isAnimationActive={!reducedMotion} radius={[2, 2, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -188,16 +174,6 @@ function ChartTooltip({ unit, active, payload }: TooltipProps) {
       <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-xs shadow-md">
         <div className="font-medium">{localDate}</div>
         <div className="text-muted-foreground">No traffic</div>
-      </div>
-    )
-  }
-
-  if (row.isLegacy) {
-    return (
-      <div className="rounded-md border border-border/50 bg-background/95 px-2.5 py-1.5 text-xs shadow-md">
-        <div className="font-medium">{localDate}</div>
-        <div>Total {formatValue(row.total, unit)}</div>
-        <div className="text-muted-foreground">Split not tracked for this day</div>
       </div>
     )
   }

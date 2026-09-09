@@ -685,8 +685,8 @@ func (h *Handler) GetSubUsagePattern(c *gin.Context) {
 // trendPointJSON is the per-day entry in a usage-trend response.
 type trendPointJSON struct {
 	Date     string `json:"date"`
-	Upload   *int64 `json:"upload"`
-	Download *int64 `json:"download"`
+	Upload   int64  `json:"upload"`
+	Download int64  `json:"download"`
 	Total    int64  `json:"total"`
 }
 

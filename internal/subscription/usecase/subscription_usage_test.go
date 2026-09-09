@@ -223,14 +223,14 @@ func newTrendTestUsecase(subRepo *mockSubscriptionRepo) SubscriptionUsecase {
 	return newCancelTestUsecase(subRepo, newMockAccountMgr())
 }
 
-func TestGetSubscriptionUsageTrend_Valid7dWithMixedRows(t *testing.T) {
+func TestGetSubscriptionUsageTrend_Valid7dWithSplitRows(t *testing.T) {
 	subRepo := &mockSubscriptionRepo{}
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	up := int64(1_000_000)
 	dn := int64(4_000_000)
 	subRepo.dailyRangeRows = []*domain.SubscriptionDailyUsage{
-		{SubscriptionID: 1, Date: today.AddDate(0, 0, -2), DataUsed: 3_000_000, DataUpload: nil, DataDownload: nil},
-		{SubscriptionID: 1, Date: today.AddDate(0, 0, -1), DataUsed: up + dn, DataUpload: &up, DataDownload: &dn},
+		{SubscriptionID: 1, Date: today.AddDate(0, 0, -2), DataUsed: 3_000_000, DataUpload: 0, DataDownload: 3_000_000},
+		{SubscriptionID: 1, Date: today.AddDate(0, 0, -1), DataUsed: up + dn, DataUpload: up, DataDownload: dn},
 	}
 	u := newTrendTestUsecase(subRepo)
 
@@ -244,10 +244,10 @@ func TestGetSubscriptionUsageTrend_Valid7dWithMixedRows(t *testing.T) {
 	if len(got.Points) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(got.Points))
 	}
-	if got.Points[0].Upload != nil || got.Points[0].Download != nil {
-		t.Fatalf("expected legacy row nil splits, got up=%v dn=%v", got.Points[0].Upload, got.Points[0].Download)
+	if got.Points[0].Upload != 0 || got.Points[0].Download != 3_000_000 {
+		t.Fatalf("expected download-only row, got up=%v dn=%v", got.Points[0].Upload, got.Points[0].Download)
 	}
-	if got.Points[1].Upload == nil || *got.Points[1].Upload != up {
+	if got.Points[1].Upload != up {
 		t.Fatalf("expected upload %d, got %v", up, got.Points[1].Upload)
 	}
 	if got.UnitHint != "MB" {

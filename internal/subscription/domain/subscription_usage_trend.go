@@ -9,11 +9,10 @@ type UsageTrend struct {
 	UnitHint string            // "KB" | "MB" | "GB" — picked from max Total in range
 }
 
-// UsageTrendPoint is one day of traffic. Upload/Download are nil on legacy
-// rows (pre-migration). Total always reflects the combined bytes.
+// UsageTrendPoint is one day of traffic, with upload, download and combined bytes.
 type UsageTrendPoint struct {
 	Date     time.Time // midnight UTC
-	Upload   *int64    // nil on legacy rows
-	Download *int64    // nil on legacy rows
+	Upload   int64
+	Download int64
 	Total    int64
 }

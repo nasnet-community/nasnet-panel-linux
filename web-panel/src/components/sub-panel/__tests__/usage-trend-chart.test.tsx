@@ -41,22 +41,7 @@ describe("UsageTrendChart", () => {
     expect(await screen.findByText(/Trend unavailable/i)).toBeInTheDocument()
   })
 
-  it("shows 'split unavailable' legend when any point is legacy", async () => {
-    const body: UsageTrendResponse = {
-      range: "7d",
-      unit_hint: "MB",
-      points: [
-        { date: isoDaysAgo(0), upload: null, download: null, total: 5_000_000 },
-      ],
-    }
-    fetchMock.mockResolvedValueOnce(jsonResponse(body))
-
-    wrap(<UsageTrendChart uuid="aaaaaaaa" />)
-
-    expect(await screen.findByText(/split unavailable/i)).toBeInTheDocument()
-  })
-
-  it("does not show 'split unavailable' legend when all points carry split", async () => {
+  it("shows upload and download legends", async () => {
     const body: UsageTrendResponse = {
       range: "7d",
       unit_hint: "MB",
@@ -69,7 +54,7 @@ describe("UsageTrendChart", () => {
     wrap(<UsageTrendChart uuid="aaaaaaaa" />)
 
     expect(await screen.findByText(/Upload/i)).toBeInTheDocument()
-    expect(screen.queryByText(/split unavailable/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Download/i)).toBeInTheDocument()
   })
 
   it("clicking 30d triggers a second fetch with range=30d", async () => {

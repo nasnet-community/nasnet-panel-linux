@@ -536,7 +536,7 @@ func (u *subscriptionUsecase) GetSubscriptionUsagePattern(ctx context.Context, c
 		days = 30
 	}
 
-	sub, err := u.subRepo.FindByConfigID(ctx, configID)
+	sub, err := u.subRepo.FindByLinkKey(ctx, configID)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +582,7 @@ func (u *subscriptionUsecase) GetSubscriptionUsagePattern(ctx context.Context, c
 	return points, nil
 }
 
-// GetSubscriptionUsageTrend returns daily totals + split (when available) for
+// GetSubscriptionUsageTrend returns daily totals + split for
 // the last rangeDays calendar days ending today (UTC). rangeDays must be 7 or 30.
 func (u *subscriptionUsecase) GetSubscriptionUsageTrend(ctx context.Context, subID uint, rangeDays int) (*domain.UsageTrend, error) {
 	if rangeDays != 7 && rangeDays != 30 {

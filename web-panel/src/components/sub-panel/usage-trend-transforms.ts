@@ -11,11 +11,9 @@ export const UNIT_FACTOR = {
 
 export type ChartPoint = {
   date: string        // YYYY-MM-DD (UTC)
-  upload: number      // bytes (0 for legacy / gap)
-  download: number    // bytes (0 for legacy / gap)
-  legacyTotal: number // bytes (0 for non-legacy / gap)
+  upload: number      // bytes (0 for a gap)
+  download: number    // bytes (0 for a gap)
   total: number       // bytes
-  isLegacy: boolean
 }
 
 function toISODate(d: Date): string {
@@ -43,18 +41,15 @@ export function buildChartPoints(
     const src = byDate.get(iso)
 
     if (!src) {
-      out.push({ date: iso, upload: 0, download: 0, legacyTotal: 0, total: 0, isLegacy: false })
+      out.push({ date: iso, upload: 0, download: 0, total: 0 })
       continue
     }
 
-    const isLegacy = src.upload === null && src.download === null
     out.push({
       date: iso,
-      upload: isLegacy ? 0 : (src.upload ?? 0),
-      download: isLegacy ? 0 : (src.download ?? 0),
-      legacyTotal: isLegacy ? src.total : 0,
+      upload: src.upload,
+      download: src.download,
       total: src.total,
-      isLegacy,
     })
   }
   return out

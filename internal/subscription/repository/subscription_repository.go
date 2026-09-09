@@ -626,30 +626,27 @@ func (r *subscriptionRepository) ResetDataWarningLevel(ctx context.Context, id u
 }
 
 // AddDailyUsageSplit atomically upserts a daily row with split upload/download bytes.
-// For existing legacy rows (NULL splits), COALESCE promotes NULL → 0 before incrementing,
-// so the row cleanly transitions to NOT NULL on first split write.
 func (r *subscriptionRepository) AddDailyUsageSplit(ctx context.Context, subID uint, date time.Time, upload, download int64) error {
 	total := upload + download
 	entry := &domain.SubscriptionDailyUsage{
 		SubscriptionID: subID,
 		Date:           date,
 		DataUsed:       total,
-		DataUpload:     &upload,
-		DataDownload:   &download,
+		DataUpload:     upload,
+		DataDownload:   download,
 	}
 	return database.GetExecutor(r.db, ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "subscription_id"}, {Name: "date"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"data_used":     gorm.Expr("subscription_daily_usage.data_used + ?", total),
-			"data_upload":   gorm.Expr("COALESCE(subscription_daily_usage.data_upload, 0) + ?", upload),
-			"data_download": gorm.Expr("COALESCE(subscription_daily_usage.data_download, 0) + ?", download),
+			"data_upload":   gorm.Expr("subscription_daily_usage.data_upload + ?", upload),
+			"data_download": gorm.Expr("subscription_daily_usage.data_download + ?", download),
 		}),
 	}).Create(entry).Error
 }
 
 // ListDailyUsageRange returns all daily usage rows for subID inside [from, to] (inclusive).
-// Results are ordered by Date ascending. Rows with NULL data_upload / data_download keep
-// those pointer fields nil, which the caller interprets as "legacy / split unavailable".
+// Results are ordered by Date ascending.
 func (r *subscriptionRepository) ListDailyUsageRange(ctx context.Context, subID uint, from, to time.Time) ([]*domain.SubscriptionDailyUsage, error) {
 	var rows []*domain.SubscriptionDailyUsage
 	if err := database.GetExecutor(r.db, ctx).

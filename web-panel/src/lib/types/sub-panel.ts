@@ -36,8 +36,8 @@ export type UsageTrendRange = "7d" | "30d"
 
 export type UsageTrendPoint = {
     date: string                    // YYYY-MM-DD (UTC calendar day)
-    upload: number | null
-    download: number | null
+    upload: number
+    download: number
     total: number
 }
 
