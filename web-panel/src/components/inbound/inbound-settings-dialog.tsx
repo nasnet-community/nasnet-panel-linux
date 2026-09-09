@@ -1,35 +1,14 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { AnimatePresence, motion } from "framer-motion"
-import { HiArrowLeft } from "react-icons/hi"
-import { useIsMobile } from "@/hooks/use-is-mobile"
-import { useInboundForm, type TabId } from "./use-inbound-form"
-
-import { InboundTabSidebar } from "./inbound-tab-sidebar"
-import { InboundTabBarMobile } from "./inbound-tab-bar-mobile"
-import { GeneralTab } from "./tabs/general-tab"
-import { NetworkTab } from "./tabs/network-tab"
-import { TransportTab } from "./tabs/transport-tab"
-import { SecurityTab } from "./tabs/security-tab"
-import { ProtocolTab } from "./tabs/protocol-tab"
-import { AdvancedTab } from "./tabs/advanced-tab"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Form } from "@/components/ui/form"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog"
-import {
-    Sheet,
-    SheetContent,
-    SheetTitle,
-    SheetDescription,
-} from "@/components/ui/sheet"
+import { ConnectionDialogShell } from "@/components/connection-dialog/connection-dialog-shell"
+import { ErrorSummary, UnsavedIndicator } from "@/components/connection-dialog/error-summary"
+import { useInboundForm, type TabId } from "./use-inbound-form"
+import { GeneralTab } from "./tabs/general-tab"
+import { ProtocolTab } from "./tabs/protocol-tab"
+import { TransportTab } from "./tabs/transport-tab"
+import { AdvancedTab } from "./tabs/advanced-tab"
 import type { Inbound } from "@/lib/types"
 
 interface InboundSettingsDialogProps {
@@ -50,29 +29,71 @@ export function InboundSettingsDialog({
     mode,
 }: InboundSettingsDialogProps) {
     const [loading, setLoading] = useState(false)
-    const isMobile = useIsMobile()
+    // True once the user pressed Save with a failing form; keeps the error
+    // summary in the footer until the errors are gone.
+    const [submitted, setSubmitted] = useState(false)
+    const confirm = useConfirm()
     const {
         form,
         activeTab,
         setActiveTab,
-        tabs,
+        rail,
+        stack,
+        errorList,
+        sectionVisibility,
         applyPreset,
+        appliedPresetId,
         navigateToFirstError,
     } = useInboundForm(mode, inbound, open)
 
-    // confirm before discarding a dirty form on any close path (save bypasses this)
-    const handleOpenChange = useCallback((next: boolean) => {
-        if (!next && form.formState.isDirty) {
-            if (!window.confirm("Discard unsaved changes?")) return
+    useEffect(() => {
+        if (open) setSubmitted(false)
+    }, [open])
+
+    const isDirty = form.formState.isDirty
+    const hasChanges = isDirty || (mode === "create" && appliedPresetId !== null)
+
+    // Guard every close path (overlay/Escape, close button, Cancel, mobile
+    // back arrow) so a dirty form isn't discarded silently. A successful
+    // save calls onOpenChange directly, bypassing this guard.
+    const handleOpenChange = useCallback(async (next: boolean) => {
+        if (!next && hasChanges) {
+            const ok = await confirm({
+                title: "Discard changes?",
+                description: mode === "create"
+                    ? "This inbound has not been created yet. Closing now loses what you entered."
+                    : "Your edits to this inbound have not been saved.",
+                confirmLabel: "Discard",
+                cancelLabel: "Keep editing",
+                variant: "warning",
+            })
+            if (!ok) return
         }
         onOpenChange(next)
-    }, [form, onOpenChange])
+    }, [hasChanges, confirm, mode, onOpenChange])
+
+    // Applying a template resets every tab. Ask first when the user has
+    // already changed something beyond tag/remark, which the reset keeps.
+    const handleApplyPreset = useCallback(async (presetId: string) => {
+        const dirtyKeys = Object.keys(form.formState.dirtyFields).filter((k) => k !== "tag" && k !== "remark")
+        if (dirtyKeys.length > 0) {
+            const ok = await confirm({
+                title: "Replace current settings?",
+                description: "The template fills every tab and replaces what you changed. Tag and remark are kept.",
+                confirmLabel: "Apply template",
+                cancelLabel: "Keep my settings",
+                variant: "warning",
+            })
+            if (!ok) return
+        }
+        applyPreset(presetId)
+    }, [form, confirm, applyPreset])
 
     const handleSave = async () => {
         const valid = await form.trigger()
         if (!valid) {
+            setSubmitted(true)
             navigateToFirstError()
-            toast.error("Please fix validation errors")
             return
         }
 
@@ -95,21 +116,23 @@ export function InboundSettingsDialog({
         }
     }
 
-    const title = mode === "create" ? "Add Inbound" : "Edit Inbound"
-    const saveLabel = loading ? "Saving..." : mode === "create" ? "Create Inbound" : "Save Changes"
+    const title = mode === "create"
+        ? "New inbound"
+        : <>Edit inbound{inbound?.tag && <span className="font-normal text-text-tertiary"> · {inbound.tag}</span>}</>
+    const primaryLabel = mode === "create" ? "Create inbound" : "Save changes"
 
-    const renderTabContent = () => {
+    const statusSlot = submitted && errorList.length > 0
+        ? <ErrorSummary errors={errorList} onJump={(tab) => setActiveTab(tab as TabId)} />
+        : hasChanges ? <UnsavedIndicator /> : null
+
+    const renderTab = () => {
         switch (activeTab) {
             case "general":
-                return <GeneralTab form={form} mode={mode} onApplyPreset={applyPreset} />
-            case "network":
-                return <NetworkTab form={form} />
-            case "transport":
-                return <TransportTab form={form} />
-            case "security":
-                return <SecurityTab form={form} />
+                return <GeneralTab form={form} mode={mode} appliedPresetId={appliedPresetId} onApplyPreset={handleApplyPreset} />
             case "protocol":
                 return <ProtocolTab form={form} />
+            case "transport":
+                return <TransportTab form={form} sectionVisibility={sectionVisibility} />
             case "advanced":
                 return <AdvancedTab form={form} />
             default:
@@ -117,107 +140,22 @@ export function InboundSettingsDialog({
         }
     }
 
-    const renderActiveTab = () => (
-        <AnimatePresence mode="wait">
-            <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                transition={{ duration: 0.15 }}
-            >
-                {renderTabContent()}
-            </motion.div>
-        </AnimatePresence>
-    )
-
-    // Mobile layout: full-screen Sheet with bottom tab bar
-    if (isMobile) {
-        return (
-            <Sheet open={open} onOpenChange={handleOpenChange}>
-                <SheetContent
-                    side="bottom"
-                    className="h-[100dvh] rounded-t-xl flex flex-col p-0 [&>button:last-child]:hidden"
-                >
-                    {/* Sticky header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b bg-background sticky top-0 z-10">
-                        <button
-                            type="button"
-                            onClick={() => handleOpenChange(false)}
-                            className="p-2 -ml-2 rounded-lg hover:bg-accent"
-                        >
-                            <HiArrowLeft className="w-5 h-5" />
-                        </button>
-                        <SheetTitle className="flex-1 text-center text-base">
-                            {title}
-                        </SheetTitle>
-                        <button
-                            type="button"
-                            onClick={handleSave}
-                            disabled={loading}
-                            className="text-primary font-semibold text-sm px-2 py-1 rounded-lg hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
-                        >
-                            {saveLabel}
-                        </button>
-                    </div>
-                    <SheetDescription className="sr-only">
-                        Configure your inbound connection settings
-                    </SheetDescription>
-
-                    <Form {...form}>
-                        {/* Scrollable content */}
-                        <div className="flex-1 overflow-y-auto px-4 py-4">
-                            {renderActiveTab()}
-                        </div>
-
-                        {/* Bottom tab bar */}
-                        <InboundTabBarMobile
-                            tabs={tabs}
-                            activeTab={activeTab}
-                            onTabChange={setActiveTab}
-                        />
-                    </Form>
-                </SheetContent>
-            </Sheet>
-        )
-    }
-
-    // Desktop layout: Dialog with vertical tab sidebar
     return (
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-w-4xl h-[85vh] max-h-[85vh] flex flex-col p-0 gap-0">
-                <DialogHeader className="px-6 pt-6 pb-3">
-                    <DialogTitle>{title}</DialogTitle>
-                    <DialogDescription>
-                        Configure your inbound connection settings
-                    </DialogDescription>
-                </DialogHeader>
-
-                <Form {...form}>
-                    {/* Tab sidebar + content */}
-                    <div className="flex flex-1 min-h-0 border-t">
-                        <InboundTabSidebar
-                            tabs={tabs}
-                            activeTab={activeTab}
-                            onTabChange={setActiveTab}
-                        />
-                        <ScrollArea className="flex-1">
-                            <div className="p-6">
-                                {renderActiveTab()}
-                            </div>
-                        </ScrollArea>
-                    </div>
-
-                    <DialogFooter className="border-t px-6 py-4">
-                        <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSave} disabled={loading}>
-                            {saveLabel}
-                        </Button>
-                    </DialogFooter>
-                </Form>
-            </DialogContent>
-        </Dialog>
+        <ConnectionDialogShell
+            open={open}
+            onOpenChange={(next) => { void handleOpenChange(next) }}
+            title={title}
+            description="Configure the inbound listener, protocol, transport and advanced options"
+            stack={stack}
+            rail={rail}
+            activeTab={activeTab}
+            onTabChange={(id) => setActiveTab(id as TabId)}
+            statusSlot={statusSlot}
+            primaryLabel={primaryLabel}
+            onPrimary={() => { void handleSave() }}
+            loading={loading}
+        >
+            <Form {...form}>{renderTab()}</Form>
+        </ConnectionDialogShell>
     )
 }

@@ -10,6 +10,10 @@ export const protocolColors: Record<string, string> = {
     socks: "bg-orange-500/10 text-orange-500 border-orange-500/20",
     freedom: "bg-cyan-500/10 text-cyan-500 border-cyan-500/20",
     blackhole: "bg-gray-500/10 text-muted-foreground border-gray-500/20",
+    wireguard: "bg-teal-500/10 text-teal-500 border-teal-500/20",
+    hysteria2: "bg-pink-500/10 text-pink-500 border-pink-500/20",
+    dns: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+    loopback: "bg-slate-500/10 text-slate-400 border-slate-500/20",
 }
 
 export function ProtocolBadge({ protocol }: { protocol: string }) {

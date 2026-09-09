@@ -1,11 +1,10 @@
 import { type UseFormReturn } from "react-hook-form"
 import { type InboundFormData } from "@/lib/validations/inbound-schema"
-import { INBOUND_PRESETS, type InboundPreset } from "@/lib/presets/inbound-presets"
+import { INBOUND_PRESETS } from "@/lib/presets/inbound-presets"
 import { INBOUND_PROTOCOLS } from "@/lib/types"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-    Form,
     FormControl,
     FormField,
     FormItem,
@@ -13,199 +12,163 @@ import {
     FormMessage,
     FormDescription,
 } from "@/components/ui/form"
-import { cn } from "@/lib/utils"
-import { motion } from "framer-motion"
-import { useState } from "react"
+import { TemplatePicker, type TemplateItem } from "@/components/connection-dialog/template-picker"
+import { Callout, FormSection } from "@/components/connection-dialog/section"
+
+const TEMPLATE_ITEMS: TemplateItem[] = INBOUND_PRESETS.map((p) => ({
+    id: p.id,
+    name: p.name,
+    tokens: p.tokens,
+    description: p.description,
+}))
+
+const Optional = () => <span className="text-xs font-normal text-text-tertiary">optional</span>
 
 interface GeneralTabProps {
     form: UseFormReturn<InboundFormData>
     mode: "create" | "edit"
+    appliedPresetId: string | null
     onApplyPreset: (presetId: string) => void
 }
 
-export function GeneralTab({ form, mode, onApplyPreset }: GeneralTabProps) {
-    const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
+export function GeneralTab({ form, mode, appliedPresetId, onApplyPreset }: GeneralTabProps) {
     const protocol = form.watch("protocol")
-
-    const handlePresetClick = (preset: InboundPreset) => {
-        setSelectedPreset(preset.id)
-        onApplyPreset(preset.id)
-    }
 
     return (
         <div className="space-y-6">
-            {/* Presets grid - create mode only */}
             {mode === "create" && (
-                <div className="space-y-3">
-                    <h3 className="text-sm font-medium text-muted-foreground">Quick Start Templates</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {INBOUND_PRESETS.map((preset) => {
-                            const Icon = preset.icon
-                            const isSelected = selectedPreset === preset.id
-                            return (
-                                <motion.button
-                                    key={preset.id}
-                                    type="button"
-                                    whileTap={{ scale: 0.97 }}
-                                    animate={isSelected ? { scale: [1, 1.02, 1] } : {}}
-                                    transition={{ duration: 0.15 }}
-                                    onClick={() => handlePresetClick(preset)}
-                                    className={cn(
-                                        "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
-                                        isSelected
-                                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                                            : "hover:bg-accent/50"
-                                    )}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <Icon className="h-4 w-4 text-muted-foreground" />
-                                        <span className="text-sm font-medium">{preset.name}</span>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground leading-tight">
-                                        {preset.description}
-                                    </p>
-                                </motion.button>
-                            )
-                        })}
-                    </div>
-                </div>
+                <TemplatePicker
+                    items={TEMPLATE_ITEMS}
+                    appliedId={appliedPresetId}
+                    onApply={onApplyPreset}
+                    visibleCount={8}
+                    sourceHint="from XTLS/Xray-examples"
+                />
             )}
 
-            {/* Tag & Remark */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                <FormField
-                    control={form.control}
-                    name="tag"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Tag *</FormLabel>
-                            <FormControl>
-                                <Input
-                                    placeholder="vless-tcp-reality"
-                                    {...field}
-                                />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                                Unique identifier for this inbound
-                            </FormDescription>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="remark"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Remark</FormLabel>
-                            <FormControl>
-                                <Input
-                                    placeholder="Germany Fast"
-                                    {...field}
-                                    value={field.value || ""}
-                                />
-                            </FormControl>
-                        </FormItem>
-                    )}
-                />
-            </div>
+            <FormSection title="Identity">
+                <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
+                    <FormField
+                        control={form.control}
+                        name="tag"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Tag <span className="text-text-tertiary">*</span></FormLabel>
+                                <FormControl>
+                                    <Input placeholder="vless-de-fra" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                                <FormDescription className="text-xs">
+                                    Unique on this node. Used in routing rules and client links.
+                                </FormDescription>
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="remark"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Remark</FormLabel>
+                                <FormControl>
+                                    <Input placeholder="Frankfurt · Hetzner" {...field} value={field.value || ""} />
+                                </FormControl>
+                                <FormDescription className="text-xs">
+                                    Shown to you in lists. Clients never see it.
+                                </FormDescription>
+                            </FormItem>
+                        )}
+                    />
+                </div>
+            </FormSection>
 
-            {/* Listen, Port, Protocol */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <FormField
-                    control={form.control}
-                    name="listen"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Listen</FormLabel>
-                            <FormControl>
-                                <Input
-                                    placeholder="0.0.0.0"
-                                    {...field}
-                                    value={field.value || ""}
-                                />
-                            </FormControl>
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="port"
-                    render={({ field }) => (
-                        <FormItem>
-                            <FormLabel>Port *</FormLabel>
-                            <FormControl>
-                                <Input
-                                    type="number"
-                                    placeholder="443"
-                                    {...field}
-                                    value={field.value || ""}
-                                    onChange={(e) => {
-                                        // NaN for non-integer input so zod flags it (no silent truncation)
-                                        field.onChange(e.target.valueAsNumber)
-                                    }}
-                                />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
+            <FormSection title="Protocol">
                 <FormField
                     control={form.control}
                     name="protocol"
                     render={({ field }) => (
-                        <FormItem className="col-span-2 md:col-span-1">
+                        <FormItem>
                             <FormLabel>Protocol</FormLabel>
-                            <Select
-                                value={field.value}
-                                onValueChange={field.onChange}
-                            >
+                            <Select value={field.value} onValueChange={field.onChange}>
                                 <FormControl>
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue />
-                                    </SelectTrigger>
+                                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
                                     {INBOUND_PROTOCOLS.map((p) => (
-                                        <SelectItem key={p.value} value={p.value}>
-                                            {p.label}
-                                        </SelectItem>
+                                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            <FormDescription className="text-xs">
+                                Changes which settings appear under Protocol and Transport.
+                            </FormDescription>
                         </FormItem>
                     )}
                 />
-            </div>
+            </FormSection>
 
-            {/* Port Range */}
-            <FormField
-                control={form.control}
-                name="port_range"
-                render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>Port range (optional)</FormLabel>
-                        <FormControl>
-                            <Input
-                                placeholder="e.g. 1000-2000 or 80,443,8080"
-                                {...field}
-                                value={field.value || ""}
-                            />
-                        </FormControl>
-                        <FormDescription className="text-xs">
-                            Listener binds this range/list; the Port above is still used for client links.
-                        </FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                )}
-            />
-
-            {/* Client Management Info */}
-            {["vless", "vmess", "trojan"].includes(protocol) && (
-                <div className="text-center py-4 text-muted-foreground rounded-lg border bg-muted/20">
-                    <p className="font-medium">{protocol?.toUpperCase()} uses dynamic client management.</p>
-                    <p className="text-sm mt-1">Users are added via the subscription system.</p>
+            <FormSection title="Listener">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1.4fr)]">
+                    <FormField
+                        control={form.control}
+                        name="listen"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Listen</FormLabel>
+                                <FormControl>
+                                    <Input placeholder="0.0.0.0" {...field} value={field.value || ""} />
+                                </FormControl>
+                                <FormDescription className="text-xs">IP or unix socket path.</FormDescription>
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="port"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Port <span className="text-text-tertiary">*</span></FormLabel>
+                                <FormControl>
+                                    <Input
+                                        type="number"
+                                        placeholder="443"
+                                        {...field}
+                                        value={field.value || ""}
+                                        onChange={(e) => {
+                                            // valueAsNumber is NaN for anything that isn't a clean
+                                            // integer (e.g. "443abc"), letting zod flag it instead
+                                            // of silently truncating.
+                                            field.onChange(e.target.valueAsNumber)
+                                        }}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={form.control}
+                        name="port_range"
+                        render={({ field }) => (
+                            <FormItem className="col-span-2 md:col-span-1">
+                                <FormLabel>Port range <Optional /></FormLabel>
+                                <FormControl>
+                                    <Input placeholder="1000-2000 or 80,443,8080" {...field} value={field.value || ""} />
+                                </FormControl>
+                                <FormDescription className="text-xs">
+                                    Binds this range too; Port above stays in client links.
+                                </FormDescription>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
                 </div>
+            </FormSection>
+
+            {["vless", "vmess", "trojan"].includes(protocol) && (
+                <Callout>
+                    {protocol.toUpperCase()} clients are managed by the subscription system. There is nothing to add here.
+                </Callout>
             )}
         </div>
     )

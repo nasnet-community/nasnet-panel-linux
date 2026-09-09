@@ -2,11 +2,11 @@ import { useMemo, useState } from "react"
 import { type UseFormReturn } from "react-hook-form"
 import { type OutboundFormData } from "@/lib/validations/outbound-schema"
 import { SockoptForm } from "@/components/shared/sockopt-form"
-import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { FinalMaskEditor } from "@/components/shared/finalmask-editor"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Disclosure, FormSection, SwitchRow } from "@/components/connection-dialog/section"
 import type { MuxSettings, ProxySettingsConfig, FinalMask, Outbound } from "@/lib/types"
 
 interface AdvancedTabProps {
@@ -20,7 +20,7 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
     const mux = (form.watch("mux_settings") || {}) as MuxSettings
     const proxy = (form.watch("proxy_settings") || {}) as ProxySettingsConfig
     const finalmask = (form.watch("finalmask") || {}) as FinalMask
-    const [showProxy, setShowProxy] = useState(!!proxy.tag)
+    const sendThrough = form.watch("send_through") || ""
     const [showFinalMask, setShowFinalMask] = useState(!!finalmask.tcp || !!finalmask.udp || !!finalmask.quicParams)
 
     const chainableOutbounds = useMemo(() =>
@@ -37,22 +37,17 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
     }
 
     return (
-        <div className="space-y-6">
-            {/* Mux */}
-            <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h4 className="text-sm font-medium">Mux (Multiplexing)</h4>
-                        <p className="text-xs text-muted-foreground">Multiplex connections over a single TCP link</p>
-                    </div>
-                    <Switch
-                        checked={mux.enabled ?? false}
-                        onCheckedChange={(checked) => updateMux({ enabled: checked })}
-                    />
-                </div>
+        <div className="space-y-7">
+            <FormSection title="Mux (multiplexing)">
+                <SwitchRow
+                    label="Enable Mux"
+                    help="Multiplex connections over a single TCP link."
+                    checked={mux.enabled ?? false}
+                    onCheckedChange={(checked) => updateMux({ enabled: checked })}
+                />
                 {mux.enabled && (
-                    <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-4 rounded-md border bg-muted/20 p-4">
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div className="space-y-2">
                                 <Label>Concurrency</Label>
                                 <Input
@@ -79,9 +74,7 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
                                 value={mux.xudpProxyUDP443 || "reject"}
                                 onValueChange={(v) => updateMux({ xudpProxyUDP443: v })}
                             >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="reject">Reject</SelectItem>
                                     <SelectItem value="allow">Allow</SelectItem>
@@ -91,91 +84,83 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
                         </div>
                     </div>
                 )}
-            </div>
+            </FormSection>
 
-            {/* Proxy Chaining */}
-            <div className="space-y-4">
-                <button
-                    type="button"
-                    className="text-xs text-primary hover:underline"
-                    onClick={() => {
-                        setShowProxy(!showProxy)
-                        if (showProxy) updateProxy({ tag: "", transportLayer: false })
-                    }}
+            <FormSection title="Routing">
+                <Disclosure
+                    title="Proxy chaining"
+                    summary={proxy.tag ? `via ${proxy.tag}` : "off"}
+                    defaultOpen={!!proxy.tag}
+                    onOpenChange={(open) => { if (!open && proxy.tag) updateProxy({ tag: "", transportLayer: false }) }}
                 >
-                    {showProxy ? "Hide" : "Show"} Proxy Chaining
-                </button>
-                {showProxy && (
-                    <div className="space-y-4 rounded-md border p-4 bg-muted/20">
-                        <div className="space-y-2">
-                            <Label>Outbound Tag</Label>
-                            {chainableOutbounds.length > 0 ? (
-                                <Select
-                                    value={proxy.tag || ""}
-                                    onValueChange={(v) => updateProxy({ tag: v })}
-                                >
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Select an outbound" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {chainableOutbounds.map((o) => (
-                                            <SelectItem key={o.tag} value={o.tag}>
-                                                {o.tag}{o.remark ? ` (${o.remark})` : ""} — {o.protocol}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            ) : (
-                                <p className="text-xs text-muted-foreground italic">No other outbounds available to chain to</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">Forward traffic through another outbound</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <Switch
-                                id="transportLayer"
-                                checked={proxy.transportLayer ?? false}
-                                onCheckedChange={(c) => updateProxy({ transportLayer: c })}
-                            />
-                            <Label htmlFor="transportLayer">Transport Layer</Label>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            When enabled, proxies raw TCP through the target outbound&apos;s transport instead of the proxy protocol layer
-                        </p>
+                    <div className="space-y-2">
+                        <Label>Outbound tag</Label>
+                        {chainableOutbounds.length > 0 ? (
+                            <Select
+                                value={proxy.tag || ""}
+                                onValueChange={(v) => updateProxy({ tag: v })}
+                            >
+                                <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Select an outbound" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {chainableOutbounds.map((o) => (
+                                        <SelectItem key={o.tag} value={o.tag}>
+                                            {o.tag}{o.remark ? ` (${o.remark})` : ""} — {o.protocol}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <p className="text-xs italic text-muted-foreground">No other outbounds available to chain to</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">Forward this outbound's traffic through another outbound. Collapsing clears it.</p>
                     </div>
-                )}
-            </div>
+                    <SwitchRow
+                        id="transportLayer"
+                        label="Transport layer"
+                        help="Proxy raw TCP through the target outbound's transport instead of the proxy protocol layer."
+                        checked={proxy.transportLayer ?? false}
+                        onCheckedChange={(c) => updateProxy({ transportLayer: c })}
+                    />
+                </Disclosure>
 
-            {/* Socket Options */}
-            <div className="space-y-4">
-                <h4 className="text-sm font-medium text-muted-foreground">Socket Options</h4>
+                <div className="space-y-2">
+                    <Label htmlFor="send-through">Send through <span className="text-xs font-normal text-text-tertiary">optional</span></Label>
+                    <Input
+                        id="send-through"
+                        placeholder="0.0.0.0"
+                        value={sendThrough}
+                        onChange={(e) => form.setValue("send_through", e.target.value, { shouldDirty: true })}
+                    />
+                    <p className="text-xs text-muted-foreground">Local address to bind outgoing connections to. Leave empty for the default route.</p>
+                </div>
+            </FormSection>
+
+            <FormSection title="Socket options">
                 <SockoptForm
                     data={sockopt}
                     onChange={(s) => form.setValue("sockopt_settings", s, { shouldDirty: true })}
                 />
-            </div>
+            </FormSection>
 
-            {/* FinalMask */}
-            <div className="space-y-4 border-t pt-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h4 className="text-sm font-medium text-muted-foreground">Packet Masking (FinalMask)</h4>
-                        <p className="text-xs text-muted-foreground">Mask packet headers for anti-detection</p>
-                    </div>
-                    <Switch
-                        checked={showFinalMask}
-                        onCheckedChange={(checked) => {
-                            setShowFinalMask(checked)
-                            if (!checked) form.setValue("finalmask", null, { shouldDirty: true })
-                        }}
-                    />
-                </div>
+            <FormSection title="Packet masking (FinalMask)">
+                <SwitchRow
+                    label="Mask packet headers"
+                    help="Anti-detection for TCP, UDP and QUIC packet shapes."
+                    checked={showFinalMask}
+                    onCheckedChange={(checked) => {
+                        setShowFinalMask(checked)
+                        if (!checked) form.setValue("finalmask", null, { shouldDirty: true })
+                    }}
+                />
                 {showFinalMask && (
                     <FinalMaskEditor
                         value={finalmask}
                         onChange={(next) => form.setValue("finalmask", next, { shouldDirty: true })}
                     />
                 )}
-            </div>
+            </FormSection>
         </div>
     )
 }

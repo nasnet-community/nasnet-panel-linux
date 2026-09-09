@@ -207,7 +207,11 @@ export function VLESSForm({ data, onChange, mode, network, security }: VLESSForm
                             onChange={(e) => onChange({ ...data, decryption: e.target.value })}
                             placeholder="none"
                         />
-                        <p className="text-[10px] text-muted-foreground">Server side (Private Key/ID)</p>
+                        <p className="text-xs text-muted-foreground">
+                            {mode === 'inbound'
+                                ? "Server side. Private key or ID; `none` disables VLESS encryption."
+                                : "Only used if this node also serves this VLESS config; usually leave `none`."}
+                        </p>
                     </div>
                     <div className="space-y-2">
                         <Label>Encryption</Label>
@@ -216,7 +220,11 @@ export function VLESSForm({ data, onChange, mode, network, security }: VLESSForm
                             onChange={(e) => onChange({ ...data, encryption: e.target.value })}
                             placeholder="none"
                         />
-                        <p className="text-[10px] text-muted-foreground">Client side (Public Key/ID)</p>
+                        <p className="text-xs text-muted-foreground">
+                            {mode === 'inbound'
+                                ? "Client side. Public key or ID that goes into subscription links."
+                                : "Must match the remote server's decryption; `none` unless it uses VLESS encryption."}
+                        </p>
                     </div>
                 </div>
             </div>

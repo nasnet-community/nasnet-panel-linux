@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { HiOutlinePlus, HiOutlineTrash } from "react-icons/hi"
 import { SockoptSettings } from "@/lib/types"
+import { Disclosure } from "@/components/connection-dialog/section"
 
 interface SockoptFormProps {
     data?: SockoptSettings
@@ -78,28 +79,26 @@ export function SockoptForm({ data, onChange }: SockoptFormProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label>TProxy</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        value={data.tproxy || "off"}
-                        onChange={(e) => update("tproxy", e.target.value)}
-                    >
-                        <option value="off">Off</option>
-                        <option value="redirect">Redirect</option>
-                        <option value="tproxy">TProxy</option>
-                    </select>
+                    <Select value={data.tproxy || "off"} onValueChange={(v) => update("tproxy", v)}>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="off">Off</SelectItem>
+                            <SelectItem value="redirect">Redirect</SelectItem>
+                            <SelectItem value="tproxy">TProxy</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="space-y-2">
                     <Label>Domain Strategy</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        value={data.domainStrategy || "AsIs"}
-                        onChange={(e) => update("domainStrategy", e.target.value)}
-                    >
-                        <option value="AsIs">AsIs</option>
-                        <option value="UseIP">UseIP</option>
-                        <option value="UseIPv4">UseIPv4</option>
-                        <option value="UseIPv6">UseIPv6</option>
-                    </select>
+                    <Select value={data.domainStrategy || "AsIs"} onValueChange={(v) => update("domainStrategy", v)}>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="AsIs">AsIs</SelectItem>
+                            <SelectItem value="UseIP">UseIP</SelectItem>
+                            <SelectItem value="UseIPv4">UseIPv4</SelectItem>
+                            <SelectItem value="UseIPv6">UseIPv6</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 
@@ -215,7 +214,6 @@ export function SockoptForm({ data, onChange }: SockoptFormProps) {
 
 // ============ Expert Socket Options ============
 function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onChange: (d: SockoptSettings | null) => void }) {
-    const [showExpert, setShowExpert] = useState(false)
     const [showHappyEyeballs, setShowHappyEyeballs] = useState(!!data.happyEyeballs)
 
     const update = (key: keyof SockoptSettings, value: SockoptSettings[keyof SockoptSettings]) => {
@@ -240,16 +238,7 @@ function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onCha
     }
 
     return (
-        <>
-            <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                onClick={() => setShowExpert(!showExpert)}
-            >
-                {showExpert ? "Hide" : "Show"} Expert Socket Options
-            </button>
-            {showExpert && (
-                <div className="space-y-4 border rounded-md p-4 bg-background">
+        <Disclosure title="Expert socket options" summary="Penetrate, address strategy, Happy Eyeballs, custom sockopt">
                     <div className="flex items-center space-x-2">
                         <Switch
                             id="penetrate"
@@ -381,8 +370,6 @@ function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onCha
                             </div>
                         ))}
                     </div>
-                </div>
-            )}
-        </>
+        </Disclosure>
     )
 }

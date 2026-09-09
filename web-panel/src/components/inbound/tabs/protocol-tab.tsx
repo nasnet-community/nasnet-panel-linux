@@ -8,6 +8,7 @@ import { SOCKSForm } from "@/components/shared/protocol-forms/socks-form"
 import { DokodemoForm } from "@/components/shared/protocol-forms/dokodemo-form"
 import { HysteriaForm } from "@/components/shared/protocol-forms/hysteria-form"
 import { FallbacksForm } from "@/components/shared/protocol-forms/fallbacks-form"
+import { Callout } from "@/components/connection-dialog/section"
 
 interface ProtocolTabProps {
     form: UseFormReturn<InboundFormData>
@@ -28,6 +29,11 @@ export function ProtocolTab({ form }: ProtocolTabProps) {
                     network={network}
                     security={security}
                 />
+            )}
+            {protocol === "vmess" && (
+                <Callout>
+                    VMess has no per-inbound settings. Clients are managed by the subscription system.
+                </Callout>
             )}
             {protocol === "trojan" && (
                 <FallbacksForm

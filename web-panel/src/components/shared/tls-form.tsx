@@ -2,9 +2,38 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Callout, Disclosure } from "@/components/connection-dialog/section"
 import { TLSSettings, TLS_FINGERPRINTS, AgentCertificate, TLSCertificate, SNI } from "@/lib/types"
 import { useCertificates, useSNIs } from "@/lib/queries"
 import * as React from "react"
+
+const TLS_VERSIONS = [
+    { value: "", label: "Default" },
+    { value: "1.0", label: "TLS 1.0" },
+    { value: "1.1", label: "TLS 1.1" },
+    { value: "1.2", label: "TLS 1.2" },
+    { value: "1.3", label: "TLS 1.3" },
+]
+
+// Radix Select cannot represent "" as an item value, so "Default" rides on a
+// sentinel and is mapped back to "" when written.
+const DEFAULT_SENTINEL = "__default__"
+const toSelectValue = (v?: string) => (v ? v : DEFAULT_SENTINEL)
+const fromSelectValue = (v: string) => (v === DEFAULT_SENTINEL ? "" : v)
+
+function TLSVersionSelect({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+    return (
+        <Select value={toSelectValue(value)} onValueChange={(v) => onChange(fromSelectValue(v))}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+                {TLS_VERSIONS.map((o) => (
+                    <SelectItem key={o.value || "default"} value={o.value || DEFAULT_SENTINEL}>{o.label}</SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
 
 interface TLSFormProps {
     settings?: TLSSettings
@@ -96,17 +125,17 @@ export function TLSForm({
                 </div>
                 <div className="space-y-2">
                     <Label>Fingerprint</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <Select
                         value={data.fingerprint || "chrome"}
-                        onChange={(e) => onChange({ ...data, fingerprint: e.target.value })}
+                        onValueChange={(v) => onChange({ ...data, fingerprint: v })}
                     >
-                        {TLS_FINGERPRINTS.map((f) => (
-                            <option key={f.value} value={f.value}>
-                                {f.label}
-                            </option>
-                        ))}
-                    </select>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            {TLS_FINGERPRINTS.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     <p className="text-xs text-muted-foreground">
                         Client-side hint for generated links; ignored by the server.
                     </p>
@@ -161,35 +190,36 @@ export function TLSForm({
                         <div className="space-y-2">
                             <Label>Select Certificate</Label>
                             {!hasAnyManaged ? (
-                                <div className="text-sm text-yellow-500 border border-yellow-200 bg-yellow-50 p-2 rounded">
-                                    No certificates found. Issue one in Certificates page or add a domain.
-                                </div>
+                                <Callout tone="warning">
+                                    No managed certificates yet. Issue one on the Certificates page or add a domain.
+                                </Callout>
                             ) : (
-                                <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                    value={getManagedValue()}
-                                    onChange={(e) => handleManagedSelect(e.target.value)}
-                                >
-                                    <option value="0">Select a certificate...</option>
-                                    {availableDomains.length > 0 && (
-                                        <optgroup label="Domains">
-                                            {availableDomains.map((d: SNI) => (
-                                                <option key={`sni-${d.id}`} value={`sni-${d.id}`}>
-                                                    {d.domain}{d.expires_at && d.expires_at !== "0001-01-01T00:00:00Z" ? ` (Expires: ${d.expires_at.split('T')[0]})` : ""}
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    )}
-                                    {availableCerts.length > 0 && (
-                                        <optgroup label="Certificates">
-                                            {availableCerts.map((c: AgentCertificate) => (
-                                                <option key={`cert-${c.id}`} value={`cert-${c.id}`}>
-                                                    {c.common_name} (Expires: {c.not_after.split('T')[0]})
-                                                </option>
-                                            ))}
-                                        </optgroup>
-                                    )}
-                                </select>
+                                <Select value={getManagedValue()} onValueChange={handleManagedSelect}>
+                                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="0">Select a certificate…</SelectItem>
+                                        {availableDomains.length > 0 && (
+                                            <SelectGroup>
+                                                <SelectLabel>Domains</SelectLabel>
+                                                {availableDomains.map((d: SNI) => (
+                                                    <SelectItem key={`sni-${d.id}`} value={`sni-${d.id}`}>
+                                                        {d.domain}{d.expires_at && d.expires_at !== "0001-01-01T00:00:00Z" ? ` (expires ${d.expires_at.split('T')[0]})` : ""}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectGroup>
+                                        )}
+                                        {availableCerts.length > 0 && (
+                                            <SelectGroup>
+                                                <SelectLabel>Certificates</SelectLabel>
+                                                {availableCerts.map((c: AgentCertificate) => (
+                                                    <SelectItem key={`cert-${c.id}`} value={`cert-${c.id}`}>
+                                                        {c.common_name} (expires {c.not_after.split('T')[0]})
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectGroup>
+                                        )}
+                                    </SelectContent>
+                                </Select>
                             )}
                         </div>
                     ) : (
@@ -269,8 +299,6 @@ export function TLSForm({
 }
 
 function AdvancedTLSSection({ data, onChange, isOutbound }: { data: TLSSettings; onChange: (s: TLSSettings) => void; isOutbound: boolean }) {
-    const [show, setShow] = React.useState(false)
-
     // Local text state for curve preferences to prevent comma from being
     // eaten during typing (same trick as ALPN above).
     const [curveText, setCurveText] = React.useState(() => (data.curvePreferences || []).join(", "))
@@ -283,12 +311,7 @@ function AdvancedTLSSection({ data, onChange, isOutbound }: { data: TLSSettings;
     }, [curveKey])
 
     return (
-        <div className="space-y-3">
-            <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShow(!show)}>
-                {show ? "Hide" : "Show"} Advanced TLS Options
-            </button>
-            {show && (
-                <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+        <Disclosure title="Advanced TLS" summary="Versions, ciphers, curves, session resumption">
                     <div className="flex items-center justify-between">
                         <Label>Enable Session Resumption</Label>
                         <Switch
@@ -309,31 +332,11 @@ function AdvancedTLSSection({ data, onChange, isOutbound }: { data: TLSSettings;
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>Min TLS Version</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={data.minVersion || ""}
-                                onChange={(e) => onChange({ ...data, minVersion: e.target.value })}
-                            >
-                                <option value="">Default</option>
-                                <option value="1.0">TLS 1.0</option>
-                                <option value="1.1">TLS 1.1</option>
-                                <option value="1.2">TLS 1.2</option>
-                                <option value="1.3">TLS 1.3</option>
-                            </select>
+                            <TLSVersionSelect value={data.minVersion} onChange={(v) => onChange({ ...data, minVersion: v })} />
                         </div>
                         <div className="space-y-2">
                             <Label>Max TLS Version</Label>
-                            <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                value={data.maxVersion || ""}
-                                onChange={(e) => onChange({ ...data, maxVersion: e.target.value })}
-                            >
-                                <option value="">Default</option>
-                                <option value="1.0">TLS 1.0</option>
-                                <option value="1.1">TLS 1.1</option>
-                                <option value="1.2">TLS 1.2</option>
-                                <option value="1.3">TLS 1.3</option>
-                            </select>
+                            <TLSVersionSelect value={data.maxVersion} onChange={(v) => onChange({ ...data, maxVersion: v })} />
                         </div>
                     </div>
                     <div className="space-y-2">
@@ -393,22 +396,13 @@ function AdvancedTLSSection({ data, onChange, isOutbound }: { data: TLSSettings;
                         />
                         <p className="text-xs text-muted-foreground">TLS key log file for debugging</p>
                     </div>
-                </div>
-            )}
-        </div>
+        </Disclosure>
     )
 }
 
 function ECHSection({ data, onChange }: { data: TLSSettings; onChange: (s: TLSSettings) => void }) {
-    const [show, setShow] = React.useState(!!data.ech)
-
     return (
-        <div className="space-y-3">
-            <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShow(!show)}>
-                {show ? "Hide" : "Show"} Encrypted Client Hello (ECH)
-            </button>
-            {show && (
-                <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+        <Disclosure title="Encrypted Client Hello (ECH)" summary={data.ech ? "configured" : "off"} defaultOpen={!!data.ech}>
                     <div className="space-y-2">
                         <Label>ECH Configuration (JSON)</Label>
                         <Textarea
@@ -420,8 +414,6 @@ function ECHSection({ data, onChange }: { data: TLSSettings; onChange: (s: TLSSe
                         />
                         <p className="text-xs text-muted-foreground">ECH settings as JSON object. See xray-core docs for supported fields.</p>
                     </div>
-                </div>
-            )}
-        </div>
+        </Disclosure>
     )
 }

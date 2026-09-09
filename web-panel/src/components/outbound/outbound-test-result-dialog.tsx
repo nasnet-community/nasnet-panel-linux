@@ -31,7 +31,7 @@ interface OutboundTestResultDialogProps {
     onRetest: (speedtest: boolean) => void
 }
 
-const STATUS_LABELS: Record<OutboundTestStatus, string> = {
+export const STATUS_LABELS: Record<OutboundTestStatus, string> = {
     passed: "Passed",
     "semi-passed": "Partially passed",
     failed: "Failed",

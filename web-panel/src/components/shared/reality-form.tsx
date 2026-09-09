@@ -1,12 +1,35 @@
 import React, { useState } from "react"
+import { Copy } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Disclosure } from "@/components/connection-dialog/section"
 import { RealitySettings, TLS_FINGERPRINTS } from "@/lib/types"
 import { generateX25519Keys } from "@/lib/api/nodes"
+import { copyToClipboard } from "@/lib/utils"
 import { toast } from "sonner"
+
+function CopyButton({ value, label }: { value?: string; label: string }) {
+    return (
+        <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Copy ${label}`}
+            disabled={!value}
+            onClick={async () => {
+                if (!value) return
+                await copyToClipboard(value)
+                toast.success(`${label} copied`)
+            }}
+        >
+            <Copy className="h-3.5 w-3.5" />
+        </Button>
+    )
+}
 
 interface RealityFormProps {
     settings?: RealitySettings
@@ -77,17 +100,17 @@ export function RealityForm({
                 </div>
                 <div className="space-y-2">
                     <Label>Fingerprint</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <Select
                         value={data.fingerprint || "chrome"}
-                        onChange={(e) => onChange({ ...data, fingerprint: e.target.value })}
+                        onValueChange={(v) => onChange({ ...data, fingerprint: v })}
                     >
-                        {TLS_FINGERPRINTS.map((f) => (
-                            <option key={f.value} value={f.value}>
-                                {f.label}
-                            </option>
-                        ))}
-                    </select>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            {TLS_FINGERPRINTS.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                     <p className="text-xs text-muted-foreground">
                         Client-side hint for generated links; ignored by the server.
                     </p>
@@ -112,7 +135,7 @@ export function RealityForm({
 
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                    <Label>Private Key / Public Key</Label>
+                    <Label>Key pair</Label>
                     <Button
                         type="button"
                         variant="outline"
@@ -120,20 +143,40 @@ export function RealityForm({
                         onClick={handleGenerateKeys}
                         disabled={generating}
                     >
-                        {generating ? "Generating..." : "Generate Key Pair"}
+                        {generating ? "Generating…" : "Generate key pair"}
                     </Button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                        placeholder="Server private key"
-                        value={data.privateKey || ""}
-                        onChange={(e) => onChange({ ...data, privateKey: e.target.value })}
-                    />
-                    <Input
-                        placeholder="For client config"
-                        value={data.publicKey || ""}
-                        onChange={(e) => onChange({ ...data, publicKey: e.target.value })}
-                    />
+                    <div className="space-y-2">
+                        <div className="flex h-8 items-center justify-between">
+                            <Label htmlFor="reality-private-key" className="text-xs text-muted-foreground">
+                                {isInbound ? "Private key" : "Private key (not used by clients)"}
+                            </Label>
+                            <CopyButton value={data.privateKey} label="Private key" />
+                        </div>
+                        <Input
+                            id="reality-private-key"
+                            placeholder="x25519 private key"
+                            className="font-mono text-xs"
+                            value={data.privateKey || ""}
+                            onChange={(e) => onChange({ ...data, privateKey: e.target.value })}
+                        />
+                        <p className="text-xs text-muted-foreground">Stays on the server.</p>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="flex h-8 items-center justify-between">
+                            <Label htmlFor="reality-public-key" className="text-xs text-muted-foreground">Public key</Label>
+                            <CopyButton value={data.publicKey} label="Public key" />
+                        </div>
+                        <Input
+                            id="reality-public-key"
+                            placeholder="x25519 public key"
+                            className="font-mono text-xs"
+                            value={data.publicKey || ""}
+                            onChange={(e) => onChange({ ...data, publicKey: e.target.value })}
+                        />
+                        <p className="text-xs text-muted-foreground">Goes into client links.</p>
+                    </div>
                 </div>
             </div>
 
@@ -226,15 +269,8 @@ export function RealityForm({
 }
 
 function AdvancedRealitySection({ data, onChange }: { data: RealitySettings; onChange: (s: RealitySettings) => void }) {
-    const [show, setShow] = useState(false)
-
     return (
-        <div className="space-y-3">
-            <button type="button" className="text-xs text-primary hover:underline" onClick={() => setShow(!show)}>
-                {show ? "Hide" : "Show"} Advanced Reality Options
-            </button>
-            {show && (
-                <div className="space-y-4 rounded-md border p-4 bg-muted/20">
+        <Disclosure title="Advanced Reality" summary="Client version limits, time diff, key log">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>Min Client Version</Label>
@@ -277,8 +313,6 @@ function AdvancedRealitySection({ data, onChange }: { data: RealitySettings; onC
                         />
                         <p className="text-xs text-muted-foreground">TLS key log file for debugging</p>
                     </div>
-                </div>
-            )}
-        </div>
+        </Disclosure>
     )
 }

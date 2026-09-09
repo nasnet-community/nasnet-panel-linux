@@ -6,12 +6,17 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { HiOutlinePlus, HiOutlineTrash } from "react-icons/hi"
 import { TransportSettings, RangeConfig, XmuxConfig, XHTTP_SESSION_ID_TABLES } from "@/lib/types"
+import { Disclosure, SectionTitle, SwitchRow } from "@/components/connection-dialog/section"
 
 interface TransportFormProps {
     network: string
     settings?: TransportSettings
     onChange: (settings: TransportSettings) => void
 }
+
+// Transports whose xray settings object carries its own acceptProxyProtocol.
+// (sockopt has a separate, global one — both are real xray keys.)
+const PROXY_PROTOCOL_NETWORKS = ["tcp", "raw", "ws", "httpupgrade"]
 
 export function TransportForm({
     network,
@@ -22,31 +27,19 @@ export function TransportForm({
 
     return (
         <div className="space-y-4">
-            {/* Meaningful for tcp/ws/httpupgrade; shown for all networks since
-                xray accepts it regardless and hiding it per-network adds
-                little value here. */}
-            <div className="flex items-center justify-between rounded-md border p-3">
-                <div>
-                    <Label>Accept PROXY Protocol</Label>
-                    <p className="text-xs text-muted-foreground">Trust PROXY protocol v1/v2 header from the connecting peer</p>
-                </div>
-                <Switch
-                    checked={data.acceptProxyProtocol ?? false}
-                    onCheckedChange={(checked) => onChange({ ...data, acceptProxyProtocol: checked })}
-                />
-            </div>
-
             {network === "tcp" && (
                 <div className="space-y-2">
                     <Label>Header Type</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <Select
                         value={data.headerType || "none"}
-                        onChange={(e) => onChange({ ...data, headerType: e.target.value })}
+                        onValueChange={(v) => onChange({ ...data, headerType: v })}
                     >
-                        <option value="none">None</option>
-                        <option value="http">HTTP</option>
-                    </select>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="http">HTTP</SelectItem>
+                        </SelectContent>
+                    </Select>
                     {data.headerType === "http" && (
                         <div className="space-y-2 mt-2">
                             <Label>HTTP Path</Label>
@@ -220,6 +213,15 @@ export function TransportForm({
             {network === "kcp" && (
                 <KCPSection data={data} onChange={onChange} />
             )}
+
+            {PROXY_PROTOCOL_NETWORKS.includes(network) && (
+                <SwitchRow
+                    label="Accept PROXY protocol"
+                    help="Trust the PROXY protocol v1/v2 header sent by a fronting load balancer."
+                    checked={data.acceptProxyProtocol ?? false}
+                    onCheckedChange={(checked) => onChange({ ...data, acceptProxyProtocol: checked })}
+                />
+            )}
         </div>
     )
 }
@@ -272,9 +274,7 @@ function RangeInput({
 
 // ============ XHTTP Section ============
 function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (s: TransportSettings) => void }) {
-    const [showAdvanced, setShowAdvanced] = useState(false)
     const [showXmux, setShowXmux] = useState(!!data.xmux)
-    const [showPlacement, setShowPlacement] = useState(false)
     const [headerKey, setHeaderKey] = useState("")
     const [headerVal, setHeaderVal] = useState("")
 
@@ -319,16 +319,18 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label>Mode</Label>
-                    <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <Select
                         value={data.mode || "auto"}
-                        onChange={(e) => onChange({ ...data, mode: e.target.value })}
+                        onValueChange={(v) => onChange({ ...data, mode: v })}
                     >
-                        <option value="auto">Auto</option>
-                        <option value="packet-up">Packet Up</option>
-                        <option value="stream-up">Stream Up</option>
-                        <option value="stream-one">Stream One</option>
-                    </select>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="auto">Auto</SelectItem>
+                            <SelectItem value="packet-up">Packet Up</SelectItem>
+                            <SelectItem value="stream-up">Stream Up</SelectItem>
+                            <SelectItem value="stream-one">Stream One</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
                 <div className="space-y-2">
                     <Label>Extra JSON</Label>
@@ -360,7 +362,7 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
 
             {/* Custom Headers */}
             <div className="space-y-3 border rounded-md p-4 bg-muted/20">
-                <Label className="text-sm font-medium">Custom Headers</Label>
+                <SectionTitle>Custom headers</SectionTitle>
                 {Object.entries(data.headers || {}).map(([key, val]) => (
                     <div key={key} className="flex gap-2 items-center">
                         <Input value={key} disabled className="flex-1 font-mono text-xs" />
@@ -385,16 +387,7 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
                 </div>
             </div>
 
-            {/* Advanced XHTTP Settings */}
-            <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-                {showAdvanced ? "Hide" : "Show"} Advanced XHTTP Settings
-            </button>
-            {showAdvanced && (
-                <div className="space-y-4 border rounded-md p-4 bg-muted/20">
+            <Disclosure title="Advanced XHTTP" summary="Padding, post sizing, Xmux, placement">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <RangeInput
                             label="X-Padding Bytes"
@@ -499,16 +492,7 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
                         )}
                     </div>
 
-                    {/* Placement & Padding */}
-                    <div className="space-y-3 border rounded-md p-3 bg-background">
-                        <button
-                            type="button"
-                            className="text-xs text-primary hover:underline"
-                            onClick={() => setShowPlacement(!showPlacement)}
-                        >
-                            {showPlacement ? "Hide" : "Show"} Placement &amp; Padding
-                        </button>
-                        {showPlacement && (
+                    <Disclosure title="Placement &amp; padding" summary="Session, seq and uplink placement">
                             <div className="space-y-4">
                                 <div className="flex items-center space-x-2">
                                     <Switch
@@ -695,10 +679,8 @@ function XHTTPSection({ data, onChange }: { data: TransportSettings; onChange: (
                                     </div>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                </div>
-            )}
+                    </Disclosure>
+            </Disclosure>
         </>
     )
 }

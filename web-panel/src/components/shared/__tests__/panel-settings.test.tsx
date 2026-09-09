@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { useOutboundForm } from '@/components/outbound/use-outbound-form'
 import { useInboundForm } from '@/components/inbound/use-inbound-form'
-import { SecurityTab } from '@/components/outbound/tabs/security-tab'
+import { TransportTab } from '@/components/outbound/tabs/transport-tab'
 import { TLSForm } from '@/components/shared/tls-form'
 import { SOCKSForm } from '@/components/shared/protocol-forms/socks-form'
 import { SockoptForm } from '@/components/shared/sockopt-form'
@@ -17,6 +17,8 @@ vi.mock('@/lib/queries', () => ({ useCertificates: () => ({ data: [] }), useSNIs
 vi.mock('@/components/ui/select', () => ({
  Select: ({ children, value, onValueChange }: { children: React.ReactNode; value: string; onValueChange: (value: string) => void }) => <select value={value} onChange={e => onValueChange(e.target.value)}>{children}</select>,
  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+ SelectGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+ SelectLabel: () => null,
  SelectItem: ({ children, value }: { children: React.ReactNode; value: string }) => <option value={value}>{children}</option>,
  SelectTrigger: () => null,
  SelectValue: () => null,
@@ -28,9 +30,9 @@ describe('panel settings compatibility', () => {
   const { result } = renderHook(() => useOutboundForm('create', null, true))
   act(() => result.current.form.setValue('protocol', 'hysteria2'))
   expect(result.current.security).toBe('tls')
-  expect(result.current.tabVisibility.security).toBe(true)
-  expect(result.current.tabVisibility.network).toBe(false)
-  render(<SecurityTab form={result.current.form} />)
+  expect(result.current.sectionVisibility.security).toBe(true)
+  expect(result.current.sectionVisibility.network).toBe(false)
+  render(<TransportTab form={result.current.form} sectionVisibility={result.current.sectionVisibility} />)
   expect(screen.getByText('Server Name (SNI)')).toBeInTheDocument()
  })
  it('repairs the security state of an existing Hysteria outbound', () => {
@@ -42,7 +44,7 @@ describe('panel settings compatibility', () => {
   const { result } = renderHook(() => useInboundForm('create', null, true))
   act(() => result.current.form.setValue('protocol', 'shadowsocks'))
   act(() => result.current.form.setValue('security', security))
-  expect(result.current.tabVisibility.security).toBe(true)
+  expect(result.current.sectionVisibility.security).toBe(true)
  })
  it('replaces the removed insecure toggle with certificate-pin guidance', () => {
   render(<TLSForm isOutbound settings={{ allowInsecure: true }} onChange={vi.fn()} />)
@@ -79,4 +81,17 @@ it('limits reverse interconnections to VLESS and removes the obsolete domain fie
 })
 it('accepts VLESS Reverse without a legacy control domain', () => {
  expect(reverseProxySchema.safeParse({ type: 'bridge', tag: 'bridge', domain: '', interconnection_tag: 'tunnel', outbound_tag: 'direct', interconnection_tags: [], inbound_tags: [] }).success).toBe(true)
+})
+
+it('reopens an outbound after a different template without discarding loaded protocol settings', () => {
+ const outbound = { id: 12, node_id: 1, tag: 'saved-vless', protocol: 'vless', address: 'example.test', port: 443, network: 'tcp', security: 'reality', vless_settings: { uuid: 'saved-uuid', flow: 'xtls-rprx-vision' }, reality_settings: { publicKey: 'saved-key', serverNames: ['example.test'] } } as Outbound
+ const { result, rerender } = renderHook(({ open }: { open: boolean }) => useOutboundForm('edit', outbound, open), { initialProps: { open: true } })
+ act(() => result.current.applyPreset('shadowsocks'))
+ expect(result.current.form.getValues('protocol')).toBe('shadowsocks')
+ rerender({ open: false })
+ rerender({ open: true })
+ expect(result.current.form.getValues('protocol')).toBe('vless')
+ expect(result.current.form.getValues('vless_settings')).toEqual(outbound.vless_settings)
+ expect(result.current.form.getValues('reality_settings')).toEqual(outbound.reality_settings)
+ expect(result.current.form.formState.isDirty).toBe(false)
 })

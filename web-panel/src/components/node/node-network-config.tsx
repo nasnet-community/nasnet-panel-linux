@@ -466,17 +466,14 @@ export function NodeNetworkConfig({
 
     // Inbound CRUD
     const handleSaveInbound = async (data: Partial<Inbound>) => {
-        try {
-            if (inboundDialog.mode === "create") {
-                await addInbound.mutateAsync({ nodeId, inbound: data })
-            } else {
-                await updateInbound.mutateAsync({ nodeId, inboundId: data.id!, inbound: data })
-            }
-            setInboundDialog({ open: false, mode: "create", inbound: null })
-            onRefresh?.()
-        } catch {
-            // toast already surfaced by mutation onError
+        // Let failures reject so the editor retains its values.
+        if (inboundDialog.mode === "create") {
+            await addInbound.mutateAsync({ nodeId, inbound: data })
+        } else {
+            await updateInbound.mutateAsync({ nodeId, inboundId: data.id!, inbound: data })
         }
+        setInboundDialog({ open: false, mode: "create", inbound: null })
+        onRefresh?.()
     }
 
     const handleDeleteInbound = async (inbound: Inbound) => {
@@ -598,17 +595,16 @@ export function NodeNetworkConfig({
 
     // Outbound CRUD
     const handleSaveOutbound = async (data: Partial<Outbound>) => {
-        try {
-            if (outboundDialog.mode === "create") {
-                await addOutbound.mutateAsync(data)
-            } else {
-                await updateOutbound.mutateAsync({ outboundId: data.id!, outbound: data })
-            }
-            setOutboundDialog({ open: false, mode: "create", outbound: null })
-            onRefresh?.()
-        } catch {
-            // mutation surfaces toast
+        // Reject on failure so the editor retains its values and Save & test
+        // cannot test an old configuration after the save was refused.
+        if (outboundDialog.mode === "create") {
+            await addOutbound.mutateAsync(data)
+        } else {
+            if (outboundDialog.outbound?.managed || !data.id) throw new Error("Managed outbounds cannot be edited")
+            await updateOutbound.mutateAsync({ outboundId: data.id, outbound: data })
         }
+        setOutboundDialog({ open: false, mode: "create", outbound: null })
+        onRefresh?.()
     }
 
     const handleDeleteOutbound = async (outbound: Outbound) => {
@@ -1501,6 +1497,7 @@ export function NodeNetworkConfig({
                 outbound={outboundDialog.outbound}
                 nodeId={nodeId}
                 onSave={handleSaveOutbound}
+                onTest={(ob) => handleTestOutbound(ob)}
                 mode={outboundDialog.mode}
                 allOutbounds={outbounds}
             />
