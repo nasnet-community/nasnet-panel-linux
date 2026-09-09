@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useLocation } from "react-router"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import {
     HiOutlineServer,
@@ -66,6 +67,13 @@ export default function NodeDetailPage() {
     // one node (local machine)
     const [node, setNode] = useState<Node | null>(null)
     const nodeId = node?.id ?? 0
+
+    const [settingsDirty, setSettingsDirty] = useState(false)
+    const [pendingSettingsNavigation, setPendingSettingsNavigation] = useState<string | null>(null)
+    const navigateFromNode = (destination: string) => {
+        if (settingsDirty) setPendingSettingsNavigation(destination)
+        else navigate(destination)
+    }
 
     // Tab state from URL
     const rawTab = searchParams.get("tab") || "overview"
@@ -168,7 +176,7 @@ export default function NodeDetailPage() {
     const handleTabChange = (value: string) => {
         const params = new URLSearchParams(searchParams)
         params.set("tab", value)
-        navigate(`${pathname}?${params.toString()}`)
+        navigateFromNode(`${pathname}?${params.toString()}`)
     }
 
     // Fetch stats using TanStack Query
@@ -404,6 +412,7 @@ export default function NodeDetailPage() {
                             <NodeSettings
                                 node={node}
                                 onRefresh={loadData}
+                                onDirtyChange={setSettingsDirty}
                             />
                         )}
                     </TabsContent>
@@ -453,6 +462,20 @@ export default function NodeDetailPage() {
                     </TabsContent>
                 </main>
             </Tabs>
+            <Dialog open={pendingSettingsNavigation !== null} onOpenChange={(open) => { if (!open) setPendingSettingsNavigation(null) }}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>Unsaved settings</DialogTitle><DialogDescription>Save your changes before leaving, or discard them to continue.</DialogDescription></DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPendingSettingsNavigation(null)}>Keep editing</Button>
+                        <Button variant="destructive" onClick={() => {
+                            const destination = pendingSettingsNavigation
+                            setPendingSettingsNavigation(null)
+                            setSettingsDirty(false)
+                            if (destination) navigate(destination)
+                        }}>Discard and leave</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
 
             <GeofilesDialog

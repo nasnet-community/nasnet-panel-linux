@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
@@ -188,6 +190,9 @@ func (u *nodeUsecase) GetNodeXrayConfig(ctx context.Context, nodeID uint) (strin
 }
 
 func (u *nodeUsecase) UpdateNodeXrayConfig(ctx context.Context, nodeID uint, content string) error {
+	state := u.getOrCreatePushState(nodeID)
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
 	node, err := u.nodeRepo.GetNode(ctx, nodeID)
 	if err != nil {
 		return err
@@ -199,54 +204,8 @@ func (u *nodeUsecase) UpdateNodeXrayConfig(ctx context.Context, nodeID uint, con
 	}
 	defer client.Close()
 
-	// Parse content to extract log settings
-	var configMap map[string]interface{}
-	if err := json.Unmarshal([]byte(content), &configMap); err == nil {
-		if logConfig, ok := configMap["log"].(map[string]interface{}); ok {
-			updated := false
-
-			// LogLevel
-			if level, ok := logConfig["loglevel"].(string); ok && level != "" {
-				if node.LogLevel != level {
-					node.LogLevel = level
-					updated = true
-				}
-			}
-
-			// LogAccess
-			if access, ok := logConfig["access"].(string); ok {
-				if node.LogAccess != access {
-					node.LogAccess = access
-					updated = true
-				}
-			}
-
-			// LogError
-			if errLog, ok := logConfig["error"].(string); ok {
-				if node.LogError != errLog {
-					node.LogError = errLog
-					updated = true
-				}
-			}
-
-			// dnsLog is a custom field the FE attaches to the log object.
-			if dnsLog, ok := logConfig["dnsLog"].(bool); ok {
-				if node.LogDNS != dnsLog {
-					node.LogDNS = dnsLog
-					updated = true
-				}
-			}
-
-			if updated {
-				if err := u.nodeRepo.UpdateNode(ctx, node); err != nil {
-					logger.GetLogger().Warnf("Failed to update node log settings: %v", err)
-				}
-			}
-		}
-	}
-
-	if err := client.PushConfig(ctx, content); err != nil {
-		return fmt.Errorf("failed to push config to agent: %w", err)
+	if err := u.applyXrayConfigAndLogs(ctx, node, content, client); err != nil {
+		return err
 	}
 
 	// Update lastPushedConfigHash so drift detection doesn't treat
@@ -267,6 +226,36 @@ func (u *nodeUsecase) UpdateNodeXrayConfig(ctx context.Context, nodeID uint, con
 		}
 	}()
 
+	return nil
+}
+
+// Persist logging defaults only after the agent accepts the configuration.
+func (u *nodeUsecase) applyXrayConfigAndLogs(ctx context.Context, node *domain.Node, content string, client agent.NodeClient) error {
+	var configMap map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &configMap); err != nil || configMap == nil {
+		return fmt.Errorf("invalid Xray configuration: expected a JSON object")
+	}
+	var settings domain.XrayLogSettings
+	if raw, exists := configMap["log"]; exists {
+		if err := json.Unmarshal(raw, &settings); err != nil {
+			return fmt.Errorf("invalid Xray log settings: %w", err)
+		}
+	}
+	if settings.Level != nil {
+		switch *settings.Level {
+		case "debug", "info", "warning", "error", "none":
+		default:
+			return fmt.Errorf("invalid Xray log level %q", *settings.Level)
+		}
+	}
+	if err := client.PushConfig(ctx, content); err != nil {
+		return fmt.Errorf("failed to push config to agent: %w", err)
+	}
+	if settings.Level != nil || settings.Access != nil || settings.Error != nil || settings.DNS != nil {
+		if err := u.nodeRepo.UpdateNodeLogSettings(ctx, node.ID, settings); err != nil {
+			return fmt.Errorf("configuration applied to agent, but log settings could not be persisted; retry saving: %w", err)
+		}
+	}
 	return nil
 }
 

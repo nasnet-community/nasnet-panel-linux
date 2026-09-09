@@ -50,20 +50,21 @@ export function NodeSettingsXray(props: NodeSettingsXrayProps) {
 
 // Integrated version — uses shared form from parent
 function IntegratedXray({ isOnline, settingsForm }: { isOnline: boolean; settingsForm: NodeSettingsForm }) {
-    const { form, xrayLoading, fullXrayConfig, fetchXrayConfig } = settingsForm
+    const { form, xrayLoading, xrayError, fullXrayConfig, fetchXrayConfig } = settingsForm
 
     if (!isOnline) return <XrayOfflineCard />
     if (xrayLoading && !fullXrayConfig) return <XrayLoadingCard />
+    if (xrayError || !fullXrayConfig) return <Card className="border-border/60 bg-card shadow-none"><CardHeader><CardTitle className="text-base">Xray logging unavailable</CardTitle><CardDescription>{xrayError || "Load the current configuration to edit logging."}</CardDescription></CardHeader><CardContent><Button type="button" variant="outline" onClick={fetchXrayConfig} disabled={xrayLoading || settingsForm.isSaving}>Retry Xray settings</Button></CardContent></Card>
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <div>
-                        <CardTitle>Xray Logging</CardTitle>
+                        <CardTitle className="text-base">Xray Logging</CardTitle>
                         <CardDescription>Control how Xray logs events and errors</CardDescription>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={fetchXrayConfig} disabled={xrayLoading} aria-label="Refresh Xray config">
+                    <Button variant="ghost" size="icon" onClick={fetchXrayConfig} disabled={xrayLoading || settingsForm.isSaving} aria-label="Refresh Xray config">
                         <HiOutlineRefresh className={`w-4 h-4 ${xrayLoading ? "animate-spin" : ""}`} />
                     </Button>
                 </div>
@@ -79,7 +80,6 @@ function IntegratedXray({ isOnline, settingsForm }: { isOnline: boolean; setting
 function StandaloneXray({ nodeId, isOnline }: { nodeId: number; isOnline: boolean }) {
     const [isLoading, setIsLoading] = useState(false)
     const [saving, setSaving] = useState(false)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [fullConfig, setFullConfig] = useState<any>(null)
 
     const form = useForm<NodeXrayLogFormData>({
@@ -145,7 +145,7 @@ function StandaloneXray({ nodeId, isOnline }: { nodeId: number; isOnline: boolea
             if (res.success) {
                 setFullConfig(updatedConfig)
                 form.reset(data)
-                toast.success("Xray log settings saved. Restart Xray to apply changes.")
+                toast.success("Xray logging saved and Xray restarted.")
             } else {
                 toast.error(res.error || "Failed to save settings")
             }
@@ -160,11 +160,11 @@ function StandaloneXray({ nodeId, isOnline }: { nodeId: number; isOnline: boolea
     if (isLoading && !fullConfig) return <XrayLoadingCard />
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <div>
-                        <CardTitle>Xray Logging</CardTitle>
+                        <CardTitle className="text-base">Xray Logging</CardTitle>
                         <CardDescription>Control how Xray logs events and errors</CardDescription>
                     </div>
                     <Button variant="ghost" size="icon" onClick={fetchConfig} disabled={isLoading || saving} aria-label="Refresh Xray config">
@@ -191,7 +191,6 @@ function StandaloneXray({ nodeId, isOnline }: { nodeId: number; isOnline: boolea
 }
 
 // Shared form fields
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function XrayFormFields({ form, fieldNames, showAccessLogToggle = false }: { form: any; fieldNames: { access: string; error: string }; showAccessLogToggle?: boolean }) {
     return (
         <>
@@ -265,7 +264,7 @@ function XrayFormFields({ form, fieldNames, showAccessLogToggle = false }: { for
                     control={form.control}
                     name="dnsLog"
                     render={({ field }) => (
-                        <FormItem className="flex items-center justify-between rounded-lg border p-3 w-fit">
+                        <FormItem className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4 w-fit">
                             <div className="space-y-0.5 mr-4">
                                 <FormLabel>DNS Logging</FormLabel>
                             </div>
@@ -284,7 +283,7 @@ function XrayFormFields({ form, fieldNames, showAccessLogToggle = false }: { for
                         control={form.control}
                         name="enable_access_log"
                         render={({ field }) => (
-                            <FormItem className="flex items-center justify-between rounded-lg border p-3 w-fit">
+                            <FormItem className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4 w-fit">
                                 <div className="space-y-0.5 mr-4">
                                     <FormLabel>Access Log Capture</FormLabel>
                                     <FormDescription className="text-xs">
@@ -305,9 +304,9 @@ function XrayFormFields({ form, fieldNames, showAccessLogToggle = false }: { for
 
             <Alert>
                 <HiOutlineExclamationCircle className="h-4 w-4" />
-                <AlertTitle>Note</AlertTitle>
+                <AlertTitle>Applies on save</AlertTitle>
                 <AlertDescription>
-                    Changes require Xray restart to take effect.
+                    Saving logging changes restarts Xray. Active connections may briefly reconnect.
                 </AlertDescription>
             </Alert>
         </>
@@ -316,7 +315,7 @@ function XrayFormFields({ form, fieldNames, showAccessLogToggle = false }: { for
 
 function XrayOfflineCard() {
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardContent className="py-12">
                 <div className="flex flex-col items-center justify-center text-muted-foreground">
                     <HiOutlineExclamationCircle className="w-12 h-12 mb-4 opacity-50" />
@@ -330,7 +329,7 @@ function XrayOfflineCard() {
 
 function XrayLoadingCard() {
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardContent className="py-12">
                 <div className="flex items-center justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />

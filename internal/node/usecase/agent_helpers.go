@@ -411,6 +411,19 @@ func (u *nodeUsecase) RepushForSNI(ctx context.Context, sniID uint) {
 
 // pushConfigToAgent builds and pushes Xray config to the agent (no direct Xray API call).
 func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) error {
+	state := u.getOrCreatePushState(node.ID)
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+	// Reload after acquiring the application lock so a queued generated push
+	// uses logging defaults accepted by an earlier manual configuration save.
+	fresh, err := u.nodeRepo.GetNode(ctx, node.ID)
+	if err != nil {
+		return err
+	}
+	return u.pushConfigToAgentUnlocked(ctx, fresh)
+}
+
+func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domain.Node) error {
 	log := logger.GetLogger()
 
 	// Mark push in progress so drift detection (tryScheduleConfigPush) doesn't

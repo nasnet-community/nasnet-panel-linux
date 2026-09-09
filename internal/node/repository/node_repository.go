@@ -18,6 +18,7 @@ type NodeRepository interface {
 	GetNode(ctx context.Context, id uint) (*domain.Node, error)
 	GetNodeByUUID(ctx context.Context, uuid string) (*domain.Node, error)
 	UpdateNode(ctx context.Context, node *domain.Node) error
+	UpdateNodeLogSettings(ctx context.Context, id uint, settings domain.XrayLogSettings) error
 	DeleteNode(ctx context.Context, id uint) error
 	ListNodes(ctx context.Context) ([]*domain.Node, error)
 	ListActiveNodes(ctx context.Context) ([]*domain.Node, error)

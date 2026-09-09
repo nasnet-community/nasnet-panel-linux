@@ -336,6 +336,7 @@ type AggregatedAccessLogEntry struct {
 // configPushState tracks per-node config push state to implement
 // rate limiting and exponential backoff for drift-triggered pushes.
 type configPushState struct {
+	applyMu     sync.Mutex
 	mu          sync.Mutex
 	inProgress  bool
 	failures    int
@@ -461,6 +462,9 @@ func NewNodeUsecase(nodeRepo repository.NodeRepository, subRepo subRepo.Subscrip
 func (u *nodeUsecase) getOrCreatePushState(nodeID uint) *configPushState {
 	u.pushStateMu.Lock()
 	defer u.pushStateMu.Unlock()
+	if u.pushState == nil {
+		u.pushState = make(map[uint]*configPushState)
+	}
 	state, ok := u.pushState[nodeID]
 	if !ok {
 		state = &configPushState{}

@@ -20,6 +20,9 @@ export interface Node {
     is_online: boolean
     last_check: string
     log_level?: string
+    log_access?: string
+    log_error?: string
+    log_dns?: boolean
     inbounds?: Inbound[]
     routing_settings?: RoutingSettings
     dns_settings?: DNSSettings

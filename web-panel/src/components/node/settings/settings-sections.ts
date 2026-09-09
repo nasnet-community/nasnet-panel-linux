@@ -1,0 +1,40 @@
+import type { NodeSettingsFormData } from "@/lib/validations/node-settings-schema"
+
+export const settingsSections = [
+    { id: "general", label: "General", description: "Identity, availability, and customer notices." },
+    { id: "connection", label: "Connection", description: "SSH access to this server." },
+    { id: "logging", label: "Logging", description: "Xray diagnostics and destination tracking." },
+    { id: "automation", label: "Automation", description: "Starlink monitoring and crash recovery." },
+    { id: "danger", label: "Danger zone", description: "Remove the server record or erase its data." },
+] as const
+export type SettingsSection = typeof settingsSections[number]["id"]
+export const settingsFields: Record<keyof NodeSettingsFormData, { label: string; section: SettingsSection }> = {
+    name: { label: "Server name", section: "general" },
+    ip: { label: "IP address", section: "general" },
+    country_code: { label: "Country code", section: "general" },
+    datacenter: { label: "Datacenter", section: "general" },
+    is_active: { label: "Server enabled", section: "general" },
+    maintenance_mode: { label: "Maintenance mode", section: "general" },
+    maintenance_message: { label: "Maintenance message", section: "general" },
+    agent_port: { label: "Agent port", section: "connection" },
+    api_port: { label: "Xray API port", section: "connection" },
+    is_stealth: { label: "Stealth mode", section: "connection" },
+    is_persistent_stealth: { label: "Persistent stealth", section: "connection" },
+    ssh_enabled: { label: "SSH service", section: "connection" },
+    ssh_port: { label: "SSH port", section: "connection" },
+    loglevel: { label: "Log level", section: "logging" },
+    log_access: { label: "Access log path", section: "logging" },
+    log_error: { label: "Error log path", section: "logging" },
+    dnsLog: { label: "DNS logging", section: "logging" },
+    enable_access_log: { label: "Access log capture", section: "logging" },
+    bandwidth_enabled: { label: "Bandwidth shaping", section: "automation" },
+    bandwidth_interface: { label: "Network interface", section: "automation" },
+    bandwidth_total_bw: { label: "Link bandwidth", section: "automation" },
+    starlink_enabled: { label: "Starlink monitoring", section: "automation" },
+    starlink_dish_address: { label: "Dish address", section: "automation" },
+    crash_recovery_enabled: { label: "Crash recovery", section: "automation" },
+    crash_recovery_command: { label: "Recovery command", section: "automation" },
+    crash_recovery_command_timeout: { label: "Command timeout", section: "automation" },
+    crash_recovery_cooldown: { label: "Recovery cooldown", section: "automation" },
+    crash_recovery_max_attempts: { label: "Recovery attempts", section: "automation" },
+}

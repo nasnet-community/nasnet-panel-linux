@@ -1,81 +1,44 @@
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
-import { HiOutlineStatusOnline, HiOutlineStatusOffline } from "react-icons/hi"
+import { Textarea } from "@/components/ui/textarea"
+import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import type { Node } from "@/lib/types"
 import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
 
-interface NodeSettingsStatusBarProps {
-    node: Node
-    settingsForm: NodeSettingsForm
-}
-
-function timeAgo(dateStr: string): string {
-    if (!dateStr) return "Never"
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffSec = Math.floor(diffMs / 1000)
-    if (diffSec < 60) return `${diffSec}s ago`
-    const diffMin = Math.floor(diffSec / 60)
-    if (diffMin < 60) return `${diffMin}m ago`
-    const diffHour = Math.floor(diffMin / 60)
-    if (diffHour < 24) return `${diffHour}h ago`
-    const diffDay = Math.floor(diffHour / 24)
-    return `${diffDay}d ago`
-}
-
-export function NodeSettingsStatusBar({ node, settingsForm }: NodeSettingsStatusBarProps) {
+export function NodeSettingsStatusBar({ node, settingsForm }: { node: Node; settingsForm: NodeSettingsForm }) {
     const { form } = settingsForm
-    const isActive = form.watch("is_active")
-
+    const maintenance = form.watch("maintenance_mode")
     return (
-        <div className="rounded-lg border bg-card/50 backdrop-blur-sm border-white/5 px-4 py-3 space-y-3">
-            {/* Status line */}
-            <div className="flex flex-wrap items-center gap-3">
-                <Badge variant={node.is_online ? "success" : "danger"} className="gap-1.5">
-                    {node.is_online ? (
-                        <HiOutlineStatusOnline className="w-3.5 h-3.5" />
-                    ) : (
-                        <HiOutlineStatusOffline className="w-3.5 h-3.5" />
-                    )}
-                    {node.is_online ? "Online" : "Offline"}
-                </Badge>
-
-                {node.agent_version && (
-                    <span className="text-sm text-muted-foreground">
-                        Agent <span className="font-mono text-foreground">{node.agent_version}</span>
-                    </span>
-                )}
-
-                {node.xray_version && (
-                    <span className="text-sm text-muted-foreground">
-                        Xray <span className="font-mono text-foreground">{node.xray_version}</span>
-                    </span>
-                )}
-
-                {node.last_check && (
-                    <span className="text-sm text-muted-foreground ml-auto">
-                        Last check: {timeAgo(node.last_check)}
-                    </span>
-                )}
-            </div>
-
-            <Separator className="bg-white/5" />
-
-            {/* Active toggle */}
-            <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                    <p className="text-sm font-medium">Node Active</p>
-                    <p className="text-xs text-muted-foreground">
-                        Disabled nodes won&apos;t receive new connections
-                    </p>
+        <Card className="border-border/60 bg-card shadow-none">
+            <CardHeader className="pb-4">
+                <CardTitle className="text-base">Availability</CardTitle>
+                <CardDescription>Control server availability and the notice users see.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="divide-y divide-border/60 rounded-lg border border-border/60">
+                    <FormField control={form.control} name="is_active" render={({ field }) => (
+                        <FormItem className="flex items-center justify-between gap-5 p-4">
+                            <div className="space-y-1"><FormLabel>Enable server</FormLabel><FormDescription>Include this server in health checks and service management.</FormDescription></div>
+                            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                        </FormItem>
+                    )} />
+                    <FormField control={form.control} name="maintenance_mode" render={({ field }) => (
+                        <FormItem className="flex items-center justify-between gap-5 p-4">
+                            <div className="space-y-1"><FormLabel>Maintenance mode</FormLabel><FormDescription>Show a maintenance notice to users of this server.</FormDescription></div>
+                            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                        </FormItem>
+                    )} />
                 </div>
-                <Switch
-                    checked={isActive}
-                    onCheckedChange={(checked) => form.setValue("is_active", checked, { shouldDirty: true })}
-                />
-            </div>
-        </div>
+                {maintenance && <FormField control={form.control} name="maintenance_message" render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>User notice <span className="font-normal text-muted-foreground">(optional)</span></FormLabel>
+                        <FormControl><Textarea {...field} dir="auto" rows={3} placeholder="We’re performing scheduled maintenance. Please check back shortly." /></FormControl>
+                        <FormDescription>Leave empty to use the default translated notice. Saved with your other settings.</FormDescription>
+                        <FormMessage />
+                    </FormItem>
+                )} />}
+                {node.maintenance_mode && node.maintenance_since && <p className="text-xs text-muted-foreground">In maintenance since {new Date(node.maintenance_since).toLocaleString()}</p>}
+            </CardContent>
+        </Card>
     )
 }

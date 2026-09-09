@@ -20,19 +20,19 @@ export function NodeSettingsGeneral({ node, settingsForm }: NodeSettingsGeneralP
     const { form } = settingsForm
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
-                <CardTitle>General Settings</CardTitle>
-                <CardDescription>Manage basic node information</CardDescription>
+                <CardTitle className="text-base">Server identity</CardTitle>
+                <CardDescription>Name and location shown across the panel.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
                     <FormField
                         control={form.control}
                         name="name"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Node Name</FormLabel>
+                                <FormLabel>Server Name</FormLabel>
                                 <FormControl>
                                     <Input {...field} />
                                 </FormControl>
@@ -55,7 +55,7 @@ export function NodeSettingsGeneral({ node, settingsForm }: NodeSettingsGeneralP
                                     />
                                 </FormLabel>
                                 <FormControl>
-                                    <Input {...field} placeholder="1.2.3.4" />
+                                    <Input {...field} placeholder="IPv4 or IPv6 address" className="font-mono" />
                                 </FormControl>
                                 <FormMessage />
                             </FormItem>
@@ -68,7 +68,7 @@ export function NodeSettingsGeneral({ node, settingsForm }: NodeSettingsGeneralP
                             <FormItem>
                                 <FormLabel>Country Code</FormLabel>
                                 <FormControl>
-                                    <Input {...field} placeholder="DE" maxLength={2} className="uppercase" />
+                                    <Input {...field} placeholder="DE" maxLength={2} className="uppercase" onChange={(event) => field.onChange(event.target.value.toUpperCase())} />
                                 </FormControl>
                                 <FormDescription>
                                     2-letter ISO code (e.g. DE, US, NL)

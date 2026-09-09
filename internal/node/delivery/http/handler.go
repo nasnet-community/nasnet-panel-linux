@@ -377,6 +377,11 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 		return
 	}
 
+	if err := req.validateSettings(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
 	// Selectively apply non-nil fields
 	if req.Name != nil {
 		node.Name = *req.Name

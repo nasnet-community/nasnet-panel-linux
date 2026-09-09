@@ -130,7 +130,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
         <div className="divide-y divide-border/40">
           {/* ── Row 0: Delete from hub (least destructive) ──────────────── */}
           {onDelete && (
-            <div className="flex items-center justify-between gap-6 px-5 py-4">
+            <div className="flex flex-col items-start justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-muted-foreground/25 bg-muted/40">
                   <MinusCircleIcon className="size-4 text-muted-foreground" />
@@ -140,12 +140,11 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                     {deleteLabel || "Delete from hub"}
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Removes the hub record for this node. The node OS, agent
-                    and any running services are not touched. Re-add the node
-                    later to restore management.
+                    Removes this server from the panel and attempts to uninstall its local agent and Xray.
+                    Force deletion also removes linked accounts and configuration.
                   </p>
                   <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                    Reversible · hub-only · no node side effects
+                    Panel record removal · local agent and Xray uninstall
                   </p>
                 </div>
               </div>
@@ -163,7 +162,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
           )}
 
           {/* ── Row 1: Wipe ─────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-6 px-5 py-4">
+          <div className="flex flex-col items-start justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
             <div className="flex items-start gap-3 min-w-0">
               <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/8">
                 <ShieldOffIcon className="size-4 text-amber-500" />
@@ -195,7 +194,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
           </div>
 
           {/* ── Row 2: Nuke ─────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between gap-6 bg-red-500/2 px-5 py-4">
+          <div className="flex flex-col items-start justify-between gap-4 bg-red-500/2 px-5 py-4 sm:flex-row sm:items-center">
             <div className="flex items-start gap-3 min-w-0">
               <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-red-500/30 bg-red-500/8">
                 <ZapIcon className="size-4 text-red-500" />

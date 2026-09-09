@@ -716,3 +716,7 @@ func (m *mockSubscriptionRepo) AddDailyUsageSplits(ctx context.Context, deltas [
 	}
 	return nil
 }
+
+func (m *mockNodeRepo) UpdateNodeLogSettings(_ context.Context, _ uint, _ nodeDomain.XrayLogSettings) error {
+	return nil
+}

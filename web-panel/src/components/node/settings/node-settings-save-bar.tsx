@@ -1,52 +1,43 @@
-import { motion, AnimatePresence } from "framer-motion"
+import { useLayoutEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2 } from "lucide-react"
-import { HiOutlineExclamation } from "react-icons/hi"
+import { Loader2, ArrowUpRight } from "lucide-react"
 import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
 
-interface NodeSettingsSaveBarProps {
-    settingsForm: NodeSettingsForm
-}
-
-export function NodeSettingsSaveBar({ settingsForm }: NodeSettingsSaveBarProps) {
-    const { isDirty, isSaving, save, reset } = settingsForm
-
+export function NodeSettingsSaveBar({ settingsForm, onSave, onReview }: {
+    settingsForm: NodeSettingsForm; onSave: () => void; onReview: () => void
+}) {
+    const { isDirty, isSaving, reset, dirtyFields } = settingsForm
+    const anchor = useRef<HTMLDivElement>(null)
+    const [bounds, setBounds] = useState<{ left: number; width: number } | null>(null)
+    useLayoutEffect(() => {
+        if (!isDirty || !anchor.current) return
+        const element = anchor.current
+        const measure = () => {
+            const rect = element.getBoundingClientRect()
+            setBounds({ left: rect.left, width: rect.width })
+        }
+        measure()
+        const observer = new ResizeObserver(measure)
+        observer.observe(element)
+        window.addEventListener("resize", measure)
+        return () => { observer.disconnect(); window.removeEventListener("resize", measure) }
+    }, [isDirty])
+    if (!isDirty) return null
     return (
-        <AnimatePresence>
-            {isDirty && (
-                <motion.div
-                    initial={{ y: 100, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 100, opacity: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 md:pb-6 pointer-events-none"
-                >
-                    <div className="pointer-events-auto max-w-4xl mx-auto flex items-center justify-between gap-3 rounded-lg border border-yellow-500/20 bg-card/95 backdrop-blur-md px-4 py-3 shadow-2xl">
-                        <div className="flex items-center gap-2 text-sm text-yellow-500">
-                            <HiOutlineExclamation className="w-4 h-4 shrink-0" />
-                            <span>You have unsaved changes</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={reset}
-                                disabled={isSaving}
-                            >
-                                Discard
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={save}
-                                disabled={isSaving}
-                            >
-                                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                                Save All
-                            </Button>
-                        </div>
-                    </div>
-                </motion.div>
-            )}
-        </AnimatePresence>
+        <div ref={anchor} className="h-28 sm:h-20">
+        <div style={bounds || undefined} className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 md:bottom-[calc(1rem+env(safe-area-inset-bottom))] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md" role="region" aria-label="Unsaved settings">
+            <button type="button" onClick={onReview} className="flex items-center gap-2 text-sm hover:underline underline-offset-4">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {dirtyFields.length} unsaved {dirtyFields.length === 1 ? "change" : "changes"}
+                <ArrowUpRight className="size-3.5 text-muted-foreground" />
+            </button>
+            <div className="ml-auto flex items-center gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={reset} disabled={isSaving}>Discard</Button>
+                <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
+                    {isSaving && <Loader2 className="size-4 animate-spin" />}{isSaving ? "Saving…" : "Save changes"}
+                </Button>
+            </div>
+        </div>
+        </div>
     )
 }

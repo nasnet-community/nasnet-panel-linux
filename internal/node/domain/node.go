@@ -203,7 +203,7 @@ type CrashRecoverySettings struct {
 	Command        string `json:"command,omitempty"`         // Shell command to execute on the node
 	CommandTimeout int    `json:"command_timeout,omitempty"` // Max seconds for command execution (default: 60)
 	Cooldown       int    `json:"cooldown,omitempty"`        // Min minutes between command executions (default: 30)
-	MaxAttempts    int    `json:"max_attempts,omitempty"`    // Max times command can run, 0=unlimited (default: 3)
+	MaxAttempts    int    `json:"max_attempts"`              // Max times command can run, 0=unlimited (default: 3)
 }
 
 // GetCrashRecoverySettingsOrDefault returns the node's crash recovery settings, or defaults when nil.

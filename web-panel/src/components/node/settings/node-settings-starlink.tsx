@@ -21,9 +21,9 @@ export function NodeSettingsStarlink({ settingsForm, isStealth }: NodeSettingsSt
     const isEnabled = form.watch("starlink_enabled")
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
-                <CardTitle>Starlink Monitoring</CardTitle>
+                <CardTitle className="text-base">Starlink Monitoring</CardTitle>
                 <CardDescription>
                     Monitor Starlink satellite dish performance metrics on this node
                 </CardDescription>
@@ -39,7 +39,7 @@ export function NodeSettingsStarlink({ settingsForm, isStealth }: NodeSettingsSt
                             control={form.control}
                             name="starlink_enabled"
                             render={({ field }) => (
-                                <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                                <FormItem className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4">
                                     <div className="space-y-0.5">
                                         <FormLabel>
                                             Enable Starlink Monitoring
@@ -68,7 +68,7 @@ export function NodeSettingsStarlink({ settingsForm, isStealth }: NodeSettingsSt
                                             <FormLabel>Dish Address</FormLabel>
                                             <FormControl>
                                                 <Input
-                                                    placeholder="192.168.100.1:9200"
+                                                    placeholder="192.168.100.1:9200" name={field.name} ref={field.ref} onBlur={field.onBlur}
                                                     value={field.value}
                                                     onChange={field.onChange}
                                                 />

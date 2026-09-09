@@ -17,19 +17,20 @@ import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
 interface SSHSettingsCardProps {
     settingsForm: NodeSettingsForm
     isStealth?: boolean
+    isOnline?: boolean
 }
 
-export function SSHSettingsCard({ settingsForm, isStealth }: SSHSettingsCardProps) {
-    const { form, sshLoading, sshStatus, fetchSSHStatus } = settingsForm
+export function SSHSettingsCard({ settingsForm, isStealth, isOnline = true }: SSHSettingsCardProps) {
+    const { form, sshLoading, sshStatus, sshError, fetchSSHStatus } = settingsForm
     const sshEnabled = form.watch("ssh_enabled")
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <div>
                         <CardTitle className="flex items-center gap-2">
-                            SSH Configuration
+                            SSH access
                             {sshStatus && (
                                 <Badge variant={sshStatus.is_active ? "success" : "secondary"} className="ml-2 text-xs">
                                     {sshStatus.is_active ? "Active" : "Inactive"}
@@ -38,19 +39,19 @@ export function SSHSettingsCard({ settingsForm, isStealth }: SSHSettingsCardProp
                         </CardTitle>
                         <CardDescription>Manage remote SSH access security</CardDescription>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={fetchSSHStatus} disabled={sshLoading} aria-label="Refresh SSH status">
+                    <Button variant="ghost" size="icon" onClick={fetchSSHStatus} disabled={sshLoading || !isOnline || isStealth} aria-label="Refresh SSH status">
                         <RefreshCw className={`w-4 h-4 ${sshLoading ? "animate-spin" : ""}`} />
                     </Button>
                 </div>
             </CardHeader>
             <CardContent className="space-y-6">
-                {isStealth ? (
+                {!isOnline ? <p className="text-sm text-muted-foreground">Restore the server connection to view and change SSH access.</p> : isStealth ? (
                     <p className="text-sm text-muted-foreground">
                         SSH configuration is not available for stealth nodes.
                     </p>
-                ) : !sshStatus && !sshLoading ? (
+                ) : sshError || (!sshStatus && !sshLoading) ? (
                     <div className="text-center py-4 text-muted-foreground">
-                        <p>Unable to retrieve SSH status. Is the agent updated?</p>
+                        <p>{sshError || "Unable to retrieve SSH status."}</p><Button type="button" size="sm" variant="outline" className="mt-3" onClick={fetchSSHStatus}>Retry SSH status</Button>
                     </div>
                 ) : sshLoading && !sshStatus ? (
                     <div className="flex items-center justify-center py-8">
@@ -62,7 +63,7 @@ export function SSHSettingsCard({ settingsForm, isStealth }: SSHSettingsCardProp
                             control={form.control}
                             name="ssh_enabled"
                             render={({ field }) => (
-                                <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                                <FormItem className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4">
                                     <div className="space-y-0.5">
                                         <FormLabel>Enable SSH Service</FormLabel>
                                         <FormDescription>
@@ -89,8 +90,9 @@ export function SSHSettingsCard({ settingsForm, isStealth }: SSHSettingsCardProp
                                         <FormControl>
                                             <Input
                                                 type="number"
+                                        name={field.name} ref={field.ref} onBlur={field.onBlur}
                                                 value={field.value}
-                                                onChange={(e) => field.onChange(parseInt(e.target.value) || 22)}
+                                                onChange={(e) => field.onChange(Number(e.target.value))}
                                                 disabled={!sshEnabled}
                                                 className="max-w-[150px]"
                                             />
