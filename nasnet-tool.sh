@@ -2792,25 +2792,25 @@ wizard_collect_install_settings() {
                 fi
                 ;;
             password)
-                wizard_navigation_menu "Admin password" setup_choice "Set or keep password" || setup_status=$?
+                clear
+                draw_box "nasnet-panel-linux Admin Tool"
+                draw_header "Admin password"
+                password_input=""; password_confirm=""
+                echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "
+                wizard_read_answer password_input true || setup_status=$?
                 if [[ $setup_status -eq 0 ]]; then
-                    password_input=""; password_confirm=""
-                    echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "
-                    wizard_read_answer password_input true || setup_status=$?
-                    if [[ $setup_status -eq 0 ]]; then
-                        if [[ -z "$password_input" && ( -n "$WIZ_ADMIN_PASS" || -n "$WIZ_ADMIN_HASH" ) ]]; then
-                            : # Keep the previous password without displaying it.
-                        elif [[ ${#password_input} -lt 6 ]]; then
-                            step_fail "Password is too short"; setup_status=1
-                        else
-                            echo -ne "  ${CYAN}Confirm password${RESET}: "
-                            wizard_read_answer password_confirm true || setup_status=$?
-                            if [[ $setup_status -eq 0 ]]; then
-                                if [[ "$password_input" == "$password_confirm" ]]; then
-                                    WIZ_ADMIN_PASS="$password_input"; WIZ_ADMIN_HASH=""
-                                else
-                                    step_fail "Passwords do not match"; setup_status=1
-                                fi
+                    if [[ -z "$password_input" && ( -n "$WIZ_ADMIN_PASS" || -n "$WIZ_ADMIN_HASH" ) ]]; then
+                        : # Keep the previous password without displaying it.
+                    elif [[ ${#password_input} -lt 6 ]]; then
+                        step_fail "Password is too short"; setup_status=1
+                    else
+                        echo -ne "  ${CYAN}Confirm password${RESET}: "
+                        wizard_read_answer password_confirm true || setup_status=$?
+                        if [[ $setup_status -eq 0 ]]; then
+                            if [[ "$password_input" == "$password_confirm" ]]; then
+                                WIZ_ADMIN_PASS="$password_input"; WIZ_ADMIN_HASH=""
+                            else
+                                step_fail "Passwords do not match"; setup_status=1
                             fi
                         fi
                     fi

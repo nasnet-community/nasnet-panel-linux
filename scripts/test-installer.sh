@@ -188,7 +188,7 @@ test_navigation_role_back() {
         'Deployment|0' 'How will you use this device?|1' 'Database|-1'
         'How will you use this device?|0' 'Database|0' 'Install method|1'
         'Enable Telegram bot?|2' 'Install method|0' 'Enable Telegram bot?|1'
-        'Admin password|0' 'Review installation|0'
+        'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     local access_visits=0
@@ -203,7 +203,7 @@ test_navigation_docker_back() {
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|1' 'Database|2'
         'How will you use this device?|2' 'Deployment|1' 'Database|2'
-        'Deployment|1' 'Database|1' 'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|0'
+        'Deployment|1' 'Database|1' 'Enable Telegram bot?|1' 'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode() { return 0; }
@@ -215,7 +215,7 @@ test_navigation_offline_back() {
     answers; OFFLINE_MODE=true; WIZ_NAVIGATION=true
     local menu_index=0 menu_script=(
         'How will you use this device?|-1' 'How will you use this device?|0'
-        'Database|0' 'Database|1' 'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|0'
+        'Database|0' 'Database|1' 'Enable Telegram bot?|1' 'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     local access_visits=0
@@ -227,14 +227,15 @@ test_navigation_review_back() {
     answers; WIZ_NAVIGATION=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
-        'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|1'
-        'Admin password|0' 'Review installation|-2'
+        'Enable Telegram bot?|1' 'Review installation|1'
+        'Enable Telegram bot?|1' 'Review installation|-2'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode() { return 0; }
     if wizard_collect_install_settings <<'INPUT'
 secret123
 secret123
+:back
 
 INPUT
     then fail 'cancel at review accepted'; return 1; fi
@@ -348,7 +349,7 @@ test_navigation_install_after_review() {
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|0' 'Database|1' 'Install method|0'
         'How will users access this server?|1' 'Public URLs|0' 'Enable Telegram bot?|1'
-        'Admin password|0' 'Review installation|0'
+        'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_random_port() { echo 12345; }; wizard_detect_ip() { echo 192.0.2.1; }
