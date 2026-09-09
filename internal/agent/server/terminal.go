@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/creack/pty"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
@@ -55,127 +58,115 @@ func (s *Server) OpenTerminal(stream pb.NodeAgent_OpenTerminalServer) error {
 			Payload: &pb.TerminalOutput_Error{Error: "failed to start PTY: " + err.Error()},
 		})
 	}
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+
+	// Only one goroutine calls Wait. PTY EOF can precede process reaping;
+	// it must not win a race that discards the shell's actual exit status.
+	processDone := make(chan struct{})
+	exitCode := int32(0)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = int32(exitErr.ExitCode())
+			}
+		}
+		close(processDone)
+	}()
+
+	done := make(chan struct{})
+	var finishOnce sync.Once
+	finish := func() { finishOnce.Do(func() { close(done) }) }
+	outputDone := make(chan struct{})
+	var sendMu sync.Mutex
 	defer func() {
-		_ = ptmx.Close()
+		cancel()
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = ptmx.Close()
+		<-processDone
+		// Returning this server RPC cancels any blocked transport Send/Recv.
+		// Waiting for those calls here would prevent gRPC from releasing them.
 		log.Info("Terminal: PTY session closed")
 	}()
 
-	log.Infof("Terminal: PTY started with shell %s (PID: %d)", shell, cmd.Process.Pid)
-
-	// Use context for graceful shutdown
-	ctx := stream.Context()
-
-	// Error channel for goroutine errors
-	errChan := make(chan error, 2)
-	var wg sync.WaitGroup
-	var sendMu sync.Mutex
-
-	// Goroutine: Read PTY output → send to stream
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				n, err := ptmx.Read(buf)
-				if err != nil {
-					if err != io.EOF {
-						log.Debugf("Terminal: PTY read error: %v", err)
-					}
-					errChan <- err
-					return
-				}
-				if n > 0 {
-					if err := sendTerminal(stream, &sendMu, &pb.TerminalOutput{
-						Payload: &pb.TerminalOutput_Data{Data: buf[:n]},
-					}); err != nil {
-						log.Debugf("Terminal: Stream send error: %v", err)
-						errChan <- err
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	// Main loop: Receive from stream → write to PTY
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				in, err := stream.Recv()
-				if err != nil {
-					if err != io.EOF {
-						log.Debugf("Terminal: Stream recv error: %v", err)
-					}
-					errChan <- err
-					return
-				}
-
-				switch p := in.Payload.(type) {
-				case *pb.TerminalInput_Data:
-					if _, err := ptmx.Write(p.Data); err != nil {
-						log.Debugf("Terminal: PTY write error: %v", err)
-						errChan <- err
-						return
-					}
-
-				case *pb.TerminalInput_Resize:
-					if p.Resize != nil {
-						if err := pty.Setsize(ptmx, &pty.Winsize{
-							Rows: uint16(p.Resize.Rows),
-							Cols: uint16(p.Resize.Cols),
-						}); err != nil {
-							log.Warnf("Terminal: Failed to resize PTY: %v", err)
-						} else {
-							log.Debugf("Terminal: Resized to %dx%d", p.Resize.Cols, p.Resize.Rows)
-						}
-					}
-
-				case *pb.TerminalInput_Close:
-					log.Info("Terminal: Close signal received")
-					return
-				}
-			}
-		}
-	}()
-
-	// Wait for process to complete or error
-	exitCode := 0
-	done := make(chan struct{})
-	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			}
-		}
-		close(done)
-	}()
-
-	// Wait for either context cancellation, error, or process exit
-	select {
-	case <-ctx.Done():
-		log.Info("Terminal: Context cancelled")
-	case err := <-errChan:
-		if err != io.EOF {
-			log.Debugf("Terminal: Error in goroutine: %v", err)
-		}
-	case <-done:
-		log.Infof("Terminal: Shell exited with code %d", exitCode)
-		_ = sendTerminal(stream, &sendMu, &pb.TerminalOutput{
-			Payload: &pb.TerminalOutput_ExitCode{ExitCode: int32(exitCode)},
-		})
+	// An empty data frame acknowledges successful PTY startup without waiting
+	// for a prompt. Silent shells can then accept their first input.
+	if err := sendTerminal(stream, &sendMu, &pb.TerminalOutput{
+		Payload: &pb.TerminalOutput_Data{Data: []byte{}},
+	}); err != nil {
+		return err
 	}
 
+	go func() {
+		defer close(outputDone)
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				if err := sendTerminal(stream, &sendMu, &pb.TerminalOutput{
+					Payload: &pb.TerminalOutput_Data{Data: append([]byte(nil), buf[:n]...)},
+				}); err != nil {
+					finish()
+					return
+				}
+			}
+			if err != nil {
+				// Linux PTYs report EIO when the shell closes its slave fd.
+				if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) && ctx.Err() == nil {
+					log.Debugf("Terminal: PTY read error: %v", err)
+					finish()
+				}
+				return
+			}
+		}
+	}()
+
+	// A server stream's Recv is released when this RPC returns. It cannot be
+	// joined before returning on shell exit; cancellation prevents late input
+	// from being applied while the transport finishes closing.
+	go func() {
+		defer finish()
+		for {
+			in, err := stream.Recv()
+			if err != nil || ctx.Err() != nil {
+				return
+			}
+			switch p := in.Payload.(type) {
+			case *pb.TerminalInput_Data:
+				if _, err := ptmx.Write(p.Data); err != nil {
+					return
+				}
+			case *pb.TerminalInput_Resize:
+				if p.Resize != nil {
+					if err := pty.Setsize(ptmx, &pty.Winsize{
+						Rows: uint16(p.Resize.Rows),
+						Cols: uint16(p.Resize.Cols),
+					}); err != nil {
+						log.Warnf("Terminal: Failed to resize PTY: %v", err)
+					}
+				}
+			case *pb.TerminalInput_Close:
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-done:
+	case <-processDone:
+		// Preserve final output, but still honor close while output is blocked
+		// by a peer that is no longer reading.
+		select {
+		case <-outputDone:
+		case <-ctx.Done():
+			return nil
+		case <-done:
+			return nil
+		}
+		_ = sendTerminal(stream, &sendMu, &pb.TerminalOutput{
+			Payload: &pb.TerminalOutput_ExitCode{ExitCode: exitCode},
+		})
+	}
 	return nil
 }

@@ -1,7 +1,10 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -85,6 +88,7 @@ const (
 type TerminalMessage struct {
 	Resize *TerminalResize `json:"resize,omitempty"`
 	Close  bool            `json:"close,omitempty"`
+	Ping   bool            `json:"ping,omitempty"`
 }
 
 // TerminalResize represents terminal resize dimensions
@@ -94,7 +98,7 @@ type TerminalResize struct {
 }
 
 // TerminalWebSocket bridges a browser WS to the agent's bidi gRPC stream.
-// Binary frames = raw PTY I/O; text frames = JSON control (resize, close).
+// Binary frames = raw PTY I/O; text frames = JSON control (resize, close, ping).
 func (h *Handler) TerminalWebSocket(c *gin.Context) {
 	nodeID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -125,52 +129,58 @@ func (h *Handler) TerminalWebSocket(c *gin.Context) {
 	// and the pinger both produce frames, so we serialize all writes
 	// through writeMu.
 	var writeMu sync.Mutex
+	terminalEnded := false // guarded by writeMu; final control always precedes close
 	writeFrame := func(msgType int, data []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
+		if terminalEnded && msgType != websocket.CloseMessage {
+			return websocket.ErrCloseSent
+		}
 		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		return conn.WriteMessage(msgType, data)
 	}
-	writeJSON := func(v any) error {
+	writeControl := func(v any, final bool) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
+		if terminalEnded {
+			return websocket.ErrCloseSent
+		}
+		terminalEnded = final
 		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		return conn.WriteJSON(v)
 	}
+	writeJSON := func(v any) error { return writeControl(v, false) }
+	writeResult := func(v any) error { return writeControl(v, true) }
 
-	// Open terminal session via usecase
-	termSession, cleanup, err := h.nodeUsecase.OpenTerminal(c.Request.Context(), uint(nodeID))
+	// Own the stream context: a shell exit or browser disconnect must cancel
+	// its peer even while the original HTTP request is still alive.
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	termSession, cleanup, err := h.nodeUsecase.OpenTerminal(ctx, uint(nodeID))
 	if err != nil {
 		log.Errorf("Terminal WS: Failed to open terminal for node %d: %v", nodeID, err)
-		_ = writeJSON(gin.H{"error": err.Error()})
+		_ = writeResult(gin.H{"error": err.Error()})
+		_ = writeFrame(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Terminal unavailable"))
 		return
 	}
-	defer cleanup()
 
-	// Use context cancellation for clean shutdown
-	ctx := c.Request.Context()
-
-	// Error channel for coordinating shutdown
-	errChan := make(chan error, 2)
+	// Every pump signals completion, including explicit close and successful
+	// shell exit. A closed channel cannot block a second pump during shutdown.
+	done := make(chan struct{})
+	var finishOnce sync.Once
+	finish := func() { finishOnce.Do(func() { close(done) }) }
 	var wg sync.WaitGroup
 
-	// Pinger: sends a control ping every wsPingPeriod. Gorilla handles the
-	// pong automatically client-side; we refresh the read deadline in the
-	// pong handler above.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer finish()
 		ticker := time.NewTicker(wsPingPeriod)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
 				if err := writeFrame(websocket.PingMessage, nil); err != nil {
-					log.Debugf("Terminal WS: ping write failed: %v", err)
-					select {
-					case errChan <- err:
-					default:
-					}
 					return
 				}
 			case <-ctx.Done():
@@ -179,96 +189,98 @@ func (h *Handler) TerminalWebSocket(c *gin.Context) {
 		}
 	}()
 
-	// Goroutine: Read from gRPC stream → Write to WebSocket (as binary)
+	// Updated agents acknowledge PTY startup with an empty data frame; older
+	// agents first send shell output. Either establishes PTY readiness, unlike
+	// a successful WebSocket upgrade alone.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer finish()
+		ready := false
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				output, err := termSession.Recv()
-				if err != nil {
+			output, err := termSession.Recv()
+			if err != nil {
+				if ctx.Err() == nil {
+					message := "Terminal connection was lost. Start a new session to reconnect."
+					if errors.Is(err, io.EOF) {
+						message = "Terminal stream ended without an exit status."
+					}
 					log.Debugf("Terminal WS: gRPC recv error: %v", err)
-					errChan <- err
-					return
+					_ = writeResult(gin.H{"error": message})
 				}
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
 
-				switch p := output.Payload.(type) {
-				case *pb.TerminalOutput_Data:
-					if err := writeFrame(websocket.BinaryMessage, p.Data); err != nil {
-						log.Debugf("Terminal WS: WebSocket write error: %v", err)
-						errChan <- err
+			switch p := output.Payload.(type) {
+			case *pb.TerminalOutput_Data:
+				if !ready {
+					if err := writeJSON(gin.H{"ready": true}); err != nil {
 						return
 					}
-				case *pb.TerminalOutput_ExitCode:
-					_ = writeJSON(gin.H{"exit_code": p.ExitCode})
-					return
-				case *pb.TerminalOutput_Error:
-					_ = writeJSON(gin.H{"error": p.Error})
+					ready = true
+				}
+				if err := writeFrame(websocket.BinaryMessage, p.Data); err != nil {
 					return
 				}
+			case *pb.TerminalOutput_ExitCode:
+				_ = writeResult(gin.H{"exit_code": p.ExitCode})
+				return
+			case *pb.TerminalOutput_Error:
+				_ = writeResult(gin.H{"error": p.Error})
+				return
 			}
 		}
 	}()
 
-	// Goroutine: Read from WebSocket → Write to gRPC stream
+	// This goroutine is the sole gRPC input writer, including CloseSend.
+	// Shutdown closes the WebSocket to wake ReadMessage; stream cancellation
+	// wakes an in-flight Send, without another goroutine sending concurrently.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer finish()
+		defer func() { _ = termSession.CloseSend() }()
 		for {
-			select {
-			case <-ctx.Done():
+			msgType, data, err := conn.ReadMessage()
+			if err != nil || ctx.Err() != nil {
 				return
-			default:
-				msgType, data, err := conn.ReadMessage()
-				if err != nil {
-					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-						log.Debug("Terminal WS: Client disconnected normally")
-					} else {
-						log.Debugf("Terminal WS: WebSocket read error: %v", err)
+			}
+			switch msgType {
+			case websocket.BinaryMessage:
+				if len(data) > 0 {
+					if err := termSession.Send(&pb.TerminalInput{
+						Payload: &pb.TerminalInput_Data{Data: data},
+					}); err != nil {
+						_ = writeResult(gin.H{"error": "Terminal input could not be delivered. Start a new session to reconnect."})
+						return
 					}
-					errChan <- err
+				}
+			case websocket.TextMessage:
+				var msg TerminalMessage
+				if err := json.Unmarshal(data, &msg); err != nil {
+					log.Debugf("Terminal WS: Failed to parse control message: %v", err)
+					continue
+				}
+				if msg.Ping {
+					_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+					if err := writeJSON(gin.H{"pong": true}); err != nil {
+						return
+					}
+				}
+				if msg.Close {
 					return
 				}
-
-				switch msgType {
-				case websocket.BinaryMessage:
-					// Binary frames = raw terminal input, forward directly to PTY
-					if len(data) > 0 {
-						if err := termSession.Send(&pb.TerminalInput{
-							Payload: &pb.TerminalInput_Data{Data: data},
-						}); err != nil {
-							log.Debugf("Terminal WS: Failed to send input: %v", err)
-							errChan <- err
-							return
-						}
-					}
-
-				case websocket.TextMessage:
-					// Text frames = JSON control messages (resize, close)
-					var msg TerminalMessage
-					if err := json.Unmarshal(data, &msg); err != nil {
-						log.Debugf("Terminal WS: Failed to parse control message: %v", err)
-						continue
-					}
-					if msg.Resize != nil {
-						if err := termSession.Send(&pb.TerminalInput{
-							Payload: &pb.TerminalInput_Resize{
-								Resize: &pb.TerminalResize{
-									Cols: msg.Resize.Cols,
-									Rows: msg.Resize.Rows,
-								},
-							},
-						}); err != nil {
-							log.Debugf("Terminal WS: Failed to send resize: %v", err)
-						}
-					}
-					if msg.Close {
-						termSession.Send(&pb.TerminalInput{
-							Payload: &pb.TerminalInput_Close{Close: true},
-						})
+				if msg.Resize != nil {
+					if err := termSession.Send(&pb.TerminalInput{
+						Payload: &pb.TerminalInput_Resize{Resize: &pb.TerminalResize{
+							Cols: msg.Resize.Cols,
+							Rows: msg.Resize.Rows,
+						}},
+					}); err != nil {
+						_ = writeResult(gin.H{"error": "Terminal resize could not be delivered. Start a new session to reconnect."})
 						return
 					}
 				}
@@ -276,18 +288,14 @@ func (h *Handler) TerminalWebSocket(c *gin.Context) {
 		}
 	}()
 
-	// Wait for either goroutine to finish or context cancellation
 	select {
 	case <-ctx.Done():
-		log.Info("Terminal WS: Context cancelled")
-	case <-errChan:
-		// One of the goroutines encountered an error
+	case <-done:
 	}
-
-	// Signal close to agent
-	termSession.Send(&pb.TerminalInput{
-		Payload: &pb.TerminalInput_Close{Close: true},
-	})
-
+	cancel()
+	cleanup()
+	_ = writeFrame(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Terminal session ended"))
+	_ = conn.Close()
+	wg.Wait()
 	log.Infof("Terminal WS: Session ended for node %d", nodeID)
 }

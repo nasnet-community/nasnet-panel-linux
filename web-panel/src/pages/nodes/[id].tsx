@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react"
 import { useNavigate, useSearchParams, useLocation } from "react-router"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
@@ -46,8 +46,16 @@ import { CopyableText } from "@/components/ui/copyable-text"
 import { AccountDetailsSheet } from "@/components/accounts/account-details-sheet"
 import { StarlinkDashboard } from "@/components/node/starlink/starlink-dashboard"
 
-// Shared tab trigger class to avoid duplication
-const tabTriggerClass = "w-auto md:w-full justify-start px-4 py-2.5 md:py-3 h-auto rounded-full md:rounded-lg bg-muted/50 md:bg-transparent data-[state=active]:bg-foreground data-[state=active]:text-background md:data-[state=active]:bg-primary/10 md:data-[state=active]:text-primary data-[state=active]:shadow-sm md:data-[state=active]:shadow-none border border-transparent md:data-[state=active]:border-primary/20 hover:bg-muted/80 md:hover:bg-muted/50 transition-all"
+const nodeTabs = [
+    { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
+    { value: "network", label: "Network", description: "Inbounds & Outbounds", icon: HiOutlineGlobeAlt },
+    { value: "users", label: "Accounts", description: "User Management", icon: HiOutlineUsers },
+    { value: "starlink", label: "Starlink", description: "Satellite Link", icon: Satellite },
+    { value: "settings", label: "Settings", description: "Server Configuration", icon: HiOutlineCog },
+    { value: "access-logs", label: "Access Logs", description: "Destinations & Domains", icon: HiOutlineGlobeAlt },
+    { value: "logs", label: "Logs", description: "System & Activity", icon: HiOutlineTerminal },
+    { value: "terminal", label: "Terminal", description: "Interactive Shell", icon: HiOutlineTerminal },
+] as const
 
 export default function NodeDetailPage() {
     const navigate = useNavigate()
@@ -61,8 +69,80 @@ export default function NodeDetailPage() {
 
     // Tab state from URL
     const rawTab = searchParams.get("tab") || "overview"
-    const activeTab = rawTab
+    const activeTab = node?.is_stealth && ["access-logs", "terminal"].includes(rawTab) ? "overview" : rawTab
     const [isLoading, setIsLoading] = useState(true)
+
+    const isTerminalWorkspace = activeTab === "terminal"
+    const [initializedTerminalNodeId, setInitializedTerminalNodeId] = useState<number | null>(null)
+    const workspaceRef = useRef<HTMLDivElement>(null)
+    const tabsListRef = useRef<HTMLDivElement>(null)
+    const terminalPanelRef = useRef<HTMLDivElement>(null)
+    const [hasSidebarRoom, setHasSidebarRoom] = useState(false)
+    const useNodeSidebar = hasSidebarRoom && !isTerminalWorkspace
+
+    // Visit creates one shell; other sections hide it until the node workspace is left.
+    useEffect(() => {
+        setInitializedTerminalNodeId(null)
+    }, [nodeId])
+
+    useEffect(() => {
+        if (isTerminalWorkspace && node?.id === nodeId) {
+            setInitializedTerminalNodeId(nodeId)
+        }
+    }, [isTerminalWorkspace, node?.id, nodeId])
+
+    // Respond to the available content width, including changes to the app sidebar.
+    useLayoutEffect(() => {
+        const workspace = workspaceRef.current
+        if (!workspace) return
+        const measure = () => setHasSidebarRoom(workspace.clientWidth >= 960)
+        measure()
+        const observer = new ResizeObserver(measure)
+        observer.observe(workspace)
+        return () => observer.disconnect()
+    }, [node?.id, nodeId])
+
+    useLayoutEffect(() => {
+        const tabList = tabsListRef.current
+        if (!tabList || useNodeSidebar) return
+        const revealActiveTab = () => {
+            const selectedTab = tabList.querySelector<HTMLElement>('[data-state="active"]')
+            if (!selectedTab) return
+            const listBounds = tabList.getBoundingClientRect()
+            const tabBounds = selectedTab.getBoundingClientRect()
+            if (tabBounds.left < listBounds.left) tabList.scrollLeft -= listBounds.left - tabBounds.left
+            if (tabBounds.right > listBounds.right) tabList.scrollLeft += tabBounds.right - listBounds.right
+        }
+        revealActiveTab()
+        const observer = new ResizeObserver(revealActiveTab)
+        observer.observe(tabList)
+        return () => observer.disconnect()
+    }, [activeTab, node?.id, useNodeSidebar])
+
+    useLayoutEffect(() => {
+        const panel = terminalPanelRef.current
+        const workspace = workspaceRef.current
+        if (!isTerminalWorkspace || !panel || !workspace) return
+        const viewport = window.visualViewport
+        const measure = () => {
+            const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
+            const bottomGutter = window.matchMedia("(min-width: 768px)").matches ? 24 : 72
+            const availableHeight = Math.max(160, viewportBottom - panel.getBoundingClientRect().top - bottomGutter)
+            panel.style.setProperty("--terminal-workspace-height", `calc(${availableHeight}px - env(safe-area-inset-bottom, 0px))`)
+        }
+        measure()
+        const observer = new ResizeObserver(measure)
+        observer.observe(workspace)
+        window.addEventListener("resize", measure)
+        viewport?.addEventListener("resize", measure)
+        viewport?.addEventListener("scroll", measure)
+        return () => {
+            observer.disconnect()
+            window.removeEventListener("resize", measure)
+            viewport?.removeEventListener("resize", measure)
+            viewport?.removeEventListener("scroll", measure)
+        }
+    }, [isTerminalWorkspace, node?.id, nodeId])
 
     const [geofilesOpen, setGeofilesOpen] = useState(false)
     const [isRestarting, setIsRestarting] = useState(false)
@@ -166,9 +246,9 @@ export default function NodeDetailPage() {
     }
 
     return (
-        <div className="min-h-screen animate-in fade-in duration-500 pb-20">
+        <div ref={workspaceRef} className={cn("min-w-0 animate-in fade-in duration-300", !isTerminalWorkspace && "pb-20")}>
             {/* Top Header / Breadcrumbs */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 md:mb-8">
+            <div className={cn("flex flex-col md:flex-row md:items-center justify-between gap-4", isTerminalWorkspace ? "mb-4" : "mb-6 md:mb-8")}>
                 <div className="flex items-center gap-3">
                     <div className={cn(
                         "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
@@ -193,7 +273,7 @@ export default function NodeDetailPage() {
                         onClick={handleRestartXray}
                         disabled={isLoading || isRestarting}
                         variant="outline"
-                        className="hidden md:inline-flex h-8 px-3"
+                        className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")}
                     >
                         {isRestarting ? (
                             <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
@@ -207,7 +287,7 @@ export default function NodeDetailPage() {
                         isOnline={node.is_online}
                         onRefresh={handleRefresh}
                         trigger={
-                            <Button variant="outline" size="sm" className="hidden md:inline-flex h-8 px-3" disabled={!node.is_online}>
+                            <Button variant="outline" size="sm" className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")} disabled={!node.is_online}>
                                 <Globe className="w-3.5 h-3.5 mr-2" />
                                 Geofiles
                             </Button>
@@ -215,7 +295,7 @@ export default function NodeDetailPage() {
                     />
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="md:hidden h-8 px-2.5">
+                            <Button variant="outline" size="sm" aria-label="Server actions" className={cn("h-8 px-2.5", !isTerminalWorkspace && "md:hidden")}>
                                 <HiOutlineDotsVertical className="w-4 h-4" />
                             </Button>
                         </DropdownMenuTrigger>
@@ -233,95 +313,59 @@ export default function NodeDetailPage() {
                 </div>
             </div>
 
-            <Tabs value={activeTab} onValueChange={handleTabChange} className="flex flex-col md:grid md:grid-cols-[240px_1fr] gap-6 md:gap-8">
-                {/* Sidebar Navigation (Mobile: Horizontal Scroll, Desktop: Vertical Sidebar) */}
-                <aside className="space-y-4">
-                    {/* Node Info Card (Hidden on Mobile, Visible on Desktop) */}
-                    <div className="hidden md:flex items-center gap-3 p-4 rounded-xl bg-card border shadow-sm mb-2">
-                        <div className={cn(
-                            "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                            node.is_online
-                                ? "bg-emerald-500/10 text-emerald-500"
-                                : "bg-red-500/10 text-red-500"
-                        )}>
-                            <HiOutlineServer className="w-5 h-5" />
+            <Tabs
+                value={activeTab}
+                onValueChange={handleTabChange}
+                orientation={useNodeSidebar ? "vertical" : "horizontal"}
+                activationMode="manual"
+                className={cn("min-w-0", useNodeSidebar ? "grid grid-cols-[224px_minmax(0,1fr)] gap-8" : "flex flex-col gap-4")}
+            >
+                <aside className="min-w-0 space-y-4" aria-label="Server sections">
+                    {useNodeSidebar && (
+                        <div className="flex items-center gap-3 p-4 rounded-xl bg-card border shadow-sm">
+                            <div className={cn(
+                                "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                                node.is_online ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
+                            )}>
+                                <HiOutlineServer className="w-5 h-5" />
+                            </div>
+                            <div className="overflow-hidden">
+                                <h2 className="font-bold truncate">{node.name}</h2>
+                                <CopyableText text={node.ip} className="text-xs text-muted-foreground font-mono" />
+                            </div>
                         </div>
-                        <div className="overflow-hidden">
-                            <h2 className="font-bold truncate">{node.name}</h2>
-                            <CopyableText
-                                text={node.ip}
-                                className="text-xs text-muted-foreground font-mono"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="relative md:static">
-                    <TabsList className="flex flex-row md:flex-col h-auto bg-transparent p-0 gap-2 md:gap-1 w-full justify-start overflow-x-auto no-scrollbar pb-2 md:pb-0 pr-6 md:pr-0">
-                        <TabsTrigger value="overview" className={tabTriggerClass}>
-                            <HiOutlineChartBar className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                            <div className="text-left flex flex-col">
-                                <span className="block font-medium text-sm md:text-base">Overview</span>
-                                <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Stats & Health</span>
-                            </div>
-                        </TabsTrigger>
-                        <TabsTrigger value="network" className={tabTriggerClass}>
-                            <HiOutlineGlobeAlt className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                            <div className="text-left flex flex-col">
-                                <span className="block font-medium text-sm md:text-base">Network</span>
-                                <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Inbounds & Outbounds</span>
-                            </div>
-                        </TabsTrigger>
-                        <TabsTrigger value="users" className={tabTriggerClass}>
-                            <HiOutlineUsers className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                            <div className="text-left flex flex-col">
-                                <span className="block font-medium text-sm md:text-base">Accounts</span>
-                                <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">User Management</span>
-                            </div>
-                        </TabsTrigger>
-                        {node.starlink_settings?.enabled && !node.is_stealth && (
-                            <TabsTrigger value="starlink" className={tabTriggerClass}>
-                                <Satellite className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                                <div className="text-left flex flex-col">
-                                    <span className="block font-medium text-sm md:text-base">Starlink</span>
-                                    <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Satellite Link</span>
-                                </div>
-                            </TabsTrigger>
+                    )}
+                    <TabsList
+                        ref={tabsListRef}
+                        aria-label="Server sections"
+                        className={cn(
+                            "flex h-auto w-full justify-start bg-transparent p-0",
+                            useNodeSidebar ? "flex-col gap-1" : "gap-1 overflow-x-auto border-b border-border rounded-none pb-1"
                         )}
-                        <TabsTrigger value="settings" className={tabTriggerClass}>
-                            <HiOutlineCog className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                            <div className="text-left flex flex-col">
-                                <span className="block font-medium text-sm md:text-base">Settings</span>
-                                <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Node Configuration</span>
-                            </div>
-                        </TabsTrigger>
-                        {!node?.is_stealth && (
-                            <TabsTrigger value="access-logs" className={tabTriggerClass}>
-                                <HiOutlineGlobeAlt className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                                <div className="text-left flex flex-col">
-                                    <span className="block font-medium text-sm md:text-base">Access Logs</span>
-                                    <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Destinations & Domains</span>
-                                </div>
+                    >
+                        {nodeTabs.filter(tab => {
+                            if (tab.value === "starlink") return node.starlink_settings?.enabled && !node.is_stealth
+                            if (tab.value === "access-logs" || tab.value === "terminal") return !node.is_stealth
+                            return true
+                        }).map(tab => (
+                            <TabsTrigger
+                                key={tab.value}
+                                value={tab.value}
+                                className={cn(
+                                    "shrink-0 justify-start gap-2 border border-transparent transition-colors data-[state=active]:shadow-none",
+                                    useNodeSidebar
+                                        ? "w-full h-auto rounded-lg px-4 py-3 hover:bg-muted/50 data-[state=active]:border-primary/20 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                                        : "min-h-11 rounded-md px-3 py-2 text-sm hover:bg-muted/70 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                                )}
+                            >
+                                <tab.icon className={cn("shrink-0", useNodeSidebar ? "h-5 w-5 mr-1" : "h-4 w-4")} />
+                                <span className="text-left">
+                                    <span className={cn("block font-medium", useNodeSidebar && "text-base")}>{tab.label}</span>
+                                    {useNodeSidebar && <span className="block text-xs opacity-70 font-normal mt-0.5">{tab.description}</span>}
+                                </span>
                             </TabsTrigger>
-                        )}
-                        <TabsTrigger value="logs" className={tabTriggerClass}>
-                            <HiOutlineTerminal className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                            <div className="text-left flex flex-col">
-                                <span className="block font-medium text-sm md:text-base">Logs</span>
-                                <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">System & Activity</span>
-                            </div>
-                        </TabsTrigger>
-                        {!node?.is_stealth && (
-                            <TabsTrigger value="terminal" className={tabTriggerClass}>
-                                <HiOutlineTerminal className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
-                                <div className="text-left flex flex-col">
-                                    <span className="block font-medium text-sm md:text-base">Terminal</span>
-                                    <span className="hidden md:block text-xs opacity-70 font-normal mt-0.5">Interactive Shell</span>
-                                </div>
-                            </TabsTrigger>
-                        )}
+                        ))}
                     </TabsList>
-                    <div className="absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-background to-transparent pointer-events-none md:hidden" />
-                    </div>
                 </aside>
 
                 {/* Main Content Area — only the active tab's component is mounted */}
@@ -378,14 +422,27 @@ export default function NodeDetailPage() {
                         )}
                     </TabsContent>
 
-                    {!node?.is_stealth && (
-                        <TabsContent value="terminal" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                            {activeTab === "terminal" && (
-                                <NodeTerminal nodeId={node.id} isOnline={node?.is_online || false} />
-                            )}
+                    {!node.is_stealth && (isTerminalWorkspace || initializedTerminalNodeId === nodeId) && (
+                        <TabsContent
+                            ref={terminalPanelRef}
+                            value="terminal"
+                            forceMount
+                            hidden={!isTerminalWorkspace}
+                            inert={!isTerminalWorkspace}
+                            aria-hidden={!isTerminalWorkspace}
+                            tabIndex={isTerminalWorkspace ? 0 : -1}
+                            className="mt-0 min-h-0 h-[var(--terminal-workspace-height,calc(100dvh-15rem))] data-[state=inactive]:hidden"
+                        >
+                            <NodeTerminal
+                                key={node.id}
+                                nodeId={node.id}
+                                nodeName={node.name}
+                                nodeAddress={node.ip}
+                                isOnline={node.is_online}
+                                isActive={isTerminalWorkspace}
+                            />
                         </TabsContent>
                     )}
-
                     <TabsContent value="users" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
                         {activeTab === "users" && (
                             <NodeAccountsList
@@ -396,6 +453,7 @@ export default function NodeDetailPage() {
                     </TabsContent>
                 </main>
             </Tabs>
+
 
             <GeofilesDialog
                 nodeId={nodeId}

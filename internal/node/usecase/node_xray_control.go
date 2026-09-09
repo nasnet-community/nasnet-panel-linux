@@ -659,14 +659,19 @@ func (u *nodeUsecase) OpenTerminal(ctx context.Context, nodeID uint) (pb.NodeAge
 		return nil, nil, fmt.Errorf("failed to connect to agent: %w", err)
 	}
 
-	stream, err := client.OpenTerminal(ctx)
+	// Embedded streams need their own cancellation; closing the shared local
+	// client does not stop an individual shell.
+	terminalCtx, cancel := context.WithCancel(ctx)
+	stream, err := client.OpenTerminal(terminalCtx)
 	if err != nil {
+		cancel()
 		client.Close()
 		return nil, nil, fmt.Errorf("failed to open terminal stream: %w", err)
 	}
 
-	// Return cleanup function that closes the client
+	// Release this shell without affecting other embedded sessions.
 	cleanup := func() {
+		cancel()
 		client.Close()
 		log.WithField("node_id", nodeID).Info("[OpenTerminal] Terminal session closed")
 	}

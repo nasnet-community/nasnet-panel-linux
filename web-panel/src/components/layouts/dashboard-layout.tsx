@@ -108,7 +108,8 @@ const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed"
 
 export function DashboardLayout() {
     const navigate = useNavigate()
-    const { pathname } = useLocation()
+    const { pathname, search } = useLocation()
+    const terminalWorkspace = /^\/server\/?$/.test(pathname) && new URLSearchParams(search).get("tab") === "terminal"
     const user = useAuthStore((state) => state.user)
     const logout = useAuthStore((state) => state.logout)
     const isLoading = useAuthStore((state) => state.isLoading)
@@ -118,6 +119,8 @@ export function DashboardLayout() {
         }
         return false
     })
+    const [terminalSidebarExpanded, setTerminalSidebarExpanded] = useState(false)
+    const sidebarCollapsed = terminalWorkspace ? !terminalSidebarExpanded : isCollapsed
     const [mounted, setMounted] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
     // Data for badges and mini dashboard
@@ -141,7 +144,10 @@ export function DashboardLayout() {
     const { resolvedTheme, setTheme } = useTheme()
     const toggleTheme = () => setTheme(resolvedTheme === "dark" ? "light" : "dark")
 
+    useEffect(() => { if (!terminalWorkspace) setTerminalSidebarExpanded(false) }, [terminalWorkspace])
+
     const toggleSidebar = () => {
+        if (terminalWorkspace) { setTerminalSidebarExpanded(value => !value); return }
         const newState = !isCollapsed
         setIsCollapsed(newState)
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newState))
@@ -165,31 +171,31 @@ export function DashboardLayout() {
                 <aside
                     className={cn(
                         "hidden md:flex border-r border-border/50 bg-card/95 backdrop-blur-sm flex-col transition-all duration-200 ease-in-out relative sticky top-0 h-screen",
-                        isCollapsed ? "w-20" : "w-64"
+                        sidebarCollapsed ? "w-20 shrink-0" : "w-64 shrink-0"
                     )}
                 >
                     <button
                         onClick={toggleSidebar}
                         className="absolute -right-3 top-20 z-10 w-6 h-6 rounded-full bg-card border border-border/60 shadow-md flex items-center justify-center hover:bg-muted hover:scale-110 active:scale-95 transition-all duration-150"
-                        title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                        title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                     >
-                        {isCollapsed ? (
+                        {sidebarCollapsed ? (
                             <HiOutlineChevronRight className="w-3 h-3 text-muted-foreground" />
                         ) : (
                             <HiOutlineChevronLeft className="w-3 h-3 text-muted-foreground" />
                         )}
                     </button>
                     <div className="flex-1 flex flex-col min-h-0">
-                        <SidebarHeader collapsed={isCollapsed} />
-                        <SidebarContextPanel collapsed={isCollapsed} />
+                        <SidebarHeader collapsed={sidebarCollapsed} />
+                        <SidebarContextPanel collapsed={sidebarCollapsed} />
                         <SidebarNav
                             sections={NAV_SECTIONS}
-                            collapsed={isCollapsed}
+                            collapsed={sidebarCollapsed}
                             getBadge={() => unreadChatCount}
                         />
                         <SidebarFooter
-                            collapsed={isCollapsed}
+                            collapsed={sidebarCollapsed}
                             username={user?.username}
                             resolvedTheme={resolvedTheme}
                             onToggleTheme={toggleTheme}
@@ -199,8 +205,8 @@ export function DashboardLayout() {
                 </aside>
 
                 {/* Main content */}
-                <main className="flex-1 overflow-auto w-full">
-                    <div className="p-4 md:p-8 pb-24 md:pb-8 space-y-6">
+                <main className="flex-1 min-w-0 overflow-auto w-full">
+                    <div className={cn("p-4 md:p-8 space-y-6", terminalWorkspace ? "pb-[calc(72px+env(safe-area-inset-bottom,0px))] md:pb-6" : "pb-24 md:pb-8")}>
                         <ErrorBoundary>
                             <Breadcrumbs />
                             {globalMaintenanceActive && (

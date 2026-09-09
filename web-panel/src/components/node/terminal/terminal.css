@@ -1,0 +1,66 @@
+.node-terminal{container-type:inline-size;display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;border:1px solid var(--border);border-radius:12px;background:#fbfdfc;overflow:hidden;color:var(--foreground)}
+.dark .node-terminal{background:#0d1113}
+.node-terminal-focused{position:fixed;inset:0;top:var(--terminal-visual-top,0px);bottom:auto;z-index:60;border:0;border-radius:0;height:var(--terminal-visual-height,100dvh);padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.node-terminal-header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--card);flex-shrink:0}
+.node-terminal-identity{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.node-terminal-identity>svg{flex-shrink:0;color:var(--muted-foreground)}
+.node-terminal-address{display:block;color:var(--muted-foreground);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-geist-mono)}
+.node-terminal-status{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;color:var(--muted-foreground)}
+.node-terminal-dot{height:6px;width:6px;border-radius:100%;background:#b78626}
+.node-terminal-status[data-ready=true] .node-terminal-dot{background:#32b480}
+.node-terminal-status[data-error=true] .node-terminal-dot{background:#e45862}
+.node-terminal-tools{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.node-terminal-tools>button{gap:6px;font-size:12px;padding-inline:9px}
+.node-terminal-search{display:flex;align-items:center;gap:7px;padding:8px 12px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--card)}
+.node-terminal-search input{flex:1;min-width:40px;width:100%;border:1px solid var(--border);background:var(--background);padding:7px 9px;border-radius:6px;font-size:13px}
+.node-terminal-search>button{height:32px;width:32px;flex-shrink:0}
+.node-terminal-match-count{min-width:58px;text-align:right;font-size:11px;color:var(--muted-foreground);white-space:nowrap}
+.node-terminal-notice{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--muted);flex-shrink:0}
+.node-terminal-notice strong{font-size:13px;font-weight:500}
+.node-terminal-notice p{font-size:12px;color:var(--muted-foreground);margin-top:3px;max-width:65ch;overflow-wrap:anywhere}
+.node-terminal-notice>button{flex-shrink:0}
+.node-terminal-notice[data-error=true] strong{color:var(--destructive)}
+.node-terminal-content{display:flex;position:relative;flex:1;min-height:0;min-width:0;overflow:hidden}
+.node-terminal-screen{position:relative;min-width:0;min-height:0;flex:1;overflow:hidden;padding:16px}
+/* FitAddon measures its parent's box: keep the host unpadded so the last row/column stays visible. */
+.node-terminal-emulator{height:100%;width:100%;min-height:0;overflow:hidden}
+.node-terminal-emulator .xterm{height:100%}
+.node-terminal-emulator .xterm-viewport{background-color:#fbfdfc}
+.dark .node-terminal-emulator .xterm-viewport{background-color:#0d1113}
+.node-terminal-emulator .xterm:focus-within{outline:0}
+.node-terminal-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#fbfdfc;padding:20px;overflow:auto}
+.dark .node-terminal-empty{background:#0d1113}
+.node-terminal-empty .node-terminal-notice{flex-direction:column;background:transparent;border:0;text-align:center;padding:0}
+.node-terminal-latest{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);box-shadow:0 2px 12px #0002;font-size:12px}
+.node-terminal-copy{position:absolute;right:14px;top:10px;font-size:12px;box-shadow:0 2px 12px #0002}
+.node-terminal-commands{width:264px;flex-shrink:0;padding:12px 16px 18px;border-left:1px solid var(--border);background:var(--card);overflow:auto;overscroll-behavior:contain}
+.node-terminal-commands>div:first-child>button{height:32px;width:32px}
+.node-terminal-command{display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;padding:10px 8px;border-radius:6px;font-size:12px;text-align:left;cursor:pointer}
+.node-terminal-command span:last-child{font-size:11px;color:var(--muted-foreground)}
+.node-terminal-command:hover{background:var(--muted)}
+.node-terminal-command[aria-pressed=true]{background:var(--accent);color:var(--accent-foreground)}
+.node-terminal-command-preview{display:flex;flex-direction:column;gap:12px;margin-top:24px}
+.node-terminal-command-preview code{font-family:var(--font-geist-mono);font-size:13px;background:var(--background);border:1px solid var(--border);border-radius:6px;padding:12px;overflow-wrap:anywhere}
+.node-terminal-command-preview p{font-size:12px;color:var(--muted-foreground)}
+.node-terminal-touch{display:flex;align-items:center;gap:5px;padding:5px 10px;border-top:1px solid var(--border);flex-shrink:0;background:var(--card)}
+.node-terminal-touch button{min-height:44px;min-width:32px;flex:1;border-radius:5px;display:flex;align-items:center;justify-content:center;font-family:var(--font-geist-mono);font-size:12px;cursor:pointer}
+.node-terminal-touch button:hover{background:var(--muted)}
+.node-terminal-touch button:disabled{opacity:.4;cursor:default}
+.node-terminal-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted-foreground);flex-shrink:0;background:var(--card)}
+.node-terminal-footer>div{display:flex;align-items:center;gap:14px;min-width:0}
+.node-terminal-footer button{display:flex;align-items:center;gap:5px;white-space:nowrap;padding:3px 0;cursor:pointer}
+.node-terminal-footer button:hover{color:var(--foreground)}
+.node-terminal-shortcut{white-space:nowrap}
+.terminal-dialog-overlay{position:fixed;inset:0;z-index:80;background:#0009;backdrop-filter:blur(3px)}
+.terminal-dialog{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:90;width:calc(100% - 32px);max-width:480px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;border:1px solid var(--border);border-radius:14px;background:var(--background);color:var(--foreground);padding:24px;box-shadow:0 16px 80px #0004}
+.terminal-dialog-close{position:absolute;right:12px;top:12px;display:grid;place-items:center;height:36px;width:36px;border-radius:8px;cursor:pointer;color:var(--muted-foreground)}
+.terminal-dialog-close:hover{background:var(--muted)}
+.node-terminal-keyboard-help{display:flex;flex-direction:column;gap:8px;font-size:12px}
+.node-terminal-keyboard-help>div{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.node-terminal-keyboard-help dt{color:var(--muted-foreground)}
+.node-terminal-keyboard-help dd{font-family:var(--font-geist-mono);font-size:11px}
+.node-terminal-paste{width:100%;min-height:180px;max-height:40dvh;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:12px;margin:20px 0;background:var(--muted);font-family:var(--font-geist-mono);font-size:13px;tab-size:4}
+@container(max-width:760px){.node-terminal-header{gap:10px}.node-terminal-tools{width:100%;justify-content:flex-end}.node-terminal-tools>button{flex:1}.node-terminal-tools>button:last-child{flex:0 0 36px}.node-terminal-commands{position:absolute;right:0;top:0;bottom:0;z-index:3;width:min(310px,100%);box-shadow:-6px 0 24px #0002}.node-terminal-shortcut{display:none}.node-terminal-notice{flex-wrap:wrap}}
+@container(max-width:400px){.node-terminal-commands{width:100%}.node-terminal-header{padding:10px}.node-terminal-tools>button{padding-inline:6px}.node-terminal-tools>button svg{height:14px;width:14px}.node-terminal-screen{padding:12px 10px}.node-terminal-search{gap:3px;padding:6px}.node-terminal-search>svg{display:none}.node-terminal-search input{padding:7px;min-width:24px}.node-terminal-match-count{min-width:48px}.node-terminal-search>button{width:28px}.node-terminal-footer{padding:6px 10px}.node-terminal-footer>div{gap:10px}.node-terminal-footer>button>span{display:none}}
+@media(pointer:coarse){.node-terminal-tools>button,.node-terminal-search>button{min-height:44px}.node-terminal-tools>button:last-child{min-width:44px}.node-terminal-search input,.node-terminal-paste{font-size:16px}.node-terminal-command{min-height:44px}.node-terminal-footer button{min-height:36px}.terminal-dialog-close{height:44px;width:44px}}
+@media(prefers-reduced-motion:reduce){.node-terminal *{scroll-behavior:auto}}

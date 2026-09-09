@@ -911,6 +911,8 @@ func (s bidiServerStream[Req, Res]) Send(m *Res) error {
 	select {
 	case s.p.toClient <- m:
 		return nil
+	case <-s.p.done:
+		return io.EOF
 	case <-s.p.ctx.Done():
 		return s.p.ctx.Err()
 	}
@@ -921,6 +923,8 @@ func (s bidiServerStream[Req, Res]) Recv() (*Req, error) {
 	case m := <-s.p.toServer:
 		return m, nil
 	case <-s.p.sendClosed:
+		return nil, io.EOF
+	case <-s.p.done:
 		return nil, io.EOF
 	case <-s.p.ctx.Done():
 		return nil, s.p.ctx.Err()
@@ -941,6 +945,8 @@ func (c bidiClientStream[Req, Res]) Send(m *Req) error {
 	select {
 	case c.p.toServer <- m:
 		return nil
+	case <-c.p.sendClosed:
+		return io.EOF
 	case <-c.p.done:
 		return io.EOF
 	case <-c.p.ctx.Done():
