@@ -2340,13 +2340,89 @@ wizard_navigation_menu() {
     printf -v "$nav_result" '%s' "$nav_selected"
 }
 
+# Read a secret with one mask character per typed character. Keep terminal echo
+# disabled so the actual input never appears, including when pasting a password.
+wizard_read_masked() {
+    local mask_status=0
+    # Keep echo disabled between reads too, so fast typing cannot slip through
+    # while Bash restores terminal settings after an individual character.
+    if [[ -t 0 ]]; then
+        MASKED_TTY_STATE=$(stty -g) || return 3
+        stty -echo || { MASKED_TTY_STATE=""; return 3; }
+    fi
+    wizard_read_masked_chars "$1" || mask_status=$?
+    if [[ -n "${MASKED_TTY_STATE:-}" ]]; then
+        stty "$MASKED_TTY_STATE" 2>/dev/null || true
+        MASKED_TTY_STATE=""
+    fi
+    return "$mask_status"
+}
+
+wizard_read_masked_chars() {
+    # Read UTF-8 byte sequences explicitly: Bash 3.2 can lose bytes with -n1
+    # in a multibyte locale. Track character lengths for correct backspacing.
+    local LC_ALL=C
+    local mask_target="$1" mask_value="" mask_key="" mask_byte=""
+    local mask_count=0 mask_code=0 mask_remaining=0
+    local mask_lengths=()
+    while IFS= read -rsn1 mask_key; do
+        case "$mask_key" in
+            ''|$'\r')
+                printf '\n'
+                printf -v "$mask_target" '%s' "$mask_value"
+                return 0
+                ;;
+            $'\x7f'|$'\b')
+                if [[ $mask_count -gt 0 ]]; then
+                    mask_count=$((mask_count - 1))
+                    mask_value="${mask_value:0:${#mask_value}-${mask_lengths[$mask_count]}}"
+                    unset 'mask_lengths[mask_count]'
+                    printf '\b \b'
+                fi
+                ;;
+            $'\x15') # Ctrl+U clears the input.
+                while [[ $mask_count -gt 0 ]]; do
+                    mask_count=$((mask_count - 1))
+                    printf '\b \b'
+                done
+                mask_value=""; mask_lengths=()
+                ;;
+            $'\x03'|$'\x04') break ;;
+            $'\x1b') # Discard arrow-key and other terminal escape sequences.
+                while IFS= read -rsn1 -t 1 mask_key; do
+                    [[ "$mask_key" == [[:alpha:]~] ]] && break
+                done
+                ;;
+            [[:cntrl:]]) ;;
+            *)
+                printf -v mask_code '%d' "'$mask_key"
+                [[ $mask_code -ge 0 ]] || mask_code=$((mask_code + 256))
+                mask_remaining=0
+                if [[ $mask_code -ge 194 && $mask_code -le 223 ]]; then mask_remaining=1;
+                elif [[ $mask_code -ge 224 && $mask_code -le 239 ]]; then mask_remaining=2;
+                elif [[ $mask_code -ge 240 && $mask_code -le 244 ]]; then mask_remaining=3; fi
+                while [[ $mask_remaining -gt 0 ]]; do
+                    IFS= read -rsn1 mask_byte || { printf '\n'; return 3; }
+                    mask_key+="$mask_byte"
+                    mask_remaining=$((mask_remaining - 1))
+                done
+                mask_lengths[$mask_count]=${#mask_key}
+                mask_count=$((mask_count + 1))
+                mask_value+="$mask_key"
+                printf '*'
+                ;;
+        esac
+    done
+    printf '\n'
+    return 3
+}
+
 # Empty input keeps the current answer; secrets are never printed as defaults.
 # Reserved commands work at text/password prompts as well as menu steps.
 wizard_read_answer() {
     local nav_target="$1" nav_secret="${2:-false}" nav_input=""
     if [[ "$nav_secret" == true ]]; then
-        read -rs nav_input || return 3
-        echo ""
+        wizard_read_masked nav_input || return 3
     else
         read -r nav_input || return 3
     fi
@@ -2724,7 +2800,7 @@ wizard_apply_install() {
 wizard_collect_install_settings() {
     local setup_step="${1:-deployment}" setup_status=0 setup_choice=-1
     local setup_history=() ARROW_MENU_DEFAULT=0
-    local password_input="" password_confirm=""
+    local password_input="" password_confirm="" password_error=""
     while true; do
         setup_status=0
         ARROW_MENU_DEFAULT=0
@@ -2795,6 +2871,10 @@ wizard_collect_install_settings() {
                 clear
                 draw_box "nasnet-panel-linux Admin Tool"
                 draw_header "Admin password"
+                if [[ -n "$password_error" ]]; then
+                    step_fail "$password_error"
+                    password_error=""
+                fi
                 password_input=""; password_confirm=""
                 echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "
                 wizard_read_answer password_input true || setup_status=$?
@@ -2802,7 +2882,7 @@ wizard_collect_install_settings() {
                     if [[ -z "$password_input" && ( -n "$WIZ_ADMIN_PASS" || -n "$WIZ_ADMIN_HASH" ) ]]; then
                         : # Keep the previous password without displaying it.
                     elif [[ ${#password_input} -lt 6 ]]; then
-                        step_fail "Password is too short"; setup_status=1
+                        password_error="Password is too short (at least 6 characters)"; setup_status=1
                     else
                         echo -ne "  ${CYAN}Confirm password${RESET}: "
                         wizard_read_answer password_confirm true || setup_status=$?
@@ -2810,7 +2890,7 @@ wizard_collect_install_settings() {
                             if [[ "$password_input" == "$password_confirm" ]]; then
                                 WIZ_ADMIN_PASS="$password_input"; WIZ_ADMIN_HASH=""
                             else
-                                step_fail "Passwords do not match"; setup_status=1
+                                password_error="Passwords do not match"; setup_status=1
                             fi
                         fi
                     fi
@@ -6288,6 +6368,9 @@ menu_systemd() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 cleanup() {
+    if [[ -n "${MASKED_TTY_STATE:-}" ]]; then
+        stty "$MASKED_TTY_STATE" 2>/dev/null || true
+    fi
     tput cnorm 2>/dev/null || true
     echo ""
 }

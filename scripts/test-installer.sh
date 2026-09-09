@@ -370,6 +370,51 @@ INPUT
     contains applied "$EVENT_LOG" || return 1
     contains 'INSTALL_STATUS=complete' "$ENV_FILE"
 }
+test_password_masking() {
+    local WIZ_NAVIGATION=true value='' status=0
+    wizard_read_answer value true <<< 'a b\$c' > "$PROJECT_DIR/mask" || return 1
+    [[ "$value" == 'a b\$c' ]] || return 1
+    [[ "$(cat "$PROJECT_DIR/mask")" == '******' ]] || return 1
+    # Backspace/Delete erase one star, including when the input is empty.
+    wizard_read_answer value true <<< $'\177abc\177\bd\n' > "$PROJECT_DIR/mask" || return 1
+    [[ "$value" == ad ]] || return 1
+    [[ "$(cat "$PROJECT_DIR/mask")" == $'***\b \b\b \b*' ]] || return 1
+    wizard_read_answer value true <<< $'abc\025xy\033[DZ' > "$PROJECT_DIR/mask" || return 1
+    [[ "$value" == xyZ ]] || return 1
+    [[ "$(cat "$PROJECT_DIR/mask")" == $'***\b \b\b \b\b \b***' ]] || return 1
+    wizard_read_answer value true <<< $'éی\177界' > "$PROJECT_DIR/mask" || return 1
+    [[ "$value" == 'é界' ]] || return 1
+    [[ "$(cat "$PROJECT_DIR/mask")" == $'**\b \b*' ]] || return 1
+    wizard_read_answer value true <<< ':back' > "$PROJECT_DIR/mask" || status=$?
+    [[ $status -eq 2 && "$value" == é界 ]] || return 1
+    status=0; wizard_read_answer value true < /dev/null > "$PROJECT_DIR/mask" || status=$?
+    [[ $status -eq 3 && "$value" == é界 ]]
+}
+test_password_validation_visible() {
+    answers; WIZ_NAVIGATION=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
+    local menu_index=0 menu_script=('Review installation|0')
+    arrow_menu() { scripted_menu "$@"; }
+    # Simulate screen clearing by discarding prior output. Every new prompt
+    # must retain the preceding failure after its redraw.
+    clear() { printf 'SCREEN\n'; }
+    wizard_collect_install_settings password > "$PROJECT_DIR/password-screen" <<'INPUT' || return 1
+short
+secret123
+wrong123
+correct123
+correct123
+INPUT
+    [[ "$WIZ_ADMIN_PASS" == correct123 && $menu_index -eq 1 ]] || return 1
+    contains 'Password is too short (at least 6 characters)' "$PROJECT_DIR/password-screen" || return 1
+    contains 'Passwords do not match' "$PROJECT_DIR/password-screen" || return 1
+    absent secret123 "$PROJECT_DIR/password-screen" || return 1
+    absent correct123 "$PROJECT_DIR/password-screen" || return 1
+    # Errors belong to the second and third screens, not the erased ones.
+    awk '/^SCREEN$/ { screen++ }
+         /Password is too short/ { if (screen != 2) exit 1; short_seen=1 }
+         /Passwords do not match/ { if (screen != 3) exit 1; mismatch_seen=1 }
+         END { if (!short_seen || !mismatch_seen) exit 1 }' "$PROJECT_DIR/password-screen"
+}
 test_navigation_menu_keys() {
     local key_result=-1 ARROW_MENU_DEFAULT=1 WIZ_NAVIGATION=true status=0
     tput() { :; }
@@ -381,6 +426,6 @@ test_navigation_menu_keys() {
     wizard_navigation_menu 'Example' key_result 'First' < /dev/null > /dev/null || status=$?
     [[ $status -eq 3 ]]
 }
-for case_name in navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
+for case_name in password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done
