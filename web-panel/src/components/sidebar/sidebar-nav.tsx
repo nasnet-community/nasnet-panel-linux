@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useId, useState } from "react"
 import { Link, useLocation } from "react-router"
 import type { IconType } from "react-icons"
 import { HiOutlineChevronDown } from "react-icons/hi"
@@ -118,6 +118,7 @@ function isOn(pathname: string, href: string): boolean {
 }
 
 function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge }: NavRowProps) {
+    const childrenId = useId()
     const childOwns = item.children?.some((c) => isOn(pathname, c.href)) ?? false
     const isActive = isOn(pathname, item.href) && !childOwns
     const hasChildren = !!item.children && item.children.length > 0 && !collapsed
@@ -179,7 +180,10 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                             onToggle(item.href)
                         }}
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                        aria-label={expanded ? "Collapse" : "Expand"}
+                        type="button"
+                        aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
+                        aria-expanded={expanded}
+                        aria-controls={childrenId}
                     >
                         <HiOutlineChevronDown
                             className={cn(
@@ -191,12 +195,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                 )}
             </div>
             {hasChildren && (
-                <div
-                    className={cn(
-                        "overflow-hidden transition-all duration-200",
-                        expanded ? "max-h-40 opacity-100" : "max-h-0 opacity-0",
-                    )}
-                >
+                <div id={childrenId} hidden={!expanded}>
                     {item.children!.map((child) => {
                         const childActive = isOn(pathname, child.href)
                         return (
