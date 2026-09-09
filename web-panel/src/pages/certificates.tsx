@@ -18,13 +18,15 @@ import { CertTimeline } from "@/components/certificates/cert-timeline"
 import { IssueCertDialog } from "@/components/certificates/issue-cert-dialog"
 import { CertDetailsDialog } from "@/components/certificates/cert-details-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { QueryError } from "@/components/ui/query-error"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { AgentCertificate } from "@/lib/types"
 import { toast } from "sonner"
 
 export default function CertificatesPage() {
     const queryClient = useQueryClient()
-    const { data: certificates = [], isLoading, isRefetching } = useCertificates()
+    const { data, isLoading, isRefetching, isError, isFetching, refetch } = useCertificates()
+    const certificates = data ?? []
     const isMobile = useIsMobile()
 
     const {
@@ -166,8 +168,19 @@ export default function CertificatesPage() {
                 }
             />
 
+            {isError && (
+                <QueryError
+                    title={data ? "Couldn't refresh certificates" : "Couldn't load certificates"}
+                    description={data
+                        ? "Showing the last loaded certificates and CA status. These may be out of date."
+                        : "Your certificates and CA status are unavailable. Try again to load them."}
+                    onRetry={() => void refetch()}
+                    isRetrying={isFetching}
+                />
+            )}
+
             {/* CA Status Banner */}
-            <CAStatusBanner certificates={certificates} />
+            {data && <CAStatusBanner certificates={certificates} />}
 
             {/* Segmented Tabs */}
             <Tabs
@@ -188,7 +201,7 @@ export default function CertificatesPage() {
             </Tabs>
 
             {/* Stats Row */}
-            <CertStatsRow certificates={certificates} />
+            {data && <CertStatsRow certificates={certificates} />}
 
             {/* Search + Controls */}
             <div className="flex items-center gap-2">
@@ -227,7 +240,11 @@ export default function CertificatesPage() {
             </div>
 
             {/* Content */}
-            {viewMode === "timeline" ? (
+            {isError && !data ? null : isLoading && viewMode === "timeline" ? (
+                <div role="status" className="py-12 text-center text-muted-foreground text-sm">
+                    Loading certificates...
+                </div>
+            ) : viewMode === "timeline" ? (
                 <div className="rounded-lg border border-border/50 p-4 bg-card/50">
                     <CertTimeline
                         certificates={filteredCerts}
@@ -271,12 +288,12 @@ export default function CertificatesPage() {
             )}
 
             {/* Bulk Actions */}
-            <BulkActionsBar
+            {data && <BulkActionsBar
                 onBulkRevoke={handleBulkRevoke}
                 onBulkDelete={handleBulkDelete}
                 isRevoking={revokeMutation.isPending}
                 isDeleting={deleteMutation.isPending}
-            />
+            />}
 
             {/* Revoke Confirmation Dialog */}
             <Dialog open={!!revokeId} onOpenChange={(open) => !open && setRevokeId(null)}>

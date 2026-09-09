@@ -2,12 +2,12 @@ import { useState, useMemo } from "react"
 import { PageHeader } from "@/components/shared/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { RefreshCw, Search, Globe, Shield, FileText, AlertTriangle } from "lucide-react"
 import { useSNIs, useDeleteSNI, useRenewSNICert, useSNIUsage } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { EmptyState } from "@/components/ui/empty-state"
+import { QueryError } from "@/components/ui/query-error"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AddDomainDialog } from "@/components/domains/add-domain-dialog"
 import { DomainsTable } from "@/components/domains/domains-table"
@@ -17,7 +17,8 @@ import type { SNI } from "@/lib/types"
 
 export default function DomainsPage() {
     const queryClient = useQueryClient()
-    const { data: domains = [], isLoading, isRefetching } = useSNIs()
+    const { data, isLoading, isRefetching, isError, isFetching, refetch } = useSNIs()
+    const domains = data ?? []
 
     const [searchQuery, setSearchQuery] = useState("")
     const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -86,6 +87,17 @@ export default function DomainsPage() {
                 }
             />
 
+            {isError && (
+                <QueryError
+                    title={data ? "Couldn't refresh domains" : "Couldn't load domains"}
+                    description={data
+                        ? "Showing the last loaded domains. These may be out of date."
+                        : "Your domains are unavailable. Try again to load them."}
+                    onRetry={() => void refetch()}
+                    isRetrying={isFetching}
+                />
+            )}
+
             {/* Stats Row */}
             {!isLoading && domains.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -134,7 +146,7 @@ export default function DomainsPage() {
             </div>
 
             {/* Content */}
-            {filteredDomains.length === 0 && !isLoading ? (
+            {isError && !data ? null : filteredDomains.length === 0 && !isLoading ? (
                 <EmptyState
                     icon={Globe}
                     title="No domains found"
