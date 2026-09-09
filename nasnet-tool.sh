@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nasnet-tool.sh - Interactive Admin Operations Tool for nasnet-panel
+# nasnet-tool.sh - Interactive Admin Operations Tool for nasnet-panel-linux
 # Pure bash TUI with arrow-key navigation, colored output, spinners, and formatted tables.
 set -euo pipefail
 
@@ -331,7 +331,7 @@ press_any_key() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 # arrow_menu "Title" result_var "Option 1" "Option 2" ...
-# Sets the named variable to the selected index (0-based), or -1 if escaped.
+# Sets the named variable to the selected index (0-based), -1 for Back, or -2 on EOF.
 # Compatible with Bash 3.2+ (no namerefs).
 arrow_menu() {
     local title="$1"
@@ -339,17 +339,22 @@ arrow_menu() {
     shift 2
     local options=("$@")
     local count=${#options[@]}
-    local selected=0
+    local selected="${ARROW_MENU_DEFAULT:-0}"
+    [[ "$selected" =~ ^[0-9]+$ && $selected -lt $count ]] || selected=0
 
     tput civis 2>/dev/null || true
 
     while true; do
         clear
-        draw_box "nasnet-panel Admin Tool"
+        draw_box "nasnet-panel-linux Admin Tool"
 
         if [[ -n "$title" ]]; then
             echo -e "  ${BOLD}${WHITE}${title}${RESET}"
             echo ""
+        fi
+
+        if [[ -n "${ARROW_MENU_DETAILS:-}" ]]; then
+            "$ARROW_MENU_DETAILS"
         fi
 
         for (( i=0; i<count; i++ )); do
@@ -363,7 +368,11 @@ arrow_menu() {
         echo ""
         echo -e "  ${DIM}↑/↓ Navigate  ⏎ Select  q/Esc Back${RESET}"
 
-        read -rsn1 key
+        if ! read -rsn1 key; then
+            printf -v "$result_var" '%s' -2
+            tput cnorm 2>/dev/null || true
+            return
+        fi
         case "$key" in
             $'\x1b')
                 local seq=""
@@ -1139,9 +1148,9 @@ wizard_prereqs_systemd() {
         fi
 
         if [[ -x "$INSTALL_DIR/bin/nasnet-panel" ]]; then
-            step_ok "nasnet-panel binary"
+            step_ok "nasnet-panel-linux binary"
         else
-            step_fail "nasnet-panel binary not found at ${INSTALL_DIR}/bin/nasnet-panel"
+            step_fail "nasnet-panel-linux binary not found at ${INSTALL_DIR}/bin/nasnet-panel"
             return 1
         fi
 
@@ -1559,7 +1568,7 @@ HBAEOF
         # Configure postgresql.conf
         sudo tee -a "$pg_data/postgresql.conf" >/dev/null << 'CONFEOF' || return 1
 
-# nasnet-panel offline bundle settings
+# nasnet-panel-linux offline bundle settings
 listen_addresses = 'localhost'
 port = 5432
 max_connections = 100
@@ -1577,7 +1586,7 @@ CONFEOF
     step_info "Creating ${PGSQL_SERVICE}.service..."
     sudo tee "/etc/systemd/system/${PGSQL_SERVICE}.service" > /dev/null << PGSVCEOF
 [Unit]
-Description=nasnet-panel PostgreSQL
+Description=nasnet-panel-linux PostgreSQL
 After=network.target
 
 [Service]
@@ -2070,7 +2079,7 @@ wizard_build_start_systemd() {
 
     local cgo_enabled=0
     is_sqlite && cgo_enabled=1
-    if run_logged "Building nasnet-panel binary" bash -c "cd '$PROJECT_DIR' && CGO_ENABLED=$cgo_enabled go build -ldflags='-w -s' -o nasnet-panel ."; then
+    if run_logged "Building nasnet-panel-linux binary" bash -c "cd '$PROJECT_DIR' && CGO_ENABLED=$cgo_enabled go build -ldflags='-w -s' -o nasnet-panel ."; then
         step_ok "Binary built: ${PROJECT_DIR}/nasnet-panel"
     else
         step_fail "Backend build failed"
@@ -2119,7 +2128,7 @@ wizard_build_start_systemd() {
 
     sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.service" > /dev/null << SVCEOF || return 1
 [Unit]
-Description=nasnet-panel Backend API
+Description=nasnet-panel-linux Backend API
 Documentation=https://github.com/nasnet-community/nasnet-panel-linux
 After=${svc_after}
 ${svc_requires}
@@ -2208,7 +2217,7 @@ wizard_write_env() {
     env_tmp=$(mktemp "${ENV_FILE}.tmp.XXXXXX") || return 1
     local ENV_FILE="$env_tmp"
     cat > "$ENV_FILE" << ENVEOF || { rm -f "$env_tmp"; return 1; }
-# ── nasnet-panel Configuration ──────────────────────────────────────────────────
+# ── nasnet-panel-linux Configuration ──────────────────────────────────────────────────
 # ${header_comment}
 # Mode: ${WIZ_MODE}  |  Deploy: ${deploy_mode}  |  DB: ${db_driver}
 
@@ -2317,220 +2326,261 @@ ENVEOF
 # Section 6.9: Setup Wizard — Access Mode Prompts (shared)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Sets: WIZ_MODE, WIZ_APP_BASE_URL, WIZ_SUB_PANEL_URL,
-#       WIZ_BASE_PATH, WIZ_COOKIE_DOMAIN,
-#       WIZ_COOKIE_SECURE, WIZ_ACME_STAGING, WIZ_ACME_EMAIL
-# Requires: WIZ_APP_PORT to be set
-# Returns 1 if user cancels
-wizard_prompt_access_mode() {
-    WIZ_TLS_CERT_FILE=""
-    WIZ_TLS_KEY_FILE=""
-    echo -e "  ${BOLD}How will users access this server?${RESET}"
-    echo ""
-    echo -e "  ${CYAN}Domain mode${RESET}  — You have a domain pointing to this server"
-    echo -e "  ${CYAN}IP mode${RESET}      — Access via server IP address (HTTP, no TLS)"
-    echo ""
+# Wizard navigation status: 0 = selected/read, 2 = previous step, 3 = cancel.
+# Keep navigation separate from validation failures (1).
+wizard_navigation_menu() {
+    local nav_title="$1" nav_result="$2" nav_selected=-1
+    shift 2
+    local nav_count=$#
+    arrow_menu "$nav_title" nav_selected "$@" "← Back" "Cancel installation" || return 3
+    case "$nav_selected" in
+        -1|"$nav_count") return 2 ;;
+        -2|"$((nav_count + 1))") return 3 ;;
+    esac
+    printf -v "$nav_result" '%s' "$nav_selected"
+}
 
-    local mode_choice
-    arrow_menu "Select mode" mode_choice \
-        "Domain mode (recommended)" \
-        "IP-only mode" \
-        "← Cancel"
-
-    [[ $mode_choice -eq -1 || $mode_choice -eq 2 ]] && return 1
-
-    if [[ $mode_choice -eq 0 ]]; then
-        # ── Domain Mode ──
-        WIZ_MODE="domain"
-
-        # ── Protocol ──
+# Empty input keeps the current answer; secrets are never printed as defaults.
+# Reserved commands work at text/password prompts as well as menu steps.
+wizard_read_answer() {
+    local nav_target="$1" nav_secret="${2:-false}" nav_input=""
+    if [[ "$nav_secret" == true ]]; then
+        read -rs nav_input || return 3
         echo ""
-        echo -e "  ${BOLD}Protocol:${RESET}"
-        echo -e "  ${CYAN}HTTPS${RESET} — Secure, requires TLS certificate (auto or manual)"
-        echo -e "  ${CYAN}HTTP${RESET}  — No encryption (use if TLS is handled by a reverse proxy)"
-        echo ""
-
-        local proto_choice
-        arrow_menu "Select protocol" proto_choice \
-            "HTTPS (recommended)" \
-            "HTTP"
-
-        local WIZ_PROTO="https"
-        WIZ_COOKIE_SECURE="true"
-        if [[ $proto_choice -eq 1 ]]; then
-            WIZ_PROTO="http"
-            WIZ_COOKIE_SECURE="false"
-        fi
-
-        # ── API domain & port ──
-        echo ""
-        local domain_err
-        while true; do
-            echo -ne "  ${CYAN}API domain${RESET} (e.g. api.example.com): "
-            read -r WIZ_API_DOMAIN
-            domain_err=$(wizard_valid_domain "$WIZ_API_DOMAIN") && break
-            step_fail "$domain_err"
-        done
-
-        local default_api_port="$WIZ_APP_PORT"
-        while true; do
-            echo -ne "  ${CYAN}API port${RESET} [${default_api_port}]: "
-            read -r api_port_input
-            [[ -z "$api_port_input" ]] && break
-            if wizard_valid_port "$api_port_input"; then
-                WIZ_APP_PORT="$api_port_input"
-                break
-            fi
-            step_fail "Invalid port: ${api_port_input} (1-65535)"
-        done
-
-        # ── Panel domain & port ──
-        echo ""
-        while true; do
-            echo -ne "  ${CYAN}Panel domain${RESET} [${WIZ_API_DOMAIN}]: "
-            read -r WIZ_PANEL_DOMAIN
-            [[ -z "$WIZ_PANEL_DOMAIN" ]] && WIZ_PANEL_DOMAIN="$WIZ_API_DOMAIN" && break
-            domain_err=$(wizard_valid_domain "$WIZ_PANEL_DOMAIN") && break
-            step_fail "$domain_err"
-        done
-
-        # ── Panel base path (auto-generated for security) ──
-        WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
-        echo ""
-        step_info "A random panel path has been generated for security."
-        step_info "Your admin panel will be at: ${GREEN}${WIZ_PROTO}://${WIZ_PANEL_DOMAIN}:${WIZ_APP_PORT}${WIZ_BASE_PATH}${RESET}"
-        echo -ne "  ${CYAN}Panel base path${RESET} [${WIZ_BASE_PATH}]: "
-        read -r bp_input
-        if [[ "$bp_input" == "none" ]]; then
-            WIZ_BASE_PATH=""
-        elif [[ -n "$bp_input" ]]; then
-            WIZ_BASE_PATH="$bp_input"
-            WIZ_BASE_PATH="${WIZ_BASE_PATH%/}"
-            [[ "$WIZ_BASE_PATH" != /* ]] && WIZ_BASE_PATH="/${WIZ_BASE_PATH}"
-        fi
-
-        WIZ_DOMAIN="$WIZ_API_DOMAIN"
-        WIZ_APP_BASE_URL="${WIZ_PROTO}://${WIZ_API_DOMAIN}:${WIZ_APP_PORT}"
-        WIZ_SUB_PANEL_URL="${WIZ_PROTO}://${WIZ_PANEL_DOMAIN}:${WIZ_APP_PORT}${WIZ_BASE_PATH}"
-        WIZ_COOKIE_DOMAIN=""
-        WIZ_ACME_STAGING="false"
-
-        echo ""
-        step_info "Derived URLs:"
-        echo -e "    APP_BASE_URL  = ${GREEN}${WIZ_APP_BASE_URL}${RESET}"
-        echo -e "    SUB_PANEL_URL = ${GREEN}${WIZ_SUB_PANEL_URL}${RESET}"
-        echo ""
-
-        if confirm_action "Override any derived URLs?"; then
-            echo ""
-            echo -ne "  ${CYAN}APP_BASE_URL${RESET} [${WIZ_APP_BASE_URL}]: "
-            read -r override
-            [[ -n "$override" ]] && WIZ_APP_BASE_URL="$override"
-
-            echo -ne "  ${CYAN}SUB_PANEL_URL${RESET} [${WIZ_SUB_PANEL_URL}]: "
-            read -r override
-            [[ -n "$override" ]] && WIZ_SUB_PANEL_URL="$override"
-        fi
-
-        # Ask if the app should handle TLS via ACME (Let's Encrypt).
-        # Users behind a reverse proxy (nginx, Caddy) should say no.
-        WIZ_ACME_EMAIL=""
-        WIZ_ACME_ENABLED="false"
-        if [[ "$WIZ_PROTO" == "https" ]]; then
-            echo ""
-            echo -e "  ${DIM}If you use a reverse proxy (nginx/Caddy) for TLS, choose No.${RESET}"
-            if confirm_action "Issue TLS certificate via Let's Encrypt (ACME)?"; then
-                echo -ne "  ${CYAN}Email for Let's Encrypt${RESET}: "
-                read -r WIZ_ACME_EMAIL
-
-                if [[ -z "$WIZ_ACME_EMAIL" || ! "$WIZ_ACME_EMAIL" =~ "@" ]]; then
-                    step_fail "A valid email is required for Let's Encrypt"
-                    return 1
-                fi
-                WIZ_ACME_ENABLED="true"
-            else
-                local tls_choice
-                arrow_menu "HTTPS termination" tls_choice "Existing reverse proxy" "Existing certificate files" "← Cancel"
-                case "$tls_choice" in
-                    0)
-                        step_info "The reverse proxy must already forward the public URLs to this panel's HTTP port ${WIZ_APP_PORT}"
-                        echo -ne "  ${CYAN}Public API URL${RESET} [https://${WIZ_API_DOMAIN}]: "
-                        read -r override
-                        WIZ_APP_BASE_URL="${override:-https://${WIZ_API_DOMAIN}}"
-                        echo -ne "  ${CYAN}Public panel URL${RESET} [https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}]: "
-                        read -r override
-                        WIZ_SUB_PANEL_URL="${override:-https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}}"
-                        ;;
-                    1)
-                        if [[ "${WIZ_DEPLOY_MODE:-systemd}" == "docker" ]]; then
-                            step_info "Use paths inside the container; bind-mount the certificate and key in Docker Compose before installing"
-                        fi
-                        echo -ne "  ${CYAN}TLS certificate file (absolute path)${RESET}: "; read -r WIZ_TLS_CERT_FILE
-                        echo -ne "  ${CYAN}TLS key file (absolute path)${RESET}: "; read -r WIZ_TLS_KEY_FILE
-                        [[ "$WIZ_TLS_CERT_FILE" == /* && "$WIZ_TLS_KEY_FILE" == /* ]] || return 1
-                        ;;
-                    *) return 1 ;;
-                esac
-            fi
-        fi
-
     else
-        # ── IP Mode ──
-        WIZ_MODE="ip"
-
-        step_info "Detecting server IP..."
-        local WIZ_IP
-        WIZ_IP=$(wizard_detect_ip)
-
-        if [[ -n "$WIZ_IP" ]]; then
-            step_ok "Detected: ${WIZ_IP}"
-        else
-            step_warn "Could not auto-detect IP"
-        fi
-
-        while true; do
-            echo -ne "  ${CYAN}Server IP${RESET} [${WIZ_IP}]: "
-            read -r ip_override
-            [[ -n "$ip_override" ]] && WIZ_IP="$ip_override"
-            if [[ -z "$WIZ_IP" ]]; then
-                step_fail "Server IP is required"
-                continue
-            fi
-            wizard_valid_ip "$WIZ_IP" && break
-            step_fail "Invalid IP address: ${WIZ_IP}"
-            WIZ_IP=""
-        done
-
-        # ── Panel base path (auto-generated for security) ──
-        WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
-        echo ""
-        step_info "A random panel path has been generated for security."
-        step_info "Your admin panel will be at: ${GREEN}http://${WIZ_IP}:${WIZ_APP_PORT}${WIZ_BASE_PATH}${RESET}"
-        echo -ne "  ${CYAN}Panel base path${RESET} [${WIZ_BASE_PATH}]: "
-        read -r bp_input
-        if [[ "$bp_input" == "none" ]]; then
-            WIZ_BASE_PATH=""
-        elif [[ -n "$bp_input" ]]; then
-            WIZ_BASE_PATH="$bp_input"
-            WIZ_BASE_PATH="${WIZ_BASE_PATH%/}"
-            [[ "$WIZ_BASE_PATH" != /* ]] && WIZ_BASE_PATH="/${WIZ_BASE_PATH}"
-        fi
-        WIZ_APP_BASE_URL="http://${WIZ_IP}:${WIZ_APP_PORT}"
-        WIZ_SUB_PANEL_URL="http://${WIZ_IP}:${WIZ_APP_PORT}${WIZ_BASE_PATH}"
-        WIZ_COOKIE_DOMAIN=""
-        WIZ_COOKIE_SECURE="false"
-        WIZ_ACME_STAGING="true"
-        WIZ_ACME_ENABLED="false"
-        WIZ_ACME_EMAIL=""
-
-        echo ""
-        step_info "Derived URLs:"
-        echo -e "    APP_BASE_URL  = ${GREEN}${WIZ_APP_BASE_URL}${RESET}"
-        echo -e "    SUB_PANEL_URL = ${GREEN}${WIZ_SUB_PANEL_URL}${RESET}"
-        echo ""
+        read -r nav_input || return 3
     fi
+    if [[ "${WIZ_NAVIGATION:-false}" == true ]]; then
+        case "$nav_input" in :back) return 2 ;; :cancel) return 3 ;; esac
+    fi
+    [[ -z "$nav_input" ]] || printf -v "$nav_target" '%s' "$nav_input"
+    return 0
+}
 
-    wizard_validate_access
+# Access configuration has its own history so Back from protocol, domain, TLS,
+# or a text prompt revisits the previous question before leaving this section.
+# Returns 0 on success, 1 on invalid configuration, 2 on Back, 3 on Cancel.
+wizard_prompt_access_mode() {
+    local WIZ_NAVIGATION=true
+    local access_step=mode access_status=0 access_choice=-1 access_next=""
+    local access_history=() ARROW_MENU_DEFAULT=0
+    local access_input="" access_error="" access_proto="${WIZ_ACCESS_PROTO:-https}"
+    local access_api="" access_panel=""
+    while true; do
+        access_status=0; access_next=""; access_input=""; ARROW_MENU_DEFAULT=0
+        case "$access_step" in
+            mode)
+                [[ "${WIZ_MODE:-}" == ip ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "How will users access this server?" access_choice \
+                    "Domain mode (recommended)" "IP-only mode" || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ $access_choice -eq 0 ]]; then
+                        WIZ_MODE=domain; access_next=protocol
+                    else
+                        WIZ_MODE=ip; access_next=ip
+                    fi
+                fi
+                ;;
+            protocol)
+                [[ "$access_proto" == http ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Select protocol" access_choice "HTTPS (recommended)" "HTTP" || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ $access_choice -eq 0 ]]; then access_proto=https; else access_proto=http; fi
+                    WIZ_ACCESS_PROTO="$access_proto"
+                fi
+                access_next=api_domain
+                ;;
+            api_domain)
+                wizard_input_hint
+                echo -ne "  ${CYAN}API domain${RESET} [${WIZ_API_DOMAIN:-}]: "
+                wizard_read_answer WIZ_API_DOMAIN || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    access_error=$(wizard_valid_domain "${WIZ_API_DOMAIN:-}") || { step_fail "$access_error"; access_status=1; }
+                fi
+                access_next=port
+                ;;
+            port)
+                wizard_input_hint
+                echo -ne "  ${CYAN}API port${RESET} [${WIZ_APP_PORT}]: "
+                wizard_read_answer access_input || access_status=$?
+                if [[ $access_status -eq 0 && -n "$access_input" ]]; then
+                    if wizard_valid_port "$access_input"; then WIZ_APP_PORT="$access_input";
+                    else step_fail "Invalid port: ${access_input} (1-65535)"; access_status=1; fi
+                fi
+                access_next=panel_domain
+                ;;
+            panel_domain)
+                wizard_input_hint
+                echo -ne "  ${CYAN}Panel domain${RESET} [${WIZ_PANEL_DOMAIN:-$WIZ_API_DOMAIN}]: "
+                wizard_read_answer WIZ_PANEL_DOMAIN || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    WIZ_PANEL_DOMAIN="${WIZ_PANEL_DOMAIN:-$WIZ_API_DOMAIN}"
+                    access_error=$(wizard_valid_domain "$WIZ_PANEL_DOMAIN") || { step_fail "$access_error"; access_status=1; }
+                fi
+                access_next=path
+                ;;
+            ip)
+                [[ -n "${WIZ_IP:-}" ]] || WIZ_IP=$(wizard_detect_ip)
+                wizard_input_hint
+                echo -ne "  ${CYAN}Server IP${RESET} [${WIZ_IP}]: "
+                wizard_read_answer WIZ_IP || access_status=$?
+                if [[ $access_status -eq 0 ]] && ! wizard_valid_ip "$WIZ_IP"; then
+                    step_fail "Invalid IP address: ${WIZ_IP}"; access_status=1
+                fi
+                access_proto=http; access_next=path
+                ;;
+            path)
+                if [[ "${WIZ_PATH_GENERATED:-false}" != true && -z "$WIZ_BASE_PATH" ]]; then
+                    WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
+                fi
+                WIZ_PATH_GENERATED=true
+                wizard_input_hint
+                echo -ne "  ${CYAN}Panel base path (type none for no path)${RESET} [${WIZ_BASE_PATH}]: "
+                wizard_read_answer access_input || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ "$access_input" == none ]]; then WIZ_BASE_PATH="";
+                    elif [[ -n "$access_input" ]]; then
+                        WIZ_BASE_PATH="${access_input%/}"
+                        [[ -z "$WIZ_BASE_PATH" || "$WIZ_BASE_PATH" == /* ]] || WIZ_BASE_PATH="/$WIZ_BASE_PATH"
+                    fi
+                    if [[ "$WIZ_MODE" == domain ]]; then
+                        WIZ_DOMAIN="$WIZ_API_DOMAIN"
+                        access_api="${access_proto}://${WIZ_API_DOMAIN}:${WIZ_APP_PORT}"
+                        access_panel="${access_proto}://${WIZ_PANEL_DOMAIN}:${WIZ_APP_PORT}${WIZ_BASE_PATH}"
+                    else
+                        access_api="http://${WIZ_IP}:${WIZ_APP_PORT}"
+                        access_panel="${access_api}${WIZ_BASE_PATH}"
+                    fi
+                    # Retain custom public URLs unless their underlying inputs changed.
+                    if [[ "${WIZ_DERIVED_API:-}" != "$access_api" ]]; then WIZ_APP_BASE_URL="$access_api"; fi
+                    if [[ "${WIZ_DERIVED_PANEL:-}" != "$access_panel" ]]; then WIZ_SUB_PANEL_URL="$access_panel"; fi
+                    WIZ_DERIVED_API="$access_api"; WIZ_DERIVED_PANEL="$access_panel"
+                    WIZ_COOKIE_DOMAIN=""; WIZ_COOKIE_SECURE=false
+                    [[ "$access_proto" != https ]] || WIZ_COOKIE_SECURE=true
+                    if [[ "$access_proto" == http ]]; then
+                        WIZ_ACME_ENABLED=false; WIZ_TLS_CERT_FILE=""; WIZ_TLS_KEY_FILE=""
+                    fi
+                    WIZ_ACME_STAGING=false
+                fi
+                access_next=urls
+                ;;
+            urls)
+                local ARROW_MENU_DETAILS=wizard_access_urls_review
+                wizard_navigation_menu "Public URLs" access_choice "Use these URLs" "Customize URLs" || access_status=$?
+                ARROW_MENU_DETAILS=""
+                if [[ $access_choice -eq 1 ]]; then access_next=custom_api;
+                elif [[ "$access_proto" == https ]]; then access_next=tls;
+                else access_next=done; fi
+                ;;
+            custom_api)
+                wizard_input_hint
+                echo -ne "  ${CYAN}Public API URL${RESET} [${WIZ_APP_BASE_URL}]: "
+                wizard_read_answer WIZ_APP_BASE_URL || access_status=$?
+                access_next=custom_panel
+                ;;
+            custom_panel)
+                wizard_input_hint
+                echo -ne "  ${CYAN}Public panel URL${RESET} [${WIZ_SUB_PANEL_URL}]: "
+                wizard_read_answer WIZ_SUB_PANEL_URL || access_status=$?
+                if [[ "$access_proto" == https ]]; then access_next=tls; else access_next=done; fi
+                ;;
+            tls)
+                if [[ "${WIZ_ACME_ENABLED:-false}" == true ]]; then ARROW_MENU_DEFAULT=0;
+                elif [[ -n "${WIZ_TLS_CERT_FILE:-}" ]]; then ARROW_MENU_DEFAULT=2;
+                else ARROW_MENU_DEFAULT=1; fi
+                wizard_navigation_menu "HTTPS termination" access_choice \
+                    "Let's Encrypt (ACME)" "Existing reverse proxy" "Existing certificate files" || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    case "$access_choice" in
+                        0) access_next=acme_email ;;
+                        1) access_next=proxy_api ;;
+                        2) access_next=certificate ;;
+                    esac
+                fi
+                ;;
+            acme_email)
+                wizard_input_hint
+                echo -ne "  ${CYAN}Email for Let's Encrypt${RESET} [${WIZ_ACME_EMAIL:-}]: "
+                wizard_read_answer WIZ_ACME_EMAIL || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ ! "$WIZ_ACME_EMAIL" =~ @ ]]; then
+                        step_fail "A valid email is required for Let's Encrypt"; access_status=1
+                    else
+                        WIZ_ACME_ENABLED=true; WIZ_TLS_CERT_FILE=""; WIZ_TLS_KEY_FILE=""
+                    fi
+                fi
+                access_next=done
+                ;;
+            proxy_api)
+                step_info "The reverse proxy must forward the public URLs to this panel's HTTP port ${WIZ_APP_PORT}"
+                wizard_input_hint
+                access_api="$WIZ_APP_BASE_URL"
+                [[ "$access_api" != "$WIZ_DERIVED_API" ]] || access_api="https://${WIZ_API_DOMAIN}"
+                echo -ne "  ${CYAN}Public API URL${RESET} [${access_api}]: "
+                wizard_read_answer access_api || access_status=$?
+                [[ $access_status -ne 0 ]] || WIZ_APP_BASE_URL="$access_api"
+                access_next=proxy_panel
+                ;;
+            proxy_panel)
+                wizard_input_hint
+                access_panel="$WIZ_SUB_PANEL_URL"
+                [[ "$access_panel" != "$WIZ_DERIVED_PANEL" ]] || access_panel="https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}"
+                echo -ne "  ${CYAN}Public panel URL${RESET} [${access_panel}]: "
+                wizard_read_answer access_panel || access_status=$?
+                if [[ $access_status -eq 0 ]]; then
+                    WIZ_SUB_PANEL_URL="$access_panel"; WIZ_ACME_ENABLED=false
+                    WIZ_TLS_CERT_FILE=""; WIZ_TLS_KEY_FILE=""
+                fi
+                access_next=done
+                ;;
+            certificate|key)
+                wizard_input_hint
+                if [[ "${WIZ_DEPLOY_MODE:-systemd}" == docker ]]; then
+                    step_info "Use container paths and bind-mount the certificate and key in Docker Compose before installing"
+                fi
+                if [[ "$access_step" == certificate ]]; then
+                    echo -ne "  ${CYAN}TLS certificate file (absolute path)${RESET} [${WIZ_TLS_CERT_FILE:-}]: "
+                    wizard_read_answer WIZ_TLS_CERT_FILE || access_status=$?
+                    access_input="${WIZ_TLS_CERT_FILE:-}"; access_next=key
+                else
+                    echo -ne "  ${CYAN}TLS key file (absolute path)${RESET} [${WIZ_TLS_KEY_FILE:-}]: "
+                    wizard_read_answer WIZ_TLS_KEY_FILE || access_status=$?
+                    access_input="${WIZ_TLS_KEY_FILE:-}"; access_next=done
+                fi
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ "$access_input" != /* ]]; then step_fail "An absolute path is required"; access_status=1;
+                    else WIZ_ACME_ENABLED=false; fi
+                fi
+                ;;
+        esac
+        case "$access_status" in
+            1) continue ;;
+            2)
+                [[ ${#access_history[@]} -gt 0 ]] || return 2
+                access_step="${access_history[${#access_history[@]}-1]}"
+                unset 'access_history[${#access_history[@]}-1]'
+                continue
+                ;;
+            3) return 3 ;;
+        esac
+        if [[ "$access_next" == done ]]; then
+            if wizard_validate_access; then return 0; fi
+            continue
+        fi
+        access_history+=("$access_step")
+        access_step="$access_next"
+    done
+}
+
+wizard_input_hint() {
+    echo ""
+    step_info "Enter keeps the current answer; :back goes back; :cancel cancels"
+}
+
+wizard_access_urls_review() {
+    step_info "Backend API: ${WIZ_APP_BASE_URL}"
+    step_info "Web panel: ${WIZ_SUB_PANEL_URL}"
+    echo ""
 }
 
 wizard_validate_access() {
@@ -2593,7 +2643,15 @@ wizard_restore_saved_config() {
     WIZ_DB_SSL_MODE="${DB_SSL_MODE:-disable}"
     WIZ_DB_PATH="${DB_PATH:-}"
     WIZ_PGSQL_SERVICE_NAME="${PGSQL_SERVICE_NAME:-postgresql}"
-    [[ "$WIZ_APP_BASE_URL" == https://* ]] && WIZ_MODE="domain" || WIZ_MODE="ip"
+    WIZ_API_DOMAIN="${WIZ_APP_BASE_URL#*://}"
+    WIZ_API_DOMAIN="${WIZ_API_DOMAIN%%/*}"; WIZ_API_DOMAIN="${WIZ_API_DOMAIN%%:*}"
+    WIZ_PANEL_DOMAIN="${WIZ_SUB_PANEL_URL#*://}"
+    WIZ_PANEL_DOMAIN="${WIZ_PANEL_DOMAIN%%/*}"; WIZ_PANEL_DOMAIN="${WIZ_PANEL_DOMAIN%%:*}"
+    WIZ_MODE=domain
+    if wizard_valid_ip "$WIZ_API_DOMAIN"; then WIZ_MODE=ip; WIZ_IP="$WIZ_API_DOMAIN"; fi
+    WIZ_ACCESS_PROTO="${WIZ_APP_BASE_URL%%://*}"
+    WIZ_DERIVED_API="${WIZ_ACCESS_PROTO}://${WIZ_API_DOMAIN}:${WIZ_APP_PORT}"
+    WIZ_DERIVED_PANEL="${WIZ_ACCESS_PROTO}://${WIZ_PANEL_DOMAIN}:${WIZ_APP_PORT}${WIZ_BASE_PATH}"
     if [[ -n "${INSTALL_SOURCE_DIR:-}" && -f "${INSTALL_SOURCE_DIR}/go.mod" ]]; then
         PROJECT_DIR="$INSTALL_SOURCE_DIR"
         COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
@@ -2666,9 +2724,186 @@ wizard_apply_install() {
     fi
 }
 
+# Collect answers without changing the host. The history contains only steps
+# actually shown, so Back skips systemd-only steps in Docker/offline installs.
+wizard_collect_install_settings() {
+    local setup_step="${1:-deployment}" setup_status=0 setup_choice=-1
+    local setup_history=() ARROW_MENU_DEFAULT=0
+    local password_input="" password_confirm=""
+    while true; do
+        setup_status=0
+        ARROW_MENU_DEFAULT=0
+        case "$setup_step" in
+            deployment)
+                if [[ "$OFFLINE_MODE" == true ]]; then
+                    setup_step=role; continue
+                fi
+                [[ "$WIZ_DEPLOY_MODE" == docker ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Deployment" setup_choice \
+                    "Systemd — release binaries (recommended for Debian/Ubuntu)" \
+                    "Docker — build from source" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_DEPLOY_MODE=systemd; else WIZ_DEPLOY_MODE=docker; fi
+                fi
+                ;;
+            role)
+                [[ "$WIZ_ROUTER_MODE" == true ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "How will you use this device?" setup_choice \
+                    "VPN Server (recommended for VPS)" "Router" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_ROUTER_MODE=false; else WIZ_ROUTER_MODE=true; fi
+                fi
+                ;;
+            database)
+                [[ "$WIZ_DB_DRIVER" == sqlite ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Database" setup_choice "PostgreSQL (recommended)" "SQLite (lightweight)" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_DB_DRIVER=postgres; else WIZ_DB_DRIVER=sqlite; fi
+                fi
+                ;;
+            method)
+                [[ "$WIZ_INSTALL_METHOD" == source ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Install method" setup_choice \
+                    "Verified release binaries (recommended)" "Build from source" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_INSTALL_METHOD=release; else WIZ_INSTALL_METHOD=source; fi
+                fi
+                ;;
+            access)
+                [[ -n "$WIZ_APP_PORT" ]] || WIZ_APP_PORT=$(wizard_random_port)
+                wizard_prompt_access_mode || setup_status=$?
+                ;;
+            telegram)
+                [[ "$WIZ_TELEGRAM_ENABLED" != true ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Enable Telegram bot?" setup_choice "Yes" "No" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    if [[ $setup_choice -eq 0 ]]; then
+                        WIZ_TELEGRAM_ENABLED=true
+                        step_info "Enter keeps existing answers; :back goes back; :cancel cancels"
+                        echo -ne "  ${CYAN}Telegram bot token${RESET}: "
+                        wizard_read_answer WIZ_BOT_TOKEN true || setup_status=$?
+                        if [[ $setup_status -eq 0 ]]; then
+                            echo -ne "  ${CYAN}Admin Telegram IDs${RESET} [${WIZ_ADMIN_IDS}]: "
+                            wizard_read_answer WIZ_ADMIN_IDS || setup_status=$?
+                        fi
+                        if [[ $setup_status -eq 0 ]]; then
+                            WIZ_ADMIN_IDS="${WIZ_ADMIN_IDS// /}"
+                            if [[ -z "$WIZ_BOT_TOKEN" || ! "$WIZ_ADMIN_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+                                step_fail "A bot token and numeric Telegram IDs are required"; setup_status=1
+                            fi
+                        fi
+                    else
+                        WIZ_TELEGRAM_ENABLED=false
+                    fi
+                fi
+                ;;
+            password)
+                wizard_navigation_menu "Admin password" setup_choice "Set or keep password" || setup_status=$?
+                if [[ $setup_status -eq 0 ]]; then
+                    step_info "Enter keeps an existing password; :back goes back; :cancel cancels"
+                    password_input=""; password_confirm=""
+                    echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "
+                    wizard_read_answer password_input true || setup_status=$?
+                    if [[ $setup_status -eq 0 ]]; then
+                        if [[ -z "$password_input" && ( -n "$WIZ_ADMIN_PASS" || -n "$WIZ_ADMIN_HASH" ) ]]; then
+                            : # Keep the previous password without displaying it.
+                        elif [[ ${#password_input} -lt 6 ]]; then
+                            step_fail "Password is too short"; setup_status=1
+                        else
+                            echo -ne "  ${CYAN}Confirm password${RESET}: "
+                            wizard_read_answer password_confirm true || setup_status=$?
+                            if [[ $setup_status -eq 0 ]]; then
+                                if [[ "$password_input" == "$password_confirm" ]]; then
+                                    WIZ_ADMIN_PASS="$password_input"; WIZ_ADMIN_HASH=""
+                                else
+                                    step_fail "Passwords do not match"; setup_status=1
+                                fi
+                            fi
+                        fi
+                    fi
+                fi
+                password_input=""; password_confirm=""
+                ;;
+            review)
+                wizard_validate_access || return 1
+                if [[ -f "$ENV_FILE" && ( "${DEPLOY_MODE:-$WIZ_DEPLOY_MODE}" != "$WIZ_DEPLOY_MODE" || "${DB_DRIVER:-$WIZ_DB_DRIVER}" != "$WIZ_DB_DRIVER" ) ]]; then
+                    step_fail "Changing deployment or database engine requires a separate data migration; existing settings kept"
+                    setup_status=2
+                else
+                    local ARROW_MENU_DETAILS=wizard_install_review
+                    wizard_navigation_menu "Review installation" setup_choice "Apply this configuration and install" || setup_status=$?
+                    ARROW_MENU_DETAILS=""
+                    [[ $setup_status -ne 0 ]] || return 0
+                fi
+                ;;
+        esac
+        case "$setup_status" in
+            1) continue ;; # Invalid answers stay on the current step.
+            2)
+                if [[ ${#setup_history[@]} -gt 0 ]]; then
+                    setup_step="${setup_history[${#setup_history[@]}-1]}"
+                    unset 'setup_history[${#setup_history[@]}-1]'
+                elif [[ "$setup_step" == review ]]; then
+                    # Saved configurations start at review; Back opens editing.
+                    setup_step=deployment
+                else
+                    step_info "You are at the first step; choose Cancel installation to exit"
+                fi
+                continue
+                ;;
+            3) step_info "Cancelled; no installation changes applied"; return 1 ;;
+        esac
+        setup_history+=("$setup_step")
+        case "$setup_step" in
+            deployment)
+                if [[ "$WIZ_DEPLOY_MODE" == docker ]]; then
+                    WIZ_ROUTER_MODE=false; WIZ_INSTALL_METHOD=source
+                    [[ -f "$ENV_FILE" ]] || WIZ_DB_USER=postgres
+                    setup_step=database
+                else
+                    [[ -f "$ENV_FILE" ]] || WIZ_DB_USER=nasnet_panel
+                    setup_step=role
+                fi
+                ;;
+            role) setup_step=database ;;
+            database)
+                if [[ "$WIZ_DEPLOY_MODE" == systemd && "$OFFLINE_MODE" != true ]]; then
+                    setup_step=method
+                else
+                    [[ "$OFFLINE_MODE" != true ]] || WIZ_INSTALL_METHOD=offline
+                    setup_step=access
+                fi
+                ;;
+            method) setup_step=access ;;
+            access) setup_step=telegram ;;
+            telegram) setup_step=password ;;
+            password) setup_step=review ;;
+        esac
+    done
+}
+
+wizard_install_review() {
+    draw_header "Review installation"
+    draw_table "Setting|Value" \
+        "Deployment|${WIZ_DEPLOY_MODE}" "Install method|${WIZ_INSTALL_METHOD}" \
+        "Router mode|${WIZ_ROUTER_MODE}" "Database|${WIZ_DB_DRIVER}" \
+        "Database role|${WIZ_DB_USER}" "Database host|${WIZ_DB_HOST}:${WIZ_DB_PORT}" \
+        "Web panel|${WIZ_SUB_PANEL_URL}" "Backend API|${WIZ_APP_BASE_URL}" \
+        "ACME|${WIZ_ACME_ENABLED}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
+        "Config|${ENV_FILE}" "Secrets|Existing values kept; missing values generated during install"
+    step_info "This installs dependencies, writes the configuration, opens the panel firewall port and starts services"
+    if [[ "$WIZ_ROUTER_MODE" == "true" ]]; then
+        step_warn "Router setup stops dnsmasq, hostapd and iwd so nasnet can manage them"
+    fi
+    if [[ "$WIZ_INSTALL_METHOD" == "source" && ! -f "$PROJECT_DIR/go.mod" ]]; then
+        step_info "Source will be cloned to ${HOME}/nasnet-panel-linux"
+    fi
+    echo ""
+}
+
 wizard_install() {
     clear
-    draw_box "nasnet-panel Installation Wizard"
+    draw_box "nasnet-panel-linux Installation Wizard"
     local WIZ_DEPLOY_MODE="systemd" WIZ_ROUTER_MODE="false" WIZ_DB_DRIVER="postgres"
     local WIZ_INSTALL_METHOD="release" WIZ_MODE="" WIZ_DOMAIN="" WIZ_BASE_PATH=""
     local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL="" WIZ_APP_PORT=""
@@ -2678,7 +2913,9 @@ wizard_install() {
     local WIZ_ADMIN_PASS="" WIZ_ADMIN_HASH="" WIZ_JWT_SECRET="" WIZ_DB_PASSWORD=""
     local WIZ_DB_USER="nasnet_panel" WIZ_DB_NAME="nasnet_panel" WIZ_DB_HOST="localhost" WIZ_DB_PORT="5432"
     local WIZ_DB_SSL_MODE="disable" WIZ_DB_PATH="" WIZ_PGSQL_SERVICE_NAME="postgresql" WIZ_INSTALL_STATUS="pending"
-    local saved=false choice=-1 WIZ_PROVISIONED=false
+    local saved=false choice=-1 WIZ_PROVISIONED=false WIZ_NAVIGATION=true
+    local WIZ_API_DOMAIN="" WIZ_PANEL_DOMAIN="" WIZ_IP="" WIZ_PATH_GENERATED=false
+    local WIZ_DERIVED_API="" WIZ_DERIVED_PANEL="" WIZ_ACCESS_PROTO=https
 
     if [[ -f "$ENV_FILE" ]]; then
         load_env
@@ -2700,81 +2937,19 @@ wizard_install() {
         esac
     fi
 
-    if ! $saved; then
-        if [[ "$OFFLINE_MODE" != "true" ]]; then
-            arrow_menu "Deployment" choice \
-                "Systemd — release binaries (recommended for Debian/Ubuntu)" \
-                "Docker — build from source" "← Cancel"
-            case "$choice" in 0) WIZ_DEPLOY_MODE="systemd" ;; 1) WIZ_DEPLOY_MODE="docker" ;; *) return 1 ;; esac
-        fi
-        if [[ "$WIZ_DEPLOY_MODE" == "systemd" ]]; then
-            step_warn "Router mode lets nasnet manage dnsmasq, hostapd and iwd on this machine"
-            arrow_menu "Machine role" choice "Server (recommended for VPS)" "LAN router" "← Cancel"
-            case "$choice" in 0) ;; 1) WIZ_ROUTER_MODE="true" ;; *) return 1 ;; esac
-        fi
-        arrow_menu "Database" choice "PostgreSQL (recommended)" "SQLite (lightweight)" "← Cancel"
-        case "$choice" in 0) WIZ_DB_DRIVER="postgres" ;; 1) WIZ_DB_DRIVER="sqlite" ;; *) return 1 ;; esac
-        if [[ "$WIZ_DEPLOY_MODE" == "systemd" && "$OFFLINE_MODE" != "true" ]]; then
-            arrow_menu "Install method" choice "Verified release binaries (recommended)" "Build from source" "← Cancel"
-            case "$choice" in 0) ;; 1) WIZ_INSTALL_METHOD="source" ;; *) return 1 ;; esac
-        fi
-        if [[ "$WIZ_DEPLOY_MODE" == "docker" ]]; then
-            WIZ_INSTALL_METHOD="source"
-            # Docker's existing POSTGRES_USER default remains compatible.
-            [[ -f "$ENV_FILE" ]] || WIZ_DB_USER="postgres"
-        fi
-        WIZ_APP_PORT=$(wizard_random_port)
-        wizard_prompt_access_mode || return 1
-        if confirm_action "Enable Telegram bot?"; then
-            WIZ_TELEGRAM_ENABLED="true"
-            echo -ne "  ${CYAN}Telegram bot token${RESET}: "; read -r WIZ_BOT_TOKEN
-            echo -ne "  ${CYAN}Admin Telegram IDs (comma-separated numbers)${RESET}: "; read -r WIZ_ADMIN_IDS
-            WIZ_ADMIN_IDS="${WIZ_ADMIN_IDS// /}"
-            if [[ -z "$WIZ_BOT_TOKEN" || ! "$WIZ_ADMIN_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-                step_fail "A bot token and numeric Telegram IDs are required"; return 1
-            fi
-        fi
-        local pass2
-        while true; do
-            echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "; read -rs WIZ_ADMIN_PASS; echo ""
-            [[ ${#WIZ_ADMIN_PASS} -ge 6 ]] || { step_fail "Password is too short"; continue; }
-            echo -ne "  ${CYAN}Confirm password${RESET}: "; read -rs pass2; echo ""
-            [[ "$WIZ_ADMIN_PASS" == "$pass2" ]] && break
-            step_fail "Passwords do not match"
-        done
-    fi
-    [[ "$OFFLINE_MODE" == "true" ]] && WIZ_INSTALL_METHOD="offline"
     if $saved && [[ -z "$WIZ_ADMIN_HASH" ]]; then
         step_fail "Saved configuration has no admin password; choose new settings to set one"
         return 1
     fi
-    wizard_validate_access || return 1
-    if [[ -f "$ENV_FILE" && ( "${DEPLOY_MODE:-$WIZ_DEPLOY_MODE}" != "$WIZ_DEPLOY_MODE" || "${DB_DRIVER:-$WIZ_DB_DRIVER}" != "$WIZ_DB_DRIVER" ) ]]; then
-        step_fail "Changing deployment or database engine requires a separate data migration; existing settings kept"
-        return 1
-    fi
-
-    draw_header "Review installation"
-    draw_table "Setting|Value" \
-        "Deployment|${WIZ_DEPLOY_MODE}" "Install method|${WIZ_INSTALL_METHOD}" \
-        "Router mode|${WIZ_ROUTER_MODE}" "Database|${WIZ_DB_DRIVER}" \
-        "Database role|${WIZ_DB_USER}" "Database host|${WIZ_DB_HOST}:${WIZ_DB_PORT}" \
-        "Web panel|${WIZ_SUB_PANEL_URL}" "Backend API|${WIZ_APP_BASE_URL}" \
-        "ACME|${WIZ_ACME_ENABLED}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
-        "Config|${ENV_FILE}" "Secrets|Existing values kept; missing values generated during install"
-    step_info "This installs dependencies, writes the configuration, opens the panel firewall port and starts services"
-    if [[ "$WIZ_ROUTER_MODE" == "true" ]]; then
-        step_warn "Router setup stops dnsmasq, hostapd and iwd so nasnet can manage them"
-    fi
-    if [[ "$WIZ_INSTALL_METHOD" == "source" && ! -f "$PROJECT_DIR/go.mod" ]]; then
-        step_info "Source will be cloned to ${HOME}/nasnet-panel-linux"
-    fi
-    if ! confirm_action "Apply this configuration and install?"; then
-        step_info "Cancelled; no installation changes applied"
-        return 1
+    [[ "$OFFLINE_MODE" != true ]] || WIZ_INSTALL_METHOD=offline
+    if $saved; then
+        WIZ_PATH_GENERATED=true
+        wizard_collect_install_settings review || return 1
+    else
+        wizard_collect_install_settings || return 1
     fi
     if [[ $EUID -ne 0 ]] && ! sudo -v; then
-        step_fail "sudo is required to install nasnet-panel"; return 1
+        step_fail "sudo is required to install nasnet-panel-linux"; return 1
     fi
 
     local complete=false
@@ -2818,7 +2993,7 @@ wizard_install() {
 
 wizard_reconfigure() {
     clear
-    draw_box "nasnet-panel Reconfigure"
+    draw_box "nasnet-panel-linux Reconfigure"
 
     if [[ ! -f "$ENV_FILE" ]]; then
         step_fail "No .env file found — run Fresh Install first"
@@ -2850,6 +3025,8 @@ wizard_reconfigure() {
     draw_header "Access Mode"
 
     local WIZ_MODE="" WIZ_DOMAIN="" WIZ_BASE_PATH=""
+    local WIZ_API_DOMAIN="" WIZ_PANEL_DOMAIN="" WIZ_IP="" WIZ_PATH_GENERATED=false
+    local WIZ_DERIVED_API="" WIZ_DERIVED_PANEL="" WIZ_ACCESS_PROTO=https
     local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL=""
     local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="" WIZ_ACME_STAGING="" WIZ_ACME_ENABLED="" WIZ_ACME_EMAIL=""
     local WIZ_APP_PORT
@@ -2972,7 +3149,7 @@ wizard_reconfigure() {
         action_view_status_inline
     else
         # Systemd: rebuild binary, deploy, restart services
-        if run_logged "Rebuilding nasnet-panel" bash -c "cd '$PROJECT_DIR' && make build"; then
+        if run_logged "Rebuilding nasnet-panel-linux" bash -c "cd '$PROJECT_DIR' && make build"; then
             step_ok "Binary rebuilt"
         else
             step_fail "Build failed"
@@ -2996,7 +3173,7 @@ wizard_reconfigure() {
 
 action_auto_update() {
     clear
-    draw_box "nasnet-panel Auto-Update (GitHub Release)"
+    draw_box "nasnet-panel-linux Auto-Update (GitHub Release)"
 
     # ── Detect current version ────────────────────────────────────────────
     local current_version="unknown"
@@ -3185,7 +3362,7 @@ action_auto_update() {
     # Hub binary
     sudo cp "${tmp_dir}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel"
     sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel"
-    step_ok "nasnet-panel binary deployed"
+    step_ok "nasnet-panel-linux binary deployed"
 
     # Ensure the current Xray core is installed before restarting the panel.
     install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"
@@ -3255,7 +3432,7 @@ action_auto_update() {
 
 wizard_update() {
     clear
-    draw_box "nasnet-panel Update"
+    draw_box "nasnet-panel-linux Update"
 
     # Check prerequisites
     if ! command -v git &>/dev/null; then
@@ -3463,7 +3640,7 @@ wizard_update() {
         fi
     else
         # Systemd: rebuild binary, deploy, and restart
-        if run_logged "Building nasnet-panel" bash -c "cd '$PROJECT_DIR' && make build"; then
+        if run_logged "Building nasnet-panel-linux" bash -c "cd '$PROJECT_DIR' && make build"; then
             true
         else
             step_fail "Build failed"
@@ -4298,7 +4475,7 @@ action_view_status_inline() {
     done < <(docker ps -a --filter "name=nasnet_panel" --format "$format" 2>/dev/null)
 
     if [[ ${#rows[@]} -eq 0 ]]; then
-        step_warn "No nasnet-panel containers found"
+        step_warn "No nasnet-panel-linux containers found"
         return
     fi
 
@@ -5224,11 +5401,11 @@ action_uninstall_docker() {
     clear
     draw_header "Uninstall (Docker)"
 
-    echo -e "  ${RED}${BOLD}This will remove all Docker containers, volumes, and images for nasnet-panel.${RESET}"
+    echo -e "  ${RED}${BOLD}This will remove all Docker containers, volumes, and images for nasnet-panel-linux.${RESET}"
     echo -e "  ${DIM}The source code and nasnet-tool.sh will NOT be removed.${RESET}"
     echo ""
 
-    if ! confirm_dangerous "Uninstall nasnet-panel Docker deployment?" "UNINSTALL"; then
+    if ! confirm_dangerous "Uninstall nasnet-panel-linux Docker deployment?" "UNINSTALL"; then
         step_info "Cancelled"
         press_any_key
         return
@@ -5280,7 +5457,7 @@ action_uninstall_systemd() {
     clear
     draw_header "Uninstall (Systemd)"
 
-    echo -e "  ${RED}${BOLD}This will remove nasnet-panel services and installed files.${RESET}"
+    echo -e "  ${RED}${BOLD}This will remove nasnet-panel-linux services and installed files.${RESET}"
     echo -e "  ${DIM}The source code and nasnet-tool.sh will NOT be removed.${RESET}"
     echo ""
 
@@ -5289,7 +5466,7 @@ action_uninstall_systemd() {
     fi
     echo ""
 
-    if ! confirm_dangerous "Uninstall nasnet-panel systemd deployment?" "UNINSTALL"; then
+    if ! confirm_dangerous "Uninstall nasnet-panel-linux systemd deployment?" "UNINSTALL"; then
         step_info "Cancelled"
         press_any_key
         return
@@ -5431,7 +5608,7 @@ _color_enabled() {
 # Show current systemd unit status in a table (supports multiple services)
 systemd_status_inline() {
     if ! detect_systemd_services; then
-        step_warn "No nasnet-panel systemd services found"
+        step_warn "No nasnet-panel-linux systemd services found"
         return
     fi
 
@@ -5497,7 +5674,7 @@ action_systemd_install() {
 
     sudo tee "$SYSTEMD_UNIT_FILE" > /dev/null << EOF
 [Unit]
-Description=nasnet-panel (Docker Compose)
+Description=nasnet-panel-linux (Docker Compose)
 Documentation=https://github.com/nasnet-community/nasnet-panel-linux
 After=network-online.target docker.service
 Requires=docker.service
@@ -5667,7 +5844,7 @@ action_systemd_status() {
     require_systemd || return 0
 
     if ! detect_systemd_services; then
-        step_warn "No nasnet-panel systemd services found"
+        step_warn "No nasnet-panel-linux systemd services found"
         step_info "Use the setup wizard to install with systemd, or 'Install Service' for Docker Compose wrapper"
         press_any_key
         return
@@ -6127,7 +6304,7 @@ cleanup() {
 print_usage() {
     cat <<USAGE
 
-  nasnet-tool — installer and operations tool for nasnet-panel
+  nasnet-tool — installer and operations tool for nasnet-panel-linux
 
   Usage: $(basename "${BASH_SOURCE[0]}") [command]
 
@@ -6237,7 +6414,7 @@ main() {
     # First-run detection: if no .env exists, offer to run wizard
     if [[ ! -f "$ENV_FILE" ]]; then
         clear
-        draw_box "nasnet-panel — First Run"
+        draw_box "nasnet-panel-linux — First Run"
         echo -e "  ${YELLOW}No .env file found.${RESET}"
         echo -e "  ${DIM}It looks like this is a fresh installation.${RESET}"
         echo ""

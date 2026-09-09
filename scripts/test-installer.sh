@@ -90,7 +90,7 @@ test_config_failure() {
 }
 test_cancel_before_changes() {
     answers; wizard_write_env systemd test >/dev/null || return 1
-    arrow_menu() { printf -v "$2" 0; }; confirm_action() { return 1; }
+    arrow_menu() { if [[ "$1" == "Review installation" ]]; then printf -v "$2" 2; else printf -v "$2" 0; fi; }; confirm_action() { return 1; }
     wizard_apply_install() { echo mutation >> "$EVENT_LOG"; return 0; }
     if wizard_install; then fail 'cancel reported success'; return 1; fi
     [[ ! -s "$EVENT_LOG" ]]
@@ -134,7 +134,7 @@ test_deploy_failure() {
 test_no_access_bypass() {
     answers; wizard_write_env systemd test >/dev/null || return 1
     local menu_count=0
-    arrow_menu() { menu_count=$((menu_count+1)); case $menu_count in 1) printf -v "$2" 0 ;; 2) printf -v "$2" 1 ;; *) printf -v "$2" 2 ;; esac; }
+    arrow_menu() { menu_count=$((menu_count+1)); case $menu_count in 1|2) printf -v "$2" 0 ;; 3) printf -v "$2" 1 ;; *) printf -v "$2" 2 ;; esac; }
     confirm_action() { return 0; }; sudo() { return 0; }
     wizard_apply_install() { WIZ_PROVISIONED=false; return 1; }
     wizard_verify_install() { echo verified >> "$EVENT_LOG"; return 0; }
@@ -174,6 +174,212 @@ test_existing_pg_dependency() {
     wizard_setup_postgres_offline nasnet_panel existing-password nasnet_panel || return 1
     [[ "$WIZ_PGSQL_SERVICE_NAME" == postgresql ]]
 }
-for case_name in root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
+# Scripted menu choices exercise real wizard navigation without touching the host.
+# An unexpected prompt aborts the test instead of allowing a runaway loop.
+scripted_menu() {
+    local expected="${menu_script[$menu_index]:-unexpected}" title="${1}" target="${2}"
+    [[ "$title" == "${expected%|*}" ]] || { fail "menu $menu_index: expected ${expected%|*}, got $title"; exit 1; }
+    menu_index=$((menu_index+1))
+    printf -v "$target" '%s' "${expected##*|}"
+}
+test_navigation_role_back() {
+    answers; WIZ_NAVIGATION=true
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|1' 'Database|-1'
+        'How will you use this device?|0' 'Database|0' 'Install method|1'
+        'Enable Telegram bot?|2' 'Install method|0' 'Enable Telegram bot?|1'
+        'Admin password|0' 'Review installation|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    local access_visits=0
+    wizard_prompt_access_mode() { access_visits=$((access_visits+1)); [[ $access_visits -ne 2 ]] || return 2; }
+    wizard_collect_install_settings <<< '' || return 1
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_ROUTER_MODE" == false && "$WIZ_INSTALL_METHOD" == release ]] || return 1
+    [[ "$WIZ_ADMIN_HASH" == '$2a$10$already-hashed' && "$WIZ_APP_PORT" == 12345 && "$WIZ_BASE_PATH" == /secret ]] || return 1
+    [[ ! -s "$EVENT_LOG" && ! -f "$ENV_FILE" ]]
+}
+test_navigation_docker_back() {
+    answers; WIZ_NAVIGATION=true
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|1' 'Database|2'
+        'How will you use this device?|2' 'Deployment|1' 'Database|2'
+        'Deployment|1' 'Database|1' 'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_prompt_access_mode() { return 0; }
+    wizard_collect_install_settings <<< '' || return 1
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_DEPLOY_MODE" == docker && "$WIZ_DB_DRIVER" == sqlite ]] || return 1
+    [[ "$WIZ_ROUTER_MODE" == false && "$WIZ_INSTALL_METHOD" == source && "$WIZ_DB_USER" == postgres ]]
+}
+test_navigation_offline_back() {
+    answers; OFFLINE_MODE=true; WIZ_NAVIGATION=true
+    local menu_index=0 menu_script=(
+        'How will you use this device?|-1' 'How will you use this device?|0'
+        'Database|0' 'Database|1' 'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    local access_visits=0
+    wizard_prompt_access_mode() { access_visits=$((access_visits+1)); [[ $access_visits -ne 1 ]] || return 2; }
+    wizard_collect_install_settings <<< '' || return 1
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_INSTALL_METHOD" == offline && "$WIZ_DB_DRIVER" == sqlite ]]
+}
+test_navigation_review_back() {
+    answers; WIZ_NAVIGATION=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
+        'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|1'
+        'Admin password|0' 'Review installation|2'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_prompt_access_mode() { return 0; }
+    if wizard_collect_install_settings <<'INPUT'
+secret123
+secret123
+
+INPUT
+    then fail 'cancel at review accepted'; return 1; fi
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_ADMIN_PASS" == secret123 ]] || return 1
+    [[ ! -s "$EVENT_LOG" && ! -f "$ENV_FILE" ]]
+}
+test_navigation_text_commands() {
+    local WIZ_NAVIGATION=true value=retained status=0
+    wizard_read_answer value <<< ':back' || status=$?
+    [[ $status -eq 2 && "$value" == retained ]] || return 1
+    status=0; wizard_read_answer value true <<< ':cancel' || status=$?
+    [[ $status -eq 3 && "$value" == retained ]] || return 1
+    wizard_read_answer value <<< '' || return 1
+    [[ "$value" == retained ]] || return 1
+    status=0; wizard_read_answer value < /dev/null || status=$?
+    [[ $status -eq 3 ]]
+}
+test_navigation_access_back() {
+    answers
+    local WIZ_API_DOMAIN='' WIZ_PANEL_DOMAIN='' WIZ_PATH_GENERATED=true
+    local WIZ_DERIVED_API='' WIZ_DERIVED_PANEL='' WIZ_ACCESS_PROTO=https
+    local menu_index=0 menu_script=(
+        'How will users access this server?|0' 'Select protocol|-1'
+        'How will users access this server?|0' 'Select protocol|1'
+        'Select protocol|1' 'Public URLs|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    # Back from the first domain prompt returns to protocol; back from the
+    # panel-domain text prompt returns to port, retaining the entered domain.
+    wizard_prompt_access_mode <<'INPUT'
+:back
+api.example.com
+
+:back
+
+panel.example.com
+
+INPUT
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_API_DOMAIN" == api.example.com ]] || return 1
+    [[ "$WIZ_APP_BASE_URL" == http://api.example.com:12345 && "$WIZ_SUB_PANEL_URL" == http://panel.example.com:12345/secret ]] || return 1
+    [[ "$WIZ_TLS_CERT_FILE" == '' && "$WIZ_ACME_ENABLED" == false ]]
+}
+test_navigation_access_tls() {
+    answers
+    local WIZ_API_DOMAIN=api.example.com WIZ_PANEL_DOMAIN=panel.example.com WIZ_PATH_GENERATED=true
+    local WIZ_DERIVED_API='' WIZ_DERIVED_PANEL='' WIZ_ACCESS_PROTO=https
+    local menu_index=0 menu_script=(
+        'How will users access this server?|0' 'Select protocol|0' 'Public URLs|0'
+        'HTTPS termination|2' 'HTTPS termination|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    # Certificate input Back returns to TLS selection; ACME clears stale files.
+    WIZ_TLS_CERT_FILE=/old/cert; WIZ_TLS_KEY_FILE=/old/key
+    wizard_prompt_access_mode <<'INPUT'
+
+
+
+
+:back
+admin@example.com
+INPUT
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_ACME_ENABLED" == true ]] || return 1
+    [[ "$WIZ_TLS_CERT_FILE" == '' && "$WIZ_TLS_KEY_FILE" == '' ]]
+}
+test_navigation_access_cancel() {
+    answers
+    local menu_index=0 menu_script=('How will users access this server?|3') status=0
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_prompt_access_mode || status=$?
+    [[ $status -eq 3 && ! -s "$EVENT_LOG" ]]
+}
+test_navigation_saved_back() {
+    answers; wizard_write_env systemd test >/dev/null || return 1
+    local before="$(cat "$ENV_FILE")" menu_index=0 menu_script=(
+        "Existing configuration at ${ENV_FILE}|0" 'Review installation|1' 'Deployment|3'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_apply_install() { echo mutation >> "$EVENT_LOG"; }
+    if wizard_install; then fail 'cancel after saved review accepted'; return 1; fi
+    [[ $menu_index -eq ${#menu_script[@]} && "$(cat "$ENV_FILE")" == "$before" && ! -s "$EVENT_LOG" ]]
+}
+test_navigation_access_preserves_urls() {
+    answers
+    local WIZ_API_DOMAIN=api.example.com WIZ_PANEL_DOMAIN=panel.example.com WIZ_PATH_GENERATED=true
+    local WIZ_DERIVED_API='' WIZ_DERIVED_PANEL='' WIZ_ACCESS_PROTO=https
+    local menu_index=0 menu_script=(
+        'How will users access this server?|0' 'Select protocol|0' 'Public URLs|0' 'HTTPS termination|1'
+        'How will users access this server?|0' 'Select protocol|0' 'Public URLs|0' 'HTTPS termination|1'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_prompt_access_mode <<'INPUT' || return 1
+
+
+
+
+https://api.example.com:8443
+https://panel.example.com:8443/secret
+INPUT
+    wizard_prompt_access_mode <<'INPUT' || return 1
+
+
+
+
+
+
+INPUT
+    [[ $menu_index -eq ${#menu_script[@]} ]] || return 1
+    [[ "$WIZ_APP_BASE_URL" == https://api.example.com:8443 && "$WIZ_SUB_PANEL_URL" == https://panel.example.com:8443/secret ]]
+}
+test_navigation_install_after_review() {
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|0' 'Database|1' 'Install method|0'
+        'How will users access this server?|1' 'Public URLs|0' 'Enable Telegram bot?|1'
+        'Admin password|0' 'Review installation|0'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_random_port() { echo 12345; }; wizard_detect_ip() { echo 192.0.2.1; }
+    sudo() { [[ "$*" == -v ]]; }
+    wizard_apply_install() {
+        [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_ADMIN_PASS" == secret123 ]] || return 1
+        [[ "$WIZ_SUB_PANEL_URL" == http://192.0.2.1:12345/secret && "$WIZ_DB_DRIVER" == sqlite ]] || return 1
+        WIZ_ADMIN_HASH=fixture-hash; WIZ_JWT_SECRET=fixture-secret
+        echo applied >> "$EVENT_LOG"
+    }
+    _sync_env_to_install_dir() { :; }
+    wizard_install <<'INPUT' || return 1
+
+/secret
+secret123
+secret123
+INPUT
+    contains applied "$EVENT_LOG" || return 1
+    contains 'INSTALL_STATUS=complete' "$ENV_FILE"
+}
+test_navigation_menu_keys() {
+    local key_result=-1 ARROW_MENU_DEFAULT=1 WIZ_NAVIGATION=true status=0
+    tput() { :; }
+    arrow_menu 'Example' key_result 'First' 'Second' <<< '' > /dev/null
+    [[ $key_result -eq 1 ]] || return 1
+    wizard_navigation_menu 'Example' key_result 'First' <<< q > /dev/null || status=$?
+    [[ $status -eq 2 ]] || return 1
+    status=0
+    wizard_navigation_menu 'Example' key_result 'First' < /dev/null > /dev/null || status=$?
+    [[ $status -eq 3 ]]
+}
+for case_name in navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done

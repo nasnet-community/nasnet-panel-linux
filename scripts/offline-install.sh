@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# offline-install.sh — Bootstrap script for offline nasnet-panel installation
+# offline-install.sh — Bootstrap script for offline nasnet-panel-linux installation
 # This script is bundled inside the offline tarball and handles:
 #   - Fresh install (default)
 #   - Update (--update)
@@ -213,7 +213,7 @@ deploy_artifacts() {
     # Hub binary
     cp "$SCRIPT_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel"
     chmod +x "$INSTALL_DIR/bin/nasnet-panel"
-    ok "nasnet-panel binary"
+    ok "nasnet-panel-linux binary"
 
     # Xray binaries — placed into versioned subdirectory so BinaryManager can find them
     local xray_version
@@ -337,7 +337,7 @@ backup_database() {
 
 # ── Update Flow ──────────────────────────────────────────────────────────────
 do_update() {
-    header "Updating nasnet-panel to ${BUNDLE_VERSION}"
+    header "Updating nasnet-panel-linux to ${BUNDLE_VERSION}"
 
     if [[ ! -d "$INSTALL_DIR" ]]; then
         fail "No existing installation found at ${INSTALL_DIR}"
@@ -446,7 +446,7 @@ do_rollback() {
 
     # Restore binaries
     header "Restoring Binaries"
-    [[ -f "$ROLLBACK_DIR/bin/nasnet-panel" ]] && cp "$ROLLBACK_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" && ok "nasnet-panel binary"
+    [[ -f "$ROLLBACK_DIR/bin/nasnet-panel" ]] && cp "$ROLLBACK_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" && ok "nasnet-panel-linux binary"
     rm -rf "$INSTALL_DIR/bin/xray" && cp -r "$ROLLBACK_DIR/bin/xray" "$INSTALL_DIR/bin/xray" 2>/dev/null && ok "Xray binaries" || true
 
     # Web panel is embedded in the Go binary — no separate restore needed
@@ -491,7 +491,7 @@ do_rollback() {
 
 # ── Fresh Install Flow ───────────────────────────────────────────────────────
 do_install() {
-    header "Installing nasnet-panel ${BUNDLE_VERSION}"
+    header "Installing nasnet-panel-linux ${BUNDLE_VERSION}"
 
     # Check for existing installation
     if [[ -d "$INSTALL_DIR" ]] && [[ -f "$INSTALL_DIR/bin/nasnet-panel" ]]; then
@@ -531,7 +531,7 @@ do_install() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "  ${BOLD}nasnet-panel Offline Installer${RESET}"
+echo -e "  ${BOLD}nasnet-panel-linux Offline Installer${RESET}"
 echo -e "  ${DIM}─────────────────────────────${RESET}"
 echo ""
 
