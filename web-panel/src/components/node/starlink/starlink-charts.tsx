@@ -11,9 +11,10 @@ import {
     CartesianGrid,
     ReferenceLine,
 } from "recharts"
+import { useChartPalette } from "@/lib/design/palette"
 import type { StarlinkDataPoint } from "@/lib/types"
 import { type TimeRange, TIME_RANGE_CONFIG, formatMbps } from "./starlink-helpers"
-import { useChartPalette, tooltipContentStyle } from "@/lib/design/palette"
+import { SegmentedControl, T, cardShell } from "./starlink-ui"
 
 interface StarlinkChartsProps {
     data: StarlinkDataPoint[]
@@ -25,14 +26,28 @@ interface StarlinkChartsProps {
 
 type ChartTab = "throughput" | "latency" | "loss" | "obstruction"
 
-const chartTabs: { key: ChartTab; label: string }[] = [
-    { key: "throughput", label: "Throughput" },
-    { key: "latency", label: "Latency" },
-    { key: "loss", label: "Packet Loss" },
-    { key: "obstruction", label: "Obstruction" },
+const chartTabs = [
+    { value: "throughput" as const, label: "Throughput" },
+    { value: "latency" as const, label: "Latency" },
+    { value: "loss" as const, label: "Packet loss" },
+    { value: "obstruction" as const, label: "Obstruction" },
 ]
 
-const timeRanges: TimeRange[] = ["1h", "6h", "24h", "7d"]
+const timeRangeOptions = (Object.keys(TIME_RANGE_CONFIG) as TimeRange[]).map(r => ({
+    value: r,
+    label: r,
+    ariaLabel: `Time range ${r}`,
+}))
+
+// The unit belongs on the axis once, as a caption. Every tick used to carry
+// it ("80 Mbps", "60 Mbps", …), which cost 80px of plot width to repeat one
+// word five times.
+const UNIT: Record<ChartTab, string> = {
+    throughput: "Mbps",
+    latency: "ms",
+    loss: "%",
+    obstruction: "%",
+}
 
 // formatTime renders a chart X-axis tick. For windows that span multiple
 // days (24h, 7d) HH:MM alone collapses every day onto the same labels, so we
@@ -47,8 +62,22 @@ function formatTime(dateStr: string, range: TimeRange): string {
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
+// var() resolves against the artifact's own theme, so the tooltip follows a
+// light/dark switch instead of staying a hardcoded slate panel.
+const tooltipStyle = {
+    backgroundColor: "var(--popover)",
+    color: "var(--popover-foreground)",
+    border: "1px solid var(--border)",
+    borderRadius: "12px",
+    padding: "8px 12px",
+    fontSize: 12,
+    boxShadow: "0 8px 32px rgb(0 0 0 / 0.25)",
+}
+
 export function StarlinkCharts({ data, isLoading, compact = false, timeRange, onTimeRangeChange }: StarlinkChartsProps) {
     const c = useChartPalette()
+    const tooltipLabelStyle = { color: c.tooltipLabel, fontSize: 11 }
+    const tickStyle = { fontSize: 11, fill: c.axis }
     const [tab, setTab] = useState<ChartTab>("throughput")
 
     const chartData = useMemo(() => data.map((d) => ({
@@ -61,108 +90,81 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
     })), [data, timeRange])
 
     const chartHeight = compact ? "h-[200px]" : "h-[280px]"
+    const controlSize = compact ? "lg" : "sm"
 
     if (isLoading && chartData.length === 0) {
         return (
-            <Card className="relative overflow-hidden rounded-2xl p-4 md:p-6 bg-card/50 backdrop-blur-sm border-white/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-                <div className="flex flex-wrap items-center gap-1.5 mb-4">
-                    {chartTabs.map((t) => (
-                        <Skeleton key={t.key} className="h-7 w-20 rounded-md" />
-                    ))}
+            <Card className={cardShell}>
+                <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                    {chartTabs.map((t) => <Skeleton key={t.value} className="h-7 w-20 rounded-lg" />)}
                 </div>
-                <Skeleton className={`${chartHeight} w-full rounded-lg`} />
+                <Skeleton className={`${chartHeight} w-full rounded-xl`} />
             </Card>
         )
     }
 
     if (chartData.length === 0) {
         return (
-            <Card className="relative overflow-hidden rounded-2xl p-4 md:p-6 bg-card/50 backdrop-blur-sm border-white/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-                <div className={`${chartHeight} flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-white/5 rounded-xl`}>
+            <Card className={cardShell}>
+                <div className={`${chartHeight} flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border text-muted-foreground`}>
                     <p className="text-sm">No history data yet</p>
-                    <p className="text-xs mt-1 text-muted-foreground/60">Updates every {Math.round(TIME_RANGE_CONFIG[timeRange].refetchInterval / 1000)}s</p>
+                    <p className={`${T.meta} mt-1`}>Updates every {Math.round(TIME_RANGE_CONFIG[timeRange].refetchInterval / 1000)}s</p>
                 </div>
             </Card>
         )
     }
 
-    return (
-        <Card className="relative overflow-hidden rounded-2xl p-4 md:p-6 bg-card/50 backdrop-blur-sm border-white/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10">
-            <div className="flex flex-col gap-2 mb-4 md:mb-6 md:flex-row md:items-center md:justify-between">
-                <div className="overflow-x-auto no-scrollbar max-w-full">
-                    <div className="flex items-center gap-1.5 bg-muted/30 rounded-lg p-0.5 w-max">
-                        {chartTabs.map((t) => (
-                            <button
-                                key={t.key}
-                                type="button"
-                                aria-pressed={tab === t.key}
-                                onClick={() => setTab(t.key)}
-                                className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                                    tab === t.key
-                                        ? "bg-foreground text-background shadow-sm"
-                                        : "text-muted-foreground hover:text-foreground"
-                                }`}
-                            >
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+    // preserveStartEnd + minTickGap lets Recharts drop labels that would
+    // collide. The old fixed `interval` was computed from the row count
+    // alone, so a phone rendered six labels into 326px as "6 PM05:37 PM…".
+    const xAxis = (
+        <XAxis
+            dataKey="time"
+            axisLine={false}
+            tickLine={false}
+            tick={tickStyle}
+            interval="preserveStartEnd"
+            minTickGap={compact ? 56 : 44}
+        />
+    )
 
-                <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-0.5 shrink-0 self-start md:self-auto">
-                    {timeRanges.map((r) => (
-                        <button
-                            key={r}
-                            type="button"
-                            aria-pressed={timeRange === r}
-                            aria-label={`Time range ${r}`}
-                            onClick={() => onTimeRangeChange(r)}
-                            className={`shrink-0 px-2 py-1 rounded-md text-[11px] font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                                timeRange === r
-                                    ? "bg-foreground text-background shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        >
-                            {r}
-                        </button>
-                    ))}
+    return (
+        <Card className={cardShell}>
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="no-scrollbar max-w-full overflow-x-auto">
+                    <SegmentedControl value={tab} options={chartTabs} onChange={setTab} size={controlSize} />
                 </div>
+                <SegmentedControl
+                    value={timeRange}
+                    options={timeRangeOptions}
+                    onChange={onTimeRangeChange}
+                    size={controlSize}
+                    className="self-start md:self-auto"
+                />
             </div>
 
-            {tab === "throughput" && (
-                <div className="flex items-center gap-4 mb-3">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">Download</span>
+            <div className="flex items-center justify-between gap-3">
+                {tab === "throughput" ? (
+                    <div className="flex items-center gap-4">
+                        <LegendKey color={c.success} label="Download" />
+                        <LegendKey color={c.info} label="Upload" />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-blue-500" />
-                        <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">Upload</span>
-                    </div>
-                </div>
-            )}
+                ) : <span />}
+                <span className={T.meta}>{UNIT[tab]}</span>
+            </div>
 
             <div className={`${chartHeight} w-full`}>
                 {tab === "throughput" && (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                        <AreaChart data={chartData} margin={{ top: 10, right: 4, left: 0, bottom: 5 }}>
                             <defs>
-                                <linearGradient id="sl-gradient-dl" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={c.success} stopOpacity={0.4} />
-                                    <stop offset="50%" stopColor={c.success} stopOpacity={0.15} />
-                                    <stop offset="100%" stopColor={c.success} stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="sl-gradient-ul" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={c.info} stopOpacity={0.4} />
-                                    <stop offset="50%" stopColor={c.info} stopOpacity={0.15} />
-                                    <stop offset="100%" stopColor={c.info} stopOpacity={0} />
-                                </linearGradient>
+                                <Fade id="sl-gradient-dl" color={c.success} />
+                                <Fade id="sl-gradient-ul" color={c.info} />
                             </defs>
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
-                            <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: c.axis }} interval={Math.max(Math.floor(chartData.length / 6), 1)} />
-                            <YAxis tickFormatter={(v) => `${v.toFixed(0)} Mbps`} width={80} tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" />
-                            <Tooltip contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }} labelStyle={{ color: c.tooltipLabel, fontSize: 11 }}
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            {xAxis}
+                            <YAxis tickFormatter={(v) => v.toFixed(0)} width={44} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" />
+                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
                                 formatter={(value: any, name: any) => [`${formatMbps((value ?? 0) * 1_000_000)} Mbps`, name === "dl_mbps" ? "Download" : "Upload"]}
                             />
                             <Area type="monotone" dataKey="dl_mbps" stroke={c.success} strokeWidth={2} fill="url(#sl-gradient-dl)" dot={false} animationDuration={500} />
@@ -173,20 +175,13 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
 
                 {tab === "latency" && (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                            <defs>
-                                <linearGradient id="sl-gradient-lat" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={c.warning} stopOpacity={0.4} />
-                                    <stop offset="50%" stopColor={c.warning} stopOpacity={0.15} />
-                                    <stop offset="100%" stopColor={c.warning} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
+                        <AreaChart data={chartData} margin={{ top: 10, right: 4, left: 0, bottom: 5 }}>
+                            <defs><Fade id="sl-gradient-lat" color={c.warning} /></defs>
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
-                            <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: c.axis }} interval={Math.max(Math.floor(chartData.length / 6), 1)} />
-                            <YAxis tickFormatter={(v) => `${v.toFixed(0)} ms`} width={60} tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" />
-                            <ReferenceLine y={50} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "50ms", position: "left", fill: c.danger, fontSize: 10 }} />
-                            <Tooltip contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }} labelStyle={{ color: c.tooltipLabel, fontSize: 11 }}
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            {xAxis}
+                            <YAxis tickFormatter={(v) => v.toFixed(0)} width={40} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" />
+                            <ReferenceLine y={50} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "50ms", position: "left", fill: c.danger, fontSize: 11 }} />
+                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
                                 formatter={(value: any) => [`${(value ?? 0).toFixed(1)} ms`, "Latency"]}
                             />
                             <Area type="monotone" dataKey="pop_ping_latency_ms" stroke={c.warning} strokeWidth={2} fill="url(#sl-gradient-lat)" dot={false} animationDuration={500} />
@@ -196,20 +191,13 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
 
                 {tab === "loss" && (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                            <defs>
-                                <linearGradient id="sl-gradient-loss" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={c.danger} stopOpacity={0.4} />
-                                    <stop offset="50%" stopColor={c.danger} stopOpacity={0.15} />
-                                    <stop offset="100%" stopColor={c.danger} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
+                        <AreaChart data={chartData} margin={{ top: 10, right: 4, left: 0, bottom: 5 }}>
+                            <defs><Fade id="sl-gradient-loss" color={c.danger} /></defs>
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
-                            <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: c.axis }} interval={Math.max(Math.floor(chartData.length / 6), 1)} />
-                            <YAxis tickFormatter={(v) => `${v.toFixed(1)}%`} width={50} tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" domain={[0, "auto"]} />
-                            <Tooltip contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }} labelStyle={{ color: c.tooltipLabel, fontSize: 11 }}
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                formatter={(value: any) => [`${(value ?? 0).toFixed(2)}%`, "Packet Loss"]}
+                            {xAxis}
+                            <YAxis tickFormatter={(v) => v.toFixed(1)} width={40} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" domain={[0, "auto"]} />
+                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
+                                formatter={(value: any) => [`${(value ?? 0).toFixed(2)}%`, "Packet loss"]}
                             />
                             <Area type="monotone" dataKey="drop_pct" stroke={c.danger} strokeWidth={2} fill="url(#sl-gradient-loss)" dot={false} animationDuration={500} />
                         </AreaChart>
@@ -218,20 +206,13 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
 
                 {tab === "obstruction" && (
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
-                            <defs>
-                                <linearGradient id="sl-gradient-obst" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={c.chart5} stopOpacity={0.4} />
-                                    <stop offset="50%" stopColor={c.chart5} stopOpacity={0.15} />
-                                    <stop offset="100%" stopColor={c.chart5} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
+                        <AreaChart data={chartData} margin={{ top: 10, right: 4, left: 0, bottom: 5 }}>
+                            <defs><Fade id="sl-gradient-obst" color={c.chart5} /></defs>
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
-                            <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: c.axis }} interval={Math.max(Math.floor(chartData.length / 6), 1)} />
-                            <YAxis tickFormatter={(v) => `${v.toFixed(1)}%`} width={50} tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" domain={[0, "auto"]} />
-                            <ReferenceLine y={5} stroke={c.warning} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "5%", position: "left", fill: c.warning, fontSize: 10 }} />
-                            <Tooltip contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }} labelStyle={{ color: c.tooltipLabel, fontSize: 11 }}
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            {xAxis}
+                            <YAxis tickFormatter={(v) => v.toFixed(1)} width={40} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" domain={[0, "auto"]} />
+                            <ReferenceLine y={5} stroke={c.warning} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "5%", position: "left", fill: c.warning, fontSize: 11 }} />
+                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
                                 formatter={(value: any) => [`${(value ?? 0).toFixed(2)}%`, "Obstruction"]}
                             />
                             <Area type="monotone" dataKey="obstruction_pct" stroke={c.chart5} strokeWidth={2} fill="url(#sl-gradient-obst)" dot={false} animationDuration={500} />
@@ -240,5 +221,24 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
                 )}
             </div>
         </Card>
+    )
+}
+
+function Fade({ id, color }: { id: string; color: string }) {
+    return (
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+            <stop offset="50%" stopColor={color} stopOpacity={0.15} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+        </linearGradient>
+    )
+}
+
+function LegendKey({ color, label }: { color: string; label: string }) {
+    return (
+        <span className={`flex items-center gap-2 ${T.meta}`}>
+            <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+            {label}
+        </span>
     )
 }

@@ -1,20 +1,19 @@
 import { useMemo, useState } from "react"
 import { motion, useReducedMotion } from "framer-motion"
-import { Activity, Shield, ArrowDown, ArrowUp, RefreshCw } from "lucide-react"
-import { WifiOff, Satellite, AlertCircle } from "lucide-react"
+import { RefreshCw, WifiOff, Satellite, AlertCircle } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useQueryClient } from "@tanstack/react-query"
 import { useIsMobile } from "@/hooks/use-is-mobile"
+import { useChartPalette } from "@/lib/design/palette"
 import { useStarlinkStatus, useStarlinkObstructionMap, useStarlinkHistory } from "@/lib/queries/use-starlink"
 import { queryKeys } from "@/lib/queries/keys"
 
 import { StarlinkStatusHeader } from "./starlink-status-header"
 import { StarlinkMetricCard } from "./starlink-metric-card"
-import { StarlinkSignalCard } from "./starlink-signal-card"
-import { StarlinkObstructionCard } from "./starlink-obstruction-card"
+import { StarlinkSkyCard } from "./starlink-sky-card"
 import { StarlinkCharts } from "./starlink-charts"
 import { StarlinkDetailDrawer } from "./starlink-detail-drawer"
-import { StarlinkSignalDetail } from "./starlink-signal-detail"
+import { StarlinkSignalGauge, StarlinkSignalFacts } from "./starlink-signal-detail"
 import { StarlinkObstructionDetail } from "./starlink-obstruction-detail"
 import { StarlinkMetricDetail } from "./starlink-metric-detail"
 import { StarlinkAlerts } from "./starlink-alerts"
@@ -46,6 +45,7 @@ const noMotionVariants = {
 } as const
 
 export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) {
+    const c = useChartPalette()
     const [activeDrawer, setActiveDrawer] = useState<DrawerType>(null)
     const [timeRange, setTimeRange] = useState<TimeRange>("1h")
     const isMobile = useIsMobile()
@@ -67,25 +67,20 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
     const dlData = useMemo(() => historyAsc.map(d => ({ value: d.downlink_throughput_bps / 1e6 })), [historyAsc])
     const ulData = useMemo(() => historyAsc.map(d => ({ value: d.uplink_throughput_bps / 1e6 })), [historyAsc])
 
-    const peakLatency = useMemo(() => latencyData.reduce((m, d) => Math.max(m, d.value), 0), [latencyData])
-    const avgDrop = useMemo(() => dropData.length > 0 ? dropData.reduce((a, d) => a + d.value, 0) / dropData.length : 0, [dropData])
-    const peakDl = useMemo(() => dlData.reduce((m, d) => Math.max(m, d.value), 0), [dlData])
-    const peakUl = useMemo(() => ulData.reduce((m, d) => Math.max(m, d.value), 0), [ulData])
-
     // Drawer title
     const drawerTitles: Record<Exclude<DrawerType, null>, string> = {
-        signal: "Signal & Dish Health", obstruction: "Obstruction Map",
-        latency: "Latency Detail", dropRate: "Packet Loss Detail",
-        download: "Download Detail", upload: "Upload Detail", alerts: "Alerts & Outages",
+        sky: "Sky & signal",
+        latency: "Latency detail", dropRate: "Packet loss detail",
+        download: "Download detail", upload: "Upload detail", alerts: "Alerts & outages",
     }
 
     // ─── Loading / Error States ─────────────────────────────────────
     if (!isOnline) {
         return (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground bg-muted/5 rounded-2xl border-2 border-dashed">
-                <WifiOff className="w-12 h-12 mb-4 opacity-50" />
-                <h3 className="text-lg font-medium text-foreground">Node Offline</h3>
-                <p className="text-sm text-center px-4">The node must be online to fetch Starlink metrics.</p>
+            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed py-12 text-muted-foreground">
+                <WifiOff className="mb-4 h-12 w-12 opacity-50" />
+                <h3 className="text-lg font-medium text-foreground">Node offline</h3>
+                <p className="px-4 text-center text-sm">The node must be online to fetch Starlink metrics.</p>
             </div>
         )
     }
@@ -109,10 +104,10 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
     if (statusError || (!statusLoading && !status)) {
         const message = statusErr instanceof Error ? statusErr.message : "Failed to load Starlink status"
         return (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground bg-red-500/5 rounded-2xl border-2 border-dashed border-red-500/20">
-                <AlertCircle className="w-12 h-12 mb-4 opacity-50 text-red-400" />
-                <h3 className="text-lg font-medium text-red-400">Failed to Load</h3>
-                <p className="text-sm text-center px-4 max-w-md mt-2 mb-4">{message}</p>
+            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-500/20 bg-red-500/5 py-12 text-muted-foreground">
+                <AlertCircle className="mb-4 h-12 w-12 text-red-400 opacity-50" />
+                <h3 className="text-lg font-medium text-red-400">Failed to load</h3>
+                <p className="mt-2 mb-4 max-w-md px-4 text-center text-sm">{message}</p>
                 <button
                     onClick={() => {
                         refetchStatus()
@@ -120,9 +115,9 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
                         queryClient.invalidateQueries({ queryKey: queryKeys.starlinkHistory(nodeId, timeRange) })
                     }}
                     disabled={statusFetching}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
                 >
-                    <RefreshCw className={`w-3.5 h-3.5 ${statusFetching ? "animate-spin" : ""}`} />
+                    <RefreshCw className={`h-3.5 w-3.5 ${statusFetching ? "animate-spin" : ""}`} />
                     Retry
                 </button>
             </div>
@@ -131,10 +126,10 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
 
     if (status && !status.available) {
         return (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground bg-red-500/5 rounded-2xl border-2 border-dashed border-red-500/20">
-                <Satellite className="w-12 h-12 mb-4 opacity-50 text-red-400" />
-                <h3 className="text-lg font-medium text-red-400">Dish Unreachable</h3>
-                <p className="text-sm text-center px-4 max-w-md mt-2">
+            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-red-500/20 bg-red-500/5 py-12 text-muted-foreground">
+                <Satellite className="mb-4 h-12 w-12 text-red-400 opacity-50" />
+                <h3 className="text-lg font-medium text-red-400">Dish unreachable</h3>
+                <p className="mt-2 max-w-md px-4 text-center text-sm">
                     Verify the dish address in node settings and ensure the dish is powered on.
                 </p>
             </div>
@@ -146,7 +141,7 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
     return (
         <>
             <motion.div className="space-y-4" initial="hidden" animate="visible" variants={containerVar}>
-                {/* Status Header */}
+                {/* Status row */}
                 <motion.div variants={cardVar}>
                     <StarlinkStatusHeader status={status} onAlertsClick={() => setActiveDrawer("alerts")} dataUpdatedAt={statusUpdatedAt} />
                 </motion.div>
@@ -154,32 +149,76 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
                 {/* Hero Metric Cards */}
                 <motion.div className={`grid ${isMobile ? "grid-cols-2" : "grid-cols-4"} gap-3 md:gap-4`} variants={containerVar}>
                     <motion.div variants={cardVar}>
-                        <StarlinkMetricCard label="Latency" value={status.pop_ping_latency_ms.toFixed(0)} unit="ms" subtitle={`Peak ${peakLatency.toFixed(0)}ms`} valueColor={latencyColor(status.pop_ping_latency_ms)} sparklineData={latencyData} sparklineColor="#f59e0b" sparklineId="latency" icon={Activity} hoverShadow="hover:shadow-amber-500/10" onClick={() => setActiveDrawer("latency")} formatHoverValue={(v) => v.toFixed(0)} threshold={{ warn: 50, crit: 80, direction: "above" }} />
+                        <StarlinkMetricCard
+                            label="Latency"
+                            value={status.pop_ping_latency_ms.toFixed(0)}
+                            unit="ms"
+                            valueColor={latencyColor(status.pop_ping_latency_ms)}
+                            sparklineData={latencyData}
+                            sparklineColor={c.warning}
+                            sparklineId="latency"
+                            onClick={() => setActiveDrawer("latency")}
+                            format={(v) => v.toFixed(0)}
+                            polarity="lower-better"
+                        />
                     </motion.div>
                     <motion.div variants={cardVar}>
-                        <StarlinkMetricCard label="Drop Rate" value={(status.pop_ping_drop_rate * 100).toFixed(1)} unit="%" subtitle={`Avg ${avgDrop.toFixed(1)}%`} valueColor={dropRateColor(status.pop_ping_drop_rate)} sparklineData={dropData} sparklineColor="#ef4444" sparklineId="drop" icon={Shield} hoverShadow="hover:shadow-red-500/10" onClick={() => setActiveDrawer("dropRate")} formatHoverValue={(v) => v.toFixed(1)} threshold={{ warn: 1, crit: 5, direction: "above" }} />
+                        <StarlinkMetricCard
+                            label="Drop rate"
+                            value={(status.pop_ping_drop_rate * 100).toFixed(1)}
+                            unit="%"
+                            valueColor={dropRateColor(status.pop_ping_drop_rate)}
+                            sparklineData={dropData}
+                            sparklineColor={c.danger}
+                            sparklineId="drop"
+                            onClick={() => setActiveDrawer("dropRate")}
+                            format={(v) => v.toFixed(1)}
+                            polarity="lower-better"
+                            // A link dropping no packets averages 0.0%, and a
+                            // percentage change against that is pure noise.
+                            deltaFloor={0.05}
+                        />
                     </motion.div>
                     <motion.div variants={cardVar}>
-                        <StarlinkMetricCard label="Download" value={formatMbps(status.downlink_throughput_bps)} unit="Mbps" subtitle={`Peak ${peakDl.toFixed(1)} Mbps`} valueColor="text-emerald-400" sparklineData={dlData} sparklineColor="#10b981" sparklineId="dl" icon={ArrowDown} hoverShadow="hover:shadow-emerald-500/10" onClick={() => setActiveDrawer("download")} formatHoverValue={(v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} />
+                        <StarlinkMetricCard
+                            label="Download"
+                            value={formatMbps(status.downlink_throughput_bps)}
+                            unit="Mbps"
+                            valueColor="text-foreground"
+                            sparklineData={dlData}
+                            sparklineColor={c.success}
+                            sparklineId="dl"
+                            onClick={() => setActiveDrawer("download")}
+                            format={(v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)}
+                            polarity="higher-better"
+                            deltaFloor={0.01}
+                        />
                     </motion.div>
                     <motion.div variants={cardVar}>
-                        <StarlinkMetricCard label="Upload" value={formatMbps(status.uplink_throughput_bps)} unit="Mbps" subtitle={`Peak ${peakUl.toFixed(1)} Mbps`} valueColor="text-blue-400" sparklineData={ulData} sparklineColor="#3b82f6" sparklineId="ul" icon={ArrowUp} hoverShadow="hover:shadow-blue-500/10" onClick={() => setActiveDrawer("upload")} formatHoverValue={(v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} />
+                        <StarlinkMetricCard
+                            label="Upload"
+                            value={formatMbps(status.uplink_throughput_bps)}
+                            unit="Mbps"
+                            valueColor="text-foreground"
+                            sparklineData={ulData}
+                            sparklineColor={c.info}
+                            sparklineId="ul"
+                            onClick={() => setActiveDrawer("upload")}
+                            format={(v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)}
+                            polarity="higher-better"
+                            deltaFloor={0.01}
+                        />
                     </motion.div>
                 </motion.div>
 
-                {/* Signal & Obstruction Row */}
+                {/* Sky & Signal + Alignment */}
                 <motion.div className={`grid ${isMobile ? "grid-cols-1" : "grid-cols-2"} gap-3 md:gap-4`} variants={containerVar}>
                     <motion.div variants={cardVar}>
-                        <StarlinkSignalCard status={status} onClick={() => setActiveDrawer("signal")} />
+                        <StarlinkSkyCard status={status} mapData={obstructionMap} onClick={() => setActiveDrawer("sky")} />
                     </motion.div>
                     <motion.div variants={cardVar}>
-                        <StarlinkObstructionCard status={status} onClick={() => setActiveDrawer("obstruction")} />
+                        <StarlinkAlignment status={status} />
                     </motion.div>
-                </motion.div>
-
-                {/* Alignment — dish rotation & tilt */}
-                <motion.div variants={cardVar}>
-                    <StarlinkAlignment status={status} />
                 </motion.div>
 
                 {/* Performance Charts */}
@@ -189,22 +228,29 @@ export function StarlinkDashboard({ nodeId, isOnline }: StarlinkDashboardProps) 
             </motion.div>
 
             {/* Detail Drawer */}
-            <StarlinkDetailDrawer isOpen={activeDrawer !== null} onClose={() => setActiveDrawer(null)} title={activeDrawer ? drawerTitles[activeDrawer] : ""}>
-                {activeDrawer === "signal" && <StarlinkSignalDetail status={status} />}
-                {activeDrawer === "obstruction" && (
-                    obstructionMap
-                        ? <StarlinkObstructionDetail status={status} mapData={obstructionMap} />
-                        : (
-                            // Without this the drawer opened completely blank while
-                            // the (60s-interval) map query was still in flight.
-                            <div className="flex items-center justify-center h-[280px] text-sm text-muted-foreground border-2 border-dashed border-white/5 rounded-2xl px-6 text-center">
-                                {mapError
-                                    ? "Failed to load the obstruction map."
-                                    : mapLoading
-                                    ? "Loading obstruction map…"
-                                    : "No obstruction map available."}
-                            </div>
-                        )
+            <StarlinkDetailDrawer
+                isOpen={activeDrawer !== null}
+                onClose={() => setActiveDrawer(null)}
+                title={activeDrawer ? drawerTitles[activeDrawer] : ""}
+            >
+                {activeDrawer === "sky" && (
+                    <div className="space-y-5">
+                        <StarlinkSignalGauge status={status} />
+                        {obstructionMap
+                            ? <StarlinkObstructionDetail status={status} mapData={obstructionMap} />
+                            : (
+                                // Without this the drawer opened completely blank while
+                                // the (60s-interval) map query was still in flight.
+                                <div className="flex h-[280px] items-center justify-center rounded-2xl border-2 border-dashed border-border px-6 text-center text-sm text-muted-foreground">
+                                    {mapError
+                                        ? "Failed to load the obstruction map."
+                                        : mapLoading
+                                        ? "Loading obstruction map…"
+                                        : "No obstruction map available."}
+                                </div>
+                            )}
+                        <StarlinkSignalFacts status={status} />
+                    </div>
                 )}
                 {(activeDrawer === "latency" || activeDrawer === "dropRate" || activeDrawer === "download" || activeDrawer === "upload") && (
                     <StarlinkMetricDetail metricType={activeDrawer} data={history || []} timeRange={timeRange} onTimeRangeChange={setTimeRange} />

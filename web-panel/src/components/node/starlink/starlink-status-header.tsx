@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
-import { Satellite, AlertOctagon, ShieldCheck, ShieldAlert, ShieldX, RadioTower } from "lucide-react"
+import { AlertOctagon, Bell, ChevronRight, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react"
 import type { StarlinkStatus } from "@/lib/types"
 import { formatUptime, getActiveAlerts, healthDotColor } from "./starlink-helpers"
+import { T } from "./starlink-ui"
 
 interface StarlinkStatusHeaderProps {
     status: StarlinkStatus
@@ -17,10 +18,26 @@ function formatRelative(ts: number, now: number): string {
     return `${Math.floor(diff / 86400)}d ago`
 }
 
+// The strip this replaces was the only tinted, ring-bordered, 12px-radius
+// element on the tab, and its five label/value cells used a type pairing
+// (9px mono label over an 11px value) that appeared nowhere else. Health is
+// the one thing worth a coloured surface, so only the pill keeps one.
 const SEM = {
-    emerald: { ring: "ring-emerald-500/15", bg: "bg-emerald-500/[0.04]", txt: "text-emerald-300", Icon: ShieldCheck, word: "NORMAL" },
-    amber:   { ring: "ring-amber-500/20",   bg: "bg-amber-500/[0.04]",   txt: "text-amber-300",   Icon: ShieldAlert, word: "DEGRADED" },
-    red:     { ring: "ring-red-500/25",     bg: "bg-red-500/[0.05]",     txt: "text-red-300",     Icon: ShieldX,     word: "CRITICAL" },
+    emerald: {
+        pill: "bg-emerald-500/10 border-emerald-500/25 text-emerald-300",
+        Icon: ShieldCheck,
+        word: "Normal",
+    },
+    amber: {
+        pill: "bg-amber-500/10 border-amber-500/25 text-amber-300",
+        Icon: ShieldAlert,
+        word: "Degraded",
+    },
+    red: {
+        pill: "bg-red-500/10 border-red-500/30 text-red-300",
+        Icon: ShieldX,
+        word: "Critical",
+    },
 } as const
 
 export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: StarlinkStatusHeaderProps) {
@@ -38,7 +55,7 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
     const freshness: "live" | "stale" | "error" =
         !status.available ? "error" : ageSec < 30 ? "live" : "stale"
 
-    const connectivity = !status.available ? "DISCONNECTED" : color === "amber" ? "DEGRADED" : "CONNECTED"
+    const connectivity = !status.available ? "Disconnected" : color === "amber" ? "Degraded" : "Connected"
     const isUpdating = !!status.software_update_state && status.software_update_state !== "IDLE" && status.software_update_state !== ""
     const updatePct = Math.max(0, Math.min(100, status.software_update_progress * 100))
     // outage_cause is empty when DishOutage is nil; UNKNOWN is the proto zero
@@ -47,95 +64,88 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
 
     return (
         <div className="space-y-2">
-            {/* Strip */}
-            <div className={`relative overflow-hidden rounded-xl ring-1 ${sem.ring} ${sem.bg} backdrop-blur-sm`}>
-                <div className="flex flex-wrap items-stretch divide-x divide-white/[0.04]">
-                    {/* Cell — semantic state */}
-                    <div className="flex items-center gap-2 px-3.5 py-2.5 min-w-0">
-                        <sem.Icon className={`w-3.5 h-3.5 ${sem.txt}`} aria-hidden />
-                        <div className="flex flex-col min-w-0">
-                            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">Status</span>
-                            <span className={`text-[11px] font-bold tracking-wider ${sem.txt}`}>{sem.word} · {connectivity}</span>
-                        </div>
-                    </div>
+            {/* Order matters at the two widths: on a phone the pill and the
+                alerts button share the first line and the facts wrap under
+                them; from sm up it is one row, facts in the middle. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap">
+                <span
+                    className={`order-1 flex h-7 shrink-0 items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold ${sem.pill}`}
+                >
+                    <sem.Icon className="h-3.5 w-3.5" aria-hidden />
+                    {sem.word} · {connectivity}
+                </span>
 
-                    {/* Cell — uptime */}
-                    {status.available && (
-                        <div className="flex flex-col justify-center px-3.5 py-2.5">
-                            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">Uptime</span>
-                            <span className="text-[11px] font-mono font-bold text-foreground tabular-nums">{formatUptime(status.uptime_s)}</span>
-                        </div>
-                    )}
+                <div className={`order-3 flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:order-2 sm:w-auto sm:flex-1 ${T.body} text-muted-foreground`}>
+                        {status.available && (
+                            <>
+                                <span>
+                                    <span className="font-medium tabular-nums text-foreground">{formatUptime(status.uptime_s)}</span> uptime
+                                </span>
+                                <Dot />
+                            </>
+                        )}
 
-                    {/* Cell — telemetry feed */}
-                    <div className="flex flex-col justify-center px-3.5 py-2.5">
-                        <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono flex items-center gap-1">
-                            <RadioTower className="w-2.5 h-2.5" /> Feed
-                        </span>
-                        <span className="text-[11px] font-mono font-bold flex items-center gap-1.5 tabular-nums">
+                        <span className="flex items-center gap-1.5">
                             <FreshnessLED state={freshness} />
                             <span className={
-                                freshness === "live" ? "text-emerald-300" :
-                                freshness === "stale" ? "text-amber-300" : "text-red-300"
+                                freshness === "live" ? "font-medium text-emerald-300"
+                                    : freshness === "stale" ? "font-medium text-amber-300"
+                                        : "font-medium text-red-300"
                             }>
-                                {freshness === "error" ? "ERROR" : freshness === "live" ? "LIVE" : "STALE"}
+                                {freshness === "error" ? "No feed" : freshness === "live" ? "Live" : "Stale"}
                             </span>
-                            <span className="text-muted-foreground/70 font-normal">
-                                {dataUpdatedAt ? `· ${formatRelative(dataUpdatedAt, now)}` : ""}
-                            </span>
+                            {dataUpdatedAt && <span>updated {formatRelative(dataUpdatedAt, now)}</span>}
                         </span>
-                    </div>
 
-                    {/* Cell — versions (collapses on mobile) */}
-                    {status.available && (
-                        <div className="hidden sm:flex flex-col justify-center px-3.5 py-2.5">
-                            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">HW · SW</span>
-                            <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
-                                {status.hardware_version || "—"} · {status.software_version || "—"}
+                        {status.available && status.software_version && (
+                            <span className="hidden items-center gap-2 sm:flex">
+                                <Dot />
+                                <span className="truncate font-mono text-[11px]">{status.software_version}</span>
                             </span>
-                        </div>
-                    )}
+                        )}
 
-                    {/* Spacer */}
-                    <div className="grow" />
-
-                    {/* Cell — alerts (always reachable) */}
-                    <button
-                        onClick={onAlertsClick}
-                        aria-label={`${alerts.length} active alerts. Open alerts panel.`}
-                        className={`flex items-center gap-2 px-3.5 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                            alerts.length === 0
-                                ? "hover:bg-emerald-500/10 text-emerald-300"
-                                : hasCritical
-                                ? "hover:bg-red-500/10 text-red-300"
-                                : "hover:bg-amber-500/10 text-amber-300"
-                        }`}
-                    >
-                        <Satellite className="w-3.5 h-3.5" />
-                        <div className="flex flex-col items-start">
-                            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground/60 font-mono">Alerts</span>
-                            <span className="text-[11px] font-bold font-mono tabular-nums">
-                                {alerts.length.toString().padStart(2, "0")}
-                                {alerts.length > 0 && <span className="ml-1 text-muted-foreground/60 font-normal">{hasCritical ? "CRIT" : "WARN"}</span>}
-                            </span>
-                        </div>
-                    </button>
+                        {isUpdating && (
+                            <>
+                                <Dot />
+                                <span className="flex items-center gap-2">
+                                    <span className="font-medium text-blue-300">Updating</span>
+                                    <span
+                                        className="h-1 w-16 overflow-hidden rounded-full bg-blue-500/15"
+                                        role="progressbar"
+                                        aria-label={`Software update ${updatePct.toFixed(0)}%`}
+                                        aria-valuenow={updatePct}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                    >
+                                        <span className="block h-full bg-blue-400 transition-[width] duration-700" style={{ width: `${updatePct}%` }} />
+                                    </span>
+                                    <span className="tabular-nums">{updatePct.toFixed(0)}%</span>
+                                </span>
+                            </>
+                        )}
                 </div>
 
-                {/* Software update — thin bleed bar at bottom edge */}
-                {isUpdating && (
-                    <div className="absolute inset-x-0 bottom-0 h-[3px] bg-blue-500/10">
-                        <div
-                            className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500 transition-[width] duration-700"
-                            style={{ width: `${updatePct}%` }}
-                            role="progressbar"
-                            aria-label={`Software update ${updatePct.toFixed(0)}%`}
-                            aria-valuenow={updatePct}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                        />
-                    </div>
-                )}
+                {/* Alerts was a cell in the strip with no affordance at all. It
+                    opens a drawer, so it looks like the page header's buttons. */}
+                <button
+                    type="button"
+                    onClick={onAlertsClick}
+                    aria-label={`${alerts.length} active alerts. Open alerts panel.`}
+                    className="order-2 ml-auto flex h-11 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 text-xs font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:order-3 sm:h-7"
+                >
+                    <Bell className={`h-3.5 w-3.5 ${alerts.length === 0 ? "text-muted-foreground" : hasCritical ? "text-red-400" : "text-amber-400"}`} aria-hidden />
+                    Alerts
+                    <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                        alerts.length === 0
+                            ? "bg-foreground/10 text-muted-foreground"
+                            : hasCritical
+                                ? "bg-red-500/15 text-red-300"
+                                : "bg-amber-500/15 text-amber-300"
+                    }`}>
+                        {alerts.length}
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" aria-hidden />
+                </button>
             </div>
 
             {/* Outage banner — full-width sibling */}
@@ -150,12 +160,12 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
                     />
                     <div className="relative flex items-center gap-3 px-4 py-2.5">
                         <AlertOctagon className="w-4 h-4 text-red-400 shrink-0" aria-hidden />
-                        <div className="flex flex-col min-w-0 grow">
-                            <span className="text-[9px] uppercase tracking-[0.2em] text-red-400/70 font-mono">Active Outage</span>
-                            <span className="text-xs font-bold text-red-300 truncate">
+                        <div className="flex min-w-0 grow flex-col">
+                            <span className={T.eyebrow}>Active outage</span>
+                            <span className="truncate text-xs font-bold text-red-300">
                                 {status.outage_cause}
                                 {status.outage_duration_ns > 0 && (
-                                    <span className="ml-2 text-red-400/70 font-mono font-normal">
+                                    <span className="ml-2 font-normal tabular-nums text-red-400/70">
                                         · {(status.outage_duration_ns / 1e9).toFixed(0)}s elapsed
                                     </span>
                                 )}
@@ -168,9 +178,13 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
     )
 }
 
+function Dot() {
+    return <span className="text-muted-foreground/40" aria-hidden>·</span>
+}
+
 function FreshnessLED({ state }: { state: "live" | "stale" | "error" }) {
     const cls = state === "live" ? "bg-emerald-400 shadow-emerald-500/60 animate-pulse"
         : state === "stale" ? "bg-amber-400 shadow-amber-500/40"
         : "bg-red-500 shadow-red-500/60"
-    return <span className={`w-1.5 h-1.5 rounded-full shadow-md ${cls}`} aria-hidden />
+    return <span className={`h-1.5 w-1.5 shrink-0 rounded-full shadow-md ${cls}`} aria-hidden />
 }

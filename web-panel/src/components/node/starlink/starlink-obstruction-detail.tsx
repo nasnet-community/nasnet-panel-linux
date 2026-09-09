@@ -1,5 +1,7 @@
 import type { StarlinkObstructionMap, StarlinkStatus } from "@/lib/types"
+import { formatDurationSecs } from "./starlink-helpers"
 import { StarlinkObstructionMapView } from "./starlink-obstruction-map"
+import { KeyValue } from "./starlink-ui"
 
 interface StarlinkObstructionDetailProps {
     status: StarlinkStatus
@@ -30,35 +32,20 @@ export function StarlinkObstructionDetail({ status, mapData }: StarlinkObstructi
                     compact={false}
                 />
             ) : (
-                <div className="flex items-center justify-center h-[280px] text-sm text-muted-foreground border-2 border-dashed border-white/5 rounded-2xl">
+                <div className="flex items-center justify-center h-[280px] text-sm text-muted-foreground rounded-2xl border-2 border-dashed border-border">
                     No obstruction map available
                 </div>
             )}
-            <div className="space-y-3 pt-3 border-t border-white/5">
-                <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground font-medium">Avg Prolonged Duration</span>
-                    <span className="font-mono font-bold">{status.avg_prolonged_obstruction_duration_s.toFixed(1)}s</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground font-medium">Avg Prolonged Interval</span>
-                    <span className="font-mono font-bold">{status.avg_prolonged_obstruction_interval_s.toFixed(1)}s</span>
-                </div>
+            <div className="space-y-2.5 border-t border-border pt-4">
+                <KeyValue label="Avg prolonged duration">{formatDurationSecs(status.avg_prolonged_obstruction_duration_s)}</KeyValue>
+                <KeyValue label="Avg prolonged interval">{formatDurationSecs(status.avg_prolonged_obstruction_interval_s)}</KeyValue>
                 {hasMap && (
                     <>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground font-medium">Reference Frame</span>
-                            <span className="font-mono font-bold">{frameLabel(mapData.reference_frame)}</span>
-                        </div>
+                        <KeyValue label="Reference frame">{frameLabel(mapData.reference_frame)}</KeyValue>
                         {mapData.max_theta_deg > 0 && (
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground font-medium">Field of View</span>
-                                <span className="font-mono font-bold">&plusmn;{mapData.max_theta_deg.toFixed(0)}&deg; from zenith</span>
-                            </div>
+                            <KeyValue label="Field of view">&plusmn;{mapData.max_theta_deg.toFixed(0)}&deg; from zenith</KeyValue>
                         )}
-                        <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground font-medium">Grid</span>
-                            <span className="font-mono font-bold">{mapData.num_cols}&times;{mapData.num_rows}</span>
-                        </div>
+                        <KeyValue label="Grid">{mapData.num_cols}&times;{mapData.num_rows}</KeyValue>
                     </>
                 )}
             </div>

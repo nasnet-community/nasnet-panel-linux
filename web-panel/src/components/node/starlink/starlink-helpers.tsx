@@ -2,7 +2,9 @@ import type { StarlinkStatus, StarlinkDataPoint } from "@/lib/types"
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-export type DrawerType = "signal" | "obstruction" | "latency" | "dropRate" | "download" | "upload" | "alerts" | null
+// "sky" is the merged Signal & Dish + Obstruction Map drawer — those were
+// two cards printing the same clear-sky figure from two sources.
+export type DrawerType = "sky" | "latency" | "dropRate" | "download" | "upload" | "alerts" | null
 export type TimeRange = "1h" | "6h" | "24h" | "7d"
 
 export interface AlertInfo {
@@ -37,6 +39,75 @@ export function formatUptime(seconds: number): string {
     return `${mins}m`
 }
 
+// formatDurationSecs renders a span the way an operator reads it. The raw
+// seconds the dish reports are fine for a machine and useless in a panel —
+// "Avg prolonged interval 43200.0s" is 12h.
+export function formatDurationSecs(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "0s"
+    if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
+    const mins = Math.floor(seconds / 60)
+    if (mins < 60) return `${mins}m`
+    const hours = Math.floor(mins / 60)
+    const remMins = mins % 60
+    if (hours < 24) return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`
+    const days = Math.floor(hours / 24)
+    const remHours = hours % 24
+    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`
+}
+
+// ─── Trend Helpers ──────────────────────────────────────────────────
+//
+// A trend arrow is only meaningful once you know which direction is good.
+// The tab used to colour every metric the same way — up amber, down emerald —
+// so a download collapsing to a fifth of its average rendered reassuring
+// green and an upload recovering rendered warning amber.
+
+export type MetricPolarity = "lower-better" | "higher-better"
+
+export interface TrendReading {
+    tone: "good" | "bad" | "flat"
+    deltaPct: number
+    /**
+     * True when the series average is too small for a percentage to carry
+     * information. Drop rate sitting at a real 0.0% produced "-100% vs avg
+     * 0.0%", which reads as a fault and is just arithmetic on noise.
+     */
+    steady: boolean
+}
+
+export function readTrend(
+    values: number[],
+    polarity: MetricPolarity,
+    /** Average below which a percentage is noise rather than signal. */
+    floor = 0,
+): TrendReading {
+    if (values.length < 2) return { tone: "flat", deltaPct: 0, steady: true }
+
+    const last = values[values.length - 1]
+    const avg = values.reduce((sum, v) => sum + v, 0) / values.length
+    if (avg <= floor) return { tone: "flat", deltaPct: 0, steady: true }
+
+    const deltaPct = ((last - avg) / avg) * 100
+    if (Math.abs(deltaPct) < 2) return { tone: "flat", deltaPct, steady: false }
+
+    const rising = deltaPct > 0
+    const good = polarity === "higher-better" ? rising : !rising
+    return { tone: good ? "good" : "bad", deltaPct, steady: false }
+}
+
+export function trendToneClass(tone: TrendReading["tone"]): string {
+    switch (tone) {
+        case "good": return "text-emerald-400"
+        case "bad": return "text-amber-400"
+        default: return "text-muted-foreground"
+    }
+}
+
+export function seriesAverage(values: number[]): number {
+    if (values.length === 0) return 0
+    return values.reduce((sum, v) => sum + v, 0) / values.length
+}
+
 // ─── Color Helpers ──────────────────────────────────────────────────
 
 export function latencyColor(ms: number): string {
@@ -69,30 +140,45 @@ export function healthDotColor(status: StarlinkStatus): "emerald" | "amber" | "r
 
 // ─── Obstruction Map Cell Classification ────────────────────────────
 //
-// `dish_get_obstruction_map` reports one float per sky cell: 0.0-1.0 for
-// measured directions and -1.0 for "never measured". Current firmware only
-// ever emits the endpoints — 1.0 = clear line of sight, 0.0 = obstructed —
-// so a continuous SNR gradient paints every clear cell mid-scale (the map
-// came out uniformly orange) and bucketing by ">3 = clear" never matched a
-// single cell. Treat it as the binary signal it is, while still tolerating
-// an intermediate value should firmware ever emit one.
+// `dish_get_obstruction_map` reports one float per sky cell: -1.0 for "never
+// measured" and 0.0–1.0 for measured directions, where 1.0 is a clear line
+// of sight and 0.0 is fully blocked. Firmware mostly emits the endpoints,
+// but not only — the dish at 192.168.100.1 had ~100 cells at 0.1–0.9 among
+// 4,800 measured (Sept 2026). Stats bucket a cell by which side of 0.5 it
+// falls on; the map paints intermediate cells between red and white so a
+// partly-blocked direction is not dressed up as either.
 
 export type ObstructionCell = "clear" | "obstructed" | "nodata"
 
+// The disc carries its own ground in both themes. Painting "clear" sky dark
+// so it would show up on a white card inverted the reading — a 99%-clear sky
+// came out as a near-black blob that looked like solid obstruction. Neutral
+// near-black, like the app, rather than the old navy.
+export const SKY_DISC_BG = "#09090b"
+
+// Same three inks as the Starlink app: white for clear view, red for
+// obstructions, faint grey for unmapped sky.
 export const OBSTRUCTION_COLORS = {
-    clear: "rgba(236,242,255,0.82)",
-    obstructed: "#ef4444",
-    nodata: "rgba(255,255,255,0.045)",
+    clear: "#f4f4f5",
+    obstructed: "#ef3340",
+    nodata: "rgba(255,255,255,0.2)",
 } as const
+
+const CLEAR_RGB = [244, 244, 245] as const
+const OBSTRUCTED_RGB = [239, 51, 64] as const
 
 export function classifyObstructionCell(v: number | null | undefined): ObstructionCell {
     if (v === null || v === undefined || Number.isNaN(v) || v < 0) return "nodata"
-    // Anything at/below the floor is blocked sky; the rest has a usable path.
-    return v <= 0 ? "obstructed" : "clear"
+    return v < 0.5 ? "obstructed" : "clear"
 }
 
+/** Cell colour for the disc: red → white as the cell goes 0 → 1. */
 export function obstructionCellColor(v: number | null | undefined): string {
-    return OBSTRUCTION_COLORS[classifyObstructionCell(v)]
+    if (v === null || v === undefined || Number.isNaN(v) || v < 0) return OBSTRUCTION_COLORS.nodata
+    if (v >= 1) return OBSTRUCTION_COLORS.clear
+    if (v <= 0) return OBSTRUCTION_COLORS.obstructed
+    const mix = (a: number, b: number) => Math.round(a + (b - a) * v)
+    return `rgb(${mix(OBSTRUCTED_RGB[0], CLEAR_RGB[0])},${mix(OBSTRUCTED_RGB[1], CLEAR_RGB[1])},${mix(OBSTRUCTED_RGB[2], CLEAR_RGB[2])})`
 }
 
 // ─── Alignment Helpers ──────────────────────────────────────────────
@@ -102,6 +188,17 @@ export function obstructionCellColor(v: number | null | undefined): string {
 // (FRAME_UT) obstruction map into compass coordinates.
 export function isAttitudeConverged(state: string | undefined): boolean {
     return state === "FILTER_CONVERGED"
+}
+
+// Whether the reported boresight azimuth can be used to place compass
+// points on the sky map. An older agent forwards the azimuth but not the
+// filter state (the panel sees ""), and the dish's own app labels its map
+// from that same azimuth — so absence is not a veto. Only an explicit
+// unconverged / reset / faulted state is.
+export function isHeadingTrusted(az: number | undefined, state: string | undefined): boolean {
+    if (typeof az !== "number" || !Number.isFinite(az)) return false
+    if (!state) return true
+    return isAttitudeConverged(state)
 }
 
 // An agent older than the extended-alignment fields sends zeroes and an empty

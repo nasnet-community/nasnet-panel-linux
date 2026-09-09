@@ -1,4 +1,3 @@
-import { Card } from "@/components/ui/card"
 import type { StarlinkStatus } from "@/lib/types"
 import {
     actuatorStateLabel,
@@ -8,6 +7,7 @@ import {
     hasAlignmentTelemetry,
     isAttitudeConverged,
 } from "./starlink-helpers"
+import { KeyValue, StarlinkCard, T } from "./starlink-ui"
 
 interface StarlinkAlignmentProps {
     status: StarlinkStatus
@@ -19,14 +19,7 @@ const TONE_TEXT = {
     red: "text-red-400",
 } as const
 
-const TONE_DOT = {
-    emerald: "bg-emerald-400",
-    amber: "bg-amber-400",
-    red: "bg-red-500",
-} as const
-
 const NEEDLE = "#f59e0b"
-const WEDGE = "rgba(255,255,255,0.22)"
 
 // polar → cartesian on an SVG canvas whose y axis grows downward.
 // `deg` is a clockwise bearing with 0 pointing up.
@@ -50,9 +43,9 @@ function wedgePath(cx: number, cy: number, r: number, fromDeg: number, toDeg: nu
 
 function TickRing({ cx, cy, r }: { cx: number; cy: number; r: number }) {
     const ticks = []
-    for (let deg = 0; deg < 360; deg += 5) {
+    for (let deg = 0; deg < 360; deg += 15) {
         const major = deg % 45 === 0
-        const len = major ? 6 : 3
+        const len = major ? 8 : 4
         const [x1, y1] = polar(cx, cy, r - len, deg)
         const [x2, y2] = polar(cx, cy, r, deg)
         ticks.push(
@@ -60,8 +53,8 @@ function TickRing({ cx, cy, r }: { cx: number; cy: number; r: number }) {
                 key={deg}
                 x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke="currentColor"
-                strokeWidth={major ? 1.4 : 1}
-                opacity={major ? 0.75 : 0.3}
+                strokeWidth={major ? 1.6 : 1.2}
+                opacity={major ? 0.7 : 0.28}
             />,
         )
     }
@@ -86,12 +79,12 @@ function RotationDial({ status }: { status: StarlinkStatus }) {
         Math.abs(((desiredAz - az + 540) % 360) - 180) > 1.5
 
     return (
-        <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-auto max-w-[220px]" role="img"
+        <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full max-w-[112px]" role="img"
             aria-label={`Dish rotation ${az.toFixed(0)} degrees, ${bearingToCardinal(az)}`}>
             <TickRing cx={c} cy={c} r={ringR} />
 
             {unc > 0.5 && (
-                <path d={wedgePath(c, c, ringR - 6, az - unc, az + unc)} fill={WEDGE} />
+                <path d={wedgePath(c, c, ringR - 6, az - unc, az + unc)} fill="currentColor" className="text-foreground" opacity={0.18} />
             )}
 
             {showDesired && (
@@ -100,20 +93,20 @@ function RotationDial({ status }: { status: StarlinkStatus }) {
                         const [dx, dy] = polar(c, c, ringR - 6, desiredAz)
                         return { x1: c, y1: c, x2: dx, y2: dy }
                     })()}
-                    stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} strokeDasharray="4 3"
+                    stroke="currentColor" className="text-foreground" opacity={0.45} strokeWidth={2} strokeDasharray="5 4"
                 />
             )}
 
             {/* Needle first, then the dish body on top — matches the dish UI,
                 where the terminal sits over its own heading line. */}
-            <line x1={c} y1={c} x2={needleX} y2={needleY} stroke={NEEDLE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={c} y1={c} x2={needleX} y2={needleY} stroke={NEEDLE} strokeWidth={3} strokeLinecap="round" />
             <rect x={c - 13} y={c - 8} width={26} height={30} rx={4}
-                fill={trusted ? "#f4f4f5" : "rgba(244,244,245,0.45)"} />
+                fill="currentColor" className="text-foreground" opacity={trusted ? 0.92 : 0.4} />
 
-            <text x={c} y={10} textAnchor="middle" className="fill-foreground text-[11px] font-bold">N</text>
-            <text x={c} y={size - 2} textAnchor="middle" className="fill-foreground text-[11px] font-bold">S</text>
-            <text x={size - 1} y={c + 4} textAnchor="end" className="fill-foreground text-[11px] font-bold">E</text>
-            <text x={1} y={c + 4} textAnchor="start" className="fill-foreground text-[11px] font-bold">W</text>
+            <text x={c} y={12} textAnchor="middle" className="fill-foreground text-[15px] font-bold">N</text>
+            <text x={c} y={size - 2} textAnchor="middle" className="fill-muted-foreground text-[15px] font-bold">S</text>
+            <text x={size - 1} y={c + 5} textAnchor="end" className="fill-muted-foreground text-[15px] font-bold">E</text>
+            <text x={1} y={c + 5} textAnchor="start" className="fill-muted-foreground text-[15px] font-bold">W</text>
         </svg>
     )
 }
@@ -146,68 +139,44 @@ function TiltDial({ status }: { status: StarlinkStatus }) {
     const [fx2, fy2] = polar(cx, cy, faceHalf, bearing(el) + 90)
 
     const ticks = []
-    for (let deg = 0; deg <= MAX_EL; deg += 5) {
+    for (let deg = 0; deg <= MAX_EL; deg += 15) {
         const major = deg % 45 === 0
-        const len = major ? 7 : 3.5
+        const len = major ? 9 : 4.5
         const [x1, y1] = polar(cx, cy, r - len, bearing(deg))
         const [x2, y2] = polar(cx, cy, r, bearing(deg))
         ticks.push(
             <line key={deg} x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke="currentColor" strokeWidth={major ? 1.4 : 1} opacity={major ? 0.75 : 0.3} />,
+                stroke="currentColor" strokeWidth={major ? 1.6 : 1.2} opacity={major ? 0.7 : 0.28} />,
         )
     }
-    const [horizonLx, horizonLy] = polar(cx, cy, r - 14, bearing(0))
-    const [zenithLx, zenithLy] = polar(cx, cy, r - 14, bearing(90))
+    const [horizonLx, horizonLy] = polar(cx, cy, r - 16, bearing(0))
+    const [zenithLx, zenithLy] = polar(cx, cy, r - 16, bearing(90))
 
     return (
-        <svg viewBox={`0 0 ${size} ${size}`} className="w-full h-auto max-w-[220px]" role="img"
+        <svg viewBox={`0 0 ${size} ${size}`} className="h-auto w-full max-w-[112px]" role="img"
             aria-label={`Dish elevation ${el.toFixed(0)} degrees, tilt ${status.tilt_angle_deg.toFixed(0)} degrees from vertical`}>
             <g className="text-foreground">{ticks}</g>
 
             {unc > 0.5 && (
-                <path d={wedgePath(cx, cy, r - 8, bearing(el) - unc, bearing(el) + unc)} fill={WEDGE} />
+                <path d={wedgePath(cx, cy, r - 8, bearing(el) - unc, bearing(el) + unc)} fill="currentColor" className="text-foreground" opacity={0.18} />
             )}
 
             {showDesired && (
                 <line x1={cx} y1={cy} x2={dx} y2={dy}
-                    stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} strokeDasharray="4 3" />
+                    stroke="currentColor" className="text-foreground" opacity={0.45} strokeWidth={2} strokeDasharray="5 4" />
             )}
 
-            <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={NEEDLE} strokeWidth={2} strokeLinecap="round" />
+            <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={NEEDLE} strokeWidth={3} strokeLinecap="round" />
             <line x1={fx1} y1={fy1} x2={fx2} y2={fy2}
-                stroke="#f4f4f5" strokeWidth={6} strokeLinecap="round" />
+                stroke="currentColor" className="text-foreground" strokeWidth={7} strokeLinecap="round" />
 
             {/* Without these the arc's two ends are indistinguishable. Both
                 are nudged off-axis so the needle can't sit on top of them. */}
-            <text x={horizonLx - 4} y={horizonLy - 6} textAnchor="end"
-                className="fill-muted-foreground text-[8px] font-medium">0°</text>
-            <text x={zenithLx - 7} y={zenithLy + 8} textAnchor="end"
-                className="fill-muted-foreground text-[8px] font-medium">90°</text>
+            <text x={horizonLx - 4} y={horizonLy - 8} textAnchor="end"
+                className="fill-muted-foreground text-[13px] font-medium">0°</text>
+            <text x={zenithLx - 8} y={zenithLy + 10} textAnchor="end"
+                className="fill-muted-foreground text-[13px] font-medium">90°</text>
         </svg>
-    )
-}
-
-function DialCard({
-    title, value, sub, tone, children,
-}: {
-    title: string
-    value: string
-    sub: string
-    tone: "emerald" | "amber" | "red"
-    children: React.ReactNode
-}) {
-    return (
-        <Card className="rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
-            <div className="flex items-center justify-between mb-1">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">{title}</p>
-                <span className={`w-1.5 h-1.5 rounded-full ${TONE_DOT[tone]}`} aria-hidden />
-            </div>
-            <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold tracking-tight tabular-nums">{value}</span>
-                <span className="text-[11px] text-muted-foreground">{sub}</span>
-            </div>
-            <div className="flex justify-center mt-2">{children}</div>
-        </Card>
     )
 }
 
@@ -219,46 +188,54 @@ export function StarlinkAlignment({ status }: StarlinkAlignmentProps) {
     const hasActuators = status.has_actuators === "HAS_ACTUATORS_YES"
 
     return (
-        <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Alignment</p>
-                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+        <StarlinkCard
+            title="Alignment"
+            // A bare amber dot in this slot told the reader nothing. The
+            // sentence it stood for is short enough to just print.
+            aside={
+                <span className={`${T.meta} truncate`}>
                     {hasTelemetry ? (
-                        <span>
-                            Attitude <span className={`font-bold ${TONE_TEXT[tone]}`}>{attitudeStateLabel(status.attitude_estimation_state)}</span>
+                        <>
+                            Attitude <span className={`font-semibold ${TONE_TEXT[tone]}`}>{attitudeStateLabel(status.attitude_estimation_state)}</span>
                             {status.attitude_uncertainty_deg > 0 && (
-                                <span className="text-muted-foreground/60"> &plusmn;{status.attitude_uncertainty_deg.toFixed(1)}&deg;</span>
+                                <span className="tabular-nums"> ±{status.attitude_uncertainty_deg.toFixed(1)}°</span>
                             )}
-                        </span>
+                        </>
                     ) : (
-                        <span className="text-muted-foreground/60">Attitude detail needs a newer node agent</span>
+                        "Attitude detail needs a newer node agent"
                     )}
+                </span>
+            }
+        >
+            <div className="grid grid-cols-2 gap-4 sm:flex sm:items-center sm:gap-5">
+                <div className="flex shrink-0 flex-col items-center gap-1.5">
+                    <RotationDial status={status} />
+                    <span className={`${T.meta} whitespace-nowrap`}>
+                        <span className="font-semibold tabular-nums text-foreground">{status.boresight_azimuth_deg.toFixed(0)}°</span>
+                        {" "}azimuth · {bearingToCardinal(status.boresight_azimuth_deg)}
+                    </span>
+                </div>
+
+                <div className="flex shrink-0 flex-col items-center gap-1.5">
+                    <TiltDial status={status} />
+                    <span className={`${T.meta} whitespace-nowrap`}>
+                        <span className="font-semibold tabular-nums text-foreground">{status.boresight_elevation_deg.toFixed(0)}°</span>
+                        {" "}elevation
+                    </span>
+                </div>
+
+                <div className="col-span-2 flex min-w-0 flex-1 flex-col gap-2 sm:col-auto">
+                    <KeyValue label="Tilt">{status.tilt_angle_deg.toFixed(1)}°</KeyValue>
+                    <KeyValue label="Mast">
+                        {status.alert_mast_not_near_vertical
+                            ? <span className="text-amber-400">Off vertical</span>
+                            : <span className="text-emerald-400">Near vertical</span>}
+                    </KeyValue>
                     {hasActuators && (
-                        <span className="hidden sm:inline">
-                            Motors <span className="font-bold text-foreground/80">{actuatorStateLabel(status.actuator_state)}</span>
-                        </span>
+                        <KeyValue label="Motors">{actuatorStateLabel(status.actuator_state)}</KeyValue>
                     )}
                 </div>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-                <DialCard
-                    title="Rotation"
-                    value={`${status.boresight_azimuth_deg.toFixed(0)}°`}
-                    sub={bearingToCardinal(status.boresight_azimuth_deg)}
-                    tone={tone}
-                >
-                    <RotationDial status={status} />
-                </DialCard>
-                <DialCard
-                    title="Tilt"
-                    value={`${status.boresight_elevation_deg.toFixed(0)}°`}
-                    sub={`elevation · ${status.tilt_angle_deg.toFixed(0)}° from vertical`}
-                    tone={tone}
-                >
-                    <TiltDial status={status} />
-                </DialCard>
-            </div>
-        </div>
+        </StarlinkCard>
     )
 }
