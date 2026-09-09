@@ -95,14 +95,6 @@ type InboundStats struct {
 	ActiveUsers   int   // Number of users on this inbound
 }
 
-// UpdateProgress represents the status of an agent update operation
-type UpdateProgress struct {
-	Step    string `json:"step"`    // init, connect, check_arch, prep_binary, upload, install, verify
-	Message string `json:"message"` // User-friendly message
-	Status  string `json:"status"`  // pending, running, success, error
-	Error   string `json:"error,omitempty"`
-}
-
 type NodeUsecase interface {
 	// Node Management
 	CreateNode(ctx context.Context, name, ip, country, datacenter string, apiPort, agentPort int, connectMode string, isStealth, isPersistentStealth bool) (*domain.Node, error)
@@ -192,8 +184,6 @@ type NodeUsecase interface {
 	CheckAgentHealth(ctx context.Context, id uint) (*domain.NodeHealth, error)
 	GetNodeWithSystemStats(ctx context.Context, id uint) (*domain.Node, error)
 	ListNodesWithSystemStats(ctx context.Context) ([]*domain.Node, error)
-	UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error
-	AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error
 
 	// Stats History
 	SyncNodeStats(ctx context.Context) error

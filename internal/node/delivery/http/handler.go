@@ -105,8 +105,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.GET("/:id/uptime", h.GetNodeUptimeEvents)
 
 		// Agent Management
-		nodes.GET("/:id/agent/update/stream", h.UpdateAgentStream)
-		nodes.POST("/:id/agent/update", h.UpdateAgent)
 		nodes.POST("/:id/agent/start", h.StartXray)
 		nodes.POST("/:id/agent/stop", h.StopXray)
 		nodes.POST("/:id/agent/restart", h.RestartXray)
@@ -1563,81 +1561,6 @@ func (h *Handler) DeleteFakeDNSSettings(c *gin.Context) {
 }
 
 // ==================== Agent Management ====================
-
-func (h *Handler) UpdateAgent(c *gin.Context) {
-	nodeID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
-		return
-	}
-
-	// Automated update using local binaries
-	if err := h.nodeUsecase.AutoUpdateAgent(c.Request.Context(), uint(nodeID), nil); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Agent update initiated successfully"})
-}
-
-func (h *Handler) UpdateAgentStream(c *gin.Context) {
-	nodeID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
-		return
-	}
-
-	// Set headers for SSE
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Transfer-Encoding", "chunked")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.Flush()
-
-	progressCh := make(chan usecase.UpdateProgress, 10)
-
-	// Start update in background
-	go func() {
-		defer close(progressCh)
-		if err := h.nodeUsecase.AutoUpdateAgent(c.Request.Context(), uint(nodeID), progressCh); err != nil {
-			// Error is already sent via channel by u.AutoUpdateAgent usually,
-			// but if it returns error logic that didn't send validation, we catch here.
-			progressCh <- usecase.UpdateProgress{
-				Step:    "complete",
-				Status:  "error",
-				Error:   err.Error(),
-				Message: "Update process failed",
-			}
-		}
-	}()
-
-	// Stream events with a 30s comment heartbeat so intermediaries don't
-	// close the connection during long-running steps (e.g. binary upload).
-	heartbeat := time.NewTicker(30 * time.Second)
-	defer heartbeat.Stop()
-
-	ctx := c.Request.Context()
-	for {
-		select {
-		case p, ok := <-progressCh:
-			if !ok {
-				return
-			}
-			jsonData, err := json.Marshal(p)
-			if err != nil {
-				continue
-			}
-			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
-			c.Writer.Flush()
-		case <-heartbeat.C:
-			fmt.Fprint(c.Writer, ": heartbeat\n\n")
-			c.Writer.Flush()
-		case <-ctx.Done():
-			return
-		}
-	}
-}
 
 func (h *Handler) StartXray(c *gin.Context) {
 	nodeID, err := strconv.Atoi(c.Param("id"))

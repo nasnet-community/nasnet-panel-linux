@@ -363,12 +363,6 @@ func (m *mockNodeUsecase) GetNodeWithSystemStats(context.Context, uint) (*nodeDo
 func (m *mockNodeUsecase) ListNodesWithSystemStats(context.Context) ([]*nodeDomain.Node, error) {
 	return nil, nil
 }
-func (m *mockNodeUsecase) UpdateAgentBinary(context.Context, uint, []byte, string, string, []byte) error {
-	return nil
-}
-func (m *mockNodeUsecase) AutoUpdateAgent(context.Context, uint, chan<- nodeUC.UpdateProgress) error {
-	return nil
-}
 
 // Stats History
 func (m *mockNodeUsecase) SyncNodeStats(context.Context) error            { return nil }

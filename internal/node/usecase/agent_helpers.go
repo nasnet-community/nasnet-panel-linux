@@ -817,45 +817,6 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 	return nil
 }
 
-// UpdateAgentBinary pushes a new agent binary to a node
-func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error {
-	log := logger.GetLogger()
-
-	node, err := u.nodeRepo.GetNode(ctx, nodeID)
-	if err != nil {
-		return err
-	}
-
-	client, err := u.getAgentClient(node)
-	if err != nil {
-		return fmt.Errorf("failed to connect to agent: %w", err)
-	}
-	defer closeAgentClient(client)
-
-	log.WithFields(map[string]interface{}{
-		"node_id":      nodeID,
-		"version":      version,
-		"binary_bytes": len(binaryContent),
-	}).Info("[UpdateAgentBinary] Pushing binary update")
-
-	result, err := client.SelfUpdate(ctx, binaryContent, checksum, version, true, signature, false)
-	if err != nil {
-		return fmt.Errorf("failed to update agent: %w", err)
-	}
-
-	if !result.Success {
-		return fmt.Errorf("agent update failed: %s", result.Message)
-	}
-
-	log.WithFields(map[string]interface{}{
-		"node_id":     nodeID,
-		"old_version": result.OldVersion,
-		"new_version": result.NewVersion,
-	}).Info("[UpdateAgentBinary] Update successful")
-
-	return nil
-}
-
 // SetXrayDeps injects optional xray binary distribution dependencies.
 func (u *nodeUsecase) SetXrayDeps(bm interface {
 	GetChecksum(version, arch string) (string, error)
