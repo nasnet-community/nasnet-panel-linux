@@ -1807,12 +1807,7 @@ const (
 // modernc sqlite driver registers under the same name as the panel's own
 // glebarez driver, and two registrations of "sqlite" panic at init.
 func (s *Server) TestOutbound(ctx context.Context, req *pb.OutboundTestRequest) (*pb.OutboundTestResponse, error) {
-	// A hub predating the option fields sends only config_link, test_url and
-	// timeout_seconds. Such a request relied on the previous handler, which
-	// always skipped TLS verification, so keep doing that for it — otherwise
-	// self-signed upstreams that used to pass would start reporting as broken.
-	legacyRequest := req.MaxDelayMs <= 0 && req.Retries <= 0
-	insecureTLS := req.InsecureTls || legacyRequest
+	insecureTLS := req.InsecureTls
 
 	maxDelay := req.MaxDelayMs
 	if maxDelay <= 0 {
