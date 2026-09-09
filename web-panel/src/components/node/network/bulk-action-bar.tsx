@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { HiOutlineBan, HiOutlineStatusOnline, HiOutlineTrash, HiOutlineX } from "react-icons/hi"
-import { Loader2 } from "lucide-react"
+import { Loader2, Power } from "lucide-react"
 
 interface BulkActionBarProps {
     count: number
@@ -10,10 +10,14 @@ interface BulkActionBarProps {
     onDisable: () => void
     onEnable: () => void
     onDelete: () => void
+    /** When given, a Test action (key T) joins the bar; loading via actionLoading === "bulk-test". */
+    onTest?: () => void
+    /** aria-label for the toolbar. Defaults to the inbound wording. */
+    label?: string
     actionLoading: string | null
 }
 
-export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, actionLoading }: BulkActionBarProps) {
+export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, onTest, label = "Bulk inbound actions", actionLoading }: BulkActionBarProps) {
     useEffect(() => {
         if (count === 0) return
         const onKey = (e: KeyboardEvent) => {
@@ -21,11 +25,12 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
             if (tag === "INPUT" || tag === "TEXTAREA") return
             if (e.key.toLowerCase() === "d" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onDisable() }
             else if (e.key.toLowerCase() === "e" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onEnable() }
+            else if (e.key.toLowerCase() === "t" && !e.metaKey && !e.ctrlKey && onTest) { e.preventDefault(); onTest() }
             else if (e.key === "Backspace" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onDelete() }
         }
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
-    }, [count, onDisable, onEnable, onDelete])
+    }, [count, onDisable, onEnable, onDelete, onTest])
 
     return (
         <AnimatePresence>
@@ -38,7 +43,7 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
                         exit={{ y: 40, opacity: 0 }}
                         transition={{ type: "spring", stiffness: 400, damping: 32 }}
                         role="toolbar"
-                        aria-label="Bulk inbound actions"
+                        aria-label={label}
                         className="hidden md:flex fixed left-1/2 -translate-x-1/2 z-50 items-stretch rounded-2xl border border-white/10 bg-background/85 backdrop-blur-xl shadow-2xl shadow-black/40 overflow-hidden"
                         style={{ bottom: "max(2rem, env(safe-area-inset-bottom))" }}
                     >
@@ -70,11 +75,21 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
                             <DockAction
                                 label="Enable"
                                 kbd="E"
-                                icon={HiOutlineStatusOnline}
+                                icon={Power}
                                 onClick={onEnable}
                                 loading={actionLoading === "bulk-enable"}
                                 color="emerald"
                             />
+                            {onTest && (
+                                <DockAction
+                                    label="Test"
+                                    kbd="T"
+                                    icon={HiOutlineStatusOnline}
+                                    onClick={onTest}
+                                    loading={actionLoading === "bulk-test"}
+                                    color="sky"
+                                />
+                            )}
                         </div>
 
                         {/* Destructive — separated */}
@@ -98,7 +113,7 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
                         exit={{ y: "100%" }}
                         transition={{ type: "spring", stiffness: 400, damping: 32 }}
                         role="toolbar"
-                        aria-label="Bulk inbound actions"
+                        aria-label={label}
                         className="md:hidden fixed inset-x-0 z-50 bg-background/95 backdrop-blur-xl border-t border-white/10 shadow-2xl shadow-black/40"
                         style={{ bottom: 0, paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
                     >
@@ -117,9 +132,10 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
                                 Cancel
                             </button>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 px-3 pb-3">
+                        <div className={cn("grid gap-2 px-3 pb-3", onTest ? "grid-cols-4" : "grid-cols-3")}>
                             <SheetAction label="Disable" icon={HiOutlineBan} onClick={onDisable} loading={actionLoading === "bulk-disable"} color="amber" />
-                            <SheetAction label="Enable" icon={HiOutlineStatusOnline} onClick={onEnable} loading={actionLoading === "bulk-enable"} color="emerald" />
+                            <SheetAction label="Enable" icon={Power} onClick={onEnable} loading={actionLoading === "bulk-enable"} color="emerald" />
+                            {onTest && <SheetAction label="Test" icon={HiOutlineStatusOnline} onClick={onTest} loading={actionLoading === "bulk-test"} color="sky" />}
                             <SheetAction label="Delete" icon={HiOutlineTrash} onClick={onDelete} loading={actionLoading === "bulk-delete"} color="red" destructive />
                         </div>
                     </motion.div>
@@ -135,13 +151,14 @@ function DockAction({ label, kbd, icon: Icon, onClick, loading, color, destructi
     icon: React.ComponentType<{ className?: string }>
     onClick: () => void
     loading: boolean
-    color: "amber" | "emerald" | "red"
+    color: "amber" | "emerald" | "red" | "sky"
     destructive?: boolean
 }) {
     const cm = {
         amber: "hover:bg-amber-500/15 text-amber-400 hover:text-amber-300",
         emerald: "hover:bg-emerald-500/15 text-emerald-400 hover:text-emerald-300",
         red: "hover:bg-red-500/20 text-red-400 hover:text-red-300",
+        sky: "hover:bg-sky-500/15 text-sky-400 hover:text-sky-300",
     } as const
     return (
         <button
@@ -168,13 +185,14 @@ function SheetAction({ label, icon: Icon, onClick, loading, color, destructive }
     icon: React.ComponentType<{ className?: string }>
     onClick: () => void
     loading: boolean
-    color: "amber" | "emerald" | "red"
+    color: "amber" | "emerald" | "red" | "sky"
     destructive?: boolean
 }) {
     const cm = {
         amber: "bg-amber-500/10 text-amber-400 border-amber-500/20 active:bg-amber-500/20",
         emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 active:bg-emerald-500/20",
         red: "bg-red-500/10 text-red-400 border-red-500/20 active:bg-red-500/20",
+        sky: "bg-sky-500/10 text-sky-400 border-sky-500/20 active:bg-sky-500/20",
     } as const
     return (
         <button

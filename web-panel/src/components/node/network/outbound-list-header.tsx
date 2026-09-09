@@ -1,40 +1,37 @@
 import { cn } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
-import { INBOUND_GRID, EXPIRED_CELL } from "./inbound-grid"
+import { OUTBOUND_GRID } from "./outbound-grid"
 import { SortableHead, PlainHead, type SortDir } from "./sortable-head"
 
-export type { SortDir }
-export type InboundSortField = "name" | "clients" | "traffic" | "expired"
+export type OutboundSortField = "name" | "usage" | "traffic" | "test"
 
-interface InboundListHeaderProps {
+interface OutboundListHeaderProps {
     allSelected: boolean
     someSelected: boolean
     onToggleAll: () => void
-    sortField: InboundSortField | null
+    sortField: OutboundSortField | null
     sortDir: SortDir
-    onSort: (field: InboundSortField) => void
+    onSort: (field: OutboundSortField) => void
 }
 
-export function InboundListHeader({
+export function OutboundListHeader({
     allSelected, someSelected, onToggleAll, sortField, sortDir, onSort,
-}: InboundListHeaderProps) {
+}: OutboundListHeaderProps) {
     const sort = { sortField, sortDir, onSort }
     return (
-        <div className={cn(INBOUND_GRID, "h-9 pl-2 pr-3 bg-muted/50 rounded-t-xl")}>
+        <div className={cn(OUTBOUND_GRID, "h-9 pl-2 pr-3 bg-muted/50 rounded-t-xl")}>
             <span />
             <Checkbox
                 checked={allSelected ? true : someSelected ? "indeterminate" : false}
                 onCheckedChange={onToggleAll}
-                aria-label="Select all inbounds"
+                aria-label="Select all outbounds"
             />
             <span />
             <SortableHead field="name" {...sort}>Name</SortableHead>
             <PlainHead>Protocol</PlainHead>
-            <SortableHead field="clients" align="right" {...sort}>Clients</SortableHead>
+            <SortableHead field="usage" align="right" {...sort}>Used by</SortableHead>
             <SortableHead field="traffic" align="right" {...sort}>Traffic</SortableHead>
-            <div className={EXPIRED_CELL}>
-                <SortableHead field="expired" align="right" {...sort}>Expired</SortableHead>
-            </div>
+            <SortableHead field="test" align="right" {...sort}>Test</SortableHead>
             <span />
         </div>
     )

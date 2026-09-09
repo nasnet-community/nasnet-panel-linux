@@ -4,10 +4,9 @@ import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -21,22 +20,10 @@ import {
     HiOutlineSwitchHorizontal,
     HiOutlineMap,
     HiOutlineDownload,
-    HiOutlineUpload,
     HiOutlinePlus,
-    HiOutlinePencil,
-    HiOutlineTrash,
-    HiChevronRight,
-    HiChevronDown,
-    HiOutlineClipboard,
-    HiOutlineUsers,
-    HiOutlineX,
-    HiOutlineBan,
-    HiOutlineClock,
-    HiOutlineStatusOnline,
-    HiOutlineCog,
     HiOutlineArrowsExpand,
 } from "react-icons/hi"
-import { cn, formatBytes, copyToClipboard, countryFlag, formatRelativeTime } from "@/lib/utils"
+import { cn, formatBytes, copyToClipboard } from "@/lib/utils"
 import { toast } from "sonner"
 import { InboundSettingsDialog } from "@/components/inbound/inbound-settings-dialog"
 import { MigrateInboundDialog } from "@/components/inbound/migrate-inbound-dialog"
@@ -82,13 +69,10 @@ import { NodeSettingsXray } from "./settings/node-settings-xray"
 import { HiOutlineCode, HiOutlineAdjustments } from "react-icons/hi"
 import { useAccountsByNode } from "@/lib/queries/use-accounts"
 import { type Account as NodeAccount } from "@/lib/api/accounts"
-import { ProtocolBadge, protocolColors } from "./protocol-badge"
 import { AnimatePresence, motion } from "framer-motion"
 import { SwipeableInboundRow } from "./swipeable-inbound-row"
 import { SwipeableOutboundRow } from "./swipeable-outbound-row"
 import { RoutingRulesTable } from "@/components/routing/routing-rules-table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { HiOutlineDotsVertical } from "react-icons/hi"
 import { OutboundTestResultDialog } from "@/components/outbound/outbound-test-result-dialog"
 import { OutboundTestSettingsCard } from "@/components/outbound/outbound-test-settings-card"
 import { BulkActionBar } from "./network/bulk-action-bar"
@@ -97,8 +81,23 @@ import { InboundListHeader, type InboundSortField, type SortDir } from "./networ
 import { InboundSectionHeader, type InboundSummary } from "./network/inbound-section-header"
 import { InboundDetailPanel } from "./network/inbound-detail-panel"
 import { buildInboundDetails } from "./network/inbound-details"
-import { HiOutlineCheckCircle, HiOutlineXCircle } from "react-icons/hi"
-import { Lock, Power, Loader2 } from "lucide-react"
+import { deleteNodeOutbound, toggleOutboundDisabled } from "@/lib/api/outbounds"
+import { DesktopOutboundRow } from "./network/desktop-outbound-row"
+import { OutboundListHeader, type OutboundSortField } from "./network/outbound-list-header"
+import { OutboundSectionHeader, type OutboundSummary } from "./network/outbound-section-header"
+import { ManagedOutboundList } from "./network/managed-outbound-list"
+import { OutboundDetailPanel } from "./network/outbound-detail-panel"
+import {
+    buildOutboundDetails,
+    buildOutboundUsage,
+    defaultOutboundTag,
+    partitionOutbounds,
+    canTestOutbound,
+    describeOutboundRoute,
+    outboundTraffic,
+    testEntryOf,
+    usageCount,
+} from "./network/outbound-details"
 
 // Mirrors Outbound.IsTestable() on the server. Blackhole discards traffic by
 // design, dns and loopback are internal routing targets, and an http proxy
@@ -171,16 +170,26 @@ export function NodeNetworkConfig({
 
     // Bulk selection state
     const [selectedInbounds, setSelectedInbounds] = useState<Set<number>>(new Set())
+    const [selectedOutbounds, setSelectedOutbounds] = useState<Set<number>>(new Set())
+    const [expandedOutbounds, setExpandedOutbounds] = useState<Set<number>>(new Set())
+    const [mountedOutboundPanels, setMountedOutboundPanels] = useState<Set<number>>(new Set())
+    const [outboundSort, setOutboundSort] = useState<{ field: OutboundSortField | null; dir: SortDir }>({
+        field: null,
+        dir: "desc",
+    })
 
-    // ESC key clears bulk selection
+    // ESC key clears bulk selection on whichever list has one
     React.useEffect(() => {
-        if (selectedInbounds.size === 0) return
+        if (selectedInbounds.size === 0 && selectedOutbounds.size === 0) return
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setSelectedInbounds(new Set())
+            if (e.key === "Escape") {
+                setSelectedInbounds(new Set())
+                setSelectedOutbounds(new Set())
+            }
         }
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
-    }, [selectedInbounds.size])
+    }, [selectedInbounds.size, selectedOutbounds.size])
 
     // Sub-tab persisted in URL via ?subtab=
     const VALID_SUBTABS = ["inbounds", "outbounds", "routing", "reverse", "dns", "settings", "config"] as const
@@ -209,7 +218,8 @@ export function NodeNetworkConfig({
 
     // Data via React Query — caches across tab switches and dedupes on refetch
     const { data: inbounds = [], isLoading: ibLoading } = useNodeInbounds(nodeId)
-    const { data: outbounds = [], isLoading: obLoading } = useNodeOutbounds(nodeId)
+    const { data: allOutbounds = [], isLoading: obLoading } = useNodeOutbounds(nodeId)
+    const { outbounds, managedOutbounds } = useMemo(() => partitionOutbounds(allOutbounds), [allOutbounds])
     const { data: routingRules = [], isLoading: rrLoading } = useNodeRouting(nodeId)
     const { data: balancingRules = [] } = useBalancingRules(nodeId)
     const { data: reverseProxies = [] } = useReverseProxies(nodeId)
@@ -368,6 +378,97 @@ export function NodeNetworkConfig({
         setMountedPanels(prev => prev.has(inboundId) ? prev : new Set(prev).add(inboundId))
     }
 
+    // --- Outbound list derivations ---
+
+    // Who routes to each outbound, from the rules and balancers already loaded.
+    const outboundUsage = useMemo(
+        () => buildOutboundUsage(allOutbounds, routingRules, balancingRules),
+        [allOutbounds, routingRules, balancingRules],
+    )
+    const defaultOutbound = useMemo(() => defaultOutboundTag(allOutbounds), [allOutbounds])
+    const outboundRoutes = useMemo(
+        () => new Map(outbounds.map(o => [o.id, describeOutboundRoute(o)] as const)),
+        [outbounds],
+    )
+    const outboundDetails = useMemo(
+        () => new Map(outbounds.map(o => [o.id, buildOutboundDetails(o)] as const)),
+        [outbounds],
+    )
+
+    const handleOutboundSort = (field: OutboundSortField) => {
+        setOutboundSort(prev => prev.field === field
+            ? { field, dir: prev.dir === "asc" ? "desc" : "asc" }
+            : { field, dir: field === "name" || field === "test" ? "asc" : "desc" })
+    }
+
+    const sortedOutbounds = useMemo(() => {
+        const field = outboundSort.field
+        if (!field) return outbounds
+        const key = (o: Outbound): string | number => {
+            switch (field) {
+                case "name": return o.tag.toLowerCase()
+                case "usage": return usageCount(outboundUsage.get(o.tag))
+                case "traffic": return outboundTraffic(o)
+                case "test": {
+                    // Ascending = best first: passing results by latency, then failures, then untested.
+                    const e = testEntryOf(o)
+                    if (!e) return 2_000_000
+                    return e.result.success ? e.result.latency_ms : 1_000_000
+                }
+            }
+        }
+        return [...outbounds].sort((a, b) => {
+            const ka = key(a), kb = key(b)
+            const cmp = typeof ka === "string" && typeof kb === "string"
+                ? ka.localeCompare(kb)
+                : (ka as number) - (kb as number)
+            return outboundSort.dir === "asc" ? cmp : -cmp
+        })
+    }, [outbounds, outboundSort, outboundUsage])
+
+    const outboundSummary = useMemo<OutboundSummary>(() => {
+        let trafficBytes = 0
+        let unused = 0
+        let lastTestedAt: string | null = null
+        outbounds.forEach(o => {
+            trafficBytes += outboundTraffic(o)
+            if (o.last_tested_at && (!lastTestedAt || o.last_tested_at > lastTestedAt)) lastTestedAt = o.last_tested_at
+            if (!o.is_disabled && o.tag !== defaultOutbound && usageCount(outboundUsage.get(o.tag)) === 0) unused++
+        })
+        return {
+            total: allOutbounds.length,
+            disabled: outbounds.filter(o => o.is_disabled).length,
+            unused,
+            trafficBytes,
+            lastTestedAt,
+        }
+    }, [outbounds, allOutbounds.length, outboundUsage, defaultOutbound])
+
+    const toggleOutboundExpand = (outboundId: number) => {
+        setExpandedOutbounds(prev => {
+            const next = new Set(prev)
+            if (next.has(outboundId)) next.delete(outboundId)
+            else next.add(outboundId)
+            return next
+        })
+        setMountedOutboundPanels(prev => prev.has(outboundId) ? prev : new Set(prev).add(outboundId))
+    }
+
+    const toggleOutboundSelection = (outboundId: number) => {
+        setSelectedOutbounds(prev => {
+            const next = new Set(prev)
+            if (next.has(outboundId)) next.delete(outboundId)
+            else next.add(outboundId)
+            return next
+        })
+    }
+
+    const toggleAllOutbounds = () => {
+        setSelectedOutbounds(prev => prev.size === outbounds.length ? new Set() : new Set(outbounds.map(o => o.id)))
+    }
+
+    const clearOutboundSelection = () => setSelectedOutbounds(new Set())
+
     // Dialog States
     const [inboundDialog, setInboundDialog] = useState<{
         open: boolean
@@ -407,15 +508,6 @@ export function NodeNetworkConfig({
     const dialogOutbound = testResultDialog.outboundId !== null
         ? outbounds.find(o => o.id === testResultDialog.outboundId) ?? null
         : null
-
-    // Results live on the outbound itself, so a fresh test and a value loaded
-    // from the server render through the same path.
-    const testEntryFor = (outbound: Outbound): OutboundTestEntry | null => {
-        if (outbound.last_test_result && outbound.last_tested_at) {
-            return { result: outbound.last_test_result, tested_at: outbound.last_tested_at }
-        }
-        return null
-    }
 
     // Pending rules generated by the settings card (not yet saved to DB)
     const [pendingPresetRules, setPendingPresetRules] = useState<Partial<RoutingRule>[]>([])
@@ -608,6 +700,7 @@ export function NodeNetworkConfig({
     }
 
     const handleDeleteOutbound = async (outbound: Outbound) => {
+        if (outbound.managed || outbound.id <= 0) return
         const ok = await confirm({
             title: "Delete outbound",
             description: <>Delete outbound <span className="font-mono font-semibold">{outbound.tag}</span>? This cannot be undone.</>,
@@ -624,6 +717,7 @@ export function NodeNetworkConfig({
     }
 
     const handleToggleOutbound = async (outbound: Outbound) => {
+        if (outbound.managed || outbound.id <= 0) return
         try {
             await toggleOutbound.mutateAsync(outbound)
             onRefresh?.()
@@ -646,6 +740,7 @@ export function NodeNetworkConfig({
         speedtest = false,
         opts?: { silent?: boolean },
     ): Promise<OutboundTestEntry | null> => {
+        if (!canTestOutbound(outbound)) return null
         markTesting(outbound.id, true)
         try {
             const entry = await testOutboundMut.mutateAsync({ outboundId: outbound.id, speedtest })
@@ -675,12 +770,9 @@ export function NodeNetworkConfig({
         }
     }
 
-    // Test All: a plain worker pool over the per-outbound endpoint. Speedtest is
-    // deliberately off here — running it across every upstream burns real traffic.
-    const handleTestAllOutbounds = async () => {
-        // Managed rows are synthesised per config build and have no stored id,
-        // so there is no outbound for the test endpoint to look up.
-        const queue = outbounds.filter(o => !o.managed && !o.is_disabled && TESTABLE_OUTBOUND_PROTOCOLS(o.protocol))
+    // A plain worker pool over the per-outbound endpoint. Speedtest is
+    // deliberately off here — running it across many upstreams burns real traffic.
+    const runTestQueue = async (queue: Outbound[]) => {
         if (queue.length === 0) {
             toast.info("No testable outbounds")
             return
@@ -709,6 +801,88 @@ export function NodeNetworkConfig({
         } else {
             toast.warning(`${passed} passed, ${failed} failed`)
         }
+    }
+
+    const testableOutbounds = (source: Outbound[]) =>
+        source.filter(o => !o.is_disabled && canTestOutbound(o))
+
+    const handleTestAllOutbounds = () => runTestQueue(testableOutbounds(outbounds))
+
+    const handleBulkOutboundTest = async () => {
+        const queue = testableOutbounds(outbounds.filter(o => selectedOutbounds.has(o.id)))
+        setSelectedOutbounds(new Set())
+        await runTestQueue(queue)
+    }
+
+    const handleBulkOutboundDelete = async () => {
+        const count = selectedOutbounds.size
+        if (count === 0) return
+        const selected = outbounds.filter(o => selectedOutbounds.has(o.id))
+        const ids = selected.map(o => o.id)
+        const referenced = selected.filter(o => usageCount(outboundUsage.get(o.tag)) > 0).length
+        const confirmed = await confirm({
+            title: `Delete ${count} outbound${count > 1 ? "s" : ""}`,
+            description: `This will permanently delete ${count} outbound${count > 1 ? "s" : ""}.`
+                + (referenced > 0 ? ` ${referenced} of them ${referenced === 1 ? "is" : "are"} targeted by routing rules.` : ""),
+            confirmLabel: "Delete",
+            variant: "destructive",
+            ...(count > 5 ? { typeToConfirm: String(count) } : {}),
+        })
+        if (!confirmed) return
+
+        setActionLoading("bulk-delete")
+        const idToTag = new Map(outbounds.map(o => [o.id, o.tag] as const))
+        const results = await Promise.allSettled(ids.map(id => deleteNodeOutbound(nodeId, id)))
+
+        const failedTags: string[] = []
+        let okCount = 0
+        results.forEach((r, idx) => {
+            if (r.status === "fulfilled" && r.value.success) okCount++
+            else failedTags.push(idToTag.get(ids[idx]) || `#${ids[idx]}`)
+        })
+
+        if (failedTags.length === 0) {
+            toast.success(`Deleted ${okCount} outbound(s)`)
+        } else {
+            toast.warning(`Deleted ${okCount}, failed ${failedTags.length}: ${failedTags.slice(0, 3).join(", ")}${failedTags.length > 3 ? "…" : ""}`)
+        }
+
+        setSelectedOutbounds(new Set())
+        setActionLoading(null)
+        queryClient.invalidateQueries({ queryKey: queryKeys.nodeOutbounds(nodeId) })
+        onRefresh?.()
+    }
+
+    const handleBulkOutboundToggle = async (disable: boolean) => {
+        if (selectedOutbounds.size === 0) return
+
+        const targets = outbounds.filter(o => selectedOutbounds.has(o.id) && o.is_disabled !== disable)
+        if (targets.length === 0) {
+            toast.info(`All selected outbounds are already ${disable ? "disabled" : "enabled"}`)
+            return
+        }
+
+        setActionLoading(disable ? "bulk-disable" : "bulk-enable")
+        const results = await Promise.allSettled(targets.map(o => toggleOutboundDisabled(o.id)))
+
+        const failedTags: string[] = []
+        let okCount = 0
+        results.forEach((r, idx) => {
+            if (r.status === "fulfilled" && r.value.success) okCount++
+            else failedTags.push(targets[idx].tag)
+        })
+
+        const verb = disable ? "Disabled" : "Enabled"
+        if (failedTags.length === 0) {
+            toast.success(`${verb} ${okCount} outbound(s)`)
+        } else {
+            toast.warning(`${verb} ${okCount}, failed ${failedTags.length}: ${failedTags.slice(0, 3).join(", ")}${failedTags.length > 3 ? "…" : ""}`)
+        }
+
+        setSelectedOutbounds(new Set())
+        setActionLoading(null)
+        queryClient.invalidateQueries({ queryKey: queryKeys.nodeOutbounds(nodeId) })
+        onRefresh?.()
     }
 
     // Routing CRUD
@@ -816,7 +990,7 @@ export function NodeNetworkConfig({
                         >
                             <HiOutlineSwitchHorizontal className="w-4 h-4 mr-1.5 md:mr-2" />
                             Outbounds
-                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{outbounds.length}</Badge>
+                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{allOutbounds.length}</Badge>
                         </TabsTrigger>
                         <TabsTrigger
                             value="routing"
@@ -1010,333 +1184,153 @@ export function NodeNetworkConfig({
 
                 {/* Outbounds Content */}
                 <TabsContent value="outbounds" className="animate-in fade-in-50 duration-300">
-                    <Card className="border-0 shadow-none bg-transparent">
-                        {/* Mobile header - just title */}
-                        <div className="flex md:hidden items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold">Outbounds</h3>
-                        </div>
-                        {/* Desktop header */}
-                        <div className="hidden md:flex items-center justify-between mb-4">
-                            <div>
-                                <h3 className="text-lg font-semibold">Outbound Defaults</h3>
-                                <p className="text-sm text-muted-foreground">Manage upstream proxies and routing targets</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleTestAllOutbounds}
-                                    disabled={!!testAllProgress || outbounds.length === 0}
-                                >
-                                    <HiOutlineStatusOnline className={cn("w-4 h-4 mr-2", testAllProgress && "animate-pulse")} />
-                                    {testAllProgress ? `Testing ${testAllProgress.done}/${testAllProgress.total}…` : "Test All"}
-                                </Button>
-                                <Button size="sm" onClick={() => setOutboundDialog({ open: true, mode: "create", outbound: null })}>
-                                    <HiOutlinePlus className="w-4 h-4 mr-2" />
-                                    Add Outbound
-                                </Button>
-                            </div>
-                        </div>
+                    <TooltipProvider delayDuration={200}>
+                        <div className="space-y-4">
+                            <OutboundSectionHeader
+                                summary={outboundSummary}
+                                testAllProgress={testAllProgress}
+                                canTestAll={testableOutbounds(outbounds).length > 0}
+                                onTestAll={handleTestAllOutbounds}
+                                onAdd={() => setOutboundDialog({ open: true, mode: "create", outbound: null })}
+                            />
 
-                        {/* Mobile outbound list */}
-                        {outbounds.length > 0 && (
-                            <div className="md:hidden divide-y rounded-xl border overflow-hidden mb-4">
-                                {outbounds.map((outbound) => outbound.managed ? (
-                                    // No row behind it, so there is nothing to swipe towards.
-                                    <div key={`managed:${outbound.tag}`} className="flex items-center gap-2 px-4 py-3">
-                                        <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground/60" />
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-mono font-semibold truncate">{outbound.tag}</span>
-                                                <Badge variant="secondary" className="text-[10px]">Managed</Badge>
-                                            </div>
-                                            {outbound.remark && (
-                                                <p className="text-xs text-muted-foreground truncate">{outbound.remark}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <SwipeableOutboundRow
-                                        key={outbound.id}
-                                        outbound={outbound}
-                                        shouldClose={openSwipeOutboundId !== null && openSwipeOutboundId !== outbound.id}
-                                        onOpen={setOpenSwipeOutboundId}
-                                        onEdit={(ob) => setOutboundDialog({ open: true, mode: "edit", outbound: ob })}
-                                        onDelete={handleDeleteOutbound}
-                                        onToggleDisabled={handleToggleOutbound}
-                                        onTest={(ob) => handleTestOutbound(ob)}
-                                        isTesting={testingIds.has(outbound.id)}
-                                        testDisabled={!TESTABLE_OUTBOUND_PROTOCOLS(outbound.protocol) || !!testAllProgress}
-                                        testEntry={testEntryFor(outbound)}
-                                        onViewTestResult={(ob) => setTestResultDialog({ open: true, outboundId: ob.id, outboundTag: ob.tag })}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                        {outbounds.length === 0 && (
-                            <div className="md:hidden flex flex-col items-center justify-center py-12 text-muted-foreground">
-                                <HiOutlineSwitchHorizontal className="w-12 h-12 opacity-50 mb-4" />
-                                <p>No outbounds configured</p>
-                            </div>
-                        )}
+                            <ManagedOutboundList
+                                outbounds={managedOutbounds}
+                                usage={outboundUsage}
+                                defaultTag={defaultOutbound}
+                                onOpenRules={() => setRoutingView("rules")}
+                            />
 
-                        {/* Desktop outbound table */}
-                        <TooltipProvider>
-                        <div className="hidden md:block rounded-2xl border bg-card/50 backdrop-blur-sm border-white/5 overflow-hidden">
                             {outbounds.length > 0 ? (
-                                <Table className="[&_th]:border-r [&_th]:border-border/40 [&_th:last-child]:border-r-0 [&_td]:border-r [&_td]:border-border/40 [&_td:last-child]:border-r-0">
-                                    <TableHeader>
-                                        <TableRow className="bg-muted/50">
-                                            <TableHead className="w-[200px]">Outbound</TableHead>
-                                            <TableHead>Configuration</TableHead>
-                                            <TableHead>Details</TableHead>
-                                            <TableHead className="w-[140px] text-center">Traffic</TableHead>
-                                            <TableHead className="w-[160px] text-center">Test Result</TableHead>
-                                            <TableHead className="w-[60px] text-center">Test</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {outbounds.map((outbound) => {
-                                            // Build destination display
-                                            let destination = "—"
-                                            if (outbound.address && outbound.port) {
-                                                destination = `${outbound.address}:${outbound.port}`
-                                            } else if (outbound.protocol === "freedom") {
-                                                destination = "Direct"
-                                            } else if (outbound.protocol === "blackhole") {
-                                                destination = "Blocked"
-                                            }
+                                <div className="space-y-3">
+                                    <BulkActionBar
+                                        label="Bulk outbound actions"
+                                        count={selectedOutbounds.size}
+                                        onCancel={clearOutboundSelection}
+                                        onDisable={() => handleBulkOutboundToggle(true)}
+                                        onEnable={() => handleBulkOutboundToggle(false)}
+                                        onDelete={handleBulkOutboundDelete}
+                                        onTest={handleBulkOutboundTest}
+                                        actionLoading={actionLoading}
+                                    />
 
-                                            // Build details string
-                                            const details: string[] = []
-                                            if (outbound.security === "tls" && outbound.tls_settings?.serverName) {
-                                                details.push(`SNI: ${outbound.tls_settings.serverName}`)
-                                            }
-                                            if (outbound.security === "reality" && outbound.reality_settings?.serverNames?.[0]) {
-                                                details.push(`SNI: ${outbound.reality_settings.serverNames[0]}`)
-                                            }
-                                            if (outbound.transport_settings?.host) {
-                                                details.push(`Host: ${outbound.transport_settings.host}`)
-                                            }
-                                            if (outbound.transport_settings?.path) {
-                                                details.push(`Path: ${outbound.transport_settings.path}`)
-                                            }
-                                            if (outbound.vless_settings?.flow) {
-                                                details.push(`Flow: ${outbound.vless_settings.flow}`)
-                                            }
-
-                                            // Special styling for freedom/blackhole
-                                            const isSpecial = outbound.protocol === "freedom" || outbound.protocol === "blackhole"
-                                            const entry = testEntryFor(outbound)
-                                            const isTesting = testingIds.has(outbound.id)
-                                            const canTest = TESTABLE_OUTBOUND_PROTOCOLS(outbound.protocol)
-                                            const hasTraffic = (outbound.uplink && outbound.uplink > 0) || (outbound.downlink && outbound.downlink > 0)
-
+                                    {/* Mobile list — swipe for actions, tap to expand */}
+                                    <div className="md:hidden divide-y rounded-xl border overflow-hidden">
+                                        <div className="flex items-center justify-between px-3 py-2 bg-muted/50">
+                                            <label className="flex items-center gap-2.5 text-sm text-muted-foreground cursor-pointer select-none">
+                                                <Checkbox
+                                                    checked={selectedOutbounds.size === outbounds.length && outbounds.length > 0}
+                                                    onCheckedChange={toggleAllOutbounds}
+                                                    aria-label="Select all outbounds"
+                                                />
+                                                {selectedOutbounds.size > 0 ? `${selectedOutbounds.size} selected` : "Select all"}
+                                            </label>
+                                        </div>
+                                        {sortedOutbounds.map((outbound) => {
+                                            const usage = outboundUsage.get(outbound.tag) ?? { rules: [], balancers: [] }
+                                            const route = outboundRoutes.get(outbound.id) ?? ""
+                                            const details = outboundDetails.get(outbound.id) ?? []
                                             return (
-                                                <TableRow
-                                                    key={outbound.managed ? `managed:${outbound.tag}` : outbound.id}
-                                                    className={cn("group", outbound.is_disabled && "opacity-50")}
-                                                >
-                                                    {/* Outbound */}
-                                                    <TableCell>
-                                                        <div className="flex items-start gap-2">
-                                                            {/* Rewritten on every config build, so an edit here is thrown away. */}
-                                                            {outbound.managed ? (
-                                                                <Tooltip>
-                                                                    <TooltipTrigger asChild>
-                                                                        <span className="mt-0.5 shrink-0 p-1 text-muted-foreground/60">
-                                                                            <Lock className="w-3.5 h-3.5" />
-                                                                        </span>
-                                                                    </TooltipTrigger>
-                                                                    <TooltipContent className="max-w-xs">
-                                                                        Router mode writes this one itself on every config
-                                                                        build, so it cannot be edited or removed.
-                                                                    </TooltipContent>
-                                                                </Tooltip>
-                                                            ) : (
-                                                            <DropdownMenu>
-                                                                <DropdownMenuTrigger asChild>
-                                                                    <button aria-label="Outbound actions" className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors mt-0.5 shrink-0 opacity-60 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                                                                        <HiOutlineDotsVertical className="w-4 h-4" />
-                                                                    </button>
-                                                                </DropdownMenuTrigger>
-                                                                <DropdownMenuContent align="start">
-                                                                    <DropdownMenuItem onClick={() => setOutboundDialog({ open: true, mode: "edit", outbound })}>
-                                                                        <HiOutlinePencil className="w-4 h-4 mr-2" />
-                                                                        Edit
-                                                                    </DropdownMenuItem>
-                                                                    {canTest && outbound.protocol !== "freedom" && (
-                                                                        <DropdownMenuItem
-                                                                            onClick={() => handleTestOutbound(outbound, true)}
-                                                                            disabled={isTesting || !!testAllProgress}
-                                                                        >
-                                                                            <HiOutlineStatusOnline className="w-4 h-4 mr-2" />
-                                                                            Test with speedtest
-                                                                        </DropdownMenuItem>
-                                                                    )}
-                                                                    <DropdownMenuItem onClick={() => handleToggleOutbound(outbound)}>
-                                                                        {outbound.is_disabled ? <Power className="w-4 h-4 mr-2" /> : <HiOutlineBan className="w-4 h-4 mr-2" />}
-                                                                        {outbound.is_disabled ? "Enable" : "Disable"}
-                                                                    </DropdownMenuItem>
-                                                                    <DropdownMenuItem onClick={() => handleDeleteOutbound(outbound)} className="text-red-500 focus:text-red-500">
-                                                                        <HiOutlineTrash className="w-4 h-4 mr-2" />
-                                                                        Delete
-                                                                    </DropdownMenuItem>
-                                                                </DropdownMenuContent>
-                                                            </DropdownMenu>
-                                                            )}
-                                                            <div className="space-y-1 min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-mono font-semibold">{outbound.tag}</span>
-                                                                    {outbound.managed && (
-                                                                        <Badge variant="secondary" className="text-[10px]">Managed</Badge>
-                                                                    )}
-                                                                </div>
-                                                                <p className={cn(
-                                                                    "text-xs font-mono truncate max-w-[160px]",
-                                                                    isSpecial ? "text-primary font-medium" : "text-muted-foreground"
-                                                                )}>
-                                                                    {destination}
-                                                                </p>
-                                                                {outbound.remark && (
-                                                                    <p className="text-xs text-muted-foreground/70 truncate max-w-[160px]">{outbound.remark}</p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </TableCell>
-                                                    {/* Configuration */}
-                                                    <TableCell>
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            <ProtocolBadge protocol={outbound.protocol} />
-                                                            {/* The mark is what picks the uplink — why these exist. */}
-                                                            {outbound.managed && outbound.sockopt_settings?.mark ? (
-                                                                <Badge variant="outline" className="text-xs font-mono">
-                                                                    mark 0x{outbound.sockopt_settings.mark.toString(16)}
-                                                                </Badge>
-                                                            ) : null}
-                                                            {!isSpecial && (
-                                                                <>
-                                                                    <Badge variant="outline" className="text-xs">{outbound.network || "tcp"}</Badge>
-                                                                    <Badge
-                                                                        variant={outbound.security === "reality" ? "success" : outbound.security === "tls" ? "default" : "secondary"}
-                                                                        className="text-xs"
-                                                                    >
-                                                                        {outbound.security || "none"}
-                                                                    </Badge>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </TableCell>
-                                                    {/* Details */}
-                                                    <TableCell>
-                                                        {details.length > 0 ? (
-                                                            <p className="text-xs text-muted-foreground truncate max-w-[250px]">
-                                                                {details.join(" • ")}
-                                                            </p>
-                                                        ) : (
-                                                            <span className="text-xs text-muted-foreground/50">—</span>
-                                                        )}
-                                                    </TableCell>
-                                                    {/* Traffic */}
-                                                    <TableCell className="text-center">
-                                                        {hasTraffic ? (
-                                                            <Badge variant="outline" className="text-xs font-mono bg-emerald-500/5 border-emerald-500/20 text-emerald-400">
-                                                                <HiOutlineUpload className="w-3 h-3 mr-1 inline" />
-                                                                {formatBytes(outbound.uplink || 0)}
-                                                                <span className="mx-1 text-muted-foreground/50">/</span>
-                                                                {formatBytes(outbound.downlink || 0)}
-                                                                <HiOutlineDownload className="w-3 h-3 ml-1 inline" />
-                                                            </Badge>
-                                                        ) : (
-                                                            <span className="text-xs text-muted-foreground/50">—</span>
-                                                        )}
-                                                    </TableCell>
-                                                    {/* Test Result */}
-                                                    <TableCell className="text-center">
-                                                        {!canTest ? (
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <span className="text-[11px] font-medium text-muted-foreground/60 cursor-help">N/A</span>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    A {outbound.protocol} outbound has no upstream to probe
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        ) : entry ? (
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    <button
-                                                                        onClick={() => setTestResultDialog({ open: true, outboundId: outbound.id, outboundTag: outbound.tag })}
-                                                                        className="inline-flex flex-col items-center gap-0.5 cursor-pointer hover:opacity-80 transition-opacity"
-                                                                    >
-                                                                        <span className="inline-flex items-center gap-1">
-                                                                            {entry.result.status === "not_applicable" ? (
-                                                                                <span className="text-[11px] font-medium text-muted-foreground/70">N/A</span>
-                                                                            ) : entry.result.success ? (
-                                                                                <HiOutlineCheckCircle className="w-5 h-5 text-emerald-500" />
-                                                                            ) : (
-                                                                                <HiOutlineXCircle className="w-5 h-5 text-red-500" />
-                                                                            )}
-                                                                            {entry.result.country && (
-                                                                                <span className="text-sm leading-none">{countryFlag(entry.result.country)}</span>
-                                                                            )}
-                                                                            {entry.result.latency_ms > 0 && (
-                                                                                <span className={cn(
-                                                                                    "text-[10px] font-mono font-medium",
-                                                                                    entry.result.latency_ms < 300 ? "text-emerald-500" :
-                                                                                    entry.result.latency_ms < 800 ? "text-amber-500" : "text-red-500"
-                                                                                )}>
-                                                                                    {entry.result.latency_ms}ms
-                                                                                </span>
-                                                                            )}
-                                                                        </span>
-                                                                        <span className="text-[10px] text-muted-foreground/60">
-                                                                            {formatRelativeTime(entry.tested_at)}
-                                                                        </span>
-                                                                    </button>
-                                                                </TooltipTrigger>
-                                                                <TooltipContent>
-                                                                    {entry.result.ip
-                                                                        ? `Exit IP: ${entry.result.ip}`
-                                                                        : entry.result.error || entry.result.message || "No details"}
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        ) : (
-                                                            <span className="text-xs text-muted-foreground/50">—</span>
-                                                        )}
-                                                    </TableCell>
-                                                    {/* Test Action */}
-                                                    <TableCell className="text-center">
-                                                        {outbound.managed ? (
-                                                            <span className="text-xs text-muted-foreground/50">—</span>
-                                                        ) : (
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    onClick={() => handleTestOutbound(outbound)}
-                                                                    disabled={isTesting || !canTest || !!testAllProgress}
-                                                                    className="text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-40"
-                                                                >
-                                                                    <HiOutlineStatusOnline className={cn("w-5 h-5", isTesting && "animate-pulse")} />
-                                                                </Button>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent>
-                                                                {canTest ? "Test connectivity" : `Nothing to test for a ${outbound.protocol} outbound`}
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                        )}
-                                                    </TableCell>
-                                                </TableRow>
+                                                <SwipeableOutboundRow
+                                                    key={outbound.id}
+                                                    outbound={outbound}
+                                                    route={route}
+                                                    trafficBytes={outboundTraffic(outbound)}
+                                                    isDefault={outbound.tag === defaultOutbound}
+                                                    isSelected={selectedOutbounds.has(outbound.id)}
+                                                    isMultiSelectMode={selectedOutbounds.size > 0}
+                                                    shouldClose={openSwipeOutboundId !== null && openSwipeOutboundId !== outbound.id}
+                                                    isExpanded={expandedOutbounds.has(outbound.id)}
+                                                    testEntry={testEntryOf(outbound)}
+                                                    isTesting={testingIds.has(outbound.id)}
+                                                    canTest={TESTABLE_OUTBOUND_PROTOCOLS(outbound.protocol)}
+                                                    testDisabled={!!testAllProgress}
+                                                    onOpen={setOpenSwipeOutboundId}
+                                                    onTap={() => toggleOutboundExpand(outbound.id)}
+                                                    onToggleSelect={toggleOutboundSelection}
+                                                    onLongPress={toggleOutboundSelection}
+                                                    onEdit={(ob) => setOutboundDialog({ open: true, mode: "edit", outbound: ob })}
+                                                    onTest={(ob) => handleTestOutbound(ob)}
+                                                    onViewTestResult={(ob) => setTestResultDialog({ open: true, outboundId: ob.id, outboundTag: ob.tag })}
+                                                    onToggleDisabled={handleToggleOutbound}
+                                                    onDelete={handleDeleteOutbound}
+                                                    expandedContent={mountedOutboundPanels.has(outbound.id) ? (
+                                                        <OutboundDetailPanel
+                                                            outbound={outbound}
+                                                            route={route}
+                                                            details={details}
+                                                            usage={usage}
+                                                            isDefault={outbound.tag === defaultOutbound}
+                                                            onOpenRules={() => setRoutingView("rules")}
+                                                        />
+                                                    ) : null}
+                                                />
                                             )
                                         })}
-                                    </TableBody>
-                                </Table>
+                                    </div>
+
+                                    {/* Desktop list — same grid as the inbound list, density from the list's own width. */}
+                                    <div className="hidden md:block @container">
+                                        <div className="rounded-xl border bg-card overflow-x-auto">
+                                            <div className="min-w-[560px]">
+                                                <OutboundListHeader
+                                                    allSelected={selectedOutbounds.size === outbounds.length && outbounds.length > 0}
+                                                    someSelected={selectedOutbounds.size > 0 && selectedOutbounds.size < outbounds.length}
+                                                    onToggleAll={toggleAllOutbounds}
+                                                    sortField={outboundSort.field}
+                                                    sortDir={outboundSort.dir}
+                                                    onSort={handleOutboundSort}
+                                                />
+                                                {sortedOutbounds.map((outbound) => {
+                                                    const usage = outboundUsage.get(outbound.tag) ?? { rules: [], balancers: [] }
+                                                    const route = outboundRoutes.get(outbound.id) ?? ""
+                                                    const details = outboundDetails.get(outbound.id) ?? []
+                                                    const canTest = TESTABLE_OUTBOUND_PROTOCOLS(outbound.protocol)
+                                                    return (
+                                                        <DesktopOutboundRow
+                                                            key={outbound.id}
+                                                            outbound={outbound}
+                                                            isExpanded={expandedOutbounds.has(outbound.id)}
+                                                            isSelected={selectedOutbounds.has(outbound.id)}
+                                                            isDefault={outbound.tag === defaultOutbound}
+                                                            usageCount={usageCount(usage)}
+                                                            trafficBytes={outboundTraffic(outbound)}
+                                                            route={route}
+                                                            details={details}
+                                                            testEntry={testEntryOf(outbound)}
+                                                            isTesting={testingIds.has(outbound.id)}
+                                                            canTest={canTest}
+                                                            speedtestSupported={outbound.protocol !== "freedom"}
+                                                            testDisabled={!!testAllProgress}
+                                                            onToggleExpand={() => toggleOutboundExpand(outbound.id)}
+                                                            onToggleSelect={() => toggleOutboundSelection(outbound.id)}
+                                                            onToggleDisabled={() => handleToggleOutbound(outbound)}
+                                                            onEdit={() => setOutboundDialog({ open: true, mode: "edit", outbound })}
+                                                            onTest={() => handleTestOutbound(outbound)}
+                                                            onTestSpeed={() => handleTestOutbound(outbound, true)}
+                                                            onViewTest={() => setTestResultDialog({ open: true, outboundId: outbound.id, outboundTag: outbound.tag })}
+                                                            onDelete={() => handleDeleteOutbound(outbound)}
+                                                            expandedContent={mountedOutboundPanels.has(outbound.id) ? (
+                                                                <OutboundDetailPanel
+                                                                    outbound={outbound}
+                                                                    route={route}
+                                                                    details={details}
+                                                                    usage={usage}
+                                                                    isDefault={outbound.tag === defaultOutbound}
+                                                                    onOpenRules={() => setRoutingView("rules")}
+                                                                />
+                                                            ) : null}
+                                                        />
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground rounded-2xl border-2 border-dashed bg-muted/5">
                                     <HiOutlineSwitchHorizontal className="w-12 h-12 opacity-50 mb-4" />
-                                    <h3 className="text-lg font-medium text-foreground mb-1">No Outbounds Configured</h3>
+                                    <h3 className="text-lg font-medium text-foreground mb-1">No Custom Outbounds Configured</h3>
                                     <p className="text-sm mb-4">Add an upstream proxy or routing target</p>
                                     <Button size="sm" onClick={() => setOutboundDialog({ open: true, mode: "create", outbound: null })}>
                                         <HiOutlinePlus className="w-4 h-4 mr-2" />
@@ -1345,8 +1339,7 @@ export function NodeNetworkConfig({
                                 </div>
                             )}
                         </div>
-                        </TooltipProvider>
-                    </Card>
+                    </TooltipProvider>
                 </TabsContent>
 
                 {/* Routing Content — one pane per job: the rules, the presets that write rules, the balancers rules target */}
@@ -1394,7 +1387,7 @@ export function NodeNetworkConfig({
                         <RoutingSettingsCard
                             nodeId={nodeId}
                             existingRules={routingRules}
-                            outbounds={outbounds}
+                            outbounds={allOutbounds}
                             onSettingsSaved={() => queryClient.invalidateQueries({ queryKey: queryKeys.nodeRouting(nodeId) })}
                             onPresetRulesChanged={setPendingPresetRules}
                         />
@@ -1403,7 +1396,7 @@ export function NodeNetworkConfig({
                     {routingView === "balancers" && (
                         <BalancingRulesCard
                             nodeId={nodeId}
-                            outbounds={outbounds}
+                            outbounds={allOutbounds}
                             rules={balancingRules}
                             routingRules={routingRules}
                             onRulesChanged={() => {
@@ -1455,7 +1448,7 @@ export function NodeNetworkConfig({
                             <HiOutlinePlus className="w-6 h-6" />
                         </motion.button>
                     )}
-                    {activeTab === "outbounds" && (
+                    {activeTab === "outbounds" && selectedOutbounds.size === 0 && (
                         <motion.button
                             className="fixed bottom-[100px] right-6 z-40 md:hidden w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-95"
                             onClick={() => setOutboundDialog({ open: true, mode: "create", outbound: null })}
@@ -1499,7 +1492,7 @@ export function NodeNetworkConfig({
                 onSave={handleSaveOutbound}
                 onTest={(ob) => handleTestOutbound(ob)}
                 mode={outboundDialog.mode}
-                allOutbounds={outbounds}
+                allOutbounds={allOutbounds}
             />
 
             <RoutingRuleDialog
@@ -1507,7 +1500,7 @@ export function NodeNetworkConfig({
                 onOpenChange={(open) => setRoutingDialog(prev => ({ ...prev, open }))}
                 rule={routingDialog.rule}
                 nodeId={nodeId}
-                outbounds={outbounds}
+                outbounds={allOutbounds}
                 inbounds={inbounds}
                 balancingRules={balancingRules}
                 onSave={handleSaveRoutingRule}
@@ -1517,7 +1510,7 @@ export function NodeNetworkConfig({
             <OutboundTestResultDialog
                 open={testResultDialog.open}
                 onOpenChange={(open) => setTestResultDialog(prev => ({ ...prev, open }))}
-                entry={dialogOutbound ? testEntryFor(dialogOutbound) : null}
+                entry={dialogOutbound ? testEntryOf(dialogOutbound) : null}
                 outboundTag={testResultDialog.outboundTag}
                 testing={dialogOutbound ? testingIds.has(dialogOutbound.id) : false}
                 speedtestSupported={dialogOutbound ? dialogOutbound.protocol !== "freedom" : false}
