@@ -90,7 +90,7 @@ test_config_failure() {
 }
 test_cancel_before_changes() {
     answers; wizard_write_env systemd test >/dev/null || return 1
-    arrow_menu() { if [[ "$1" == "Review installation" ]]; then printf -v "$2" 2; else printf -v "$2" 0; fi; }; confirm_action() { return 1; }
+    arrow_menu() { if [[ "$1" == "Review installation" ]]; then printf -v "$2" -2; else printf -v "$2" 0; fi; }; confirm_action() { return 1; }
     wizard_apply_install() { echo mutation >> "$EVENT_LOG"; return 0; }
     if wizard_install; then fail 'cancel reported success'; return 1; fi
     [[ ! -s "$EVENT_LOG" ]]
@@ -228,7 +228,7 @@ test_navigation_review_back() {
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
         'Enable Telegram bot?|1' 'Admin password|0' 'Review installation|1'
-        'Admin password|0' 'Review installation|2'
+        'Admin password|0' 'Review installation|-2'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode() { return 0; }
@@ -301,7 +301,7 @@ INPUT
 }
 test_navigation_access_cancel() {
     answers
-    local menu_index=0 menu_script=('How will users access this server?|3') status=0
+    local menu_index=0 menu_script=('How will users access this server?|-2') status=0
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode || status=$?
     [[ $status -eq 3 && ! -s "$EVENT_LOG" ]]
@@ -309,7 +309,7 @@ test_navigation_access_cancel() {
 test_navigation_saved_back() {
     answers; wizard_write_env systemd test >/dev/null || return 1
     local before="$(cat "$ENV_FILE")" menu_index=0 menu_script=(
-        "Existing configuration at ${ENV_FILE}|0" 'Review installation|1' 'Deployment|3'
+        "Existing configuration at ${ENV_FILE}|0" 'Review installation|1' 'Deployment|-2'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_apply_install() { echo mutation >> "$EVENT_LOG"; }

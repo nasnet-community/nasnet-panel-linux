@@ -2332,10 +2332,10 @@ wizard_navigation_menu() {
     local nav_title="$1" nav_result="$2" nav_selected=-1
     shift 2
     local nav_count=$#
-    arrow_menu "$nav_title" nav_selected "$@" "← Back" "Cancel installation" || return 3
+    arrow_menu "$nav_title" nav_selected "$@" "← Back" || return 3
     case "$nav_selected" in
         -1|"$nav_count") return 2 ;;
-        -2|"$((nav_count + 1))") return 3 ;;
+        -2) return 3 ;;
     esac
     printf -v "$nav_result" '%s' "$nav_selected"
 }
@@ -2391,7 +2391,7 @@ wizard_prompt_access_mode() {
                 access_next=api_domain
                 ;;
             api_domain)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}API domain${RESET} [${WIZ_API_DOMAIN:-}]: "
                 wizard_read_answer WIZ_API_DOMAIN || access_status=$?
                 if [[ $access_status -eq 0 ]]; then
@@ -2400,7 +2400,7 @@ wizard_prompt_access_mode() {
                 access_next=port
                 ;;
             port)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}API port${RESET} [${WIZ_APP_PORT}]: "
                 wizard_read_answer access_input || access_status=$?
                 if [[ $access_status -eq 0 && -n "$access_input" ]]; then
@@ -2410,7 +2410,7 @@ wizard_prompt_access_mode() {
                 access_next=panel_domain
                 ;;
             panel_domain)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Panel domain${RESET} [${WIZ_PANEL_DOMAIN:-$WIZ_API_DOMAIN}]: "
                 wizard_read_answer WIZ_PANEL_DOMAIN || access_status=$?
                 if [[ $access_status -eq 0 ]]; then
@@ -2421,7 +2421,7 @@ wizard_prompt_access_mode() {
                 ;;
             ip)
                 [[ -n "${WIZ_IP:-}" ]] || WIZ_IP=$(wizard_detect_ip)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Server IP${RESET} [${WIZ_IP}]: "
                 wizard_read_answer WIZ_IP || access_status=$?
                 if [[ $access_status -eq 0 ]] && ! wizard_valid_ip "$WIZ_IP"; then
@@ -2434,7 +2434,7 @@ wizard_prompt_access_mode() {
                     WIZ_BASE_PATH="/$(head -c 64 /dev/urandom | base64 | tr -dc 'a-z0-9' | head -c 6)"
                 fi
                 WIZ_PATH_GENERATED=true
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Panel base path (type none for no path)${RESET} [${WIZ_BASE_PATH}]: "
                 wizard_read_answer access_input || access_status=$?
                 if [[ $access_status -eq 0 ]]; then
@@ -2473,13 +2473,13 @@ wizard_prompt_access_mode() {
                 else access_next=done; fi
                 ;;
             custom_api)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Public API URL${RESET} [${WIZ_APP_BASE_URL}]: "
                 wizard_read_answer WIZ_APP_BASE_URL || access_status=$?
                 access_next=custom_panel
                 ;;
             custom_panel)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Public panel URL${RESET} [${WIZ_SUB_PANEL_URL}]: "
                 wizard_read_answer WIZ_SUB_PANEL_URL || access_status=$?
                 if [[ "$access_proto" == https ]]; then access_next=tls; else access_next=done; fi
@@ -2499,7 +2499,7 @@ wizard_prompt_access_mode() {
                 fi
                 ;;
             acme_email)
-                wizard_input_hint
+                echo ""
                 echo -ne "  ${CYAN}Email for Let's Encrypt${RESET} [${WIZ_ACME_EMAIL:-}]: "
                 wizard_read_answer WIZ_ACME_EMAIL || access_status=$?
                 if [[ $access_status -eq 0 ]]; then
@@ -2513,7 +2513,7 @@ wizard_prompt_access_mode() {
                 ;;
             proxy_api)
                 step_info "The reverse proxy must forward the public URLs to this panel's HTTP port ${WIZ_APP_PORT}"
-                wizard_input_hint
+                echo ""
                 access_api="$WIZ_APP_BASE_URL"
                 [[ "$access_api" != "$WIZ_DERIVED_API" ]] || access_api="https://${WIZ_API_DOMAIN}"
                 echo -ne "  ${CYAN}Public API URL${RESET} [${access_api}]: "
@@ -2522,7 +2522,7 @@ wizard_prompt_access_mode() {
                 access_next=proxy_panel
                 ;;
             proxy_panel)
-                wizard_input_hint
+                echo ""
                 access_panel="$WIZ_SUB_PANEL_URL"
                 [[ "$access_panel" != "$WIZ_DERIVED_PANEL" ]] || access_panel="https://${WIZ_PANEL_DOMAIN}${WIZ_BASE_PATH}"
                 echo -ne "  ${CYAN}Public panel URL${RESET} [${access_panel}]: "
@@ -2534,7 +2534,7 @@ wizard_prompt_access_mode() {
                 access_next=done
                 ;;
             certificate|key)
-                wizard_input_hint
+                echo ""
                 if [[ "${WIZ_DEPLOY_MODE:-systemd}" == docker ]]; then
                     step_info "Use container paths and bind-mount the certificate and key in Docker Compose before installing"
                 fi
@@ -2570,11 +2570,6 @@ wizard_prompt_access_mode() {
         access_history+=("$access_step")
         access_step="$access_next"
     done
-}
-
-wizard_input_hint() {
-    echo ""
-    step_info "Enter keeps the current answer; :back goes back; :cancel cancels"
 }
 
 wizard_access_urls_review() {
@@ -2779,7 +2774,6 @@ wizard_collect_install_settings() {
                 if [[ $setup_status -eq 0 ]]; then
                     if [[ $setup_choice -eq 0 ]]; then
                         WIZ_TELEGRAM_ENABLED=true
-                        step_info "Enter keeps existing answers; :back goes back; :cancel cancels"
                         echo -ne "  ${CYAN}Telegram bot token${RESET}: "
                         wizard_read_answer WIZ_BOT_TOKEN true || setup_status=$?
                         if [[ $setup_status -eq 0 ]]; then
@@ -2800,7 +2794,6 @@ wizard_collect_install_settings() {
             password)
                 wizard_navigation_menu "Admin password" setup_choice "Set or keep password" || setup_status=$?
                 if [[ $setup_status -eq 0 ]]; then
-                    step_info "Enter keeps an existing password; :back goes back; :cancel cancels"
                     password_input=""; password_confirm=""
                     echo -ne "  ${CYAN}Admin password (at least 6 characters)${RESET}: "
                     wizard_read_answer password_input true || setup_status=$?
@@ -2846,8 +2839,6 @@ wizard_collect_install_settings() {
                 elif [[ "$setup_step" == review ]]; then
                     # Saved configurations start at review; Back opens editing.
                     setup_step=deployment
-                else
-                    step_info "You are at the first step; choose Cancel installation to exit"
                 fi
                 continue
                 ;;
