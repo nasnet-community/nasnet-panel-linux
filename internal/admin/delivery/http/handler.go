@@ -693,19 +693,16 @@ func (h *Handler) ListAllSubscriptions(c *gin.Context) {
 	search := c.Query("search")
 	source := c.Query("source")
 
-	// Page-based pagination (preferred)
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "0"))
-
-	// Backward compat: offset/limit
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-
-	// If page-based params are provided, convert to offset/limit
-	if page > 0 && perPage > 0 {
-		offset = (page - 1) * perPage
-		limit = perPage
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+	if page < 1 {
+		page = 1
 	}
+	if perPage < 1 {
+		perPage = 20
+	}
+	offset := (page - 1) * perPage
+	limit := perPage
 
 	// Optional filters
 	var exhausted *bool
@@ -758,8 +755,6 @@ func (h *Handler) ListAllSubscriptions(c *gin.Context) {
 			"page":        page,
 			"per_page":    limit,
 			"total_pages": totalPages,
-			"offset":      offset,
-			"limit":       limit,
 		},
 	})
 }
