@@ -16,8 +16,8 @@ import (
 // second one does not need a second table.
 const VPNTypeWireGuard = "wireguard"
 
-// VPNProfile is one saved tunnel. At most one row is Active, enforced by a
-// partial unique index in cmd/root.go.
+// VPNProfile is one saved tunnel. Each enabled profile has a unique interface
+// slot, enforced by a partial unique index.
 //
 // Config holds the protocol-shaped payload as JSON. Only what the panel queries
 // or enforces gets a real column, so a second protocol costs no migration —
@@ -28,10 +28,8 @@ type VPNProfile struct {
 
 	Name string `gorm:"not null" json:"name"`
 	Type string `gorm:"not null;default:'wireguard'" json:"type"`
-	// Active is the retired single-tunnel flag; the migration drains it.
-	Active bool `gorm:"not null;default:false" json:"-"`
-	// Enabled puts the profile in the pool. Priority 0 is the best tier;
-	// weight splits flows inside a tier.
+	// Enabled puts the profile in the pool. Priority is its position in the
+	// failover chain; weight is inert under the current pool strategies.
 	Enabled  bool `gorm:"not null;default:false" json:"enabled"`
 	Priority int  `gorm:"not null;default:0" json:"priority"`
 	Weight   int  `gorm:"not null;default:1" json:"weight"`

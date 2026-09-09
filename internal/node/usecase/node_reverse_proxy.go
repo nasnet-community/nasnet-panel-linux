@@ -77,17 +77,11 @@ func (u *nodeUsecase) UpdateReverseProxy(ctx context.Context, rp *domain.Reverse
 	}
 
 	// Read old rule priorities before deleting so regenerated rules keep the same position
-	var oldPriority1, oldPriority2 int
+	var oldPriority int
 	hasOldPriorities := false
-	if existing.Rule1ID != nil {
-		if r, err := u.nodeRepo.GetRoutingRule(ctx, *existing.Rule1ID); err == nil {
-			oldPriority1 = r.Priority
-			hasOldPriorities = true
-		}
-	}
 	if existing.Rule2ID != nil {
 		if r, err := u.nodeRepo.GetRoutingRule(ctx, *existing.Rule2ID); err == nil {
-			oldPriority2 = r.Priority
+			oldPriority = r.Priority
 			hasOldPriorities = true
 		}
 	}
@@ -101,7 +95,7 @@ func (u *nodeUsecase) UpdateReverseProxy(ctx context.Context, rp *domain.Reverse
 			return fmt.Errorf("failed to update reverse proxy: %w", err)
 		}
 		if hasOldPriorities {
-			return u.generateReverseProxyRulesWithRepo(ctx, txRepo, rp, oldPriority1, oldPriority2)
+			return u.generateReverseProxyRulesWithRepo(ctx, txRepo, rp, oldPriority)
 		}
 		return u.generateReverseProxyRulesWithRepo(ctx, txRepo, rp)
 	}); err != nil {
@@ -213,12 +207,11 @@ func (u *nodeUsecase) validateReverseProxy(ctx context.Context, rp *domain.Rever
 	return domain.ValidateVLESSReverse(inbounds, outbounds, candidates)
 }
 
-// generateReverseProxyRulesWithRepo stores the data route. VLESS handles tunnel
-// control internally; the old domain-control rule is no longer needed.
+// generateReverseProxyRulesWithRepo stores the managed VLESS Reverse traffic route.
 func (u *nodeUsecase) generateReverseProxyRulesWithRepo(ctx context.Context, repo repository.NodeRepository, rp *domain.ReverseProxy, oldPriorities ...int) error {
 	priority := 9000
-	if len(oldPriorities) > 1 {
-		priority = oldPriorities[1]
+	if len(oldPriorities) > 0 {
+		priority = oldPriorities[0]
 	}
 	rule := &domain.RoutingRule{NodeID: rp.NodeID, RuleTag: "reverse-" + rp.Tag + "-traffic", Remark: "[reverse] " + rp.Tag, Priority: priority, Enabled: true}
 	if rp.Type == "bridge" {
@@ -231,7 +224,6 @@ func (u *nodeUsecase) generateReverseProxyRulesWithRepo(ctx context.Context, rep
 	if err := repo.CreateRoutingRule(ctx, rule); err != nil {
 		return fmt.Errorf("failed to create reverse traffic rule: %w", err)
 	}
-	rp.Rule1ID = nil
 	rp.Rule2ID = &rule.ID
 	if err := repo.UpdateReverseProxy(ctx, rp); err != nil {
 		return err
@@ -250,11 +242,6 @@ func (u *nodeUsecase) generateReverseProxyRulesWithRepo(ctx context.Context, rep
 
 // deleteReverseProxyRulesWithRepo removes the auto-generated routing rules using the provided repo.
 func (u *nodeUsecase) deleteReverseProxyRulesWithRepo(ctx context.Context, repo repository.NodeRepository, rp *domain.ReverseProxy) error {
-	if rp.Rule1ID != nil {
-		if err := repo.DeleteRoutingRule(ctx, *rp.Rule1ID); err != nil {
-			return fmt.Errorf("failed to delete reverse proxy rule %d: %w", *rp.Rule1ID, err)
-		}
-	}
 	if rp.Rule2ID != nil {
 		if err := repo.DeleteRoutingRule(ctx, *rp.Rule2ID); err != nil {
 			return fmt.Errorf("failed to delete reverse proxy rule %d: %w", *rp.Rule2ID, err)

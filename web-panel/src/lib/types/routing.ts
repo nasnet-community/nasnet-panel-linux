@@ -65,12 +65,10 @@ export interface ReverseProxy {
     node_id: number
     type: "bridge" | "portal"
     tag: string
-    domain: string
     interconnection_tag: string
     interconnection_tags: string[]
     outbound_tag: string
     inbound_tags: string[]
-    rule1_id?: number
     rule2_id?: number
     created_at: string
     updated_at: string

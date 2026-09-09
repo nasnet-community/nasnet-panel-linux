@@ -504,12 +504,9 @@ type ShadowsocksSettings struct {
 
 // WireGuardSettings for WireGuard inbound/outbound
 type WireGuardSettings struct {
-	SecretKey string   `json:"secretKey,omitempty"` // Server private key
-	MTU       int      `json:"mtu,omitempty"`       // Default 1420
-	Endpoint  []string `json:"endpoint,omitempty"`  // Local addresses (CIDR)
-	// Deprecated: xray-core removed the WireGuard `workers` knob. Kept so
-	// stored settings still deserialize; never emitted into a node config.
-	NumWorkers     int             `json:"numWorkers,omitempty"`
+	SecretKey      string          `json:"secretKey,omitempty"`      // Server private key
+	MTU            int             `json:"mtu,omitempty"`            // Default 1420
+	Endpoint       []string        `json:"endpoint,omitempty"`       // Local addresses (CIDR)
 	Reserved       []int           `json:"reserved,omitempty"`       // Reserved bytes (3 bytes)
 	DomainStrategy string          `json:"domainStrategy,omitempty"` // FORCE_IP, FORCE_IP4, etc.
 	NoKernelTun    bool            `json:"noKernelTun,omitempty"`

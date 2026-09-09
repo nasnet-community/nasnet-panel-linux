@@ -187,13 +187,6 @@ type fakePoolSettings struct {
 	err  error
 }
 
-func (f *fakePoolSettings) Get(_ context.Context, key string) (string, error) {
-	if f.err != nil {
-		return "", f.err
-	}
-	return f.rows[key], nil
-}
-
 func (f *fakePoolSettings) Set(_ context.Context, key, value string) error {
 	if f.err != nil {
 		return f.err
@@ -288,74 +281,6 @@ func TestSetPoolOrder_RefusesAPartialOrHalfKnownOrder(t *testing.T) {
 		if err := f.uc.SetPoolOrder(ctx, tc.ids); err == nil {
 			t.Errorf("%s was accepted as an order", tc.name)
 		}
-	}
-}
-
-// An upgraded box has tiers and no strategy. Tiers meant "these carry, that one
-// waits", and the chain is the only thing that still says it.
-func TestMigratePoolStrategy_ReadsTheOldTiers(t *testing.T) {
-	ctx := context.Background()
-	cases := []struct {
-		name  string
-		rows  []domain.VPNProfile
-		want  PoolStrategy
-		order []uint
-	}{
-		{"one flat tier stays a spread",
-			[]domain.VPNProfile{
-				{ID: 1, Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(0)},
-				{ID: 2, Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(1)},
-			}, StrategySpread, []uint{1, 2}},
-		{"tiers become a chain, heaviest first inside a tier",
-			[]domain.VPNProfile{
-				{ID: 1, Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(0)},
-				{ID: 2, Enabled: true, Priority: 1, Weight: 1, WGSlot: slotOf(1)},
-				{ID: 3, Enabled: true, Priority: 0, Weight: 5, WGSlot: slotOf(2)},
-			}, StrategyOrder, []uint{3, 1, 2}},
-		{"an empty pool is a spread", nil, StrategySpread, nil},
-	}
-	for _, tc := range cases {
-		f := newVPNFixture(t)
-		store := &fakePoolSettings{}
-		f.uc.PoolSettings = store
-		f.repo.rows = tc.rows
-
-		if err := f.uc.MigratePoolStrategy(ctx); err != nil {
-			t.Fatalf("%s: %v", tc.name, err)
-		}
-		if got := store.rows[PoolStrategyKey]; got != string(tc.want) {
-			t.Errorf("%s: stored %q, want %q", tc.name, got, tc.want)
-		}
-		if f.uc.poolStrategyNow() != tc.want {
-			t.Errorf("%s: in memory %q, want %q", tc.name, f.uc.poolStrategyNow(), tc.want)
-		}
-		for pos, id := range tc.order {
-			for i := range f.repo.rows {
-				if f.repo.rows[i].ID == id && f.repo.rows[i].Priority != pos {
-					t.Errorf("%s: profile %d at position %d, want %d",
-						tc.name, id, f.repo.rows[i].Priority, pos)
-				}
-			}
-		}
-	}
-}
-
-func TestMigratePoolStrategy_LeavesAChosenStrategyAlone(t *testing.T) {
-	f := newVPNFixture(t)
-	store := &fakePoolSettings{rows: map[string]string{PoolStrategyKey: "fastest"}}
-	f.uc.PoolSettings = store
-	f.repo.rows = []domain.VPNProfile{
-		{ID: 1, Enabled: true, Priority: 0, Weight: 1, WGSlot: slotOf(0)},
-		{ID: 2, Enabled: true, Priority: 3, Weight: 1, WGSlot: slotOf(1)},
-	}
-	if err := f.uc.MigratePoolStrategy(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if store.rows[PoolStrategyKey] != "fastest" {
-		t.Errorf("migration overwrote a chosen strategy with %q", store.rows[PoolStrategyKey])
-	}
-	if f.repo.rows[1].Priority != 3 {
-		t.Errorf("migration renumbered a pool it should not have touched")
 	}
 }
 

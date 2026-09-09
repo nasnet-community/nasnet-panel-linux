@@ -197,7 +197,7 @@ func (u *subscriptionUsecase) buildInboundDetailFromHost(ctx context.Context, in
 }
 
 func (u *subscriptionUsecase) GetSubscriptionConfig(ctx context.Context, configID string) (*SubscriptionConfigResult, error) {
-	sub, err := u.subRepo.FindByConfigID(ctx, configID)
+	sub, err := u.subRepo.FindByLinkKey(ctx, configID)
 	if err != nil {
 		return nil, err
 	}

@@ -93,7 +93,7 @@ func (m *mockSubscriptionRepo) FindByID(_ context.Context, id uint) (*domain.Sub
 	return s, nil
 }
 
-func (m *mockSubscriptionRepo) FindByConfigID(_ context.Context, _ string) (*domain.Subscription, error) {
+func (m *mockSubscriptionRepo) FindByLinkKey(_ context.Context, _ string) (*domain.Subscription, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 func (m *mockSubscriptionRepo) FindByConfigEmail(_ context.Context, _ string) (*domain.Subscription, error) {

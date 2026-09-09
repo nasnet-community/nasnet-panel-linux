@@ -35,5 +35,4 @@ type SettingUsecase interface {
 	SetOnRouterHealthChange(fn func())
 	SetAuditUsecase(auc auditDomain.AuditLogUsecase)
 	ReseedEnvSettings(ctx context.Context) error
-	MigrateGlobalPanelPassword(ctx context.Context)
 }

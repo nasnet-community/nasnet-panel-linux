@@ -129,9 +129,9 @@ func TestSubscription_GetLinkKey(t *testing.T) {
 	if got := (&Subscription{LinkKey: "lk", ConfigID: "cfg"}).GetLinkKey(); got != "lk" {
 		t.Errorf("link key = %q, want lk", got)
 	}
-	// Older subscriptions without LinkKey fall back to ConfigID.
-	if got := (&Subscription{ConfigID: "cfg"}).GetLinkKey(); got != "cfg" {
-		t.Errorf("fallback = %q, want cfg", got)
+	// A protocol credential must never become a public subscription key.
+	if got := (&Subscription{ConfigID: "cfg"}).GetLinkKey(); got != "" {
+		t.Errorf("missing link key = %q, want empty", got)
 	}
 }
 

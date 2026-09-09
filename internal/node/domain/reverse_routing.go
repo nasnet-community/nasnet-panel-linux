@@ -1,23 +1,18 @@
 package domain
 
-// OrderReverseRoutingRules keeps each managed control/data pair ahead of a
-// general fallback, and control ahead of data. Specific user policies retain
-// their relative order. It also repairs configurations saved by older panels.
+// OrderReverseRoutingRules keeps managed reverse traffic ahead of a general
+// fallback. Specific user policies retain their relative order.
 func OrderReverseRoutingRules(rules []*RoutingRule, proxies []*ReverseProxy) []*RoutingRule {
 	ordered := append([]*RoutingRule{}, rules...)
 	for _, rp := range proxies {
 		if rp.Rule2ID == nil {
 			continue
 		}
-		var control, traffic *RoutingRule
+		var traffic *RoutingRule
 		position := len(ordered)
 		for i, rule := range ordered {
 			if rule == nil {
 				continue
-			}
-			if rp.Rule1ID != nil && rule.ID == *rp.Rule1ID {
-				control = rule
-				position = min(position, i)
 			}
 			if rule.ID == *rp.Rule2ID {
 				traffic = rule
@@ -33,12 +28,9 @@ func OrderReverseRoutingRules(rules []*RoutingRule, proxies []*ReverseProxy) []*
 		next := make([]*RoutingRule, 0, len(ordered))
 		for i, rule := range ordered {
 			if i == position {
-				if control != nil {
-					next = append(next, control)
-				}
 				next = append(next, traffic)
 			}
-			if rule == nil || ((control == nil || rule.ID != control.ID) && rule.ID != traffic.ID) {
+			if rule == nil || rule.ID != traffic.ID {
 				next = append(next, rule)
 			}
 		}

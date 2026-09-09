@@ -33,7 +33,7 @@ func (f *fakeSubLinker) GetByID(_ context.Context, id uint) (*subdomain.Subscrip
 
 func (f *fakeSubLinker) UpdateTelegramChatIDByConfigID(_ context.Context, configID string, chatID int64) error {
 	for _, s := range f.subs {
-		if s.LinkKey == configID || (s.LinkKey == "" && s.ConfigID == configID) {
+		if s.LinkKey == configID {
 			f.bound[s.ID] = chatID
 			return nil
 		}

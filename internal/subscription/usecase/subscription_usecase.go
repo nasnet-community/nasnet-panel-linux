@@ -111,9 +111,6 @@ type SubscriptionUsecase interface {
 	GetSubscriptionConfig(ctx context.Context, configID string) (*SubscriptionConfigResult, error)
 	GetSubscriptionServers(ctx context.Context, subID uint) ([]SubServer, error)
 
-	// Migration support
-	GetByConfigEmail(ctx context.Context, email string) (*domain.Subscription, error)
-	CreateDirect(ctx context.Context, sub *domain.Subscription) error
 	AssignToUser(ctx context.Context, subID, userID uint) error
 
 	// Inbound assignment

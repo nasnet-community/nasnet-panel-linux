@@ -53,7 +53,6 @@ export function ReverseProxyDialog({
         defaultValues: {
             type: "bridge",
             tag: `reverse-${existingCount}`,
-            domain: "",
             interconnection_tag: "",
             outbound_tag: "",
             interconnection_tags: [],
@@ -70,7 +69,6 @@ export function ReverseProxyDialog({
                 reset({
                     type: reverseProxy.type,
                     tag: reverseProxy.tag,
-                    domain: reverseProxy.domain,
                     interconnection_tag: reverseProxy.interconnection_tag || "",
                     outbound_tag: reverseProxy.outbound_tag || "",
                     interconnection_tags: reverseProxy.interconnection_tags || [],
@@ -80,7 +78,6 @@ export function ReverseProxyDialog({
                 reset({
                     type: "bridge",
                     tag: `reverse-${existingCount}`,
-                    domain: "",
                     interconnection_tag: "",
                     outbound_tag: "",
                     interconnection_tags: [],

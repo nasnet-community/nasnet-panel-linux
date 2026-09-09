@@ -22,7 +22,7 @@ const PoolStrategyKey = "router_vpn_pool_strategy"
 // An unconfigured pool spreads: nothing the operator enabled sits idle.
 const DefaultPoolStrategy = StrategySpread
 
-// False for anything else, including the empty string a fresh install stores.
+// False for anything else, including a missing setting.
 func ParsePoolStrategy(s string) (PoolStrategy, bool) {
 	switch PoolStrategy(s) {
 	case StrategySpread, StrategyOrder, StrategyFastest:

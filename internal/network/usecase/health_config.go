@@ -209,7 +209,7 @@ func ParseHealthConfig(get func(string) (string, error)) HealthConfig {
 	if v, err := get("router_portmap_enabled"); err == nil && v != "" {
 		cfg.PortMapEnabled = v == "true"
 	}
-	// Empty is the unmigrated box, and a typo is not a fourth strategy.
+	// Missing or invalid values retain the default strategy.
 	if v, err := get(PoolStrategyKey); err == nil {
 		if s, ok := ParsePoolStrategy(v); ok {
 			cfg.PoolStrategy = s

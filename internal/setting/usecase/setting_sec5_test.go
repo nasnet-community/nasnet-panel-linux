@@ -31,9 +31,7 @@ func newTestUsecase(t *testing.T) domain.SettingUsecase {
 	return NewSettingUsecase(repository.NewSettingRepository(db), &InitialConfig{})
 }
 
-// seedPassword inserts a single sub_panel_password row directly so we
-// can simulate the pre-migration (plaintext) and already-migrated
-// (bcrypt) states.
+// seedPassword stores a panel password through the normal settings write path.
 func seedPassword(t *testing.T, uc domain.SettingUsecase, value string) {
 	t.Helper()
 	err := uc.UpdateMany(context.Background(), []*domain.Setting{{
@@ -45,94 +43,6 @@ func seedPassword(t *testing.T, uc domain.SettingUsecase, value string) {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-}
-
-func TestPasswordMigration_HashesPlaintext(t *testing.T) {
-	// Bypass UpdateMany's own bcrypt-on-write so we can plant a
-	// raw plaintext password as if it was stored by an older build.
-	db, _ := gorm.Open(sqlite.Open("file::memory:?cache=shared&_pragma=foreign_keys(1)"), &gorm.Config{})
-	_ = db.Migrator().DropTable(&domain.Setting{})
-	_ = db.AutoMigrate(&domain.Setting{})
-	repo := repository.NewSettingRepository(db)
-	// Write raw.
-	if err := repo.Update(context.Background(), &domain.Setting{
-		Key:      "sub_panel_password",
-		Value:    "plaintext-secret",
-		Type:     "string",
-		Category: "sub_panel",
-	}); err != nil {
-		t.Fatalf("seed raw: %v", err)
-	}
-
-	uc := NewSettingUsecase(repo, &InitialConfig{})
-	uc.MigrateGlobalPanelPassword(context.Background())
-
-	stored, err := uc.GetByKey(context.Background(), "sub_panel_password")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if !strings.HasPrefix(stored, "$2") {
-		t.Fatalf("expected bcrypt hash, got %q", stored)
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(stored), []byte("plaintext-secret")); err != nil {
-		t.Errorf("bcrypt compare should verify original password: %v", err)
-	}
-}
-
-func TestPasswordMigration_Idempotent(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open("file::memory:?cache=shared&_pragma=foreign_keys(1)"), &gorm.Config{})
-	_ = db.Migrator().DropTable(&domain.Setting{})
-	_ = db.AutoMigrate(&domain.Setting{})
-	repo := repository.NewSettingRepository(db)
-
-	// Pre-hashed value; migration must not double-hash.
-	preHashed, _ := bcrypt.GenerateFromPassword([]byte("secret"), bcrypt.DefaultCost)
-	_ = repo.Update(context.Background(), &domain.Setting{
-		Key:      "sub_panel_password",
-		Value:    string(preHashed),
-		Type:     "string",
-		Category: "sub_panel",
-	})
-
-	uc := NewSettingUsecase(repo, &InitialConfig{})
-	uc.MigrateGlobalPanelPassword(context.Background())
-	uc.MigrateGlobalPanelPassword(context.Background()) // run twice
-
-	after, _ := uc.GetByKey(context.Background(), "sub_panel_password")
-	if after != string(preHashed) {
-		t.Errorf("bcrypt value was mutated by migration: before=%q after=%q", string(preHashed), after)
-	}
-	// Original password still verifies.
-	if err := bcrypt.CompareHashAndPassword([]byte(after), []byte("secret")); err != nil {
-		t.Errorf("idempotent migration broke password: %v", err)
-	}
-}
-
-func TestPasswordMigration_EmptyNoop(t *testing.T) {
-	db, _ := gorm.Open(sqlite.Open("file::memory:?cache=shared&_pragma=foreign_keys(1)"), &gorm.Config{})
-	_ = db.Migrator().DropTable(&domain.Setting{})
-	_ = db.AutoMigrate(&domain.Setting{})
-	repo := repository.NewSettingRepository(db)
-	// Row exists but value is empty (no panel password set yet).
-	_ = repo.Update(context.Background(), &domain.Setting{
-		Key:      "sub_panel_password",
-		Value:    "",
-		Type:     "string",
-		Category: "sub_panel",
-	})
-
-	uc := NewSettingUsecase(repo, &InitialConfig{})
-	uc.MigrateGlobalPanelPassword(context.Background())
-	after, _ := uc.GetByKey(context.Background(), "sub_panel_password")
-	if after != "" {
-		t.Errorf("empty password should stay empty, got %q", after)
-	}
-}
-
-func TestPasswordMigration_MissingRowNoop(t *testing.T) {
-	uc := newTestUsecase(t)
-	// Should not panic or error when row doesn't exist at all.
-	uc.MigrateGlobalPanelPassword(context.Background())
 }
 
 func TestUpdateMany_HashesOnWrite(t *testing.T) {
@@ -168,5 +78,25 @@ func TestMaskValue_HidesSecrets(t *testing.T) {
 		if got := maskValue(c.in); got != c.want {
 			t.Errorf("maskValue(%q)=%q want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestSeedDefaults_InitializesPoolStrategyAndPreservesChoice(t *testing.T) {
+	ctx := context.Background()
+	uc := newTestUsecase(t)
+	if err := uc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := uc.GetByKey(ctx, "router_vpn_pool_strategy"); err != nil || got != "spread" {
+		t.Fatalf("fresh pool strategy = %q, err = %v", got, err)
+	}
+	if err := uc.UpdateMany(ctx, []*domain.Setting{{Key: "router_vpn_pool_strategy", Value: "fastest"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := uc.SeedDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := uc.GetByKey(ctx, "router_vpn_pool_strategy"); err != nil || got != "fastest" {
+		t.Fatalf("chosen pool strategy after restart = %q, err = %v", got, err)
 	}
 }

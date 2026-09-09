@@ -116,7 +116,7 @@ func TestPanelSettingsReferencedRenames(t *testing.T) {
 	}
 	// Reverse's own managed rule IDs are regenerated on edit; manual references aren't.
 	id := uint(42)
-	rp := &d.ReverseProxy{Rule1ID: &id}
+	rp := &d.ReverseProxy{Rule2ID: &id}
 	u.nodeRepo = &settingsRepo{rules: []*d.RoutingRule{{ID: id, OutboundTag: "old"}}}
 	if err := u.rejectReferencedTagRename(context.Background(), 10, "old", "outbound", rp); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestPanelSettingsReservedAndReverseTagCollisions(t *testing.T) {
 	repo := &settingsRepo{inbounds: []*d.Inbound{{Tag: "in"}}}
 	u := &nodeUsecase{nodeRepo: repo}
 	for _, tag := range []string{"direct", "blocked", "api", "IPv4", "direct-bw10", "__panel_bw/fallback", "direct-foreign", "direct-domestic", "direct-foreign-secondary4"} {
-		rp := &d.ReverseProxy{Tag: tag, Type: "portal", Domain: "internal.test", InterconnectionTags: []string{"in"}, InboundTags: []string{"in"}}
+		rp := &d.ReverseProxy{Tag: tag, Type: "portal", InterconnectionTags: []string{"in"}, InboundTags: []string{"in"}}
 		if err := u.validateReverseProxy(context.Background(), rp); err == nil || !strings.Contains(err.Error(), "reserved") {
 			t.Fatalf("accepted generated tag %q: %v", tag, err)
 		}
@@ -151,11 +151,11 @@ func TestPanelSettingsManagedRouterOutboundTags(t *testing.T) {
 func TestPanelSettingsReverseGenerationOrdersAndDeletionErrors(t *testing.T) {
 	repo := &settingsRepo{rules: []*d.RoutingRule{{ID: 1, Enabled: true, RuleTag: "catch-all", NetworkRules: []string{"tcp", "udp"}, OutboundTag: "direct"}}}
 	u := &nodeUsecase{nodeRepo: repo}
-	rp := &d.ReverseProxy{Tag: "bridge", Type: "bridge", Domain: "internal.test", InterconnectionTag: "tunnel", OutboundTag: "direct"}
+	rp := &d.ReverseProxy{Tag: "bridge", Type: "bridge", InterconnectionTag: "tunnel", OutboundTag: "direct"}
 	if err := u.generateReverseProxyRulesWithRepo(context.Background(), repo, rp); err != nil {
 		t.Fatal(err)
 	}
-	if len(repo.rules) != 2 || rp.Rule1ID != nil || repo.rules[0].ID != *rp.Rule2ID || repo.rules[1].ID != 1 {
+	if len(repo.rules) != 2 || repo.rules[0].ID != *rp.Rule2ID || repo.rules[1].ID != 1 {
 		t.Fatalf("unsafe order: %v", repo.rules)
 	}
 	repo.lookupErr = fmt.Errorf("lookup failed")

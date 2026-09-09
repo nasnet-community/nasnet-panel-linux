@@ -143,9 +143,6 @@ type SubscriptionInfo struct {
 	Status         string // Subscription status (active, paused, expired, etc.)
 	BandwidthLimit int    // Mbps, 0 = unlimited (from plan)
 
-	// Deprecated: Legacy single-server template
-	TemplateLink string
-
 	// Multi-Server Support: List of inbounds this subscription has access to
 	Inbounds []InboundDetail
 }

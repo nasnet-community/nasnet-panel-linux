@@ -21,8 +21,7 @@ const (
 	tPub  = "Ntq1x3JYRTMHTIfNMpkKCPMBHfJhFtjM2sM82nz0ZW4="
 )
 
-// fakeVPNRepo is an in-memory VPNRepository. Real enough for the invariant that
-// matters here: exactly one profile is active.
+// fakeVPNRepo is an in-memory VPNRepository with unique slots for enabled profiles.
 type fakeVPNRepo struct {
 	rows   []domain.VPNProfile
 	nextID uint
@@ -46,7 +45,6 @@ func (f *fakeVPNRepo) Get(_ context.Context, id uint) (*domain.VPNProfile, error
 func (f *fakeVPNRepo) Create(_ context.Context, p *domain.VPNProfile) error {
 	f.nextID++
 	p.ID = f.nextID
-	p.Active = false
 	f.rows = append(f.rows, *p)
 	return nil
 }
@@ -73,40 +71,6 @@ func (f *fakeVPNRepo) Delete(_ context.Context, id uint) error {
 		return nil
 	}
 	return errors.New("no such profile")
-}
-
-func (f *fakeVPNRepo) Active(context.Context) (*domain.VPNProfile, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	for i := range f.rows {
-		if f.rows[i].Active {
-			c := f.rows[i]
-			return &c, nil
-		}
-	}
-	return nil, nil
-}
-
-func (f *fakeVPNRepo) SetActive(_ context.Context, id uint) error {
-	found := false
-	for i := range f.rows {
-		f.rows[i].Active = f.rows[i].ID == id
-		if f.rows[i].ID == id {
-			found = true
-		}
-	}
-	if !found {
-		return errors.New("no such profile")
-	}
-	return nil
-}
-
-func (f *fakeVPNRepo) ClearActive(context.Context) error {
-	for i := range f.rows {
-		f.rows[i].Active = false
-	}
-	return nil
 }
 
 func (f *fakeVPNRepo) Enabled(context.Context) ([]domain.VPNProfile, error) {

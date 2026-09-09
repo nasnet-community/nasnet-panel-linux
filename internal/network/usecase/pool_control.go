@@ -4,14 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-
-	"github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 )
 
 // Nil storage still takes a strategy; it just forgets it at the next boot.
 type PoolSettings interface {
-	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key, value string) error
 }
 
@@ -88,75 +84,4 @@ func (u *networkUsecase) appendToChain(ctx context.Context, id uint) error {
 		}
 	}
 	return u.VPNRepo.SetRole(ctx, id, last+1, 1)
-}
-
-// Runs once on an upgraded box, which has tiers but no strategy. Tiers meant
-// "these share, that one is my backup", so a tiered pool becomes a chain and a
-// flat one a spread — the reading that keeps a backup a backup.
-func (u *networkUsecase) MigratePoolStrategy(ctx context.Context) error {
-	if u.PoolSettings == nil || u.VPNRepo == nil {
-		return nil
-	}
-	if v, err := u.PoolSettings.Get(ctx, PoolStrategyKey); err == nil {
-		if _, chosen := ParsePoolStrategy(v); chosen {
-			return nil
-		}
-	}
-	enabled, err := u.VPNRepo.Enabled(ctx)
-	if err != nil {
-		return err
-	}
-	strategy := DefaultPoolStrategy
-	if tiersOf(enabled) > 1 {
-		strategy = StrategyOrder
-	}
-	if err := u.PoolSettings.Set(ctx, PoolStrategyKey, string(strategy)); err != nil {
-		return err
-	}
-	u.healthMu.Lock()
-	if u.healthCfg.DegradedRTTms == nil {
-		u.healthCfg = DefaultHealthConfig()
-	}
-	u.healthCfg.PoolStrategy = strategy
-	u.healthMu.Unlock()
-	return u.normalizeChain(ctx, enabled)
-}
-
-func tiersOf(profiles []domain.VPNProfile) int {
-	seen := map[int]bool{}
-	for i := range profiles {
-		seen[profiles[i].Priority] = true
-	}
-	return len(seen)
-}
-
-// Flattens tier-and-weight into positions 0..n. A heavier member of a tier was
-// the one the operator leaned on, so it leads its tier in the chain.
-func (u *networkUsecase) normalizeChain(ctx context.Context, enabled []domain.VPNProfile) error {
-	ordered := append([]domain.VPNProfile(nil), enabled...)
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].Priority != ordered[j].Priority {
-			return ordered[i].Priority < ordered[j].Priority
-		}
-		if ordered[i].Weight != ordered[j].Weight {
-			return ordered[i].Weight > ordered[j].Weight
-		}
-		return slotOrder(ordered[i]) < slotOrder(ordered[j])
-	})
-	ids := make([]uint, 0, len(ordered))
-	for i := range ordered {
-		ids = append(ids, ordered[i].ID)
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	return u.VPNRepo.SetOrder(ctx, ids)
-}
-
-// The tie-break of last resort, and the only one that cannot itself be tied.
-func slotOrder(p domain.VPNProfile) int {
-	if p.WGSlot == nil {
-		return 1 << 30
-	}
-	return *p.WGSlot
 }

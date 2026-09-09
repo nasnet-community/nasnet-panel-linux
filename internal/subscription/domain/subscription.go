@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	userDomain "github.com/nasnet-community/nasnet-panel-linux/internal/user/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/product"
 	"gorm.io/gorm"
@@ -71,13 +73,13 @@ type Subscription struct {
 	MaintenanceSince   *time.Time `gorm:"default:null" json:"maintenance_since,omitempty"`
 
 	// Generic config fields
-	ConfigID        string `gorm:"size:100;uniqueIndex" json:"config_id"` // UUID or identifier (Xray user UUID)
-	LinkKey         string `gorm:"size:100;uniqueIndex" json:"link_key"`  // Subscription link key (for URLs, separate from ConfigID)
-	ConfigEmail     string `gorm:"size:255;index" json:"config_email"`    // Email/username
-	ConfigData      string `gorm:"type:text" json:"config_data"`          // Full config content
-	SubLink         string `gorm:"type:text" json:"sub_link"`             // Import link
-	SubscriptionURL string `gorm:"-" json:"subscription_url"`             // Full subscription URL (computed)
-	FileExt         string `gorm:"size:20" json:"file_ext"`               // .json, .ovpn, .conf
+	ConfigID        string `gorm:"size:100;uniqueIndex" json:"config_id"`                                                        // UUID or identifier (Xray user UUID)
+	LinkKey         string `gorm:"size:100;uniqueIndex;not null;check:chk_subscription_link_key,link_key <> ''" json:"link_key"` // Subscription link key (for URLs, separate from ConfigID)
+	ConfigEmail     string `gorm:"size:255;index" json:"config_email"`                                                           // Email/username
+	ConfigData      string `gorm:"type:text" json:"config_data"`                                                                 // Full config content
+	SubLink         string `gorm:"type:text" json:"sub_link"`                                                                    // Import link
+	SubscriptionURL string `gorm:"-" json:"subscription_url"`                                                                    // Full subscription URL (computed)
+	FileExt         string `gorm:"size:20" json:"file_ext"`                                                                      // .json, .ovpn, .conf
 
 	// Transient field for partial provisioning notification (not persisted)
 	PartialProvisioningNote string `gorm:"-" json:"-"`
@@ -89,6 +91,14 @@ type Subscription struct {
 
 func (Subscription) TableName() string {
 	return "subscriptions"
+}
+
+// BeforeCreate gives every subscription an independent, rotatable public link key.
+func (s *Subscription) BeforeCreate(tx *gorm.DB) error {
+	if s.LinkKey == "" {
+		s.LinkKey = uuid.NewString()
+	}
+	return nil
 }
 
 // GrantsAccess reports whether this subscription should currently be carrying
@@ -212,12 +222,8 @@ func (s *Subscription) DisplayLabel() string {
 }
 
 // GetLinkKey returns the subscription link key for URLs.
-// Falls back to ConfigID for backward compatibility with older subscriptions.
 func (s *Subscription) GetLinkKey() string {
-	if s.LinkKey != "" {
-		return s.LinkKey
-	}
-	return s.ConfigID
+	return s.LinkKey
 }
 
 // ToSubscriptionInfo converts to product.SubscriptionInfo

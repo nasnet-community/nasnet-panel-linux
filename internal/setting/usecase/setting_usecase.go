@@ -449,8 +449,7 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "router_degraded_rtt_ms_foreign", Value: "800", Type: "int", Category: "router",
 			Label:       "Degraded RTT, foreign (ms)",
 			Description: "Median probe RTT that marks the secondary uplink degraded. Higher floor: satellite latency is normal."},
-		// Empty until the first boot reads the old tiers and writes what they meant.
-		{Key: "router_vpn_pool_strategy", Value: "", Type: "string", Category: "router",
+		{Key: "router_vpn_pool_strategy", Value: "spread", Type: "string", Category: "router",
 			Label:       "How traffic uses the VPN pool",
 			Description: "spread (every tunnel carries an equal share), order (the first carries, the rest are backups) or fastest (the lowest-latency tunnel carries)."},
 		{Key: "router_failover_domestic_to_vpn", Value: "true", Type: "bool", Category: "router",
@@ -495,14 +494,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 					return err
 				}
 			}
-		}
-	}
-
-	// Migrate legacy category for maintenance-mode settings (originally seeded under "general").
-	for _, key := range []string{"maintenance_mode_enabled", "maintenance_mode_message", "maintenance_mode_since"} {
-		if existing, err := u.repo.GetByKey(ctx, key); err == nil && existing != nil && existing.Category != "maintenance" {
-			existing.Category = "maintenance"
-			_ = u.repo.Update(ctx, existing)
 		}
 	}
 
@@ -577,27 +568,4 @@ func (u *settingUsecase) ReseedEnvSettings(ctx context.Context) error {
 		log.WithField("key", s.Key).Debug("Reseeded env setting after restore")
 	}
 	return nil
-}
-
-// MigrateGlobalPanelPassword checks whether the stored global panel password
-// is plaintext (does not start with "$2", a bcrypt prefix) and hashes it if
-// so. This is a one-time migration that runs on startup to transition existing
-// installations from plaintext to bcrypt storage.
-func (u *settingUsecase) MigrateGlobalPanelPassword(ctx context.Context) {
-	pw, err := u.GetByKey(ctx, "sub_panel_password")
-	if err != nil || pw == "" {
-		return
-	}
-	if !strings.HasPrefix(pw, "$2") {
-		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
-		if err != nil {
-			logger.GetLogger().WithError(err).Warn("Failed to hash global panel password during migration")
-			return
-		}
-		if err := u.repo.UpdateMany(ctx, []*domain.Setting{
-			{Key: "sub_panel_password", Value: string(hash)},
-		}); err != nil {
-			logger.GetLogger().WithError(err).Warn("Failed to persist hashed global panel password")
-		}
-	}
 }

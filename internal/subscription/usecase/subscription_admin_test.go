@@ -57,26 +57,6 @@ func newAdminTestUsecase(subRepo *adminSpySubRepo) SubscriptionUsecase {
 	)
 }
 
-// ─── CreateDirect / AssignToUser ───────────────────────────────────────────
-
-// CreateDirect is a thin pass-through for migrations; verify the sub lands
-// in the repo with an assigned ID.
-func TestCreateDirect_StoresViaRepo(t *testing.T) {
-	subRepo := newAdminSubRepoSpy()
-	uc := newAdminTestUsecase(subRepo)
-
-	sub := &domain.Subscription{ConfigEmail: "imported@x"}
-	if err := uc.CreateDirect(context.Background(), sub); err != nil {
-		t.Fatalf("CreateDirect: %v", err)
-	}
-	if sub.ID == 0 {
-		t.Fatal("expected ID to be assigned by repo")
-	}
-	if _, ok := subRepo.subs[sub.ID]; !ok {
-		t.Errorf("subscription not stored under id %d", sub.ID)
-	}
-}
-
 func TestAssignToUser_PropagatesToRepo(t *testing.T) {
 	subRepo := newAdminSubRepoSpy()
 	uc := newAdminTestUsecase(subRepo)

@@ -387,7 +387,6 @@ type WireGuardOutboundConfig struct {
 	SecretKey      string
 	Endpoint       []string // Local tunnel addresses (CIDR)
 	MTU            int
-	NumWorkers     int
 	Reserved       []byte
 	DomainStrategy string
 	NoKernelTun    bool

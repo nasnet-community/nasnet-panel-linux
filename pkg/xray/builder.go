@@ -615,12 +615,10 @@ func buildWireGuardOutbound(cfg *OutboundConfig) (*serial.TypedMessage, error) {
 	}
 
 	return serial.ToTypedMessage(&wireguard.DeviceConfig{
-		SecretKey: wg.SecretKey,
-		Endpoint:  wg.Endpoint,
-		Peers:     peers,
-		Mtu:       int32(wg.MTU),
-		// NumWorkers was removed from wireguard.DeviceConfig upstream; xray-core
-		// now sizes its worker pool internally, so wg.NumWorkers is ignored.
+		SecretKey:      wg.SecretKey,
+		Endpoint:       wg.Endpoint,
+		Peers:          peers,
+		Mtu:            int32(wg.MTU),
 		Reserved:       wg.Reserved,
 		DomainStrategy: ds,
 		IsClient:       true,

@@ -21,7 +21,7 @@ func (u *subscriptionUsecase) RenameSubscription(ctx context.Context, id uint, l
 func (u *subscriptionUsecase) UpdateTelegramChatIDByConfigID(ctx context.Context, configID string, chatID int64) error {
 	log := logger.GetLogger()
 
-	sub, err := u.subRepo.FindByConfigID(ctx, configID)
+	sub, err := u.subRepo.FindByLinkKey(ctx, configID)
 	if err != nil {
 		return ErrSubscriptionNotFound
 	}
@@ -224,11 +224,6 @@ func (u *subscriptionUsecase) prepareManualSubscriptionInfo(ctx context.Context,
 		PlanName:  "Manual",
 		Inbounds:  inboundDetails,
 	}, nil
-}
-
-// CreateDirect creates a subscription directly without provisioning (for migrations)
-func (u *subscriptionUsecase) CreateDirect(ctx context.Context, sub *domain.Subscription) error {
-	return u.subRepo.Create(ctx, sub)
 }
 
 // AssignToUser reassigns a subscription to a different user

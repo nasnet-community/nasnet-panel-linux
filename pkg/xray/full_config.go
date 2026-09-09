@@ -1780,18 +1780,9 @@ func (b *FullConfigBuilder) buildRouting() map[string]interface{} {
 		})
 	}
 
-	// VLESS manages its control channel inside the outbound handler. Old
-	// domain-control rules must not be emitted after migration.
-	obsoleteControl := make(map[uint]bool)
-	for _, rp := range b.reverseProxies {
-		if rp.Rule1ID != nil {
-			obsoleteControl[*rp.Rule1ID] = true
-		}
-	}
-
 	// Convert domain routing rules (both preset and manual rules from DB)
 	for _, rule := range nodeDomain.OrderReverseRoutingRules(b.routing, b.reverseProxies) {
-		if rule == nil || !rule.Enabled || obsoleteControl[rule.ID] {
+		if rule == nil || !rule.Enabled {
 			continue
 		}
 		rules = append(rules, b.convertRoutingRule(rule))

@@ -151,8 +151,6 @@ type NetworkUsecase interface {
 	SetVPNProfileTransport(ctx context.Context, id uint, uplinkKey string) error
 	SetPoolStrategy(ctx context.Context, strategy string) error
 	SetPoolOrder(ctx context.Context, ids []uint) error
-	// MigratePoolStrategy reads an upgraded box's tiers once, at boot.
-	MigratePoolStrategy(ctx context.Context) error
 	VPNStatus(ctx context.Context) (*VPNPoolStatusView, error)
 
 	// The flow page. All read-only: nothing here touches a packet.

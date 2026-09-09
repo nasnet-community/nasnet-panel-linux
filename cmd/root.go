@@ -231,10 +231,9 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Warn("Failed to create ux_netif_uplink_slot")
 	}
 
-	// Pool slots are unique among enabled profiles; also converts the old
-	// single-active row on first boot after the upgrade.
-	if err := networkRepo.EnsureVPNPoolMigration(db); err != nil {
-		log.WithError(err).Warn("Failed to migrate the VPN pool schema")
+	// Each pool interface slot belongs to one profile.
+	if err := networkRepo.EnsureVPNPoolIndex(db); err != nil {
+		log.WithError(err).Warn("Failed to create the VPN pool slot index")
 	}
 
 	if cfg.Router.Enabled {
@@ -821,10 +820,6 @@ type routerModeDeps struct {
 // The strategy lives in the settings table with the other router_ keys.
 type poolSettings struct{ uc settingDomain.SettingUsecase }
 
-func (p poolSettings) Get(ctx context.Context, key string) (string, error) {
-	return p.uc.GetByKey(ctx, key)
-}
-
 func (p poolSettings) Set(ctx context.Context, key, value string) error {
 	return p.uc.UpdateMany(ctx, []*settingDomain.Setting{{
 		Key: key, Value: value, Type: "string", Category: "router",
@@ -879,12 +874,6 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),
 	})
-
-	// Before the first reconcile: an upgraded pool has tiers and no strategy.
-	if err := uc.MigratePoolStrategy(ctx); err != nil {
-		deps.Log.WithError(err).WithField("component", "router").
-			Error("Could not read the pool's old tiers; it starts on the default strategy")
-	}
 
 	// Loud, never fatal: the panel is the only tool the operator has to fix
 	// whatever broke the reconcile.

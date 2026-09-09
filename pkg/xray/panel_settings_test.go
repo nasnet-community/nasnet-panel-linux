@@ -94,7 +94,7 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 		{Enabled: true, RuleTag: "reverse", OutboundTag: "portal", DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "reverse.test"}}},
 		{Enabled: true, RuleTag: "catch", OutboundTag: "direct", NetworkRules: []string{"tcp", "udp"}},
 	}).WithBalancingRules([]*d.BalancingRule{{Tag: "pool", Enabled: true, OutboundSelectors: []string{"pro"}, Strategy: "random", FallbackTag: "warp"}}).
-		WithReverseProxies([]*d.ReverseProxy{{Type: "portal", Tag: "portal", Domain: "internal.test"}})
+		WithReverseProxies([]*d.ReverseProxy{{Type: "portal", Tag: "portal"}})
 	c := b.buildOrderedConfig()
 	for _, email := range []string{"limited@example.test", "unlimited@test"} {
 		tag, _ := firstPanelRoute(t, c, "in", email, "blocked.test")
@@ -290,11 +290,10 @@ func TestPanelSettingsStreamOptionsAndAuthentication(t *testing.T) {
 }
 
 func TestPanelSettingsReverseRulesPrecedeCatchAll(t *testing.T) {
-	first, second := uint(2), uint(3)
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).WithReverseProxies([]*d.ReverseProxy{{Tag: "bridge", Type: "bridge", Domain: "internal.test", Rule1ID: &first, Rule2ID: &second}}).
+	second := uint(3)
+	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).WithReverseProxies([]*d.ReverseProxy{{Tag: "bridge", Type: "bridge", Rule2ID: &second}}).
 		WithRoutingRules([]*d.RoutingRule{
 			{ID: 1, Enabled: true, OutboundTag: "direct", NetworkRules: []string{"tcp", "udp"}},
-			{ID: 2, Enabled: true, OutboundTag: "tunnel", InboundTags: []string{"bridge"}, DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "internal.test"}}},
 			{ID: 3, Enabled: true, OutboundTag: "user-exit", InboundTags: []string{"bridge"}},
 		})
 	c := b.buildOrderedConfig()
@@ -352,7 +351,7 @@ func TestPanelSettingsBalancerPrefixIsolation(t *testing.T) {
 		WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 		WithBalancingRules([]*d.BalancingRule{{Tag: "pool", Enabled: true, Strategy: "roundrobin", OutboundSelectors: []string{"portal"}}}).
 		WithRoutingRules([]*d.RoutingRule{{Enabled: true, BalancingTag: "pool", NetworkRules: []string{"tcp", "udp"}}}).
-		WithReverseProxies([]*d.ReverseProxy{{Type: "portal", Tag: "portal", Domain: "internal.test"}})
+		WithReverseProxies([]*d.ReverseProxy{{Type: "portal", Tag: "portal"}})
 	c := b.buildOrderedConfig()
 	mgr, err := om.New(context.Background(), &proxyman.OutboundConfig{})
 	if err != nil {
@@ -381,16 +380,16 @@ func TestPanelSettingsBalancerPrefixIsolation(t *testing.T) {
 	}
 }
 
-func TestPanelSettingsVLESSReverseMigration(t *testing.T) {
-	control, traffic := uint(1), uint(2)
-	bridge := &d.ReverseProxy{Type: "bridge", Tag: "bridge", Domain: "legacy.test", InterconnectionTag: "tunnel", OutboundTag: "direct", Rule1ID: &control, Rule2ID: &traffic}
-	portal := &d.ReverseProxy{Type: "portal", Tag: "portal", Domain: "legacy.test", InterconnectionTags: []string{"tunnel-in"}, InboundTags: []string{"public-in"}}
+func TestPanelSettingsVLESSReverseConfiguration(t *testing.T) {
+	traffic := uint(2)
+	bridge := &d.ReverseProxy{Type: "bridge", Tag: "bridge", InterconnectionTag: "tunnel", OutboundTag: "direct", Rule2ID: &traffic}
+	portal := &d.ReverseProxy{Type: "portal", Tag: "portal", InterconnectionTags: []string{"tunnel-in"}, InboundTags: []string{"public-in"}}
 	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).
 		WithInbounds([]*d.Inbound{{Tag: "tunnel-in", Protocol: "vless", Listen: "127.0.0.1", Port: 12345}, {Tag: "public-in", Protocol: "socks", Listen: "127.0.0.1", Port: 12346}}).
 		WithOutbounds([]*d.Outbound{{Tag: "tunnel", Protocol: "vless", Address: "127.0.0.1", Port: 12345, Network: "tcp", VLESSSettings: &d.VLESSSettings{UUID: "test-user", Encryption: "none"}}, {Tag: "direct", Protocol: "freedom", FreedomSettings: &d.FreedomSettings{FinalRules: []d.FreedomFinalRule{{Action: "allow", IP: []string{"127.0.0.1/32"}}}}}}).
 		WithUsers(map[string][]*User{"tunnel-in": {{Email: "bridge@test", UUID: "test-user"}}}).
 		WithReverseProxies([]*d.ReverseProxy{bridge, portal}).
-		WithRoutingRules([]*d.RoutingRule{{ID: 1, Enabled: true, RuleTag: "legacy-control", OutboundTag: "tunnel", InboundTags: []string{"bridge"}, DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "legacy.test"}}}, {ID: 2, Enabled: true, OutboundTag: "direct", InboundTags: []string{"bridge"}}})
+		WithRoutingRules([]*d.RoutingRule{{ID: 2, Enabled: true, OutboundTag: "direct", InboundTags: []string{"bridge"}}})
 	raw, err := b.Build()
 	if err != nil {
 		t.Fatal(err)
@@ -417,12 +416,7 @@ func TestPanelSettingsVLESSReverseMigration(t *testing.T) {
 	if c.XCoreHub["reversePortals"].(map[string]string)["tunnel-in"] != "portal" {
 		t.Fatal("API metadata missing")
 	}
-	for _, rule := range c.Routing["rules"].([]map[string]interface{}) {
-		if rule["ruleTag"] == "legacy-control" {
-			t.Fatal("legacy control rule retained")
-		}
-	}
-	// Unsupported legacy interconnections are surfaced before a node push.
+	// Unsupported interconnections are surfaced before a node push.
 	b.outbounds[0].Protocol = "socks"
 	if _, err = b.Build(); err == nil || !strings.Contains(err.Error(), "VLESS") {
 		t.Fatalf("non-VLESS interconnection accepted: %v", err)

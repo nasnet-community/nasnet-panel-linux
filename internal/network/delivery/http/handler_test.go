@@ -196,8 +196,6 @@ func (s *stubUsecase) SetPoolOrder(_ context.Context, ids []uint) error {
 	return s.poolOrderErr
 }
 
-func (s *stubUsecase) MigratePoolStrategy(context.Context) error { return nil }
-
 func (s *stubUsecase) VPNStatus(context.Context) (*usecase.VPNPoolStatusView, error) {
 	if s.vpnStatus == nil {
 		return &usecase.VPNPoolStatusView{Tunnels: []usecase.TunnelStatusView{}, KillSwitch: true}, nil

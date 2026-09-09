@@ -88,12 +88,6 @@ func (s *stubSubscriptionUsecase) GetSubscriptionConfig(_ context.Context, _ str
 func (s *stubSubscriptionUsecase) GetSubscriptionServers(_ context.Context, _ uint) ([]usecase.SubServer, error) {
 	return nil, nil
 }
-func (s *stubSubscriptionUsecase) GetByConfigEmail(_ context.Context, _ string) (*domain.Subscription, error) {
-	return nil, errStub
-}
-func (s *stubSubscriptionUsecase) CreateDirect(_ context.Context, _ *domain.Subscription) error {
-	return errStub
-}
 func (s *stubSubscriptionUsecase) AssignToUser(_ context.Context, _, _ uint) error { return errStub }
 func (s *stubSubscriptionUsecase) AssignToInbound(_ context.Context, _, _ uint) error {
 	return errStub

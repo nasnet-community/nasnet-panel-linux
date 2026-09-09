@@ -12,7 +12,7 @@ func (u *subscriptionUsecase) GetByID(ctx context.Context, id uint) (*domain.Sub
 }
 
 func (u *subscriptionUsecase) GetByConfigID(ctx context.Context, configID string) (*domain.Subscription, error) {
-	return u.subRepo.FindByConfigID(ctx, configID)
+	return u.subRepo.FindByLinkKey(ctx, configID)
 }
 
 func (u *subscriptionUsecase) ListByUserID(ctx context.Context, userID uint, offset, limit int) ([]*domain.Subscription, error) {
@@ -37,9 +37,4 @@ func (u *subscriptionUsecase) GetSubscriptionLink(ctx context.Context, id uint) 
 		return "", err
 	}
 	return sub.SubLink, nil
-}
-
-// GetByConfigEmail finds a subscription by config email (for migration duplicate check)
-func (u *subscriptionUsecase) GetByConfigEmail(ctx context.Context, email string) (*domain.Subscription, error) {
-	return u.subRepo.FindByConfigEmail(ctx, email)
 }

@@ -27,7 +27,7 @@ type SubscriptionFilter struct {
 type SubscriptionRepository interface {
 	Create(ctx context.Context, sub *domain.Subscription) error
 	FindByID(ctx context.Context, id uint) (*domain.Subscription, error)
-	FindByConfigID(ctx context.Context, configID string) (*domain.Subscription, error)
+	FindByLinkKey(ctx context.Context, linkKey string) (*domain.Subscription, error)
 	FindByConfigEmail(ctx context.Context, email string) (*domain.Subscription, error)
 
 	FindByConfigEmails(ctx context.Context, emails []string) (map[string]*domain.Subscription, error)
@@ -118,14 +118,12 @@ func (r *subscriptionRepository) FindByID(ctx context.Context, id uint) (*domain
 	return &sub, nil
 }
 
-// FindByConfigID resolves by link_key first (rotatable), falling back to
-// config_id for legacy rows. Once link_key is set, old config_id stops
-// resolving — required for key rotation to invalidate old URLs.
-func (r *subscriptionRepository) FindByConfigID(ctx context.Context, configID string) (*domain.Subscription, error) {
+// FindByLinkKey resolves only the rotatable public subscription key.
+func (r *subscriptionRepository) FindByLinkKey(ctx context.Context, linkKey string) (*domain.Subscription, error) {
 	var sub domain.Subscription
 	if err := database.GetExecutor(r.db, ctx).
 		Preload("User").
-		Where("link_key = ? OR ((link_key IS NULL OR link_key = '') AND config_id = ?)", configID, configID).
+		Where("link_key = ?", linkKey).
 		First(&sub).Error; err != nil {
 		return nil, err
 	}

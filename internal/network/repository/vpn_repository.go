@@ -9,7 +9,7 @@ import (
 )
 
 // VPNRepository stores tunnel profiles. Slot uniqueness among enabled rows is
-// a database constraint rather than a convention — see EnsureVPNPoolMigration.
+// a database constraint rather than a convention — see EnsureVPNPoolIndex.
 type VPNRepository interface {
 	List(ctx context.Context) ([]domain.VPNProfile, error)
 	Get(ctx context.Context, id uint) (*domain.VPNProfile, error)
@@ -30,11 +30,6 @@ type VPNRepository interface {
 	SetTransport(ctx context.Context, id uint, uplinkKey string) error
 	// SetPool is the rollback path: the enabled set becomes exactly want.
 	SetPool(ctx context.Context, want []domain.VPNProfile) error
-
-	// Retired by the pool rework; deleted once the last caller goes.
-	Active(ctx context.Context) (*domain.VPNProfile, error)
-	SetActive(ctx context.Context, id uint) error
-	ClearActive(ctx context.Context) error
 }
 
 type vpnRepository struct {
@@ -45,36 +40,12 @@ func NewVPNRepository(db *gorm.DB) VPNRepository {
 	return &vpnRepository{db: db}
 }
 
-// EnsureVPNPoolMigration retires the single-active model. Idempotent: the
-// active flag is cleared as it converts, so a later disable sticks.
-func EnsureVPNPoolMigration(db *gorm.DB) error {
-	// One transaction: the slot index and the rows it constrains must not be
-	// able to land apart, or a boot that half-ran leaves the tunnel off and
-	// retries the same failing update forever.
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`DROP INDEX IF EXISTS ux_vpn_profile_active`).Error; err != nil {
-			return err
-		}
-		// Only one row can take slot 0, so convert the newest and leave the
-		// rest disabled rather than failing the whole migration.
-		if err := tx.Exec(`
-			UPDATE vpn_profiles SET enabled = true, wg_slot = 0, weight = 1,
-			  priority = 0, active = false
-			WHERE id = (SELECT id FROM vpn_profiles
-			            WHERE active AND deleted_at IS NULL
-			            ORDER BY id DESC LIMIT 1)`).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(`
-			UPDATE vpn_profiles SET active = false
-			WHERE active AND deleted_at IS NULL`).Error; err != nil {
-			return err
-		}
-		return tx.Exec(`
-			CREATE UNIQUE INDEX IF NOT EXISTS ux_vpn_wg_slot
-			  ON vpn_profiles (wg_slot)
-			  WHERE wg_slot IS NOT NULL AND deleted_at IS NULL`).Error
-	})
+// EnsureVPNPoolIndex gives each saved pool interface slot one owner.
+func EnsureVPNPoolIndex(db *gorm.DB) error {
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS ux_vpn_wg_slot
+		  ON vpn_profiles (wg_slot)
+		  WHERE wg_slot IS NOT NULL AND deleted_at IS NULL`).Error
 }
 
 func (r *vpnRepository) List(ctx context.Context) ([]domain.VPNProfile, error) {
@@ -101,8 +72,6 @@ func (r *vpnRepository) Create(ctx context.Context, p *domain.VPNProfile) error 
 	if p.Type == "" {
 		p.Type = domain.VPNTypeWireGuard
 	}
-	// Activation is a routing change, so it never rides on a create.
-	p.Active = false
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -214,38 +183,6 @@ func (r *vpnRepository) SetTransport(ctx context.Context, id uint, uplinkKey str
 		return domain.ErrProfileNotFound
 	}
 	return res.Error
-}
-
-func (r *vpnRepository) Active(ctx context.Context) (*domain.VPNProfile, error) {
-	var p domain.VPNProfile
-	err := r.db.WithContext(ctx).Where("active").First(&p).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
-}
-
-func (r *vpnRepository) SetActive(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var p domain.VPNProfile
-		if err := tx.First(&p, id).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&domain.VPNProfile{}).
-			Where("active").Update("active", false).Error; err != nil {
-			return err
-		}
-		return tx.Model(&domain.VPNProfile{}).
-			Where("id = ?", id).Update("active", true).Error
-	})
-}
-
-func (r *vpnRepository) ClearActive(ctx context.Context) error {
-	return r.db.WithContext(ctx).Model(&domain.VPNProfile{}).
-		Where("active").Update("active", false).Error
 }
 
 func (r *vpnRepository) SetPool(ctx context.Context, want []domain.VPNProfile) error {

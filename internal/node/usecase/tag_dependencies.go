@@ -59,7 +59,7 @@ func (u *nodeUsecase) rejectReferencedTagRename(ctx context.Context, nodeID uint
 		return fmt.Errorf("failed to check routing references: %w", err)
 	}
 	for _, rule := range rules {
-		if managed != nil && ((managed.Rule1ID != nil && rule.ID == *managed.Rule1ID) || (managed.Rule2ID != nil && rule.ID == *managed.Rule2ID)) {
+		if managed != nil && managed.Rule2ID != nil && rule.ID == *managed.Rule2ID {
 			continue
 		}
 		if (kind == "outbound" && rule.OutboundTag == tag) || (kind == "inbound" && slices.Contains(rule.InboundTags, tag)) {

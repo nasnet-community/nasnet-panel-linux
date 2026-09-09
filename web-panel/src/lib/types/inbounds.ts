@@ -196,7 +196,6 @@ export interface WireGuardSettings {
     secretKey: string
     mtu?: number
     endpoint: string[]
-    numWorkers?: number
     reserved?: number[]
     domainStrategy?: 'forceip' | 'forceipv4' | 'forceipv6' | 'forceipv4v6' | 'forceipv6v4'
     noKernelTun?: boolean

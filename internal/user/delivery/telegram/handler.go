@@ -95,10 +95,7 @@ func (h *Handler) handleLinkPayload(ctx context.Context, payload string, chatID 
 	if err != nil {
 		return i18n.Get(lang, "TgLinkExpired")
 	}
-	linkKey := sub.LinkKey
-	if linkKey == "" {
-		linkKey = sub.ConfigID
-	}
+	linkKey := sub.GetLinkKey()
 	if err := h.subLinker.UpdateTelegramChatIDByConfigID(ctx, linkKey, chatID); err != nil {
 		return i18n.Get(lang, "ErrGeneral")
 	}

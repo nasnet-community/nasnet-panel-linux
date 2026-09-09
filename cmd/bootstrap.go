@@ -273,12 +273,6 @@ func initUsecases(
 		log.WithError(err).Warn("Failed to seed default settings")
 	}
 
-	// Nodes stored before the uuid column existed carry an empty one, and the
-	// heartbeat's agent-identity check skips a node whose UUID is empty.
-	if err := nodeUsecase.BackfillNodeUUIDs(context.Background()); err != nil {
-		log.WithError(err).Warn("Failed to backfill node UUIDs")
-	}
-
 	// After a SQLite backup restore the process restarts, but the restored
 	// database may contain deployment-specific settings (URLs, ports, tokens)
 	// from a different server. Check for the marker file and re-apply env values.
@@ -290,9 +284,6 @@ func initUsecases(
 		}
 		os.Remove(reseedMarker)
 	}
-
-	// Migrate global panel password from plaintext to bcrypt if needed.
-	settingUsecase.MigrateGlobalPanelPassword(context.Background())
 
 	chatUsecase := chatUC.NewChatUsecase(
 		repos.Chat,

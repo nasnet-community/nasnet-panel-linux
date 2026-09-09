@@ -1570,9 +1570,6 @@ func (r *nodeRepository) DeleteReverseProxiesByNode(ctx context.Context, nodeID 
 	var rps []*domain.ReverseProxy
 	if err := r.db.WithContext(ctx).Where("node_id = ?", nodeID).Find(&rps).Error; err == nil {
 		for _, rp := range rps {
-			if rp.Rule1ID != nil {
-				r.db.WithContext(ctx).Delete(&domain.RoutingRule{}, *rp.Rule1ID)
-			}
 			if rp.Rule2ID != nil {
 				r.db.WithContext(ctx).Delete(&domain.RoutingRule{}, *rp.Rule2ID)
 			}
