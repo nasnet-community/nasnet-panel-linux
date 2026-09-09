@@ -56,9 +56,10 @@ import { toast } from "sonner"
 // ==================== Queries ====================
 
 // List all nodes
-export function useNodes() {
+export function useNodes(enabled = true) {
     return useQuery({
         queryKey: queryKeys.nodeList(),
+        enabled,
         queryFn: async () => {
             const res = await listNodes()
             if (!res.success) throw new Error(res.error || "Failed to fetch nodes")

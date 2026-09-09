@@ -4,10 +4,11 @@ import { queryKeys } from "./keys"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 
 // Dashboard stats query
-export function useDashboardStats() {
+export function useDashboardStats(enabled = true) {
     const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.dashboardStats(),
+        enabled,
         queryFn: async () => {
             const res = await getDashboardStats()
             if (!res.success) throw new Error(res.error || "Failed to fetch dashboard stats")
@@ -60,9 +61,10 @@ export function useNodesSummary(limit = 4) {
 // Dedup'd global online-user history for sidebar sparkline.
 // Backend writes one snapshot per scheduler tick (default 5s);
 // we poll at 15s so we don't burn requests faster than new data arrives.
-export function useOnlineUsersHistory(minutes: number = 15) {
+export function useOnlineUsersHistory(minutes: number = 15, enabled = true) {
     return useQuery({
         queryKey: queryKeys.onlineUsersHistory(minutes),
+        enabled,
         queryFn: async () => {
             const res = await getOnlineUsersHistory(minutes)
             if (!res.success) throw new Error(res.error || "Failed to fetch online users history")

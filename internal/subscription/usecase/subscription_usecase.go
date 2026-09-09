@@ -131,6 +131,7 @@ type SubscriptionUsecase interface {
 
 	// Filtered admin list (used by web panel)
 	ListAllFilteredSubscriptions(ctx context.Context, filter repository.SubscriptionFilter) ([]*domain.Subscription, int64, error)
+	CountExpiringSubscriptions(ctx context.Context, days int) (int64, error)
 
 	// Subscription daily usage
 	GetSubscriptionUsageHistory(ctx context.Context, subID uint, days int) ([]UsageHistoryPoint, error)

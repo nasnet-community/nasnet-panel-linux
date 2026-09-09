@@ -7,8 +7,8 @@ import { useNodes, useNodesStatsBulk } from "./use-nodes"
 // Node aggregate stats derived from existing useNodes + useNodesStatsBulk
 // caches. SSE node.stats_updated patches the bulk cache, so this widget
 // refreshes without explicit invalidation.
-export function useNodeAggregateStats() {
-    const { data: nodes = [], isLoading: nodesLoading } = useNodes()
+export function useNodeAggregateStats(enabled = true, includeStats = true) {
+    const { data: nodes = [], isLoading: nodesLoading } = useNodes(enabled)
 
     const onlineIds = useMemo(
         () => nodes.filter((n) => n.is_online).map((n) => n.id),
@@ -17,7 +17,7 @@ export function useNodeAggregateStats() {
 
     const { data: bulk, isLoading: bulkLoading } = useNodesStatsBulk(
         onlineIds,
-        onlineIds.length > 0,
+        enabled && includeStats && onlineIds.length > 0,
     )
 
     const data = useMemo(() => {

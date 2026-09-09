@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { useState, useEffect } from "react"
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Breadcrumbs } from "@/components/shared/breadcrumbs"
+import { useIsMobile } from "@/hooks/use-is-mobile"
 import { useSettings } from "@/lib/queries"
 import { Router as RouterIcon, Waypoints, Wrench } from "lucide-react"
 // import { MessageSquare } from "lucide-react"
@@ -119,6 +120,7 @@ export function DashboardLayout() {
         }
         return false
     })
+    const isMobile = useIsMobile()
     const [terminalSidebarExpanded, setTerminalSidebarExpanded] = useState(false)
     const sidebarCollapsed = terminalWorkspace ? !terminalSidebarExpanded : isCollapsed
     const [mounted, setMounted] = useState(false)
@@ -188,7 +190,7 @@ export function DashboardLayout() {
                     </button>
                     <div className="flex-1 flex flex-col min-h-0">
                         <SidebarHeader collapsed={sidebarCollapsed} />
-                        <SidebarContextPanel collapsed={sidebarCollapsed} />
+                        <SidebarContextPanel collapsed={sidebarCollapsed} visible={!isMobile} />
                         <SidebarNav
                             sections={NAV_SECTIONS}
                             collapsed={sidebarCollapsed}
@@ -279,7 +281,7 @@ export function DashboardLayout() {
                         <SheetDescription className="sr-only">Additional navigation and settings</SheetDescription>
                         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                         <div className="px-4 pt-2 pb-1">
-                            <SidebarContextPanel collapsed={false} />
+                            <SidebarContextPanel collapsed={false} visible={mobileOpen} />
                         </div>
                         <nav className="px-2 space-y-1">
                             {NAV_SECTIONS.map((section) => {

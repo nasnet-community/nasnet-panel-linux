@@ -207,3 +207,8 @@ export async function getBulkInboundSummary(subscriptionIds: number[]): Promise<
         subscription_ids: subscriptionIds,
     })
 }
+
+// Exact aggregate for sidebar badges, without loading subscription rows.
+export async function getExpiringSubscriptionCount(days: number): Promise<ApiResponse<{ count: number }>> {
+    return api.get<{ count: number }>(`/api/v1/admin/subscriptions/expiring-soon/count?days=${days}`)
+}

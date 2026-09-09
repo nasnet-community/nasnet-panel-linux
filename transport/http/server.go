@@ -317,6 +317,7 @@ func NewServer(deps ServerDeps) *Server {
 	}
 	{
 		// Admin dashboard and management
+		subHandler.RegisterAdminRoutes(adminAPI)
 		if deps.Admin.AdminUsecase != nil {
 			adminHandler := adminHttp.NewHandler(deps.Admin.AdminUsecase, deps.Config.AppConfig.BaseURL, deps.Admin.AuditUsecase, deps.Config.TelegramBotToken, deps.Admin.SettingUsecase)
 			adminHandler.SetHTTPClientFactory(deps.Infra.HTTPClientFactory)

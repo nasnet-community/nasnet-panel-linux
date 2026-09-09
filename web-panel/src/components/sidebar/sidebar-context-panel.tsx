@@ -90,8 +90,11 @@ interface PanelData {
 
 const EMPTY_PLACEHOLDER = "—"
 
-function useResolvedPanelData(config: ContextConfig): PanelData {
-    // All hooks run unconditionally; consumers pick the right fields below.
+function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel: boolean, showDetails: boolean): PanelData {
+    const context = visible ? config.id : undefined
+    const showOnline = context === "system" || context === "customers" || context === "nodes"
+    const showPortfolio = showDetails && (context === "system" || context === "customers")
+    // Hook order stays stable; observers only fetch data needed on screen.
     const c = useChartPalette()
     const COLORS = {
         active: c.success,
@@ -101,13 +104,13 @@ function useResolvedPanelData(config: ContextConfig): PanelData {
         paused: c.neutral,
         cancelled: c.mutedForeground,
     } as const
-    const dashboard = useDashboardStats()
+    const dashboard = useDashboardStats(!!context && (context !== "nodes" || showPanel))
     // Chat support removed (frontend only)
     // const unread = useUnreadChatCount()
-    const aggregate = useNodeAggregateStats()
-    const onlineHistory = useOnlineUsersHistory(15)
-    const subCounts = useSubscriptionCounts()
-    const expiring7d = useSubsExpiringWithin(7)
+    const aggregate = useNodeAggregateStats(showOnline, context === "nodes" && showDetails)
+    const onlineHistory = useOnlineUsersHistory(15, showOnline && showPanel)
+    const subCounts = useSubscriptionCounts(showPortfolio)
+    const expiring7d = useSubsExpiringWithin(7, showPortfolio)
 
     const dash = dashboard.data
     const agg = aggregate.data
@@ -361,19 +364,23 @@ const STATUS_DOT: Record<ContextStatus, string> = {
 
 export interface SidebarContextPanelProps {
     collapsed: boolean
+    visible?: boolean
 }
 
-export function SidebarContextPanel({ collapsed }: SidebarContextPanelProps) {
+export function SidebarContextPanel({ collapsed, visible = true }: SidebarContextPanelProps) {
     const location = useLocation()
     const pathname = location.pathname
     // Always a config, so the panel is always present and the nav never moves.
     const config = getContextConfig(pathname)
     const [expanded, toggleExpanded] = useExpandedState()
-    const data = useResolvedPanelData(config)
+    const [hovered, setHovered] = useState(false)
+    useEffect(() => setHovered(false), [visible, collapsed, pathname])
+    const data = useResolvedPanelData(config, visible, !collapsed || hovered, collapsed ? hovered : expanded)
+    if (!visible) return null
 
     if (collapsed) {
         return (
-            <div className="group relative py-2.5 px-2 border-b border-border/50">
+            <div className="group relative py-2.5 px-2 border-b border-border/50" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
                 <div
                     className="flex flex-col items-center gap-0.5 rounded-[4px] py-1.5 px-1 cursor-default"
                     title={`${config.label} · ${data.headline}`}

@@ -46,6 +46,7 @@ type SubscriptionRepository interface {
 	ListAll(ctx context.Context, status string, offset, limit int) ([]*domain.Subscription, error)
 	CountAll(ctx context.Context) (int64, error)
 	CountByStatus(ctx context.Context, status string) (int64, error)
+	CountExpiring(ctx context.Context, after, through time.Time) (int64, error)
 	ExtendDays(ctx context.Context, id uint, days int) error
 	ResetDataUsed(ctx context.Context, id uint) error
 	UpdateLabel(ctx context.Context, id uint, label string) error

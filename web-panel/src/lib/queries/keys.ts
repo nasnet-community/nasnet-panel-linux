@@ -58,6 +58,7 @@ export const queryKeys = {
     subscriptionList: (filters: object) => [...queryKeys.subscriptions, 'list', filters] as const,
     subscriptionDetails: (id: number) => [...queryKeys.subscriptions, 'details', id] as const,
     subscriptionCounts: () => [...queryKeys.subscriptions, 'counts'] as const,
+    subscriptionExpiringCount: (days: number) => [...queryKeys.subscriptions, 'expiring-count', days] as const,
     subscriptionAccessHistory: (id: number, from: string, to: string, granularity: string, includeIps: boolean) =>
         [...queryKeys.subscriptions, 'access-history', id, from, to, granularity, includeIps] as const,
     subscriptionAccessSearch: (id: number, from: string, to: string, q: string, kinds: string[], includeIps: boolean) =>

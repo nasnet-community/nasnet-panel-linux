@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useMemo } from "react"
 import {
     listSubscriptions,
     getSubscription,
@@ -20,6 +19,7 @@ import {
     bulkSubscriptionAction,
     bulkSetBandwidthLimit,
     getSubscriptionCounts,
+    getExpiringSubscriptionCount,
     setSubscriptionBandwidthLimit,
     setSubscriptionMaxDevices,
     setSubscriptionPanelPassword,
@@ -57,10 +57,11 @@ export interface UseSubscriptionsParams {
 // ==================== Queries ====================
 
 // List subscriptions with filters
-export function useSubscriptions(params: UseSubscriptionsParams) {
+export function useSubscriptions(params: UseSubscriptionsParams, enabled = true) {
     const refetchInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.subscriptionList(params),
+        enabled,
         queryFn: async () => {
             const res = await listSubscriptions({
                 status: params.status === "all" ? undefined : params.status,
@@ -525,9 +526,10 @@ export function useSetPanelPassword() {
 
 // Aggregate sub counts by status. Powers the sidebar context panel's
 // portfolio distribution bar and the derived expiring-soon tiles.
-export function useSubscriptionCounts() {
+export function useSubscriptionCounts(enabled = true) {
     return useQuery({
         queryKey: queryKeys.subscriptionCounts(),
+        enabled,
         queryFn: async () => {
             const res = await getSubscriptionCounts()
             if (!res.success) throw new Error(res.error || "Failed to fetch subscription counts")
@@ -610,23 +612,18 @@ export function useAssignSubscriptionToInbound() {
     })
 }
 
-// Count of active subscriptions whose end_date falls within `days`.
-// Derived client-side from the existing subscription list query; capped
-// at per_page=1000 — flagged as a known limit in the spec.
-export function useSubsExpiringWithin(days: number) {
-    const { data: subs, isLoading } = useSubscriptions({ status: "active", page: 1, perPage: 1000 })
-    const count = useMemo(() => {
-        if (!subs) return 0
-        const cutoff = Date.now() + days * 24 * 3600 * 1000
-        let n = 0
-        for (const s of subs) {
-            if (!s.end_date) continue
-            const t = new Date(s.end_date).getTime()
-            if (!Number.isFinite(t)) continue
-            if (t < cutoff) n++
-        }
-        return n
-    }, [subs, days])
-    return { count, isLoading }
+// Count every active subscription using its effective expiry, without loading rows.
+export function useSubsExpiringWithin(days: number, enabled = true) {
+    const { data, isLoading } = useQuery({
+        queryKey: queryKeys.subscriptionExpiringCount(days),
+        queryFn: async () => {
+            const res = await getExpiringSubscriptionCount(days)
+            if (!res.success) throw new Error(res.error || "Failed to fetch expiring subscription count")
+            return res.data?.count ?? 0
+        },
+        enabled,
+        refetchInterval: 30_000,
+        staleTime: 15_000,
+    })
+    return { count: data ?? 0, isLoading }
 }
-

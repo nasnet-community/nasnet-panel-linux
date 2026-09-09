@@ -53,26 +53,26 @@ interface EventsProviderProps {
     children: React.ReactNode
 }
 
-// ─── Debounced invalidation ─────────────────────────────────────────────────
+// ─── Coalesced invalidation ─────────────────────────────────────────────────
 // Coalesces rapid-fire invalidation requests (e.g. node.stats_updated arriving
 // from many nodes within seconds) into a single invalidateQueries call per
-// query-key prefix.  This avoids hammering the network with redundant refetches.
+// query-key prefix. Later events share the first timer so a steady stream
+// cannot indefinitely postpone the refresh.
 
-type DebouncedInvalidator = {
+type CoalescedInvalidator = {
     timers: Map<string, NodeJS.Timeout>
     schedule: (queryClient: QueryClient, queryKey: readonly unknown[], delayMs: number) => void
     cleanup: () => void
 }
 
-function createDebouncedInvalidator(): DebouncedInvalidator {
+function createCoalescedInvalidator(): CoalescedInvalidator {
     const timers = new Map<string, NodeJS.Timeout>()
 
     return {
         timers,
         schedule(queryClient, queryKey, delayMs) {
             const key = JSON.stringify(queryKey)
-            const existing = timers.get(key)
-            if (existing) clearTimeout(existing)
+            if (timers.has(key)) return
             timers.set(key, setTimeout(() => {
                 timers.delete(key)
                 queryClient.invalidateQueries({ queryKey })
@@ -104,7 +104,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
     const activeToastsRef = useRef<Map<number, string | number>>(new Map())
 
     // Debounced invalidator for high-frequency events (node.stats_updated)
-    const debouncerRef = useRef<DebouncedInvalidator>(createDebouncedInvalidator())
+    const invalidatorRef = useRef<CoalescedInvalidator>(createCoalescedInvalidator())
 
     // Raw event listeners — components subscribe via useEventListener()
     const listenersRef = useRef<Set<RawEventListener>>(new Set())
@@ -145,6 +145,8 @@ export function EventsProvider({ children }: EventsProviderProps) {
             // patches resume.
             queryClientRef.current.invalidateQueries({ queryKey: queryKeys.nodeList() })
             queryClientRef.current.invalidateQueries({ queryKey: queryKeys.nodeStatsBulkAll(), exact: false })
+            queryClientRef.current.invalidateQueries({ queryKey: queryKeys.dashboard })
+            queryClientRef.current.invalidateQueries({ queryKey: queryKeys.subscriptions })
         }
 
         // Handle all event types with inline handlers to avoid dependency issues
@@ -168,7 +170,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             es.addEventListener(eventType, (e) => {
                 try {
                     const event: ServerEvent = JSON.parse(e.data)
-                    handleEvent(eventType, event, queryClientRef.current, activeToastsRef.current, debouncerRef.current)
+                    handleEvent(eventType, event, queryClientRef.current, activeToastsRef.current, invalidatorRef.current)
                     // Notify raw listeners (ActivityFeed, etc.)
                     listenersRef.current.forEach((fn) => fn(eventType, event))
                 } catch (error) {
@@ -197,7 +199,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
         connect()
 
         return () => {
-            debouncerRef.current.cleanup()
+            invalidatorRef.current.cleanup()
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current)
             }
@@ -217,12 +219,18 @@ export function EventsProvider({ children }: EventsProviderProps) {
 // handleEvent: toast + cache invalidation cascade. See call sites for the
 // per-event invalidation lists.
 
+const liveDashboardKeys = [queryKeys.dashboardStats(), queryKeys.onlineUsers(), queryKeys.onlineUsersWithIPs()]
+
+function invalidateLiveDashboard(queryClient: QueryClient) {
+    for (const queryKey of liveDashboardKeys) queryClient.invalidateQueries({ queryKey })
+}
+
 function handleEvent(
     eventType: EventType,
     event: ServerEvent,
     queryClient: QueryClient,
     activeToasts: Map<number, string | number>,
-    debouncer: DebouncedInvalidator,
+    invalidator: CoalescedInvalidator,
 ) {
     switch (eventType) {
         case 'node.online': {
@@ -234,7 +242,7 @@ function handleEvent(
             // Node status changed → refresh node lists, detail, and stats
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             // Dashboard aggregates depend on which nodes are online
-            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+            invalidateLiveDashboard(queryClient)
             // Account online indicators may change
             queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
             break
@@ -246,7 +254,7 @@ function handleEvent(
                 duration: 8000,
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
-            queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+            invalidateLiveDashboard(queryClient)
             queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
             break
         }
@@ -338,7 +346,7 @@ function handleEvent(
             // Dashboard widgets that are *not* derived from bulk cache still
             // need a poke (e.g. dashboard/* aggregates that read other keys).
             // Debounced to coalesce N-nodes-in-burst.
-            debouncer.schedule(queryClient, queryKeys.dashboard, 3000)
+            for (const queryKey of liveDashboardKeys) invalidator.schedule(queryClient, queryKey, 3000)
             break
         }
         case 'subscription.created': {
