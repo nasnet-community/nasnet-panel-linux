@@ -15,6 +15,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
+      - name: Check release notes
+        run: test -s "docs/releases/${GITHUB_REF_NAME}.md"
+
       - name: Set up Go
         uses: actions/setup-go@v7.0.0
         with:
@@ -150,7 +153,8 @@ jobs:
         with:
           name: ${{ steps.meta.outputs.version }}
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          draft: true
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: |
             nasnet-panel-linux-amd64
             nasnet-panel-linux-arm64
