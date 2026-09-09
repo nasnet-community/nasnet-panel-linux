@@ -6,7 +6,7 @@ import {
     getAccountCounts,
     type ListAccountsParams,
     type Account,
-} from "@/lib/admin-api"
+} from "@/lib/api/accounts"
 import { getAccountLink } from "@/lib/api/accounts"
 import { copyToClipboard } from "@/lib/utils"
 import {

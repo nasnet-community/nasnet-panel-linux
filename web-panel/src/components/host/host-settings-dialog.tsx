@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Host, HostWithRelations, Inbound } from "@/lib/types"
-import { addInboundHost, updateHost, createHost, createHostTemplate } from "@/lib/admin-api"
+import { addInboundHost, updateHost, createHost, createHostTemplate } from "@/lib/api/hosts"
 import { queryKeys } from "@/lib/queries/keys"
 import {
     SECURITY_TYPES,

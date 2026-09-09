@@ -21,7 +21,7 @@ import {
 import { Loader2, GitCompare } from "lucide-react"
 import { XrayConfigDiffDialog } from "@/components/node/xray-config-diff-dialog"
 import { toast } from "sonner"
-import { getXrayConfig, updateXrayConfig, validateXrayConfig } from "@/lib/admin-api"
+import { getXrayConfig, updateXrayConfig, validateXrayConfig } from "@/lib/api/nodes"
 import { useTheme } from "@/components/providers/theme-provider"
 
 interface NodeXrayConfigEditorProps {

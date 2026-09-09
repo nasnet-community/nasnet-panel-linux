@@ -6,7 +6,7 @@ import {
     getAccessLogTopDomains,
     type AggregatedAccessLogsParams,
     type AccessLogAnalyticsParams,
-} from "@/lib/admin-api"
+} from "@/lib/api/access-logs"
 
 export interface UseAccessLogsParams {
     nodeIds?: number[]

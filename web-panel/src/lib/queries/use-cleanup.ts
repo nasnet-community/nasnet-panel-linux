@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { cleanupDatabase } from "@/lib/admin-api"
-import type { CleanupResult } from "@/lib/admin-api"
+import { cleanupDatabase } from "@/lib/api/backup"
+import type { CleanupResult } from "@/lib/api/backup"
 import { toast } from "sonner"
 
 export function useDatabaseCleanup() {

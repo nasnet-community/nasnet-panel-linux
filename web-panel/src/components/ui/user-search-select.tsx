@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Search, X, UserPlus, Loader2 } from "lucide-react"
 import { FaTelegram } from "react-icons/fa"
-import { listUsers } from "@/lib/admin-api"
+import { listUsers } from "@/lib/api/users"
 import { cn } from "@/lib/utils"
 import type { User } from "@/lib/types"
 

@@ -16,7 +16,7 @@ import { useTheme } from "@/components/providers/theme-provider"
 import { useNodeXrayConfigDiff } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
-import { pushNodeConfig } from "@/lib/admin-api"
+import { pushNodeConfig } from "@/lib/api/nodes"
 import { toast } from "sonner"
 
 const DiffEditor = lazy(async () => {

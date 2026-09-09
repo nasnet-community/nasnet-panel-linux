@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { HiOutlineRefresh, HiOutlineSearch, HiOutlineX, HiOutlineCog } from "react-icons/hi"
 import { Loader2 } from "lucide-react"
 import { useSettings, useUpdateSettings } from "@/lib/queries"
-import { restartServer } from "@/lib/admin-api"
+import { restartServer } from "@/lib/api/backup"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { toast } from "sonner"
 import { getApiBaseUrl } from '@/lib/config'

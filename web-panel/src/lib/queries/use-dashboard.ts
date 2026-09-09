@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
-import { getDashboardStats, getOnlineUsers, getOnlineUsersWithIPs, getOnlineUsersHistory, listNodes } from "@/lib/admin-api"
+import { getDashboardStats, getOnlineUsers, getOnlineUsersHistory } from "@/lib/api/dashboard"
+import { getOnlineUsersWithIPs } from "@/lib/api/users"
+import { listNodes } from "@/lib/api/nodes"
 import { queryKeys } from "./keys"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 

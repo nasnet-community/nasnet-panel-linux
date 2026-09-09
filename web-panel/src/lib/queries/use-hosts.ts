@@ -13,7 +13,7 @@ import {
     deleteHostTemplate as deleteHostTemplateApi,
     applyHostTemplate,
     type ListHostsParams,
-} from "@/lib/admin-api"
+} from "@/lib/api/hosts"
 import type { Host, HostTemplate } from "@/lib/types"
 import { queryKeys } from "./keys"
 import { toast } from "sonner"

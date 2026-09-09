@@ -31,7 +31,8 @@ import {
     FormMessage,
 } from "@/components/ui/form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { listNodes, listNodeInbounds, migrateAccount, Account } from "@/lib/admin-api"
+import { listNodes, listNodeInbounds } from "@/lib/api/nodes"
+import { migrateAccount, Account } from "@/lib/api/accounts"
 
 const schema = z.object({
     targetNodeId: z.string().min(1, "Target node is required"),

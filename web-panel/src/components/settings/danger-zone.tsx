@@ -13,7 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Loader2, AlertTriangle, Info, CheckCircle2, Trash2 } from "lucide-react"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { useDatabaseCleanup, useCreateBackup } from "@/lib/queries"
-import type { CleanupResult } from "@/lib/admin-api"
+import type { CleanupResult } from "@/lib/api/backup"
 
 export function DangerZone({ disabled, asMenuItem = false }: { disabled?: boolean; asMenuItem?: boolean }) {
     const [confirmOpen, setConfirmOpen] = useState(false)

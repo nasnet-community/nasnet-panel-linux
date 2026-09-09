@@ -12,7 +12,7 @@ import {
     issueSNICertHTTP01,
     startSNIDNS01,
     completeSNIDNS01,
-} from "@/lib/admin-api"
+} from "@/lib/api/domains"
 import { queryKeys } from "./keys"
 import { toast } from "sonner"
 

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { updateGeoFiles } from "@/lib/admin-api"
+import { updateGeoFiles } from "@/lib/api/nodes"
 import { Globe, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 

@@ -38,7 +38,8 @@ import {
     Wifi,
 } from "lucide-react"
 import { FaTelegram } from "react-icons/fa"
-import { listNodes, createUser as createUserAPI } from "@/lib/admin-api"
+import { listNodes } from "@/lib/api/nodes"
+import { createUser as createUserAPI } from "@/lib/api/users"
 import { useCreateManualSubscription } from "@/lib/queries/use-subscriptions"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
 import { UserSearchSelect } from "@/components/ui/user-search-select"

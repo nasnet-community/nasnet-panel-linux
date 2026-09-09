@@ -12,7 +12,7 @@ import {
     getUserActivity,
     updateUserNotes,
     getUserAccounts,
-} from "@/lib/admin-api"
+} from "@/lib/api/users"
 import type { User, UserListItem } from "@/lib/types"
 import { queryKeys } from "./keys"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"

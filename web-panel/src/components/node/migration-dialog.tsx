@@ -31,7 +31,7 @@ import {
     FormMessage,
 } from "@/components/ui/form"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { listNodes, listNodeInbounds, migrateNode } from "@/lib/admin-api"
+import { listNodes, listNodeInbounds, migrateNode } from "@/lib/api/nodes"
 import { Node } from "@/lib/types"
 
 const transformSchema = z.object({

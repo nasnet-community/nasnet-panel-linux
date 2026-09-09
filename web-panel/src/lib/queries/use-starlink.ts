@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "./keys"
-import { getStarlinkStatus, getStarlinkObstructionMap, getStarlinkHistory } from "@/lib/admin-api"
+import { getStarlinkStatus, getStarlinkObstructionMap, getStarlinkHistory } from "@/lib/api/nodes"
 
 const TIME_RANGE_MS: Record<string, number> = {
     "1h": 60 * 60 * 1000,

@@ -12,8 +12,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { formatDate } from "@/lib/utils"
-import { getXrayReleases, updateXrayVersion } from "@/lib/admin-api"
-import type { XrayRelease } from "@/lib/admin-api"
+import { getXrayReleases, updateXrayVersion } from "@/lib/api/nodes"
+import type { XrayRelease } from "@/lib/api/nodes"
 import { Loader2, Settings } from "lucide-react"
 
 interface XrayVersionDialogProps {

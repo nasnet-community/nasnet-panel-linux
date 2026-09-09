@@ -7,7 +7,7 @@ import { Info, AlertTriangle, KeyRound, Shield, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { generateVLESSKeys } from "@/lib/admin-api";
+import { generateVLESSKeys } from "@/lib/api/nodes"
 import { cn } from "@/lib/utils";
 import { FallbacksForm } from "./fallbacks-form";
 

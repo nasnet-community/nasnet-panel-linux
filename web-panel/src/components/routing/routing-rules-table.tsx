@@ -30,7 +30,7 @@ import { GripVertical } from "lucide-react"
 import { HiOutlinePencil, HiOutlineTrash, HiOutlineMap, HiOutlinePlus } from "react-icons/hi"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { reorderRoutingRules } from "@/lib/admin-api"
+import { reorderRoutingRules } from "@/lib/api/routing"
 import { SwipeableRoutingRow } from "@/components/node/swipeable-routing-row"
 import type { RoutingRule } from "@/lib/types"
 

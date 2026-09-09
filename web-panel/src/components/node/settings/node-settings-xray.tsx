@@ -19,7 +19,7 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form"
-import { getXrayConfig, updateXrayConfig } from "@/lib/admin-api"
+import { getXrayConfig, updateXrayConfig } from "@/lib/api/nodes"
 import { nodeXrayLogSchema, type NodeXrayLogFormData } from "@/lib/validations/node-settings-schema"
 import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
 

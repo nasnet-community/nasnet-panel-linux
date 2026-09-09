@@ -3,7 +3,7 @@ import { motion, useMotionValue, useTransform, animate } from "framer-motion"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { cn, formatCompact } from "@/lib/utils"
-import type { Account } from "@/lib/admin-api"
+import type { Account } from "@/lib/api/accounts"
 import { HiOutlineClipboardCopy, HiOutlineRefresh } from "react-icons/hi"
 import { Trash2 } from "lucide-react"
 

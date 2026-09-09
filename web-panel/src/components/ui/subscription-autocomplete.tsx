@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Search, Loader2 } from "lucide-react"
-import { listSubscriptions } from "@/lib/admin-api"
+import { listSubscriptions } from "@/lib/api/subscriptions"
 import { cn } from "@/lib/utils"
 
 interface Suggestion {

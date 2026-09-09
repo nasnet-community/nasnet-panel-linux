@@ -21,11 +21,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-    getNode,
-    listNodes,
-    restartXrayProcess,
-} from "@/lib/admin-api"
+import { getNode, listNodes, restartXrayProcess } from "@/lib/api/nodes"
 import { Loader2, Satellite } from "lucide-react"
 import { useNodeStats, useNodeStatsHistory, queryKeys } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"

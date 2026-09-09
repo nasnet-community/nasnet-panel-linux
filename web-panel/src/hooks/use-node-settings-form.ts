@@ -2,17 +2,8 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react
 import { useForm, type UseFormReturn } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
-import {
-    nodeSettingsSchema,
-    type NodeSettingsFormData,
-} from "@/lib/validations/node-settings-schema"
-import {
-    updateNode,
-    getXrayConfig,
-    updateXrayConfig,
-    getNodeSSHStatus,
-    updateNodeSSHConfig,
-} from "@/lib/admin-api"
+import { nodeSettingsSchema, type NodeSettingsFormData } from "@/lib/validations/node-settings-schema"
+import { updateNode, getXrayConfig, updateXrayConfig, getNodeSSHStatus, updateNodeSSHConfig } from "@/lib/api/nodes"
 import { setNodeMaintenance } from "@/lib/api/maintenance"
 import type { Node, SSHStatus } from "@/lib/types"
 

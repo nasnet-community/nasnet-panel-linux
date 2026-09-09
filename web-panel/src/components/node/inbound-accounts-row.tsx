@@ -40,7 +40,7 @@ import {
 } from "react-icons/hi"
 import { cn, formatBytes, formatDataLimit, getExpiryInfo, copyToClipboard } from "@/lib/utils"
 import { toast } from "sonner"
-import { deleteAccount } from "@/lib/admin-api"
+import { deleteAccount } from "@/lib/api/accounts"
 import { type Account, disableAccount, enableAccount, getAccountLink } from "@/lib/api/accounts"
 import { useQueryClient } from "@tanstack/react-query"
 import { QRCodeSVG } from "qrcode.react"

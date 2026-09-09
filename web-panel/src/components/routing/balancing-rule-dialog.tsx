@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ResponsiveDialog } from "@/components/ui/responsive-dialog"
 import { toast } from "sonner"
 import { HiOutlineExclamation, HiOutlineInformationCircle, HiOutlineSearch } from "react-icons/hi"
-import { addBalancingRule, updateBalancingRule } from "@/lib/admin-api"
+import { addBalancingRule, updateBalancingRule } from "@/lib/api/routing"
 import type { BalancingRule, Outbound, RoutingRule } from "@/lib/types"
 
 export const STRATEGIES = [

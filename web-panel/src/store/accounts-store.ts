@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import type { Account } from "@/lib/admin-api"
+import type { Account } from "@/lib/api/accounts"
 
 type StatusFilter = "all" | "active" | "disabled" | "expired"
 

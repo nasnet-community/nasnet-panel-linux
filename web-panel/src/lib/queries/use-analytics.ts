@@ -1,5 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { getPeakHours, getBlockedDomainStats, getUserUsagePattern, getExhaustionPrediction } from "@/lib/admin-api"
+import {
+    getPeakHours,
+    getBlockedDomainStats,
+    getUserUsagePattern,
+    getExhaustionPrediction,
+} from "@/lib/api/dashboard"
 import { queryKeys } from "./keys"
 
 export function usePeakHours(days = 7, nodeIds?: number[]) {

@@ -12,15 +12,12 @@ import {
     getNodeHostInfo,
     getNodeStatsHistory,
     listNodeInbounds,
-    listNodeOutbounds,
-    listNodeRoutingRules,
     addNodeInbound,
     updateNodeInbound,
     deleteNodeInbound,
     discoverNodeInbounds,
     syncNodeInbounds,
     getNodeRealtimeUsers,
-    getAccessLogs,
     getNodeDailyTraffic,
     getNodeUptimeEvents,
     migrateInbound,
@@ -29,7 +26,9 @@ import {
     bulkCheckNodeHealth,
     bulkUpdateXrayVersion,
     getNodeXrayConfigDiff,
-    toggleInboundDisabled,
+} from "@/lib/api/nodes"
+import {
+    listNodeOutbounds,
     addNodeOutbound,
     updateNodeOutbound,
     deleteNodeOutbound,
@@ -37,6 +36,9 @@ import {
     testOutbound,
     getOutboundTestSettings,
     updateOutboundTestSettings,
+} from "@/lib/api/outbounds"
+import {
+    listNodeRoutingRules,
     addNodeRoutingRule,
     updateNodeRoutingRule,
     deleteNodeRoutingRule,
@@ -46,7 +48,9 @@ import {
     addReverseProxy,
     updateReverseProxy,
     deleteReverseProxy,
-} from "@/lib/admin-api"
+} from "@/lib/api/routing"
+import { getAccessLogs } from "@/lib/api/access-logs"
+import { toggleInboundDisabled } from "@/lib/api/inbounds"
 import type { NodeStatsBulkMap, NodeBulkActionResponse, XrayConfigDiff } from "@/lib/api/nodes"
 import { ApiError } from "@/lib/api"
 import { queryKeys } from "./keys"

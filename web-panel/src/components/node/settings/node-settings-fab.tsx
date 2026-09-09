@@ -15,7 +15,7 @@ import {
     stopXrayProcess,
     clearNodeSSHLogs,
     restartNodeSSH,
-} from "@/lib/admin-api"
+} from "@/lib/api/nodes"
 import { useIsMobile } from "@/hooks/use-is-mobile"
 import type { Node } from "@/lib/types"
 

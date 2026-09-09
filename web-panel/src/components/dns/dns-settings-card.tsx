@@ -26,7 +26,13 @@ import {
     HiOutlineChevronRight,
 } from "react-icons/hi"
 import { Loader2 } from "lucide-react"
-import { getNodeDNSSettings, updateNodeDNSSettings, deleteNodeDNSSettings, getNodeFakeDNSSettings, updateNodeFakeDNSSettings } from "@/lib/admin-api"
+import {
+    getNodeDNSSettings,
+    updateNodeDNSSettings,
+    deleteNodeDNSSettings,
+    getNodeFakeDNSSettings,
+    updateNodeFakeDNSSettings,
+} from "@/lib/api/routing"
 import type { DNSSettings, DNSServer, FakeDNSPool } from "@/lib/types"
 
 // ─── Constants ─────────────────────────────────────────────

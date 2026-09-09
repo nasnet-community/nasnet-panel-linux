@@ -4,7 +4,7 @@ import {
     getSubscriptionAccessHistory,
     searchSubscriptionAccessHistory,
     searchGlobalAccessHistory,
-} from "@/lib/admin-api"
+} from "@/lib/api/access-history"
 import type {
     AccessHistoryParams,
     AccessHistorySearchParams,

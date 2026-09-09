@@ -35,7 +35,8 @@ import { BalancingRulesCard } from "@/components/routing/balancing-rules-card"
 import { ReverseProxyTable } from "@/components/reverse-proxy/reverse-proxy-table"
 import { ReverseProxyDialog } from "@/components/reverse-proxy/reverse-proxy-dialog"
 import type { Inbound, Outbound, OutboundTestEntry, RoutingRule, ReverseProxy } from "@/lib/types"
-import { deleteNodeInbound, toggleInboundDisabled } from "@/lib/admin-api"
+import { deleteNodeInbound } from "@/lib/api/nodes"
+import { toggleInboundDisabled } from "@/lib/api/inbounds"
 import {
     useNodes,
     useNodeInbounds,
@@ -63,7 +64,7 @@ import {
     useUpdateReverseProxy,
     useDeleteReverseProxy,
 } from "@/lib/queries/use-nodes"
-import { listNodeInbounds } from "@/lib/admin-api"
+import { listNodeInbounds } from "@/lib/api/nodes"
 import { NodeXrayConfigEditor } from "./node-xray-config-editor"
 import { NodeSettingsXray } from "./settings/node-settings-xray"
 import { HiOutlineCode, HiOutlineAdjustments } from "react-icons/hi"

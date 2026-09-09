@@ -30,8 +30,8 @@ import {
     addNodeRoutingRule,
     updateNodeRoutingRule,
     deleteNodeRoutingRule,
-    pushNodeConfig,
-} from "@/lib/admin-api"
+} from "@/lib/api/routing"
+import { pushNodeConfig } from "@/lib/api/nodes"
 import type { RoutingSettings, RoutingRule, Outbound } from "@/lib/types"
 
 // ─── Country flag helper ─────────────────────────────────────

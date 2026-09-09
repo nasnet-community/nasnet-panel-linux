@@ -24,8 +24,8 @@ import {
     setSubscriptionMaxDevices,
     setSubscriptionPanelPassword,
     assignSubscriptionToInbound,
-} from "@/lib/admin-api"
-import type { CreateManualSubscriptionRequest } from "@/lib/admin-api"
+} from "@/lib/api/subscriptions"
+import type { CreateManualSubscriptionRequest } from "@/lib/api/subscriptions"
 import {
     bulkManageInbounds,
     getBulkInboundSummary,

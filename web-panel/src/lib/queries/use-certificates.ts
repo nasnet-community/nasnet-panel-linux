@@ -18,7 +18,7 @@ import {
     deleteCertificate,
     getCertificateDetails,
     toggleAutoRenew,
-} from "@/lib/admin-api"
+} from "@/lib/api/certificates"
 import { queryKeys } from "./keys"
 import { toast } from "sonner"
 

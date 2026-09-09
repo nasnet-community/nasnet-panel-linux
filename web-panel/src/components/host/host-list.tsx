@@ -10,7 +10,7 @@ import {
     HiOutlineTrash,
 } from "react-icons/hi"
 import type { Host, Inbound } from "@/lib/types"
-import { listInboundHosts, updateHost, deleteHost } from "@/lib/admin-api"
+import { listInboundHosts, updateHost, deleteHost } from "@/lib/api/hosts"
 import { queryKeys } from "@/lib/queries/keys"
 import { HostSettingsDialog } from "./host-settings-dialog"
 

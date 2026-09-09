@@ -11,7 +11,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { deleteNode } from "@/lib/admin-api"
+import { deleteNode } from "@/lib/api/nodes"
 import { useNodeSettingsForm } from "@/hooks/use-node-settings-form"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes"
