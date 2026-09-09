@@ -9,10 +9,12 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 // sendTerminal serializes Send calls on a bidi terminal stream.
@@ -58,6 +60,22 @@ func (s *Server) OpenTerminal(stream pb.NodeAgent_OpenTerminalServer) error {
 			Payload: &pb.TerminalOutput_Error{Error: "failed to start PTY: " + err.Error()},
 		})
 	}
+	// pty.Start uses Fd(), which disables Go's poller. Reopen a nonblocking
+	// duplicate so Close interrupts reads, including after terminal resizes.
+	fd, err := unix.FcntlInt(ptmx.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err == nil {
+		err = syscall.SetNonblock(fd, true)
+		if err != nil {
+			_ = syscall.Close(fd)
+		}
+	}
+	_ = ptmx.Close()
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return err
+	}
+	ptmx = os.NewFile(uintptr(fd), "terminal-pty")
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
@@ -112,7 +130,7 @@ func (s *Server) OpenTerminal(stream pb.NodeAgent_OpenTerminalServer) error {
 			}
 			if err != nil {
 				// Linux PTYs report EIO when the shell closes its slave fd.
-				if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) && ctx.Err() == nil {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, syscall.EIO) && !errors.Is(err, os.ErrClosed) && ctx.Err() == nil {
 					log.Debugf("Terminal: PTY read error: %v", err)
 					finish()
 				}
@@ -155,8 +173,9 @@ func (s *Server) OpenTerminal(stream pb.NodeAgent_OpenTerminalServer) error {
 	case <-ctx.Done():
 	case <-done:
 	case <-processDone:
-		// Preserve final output, but still honor close while output is blocked
-		// by a peer that is no longer reading.
+		// Drain final output, then detach children that still hold the PTY open.
+		drain := time.AfterFunc(250*time.Millisecond, func() { _ = ptmx.Close() })
+		defer drain.Stop()
 		select {
 		case <-outputDone:
 		case <-ctx.Done():

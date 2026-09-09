@@ -18,6 +18,7 @@ func TestTerminalExitDoesNotWaitForBackgroundPTYHolder(t *testing.T) {
 	shell := filepath.Join(dir, "shell")
 	script := `#!/bin/sh
 trap '' HUP
+read -r finish
 /bin/sh -c 'trap "" HUP; echo $$ > "$TERMINAL_TEST_CHILD_PID"; exec sleep 30' &
 while [ ! -s "$TERMINAL_TEST_CHILD_PID" ]; do sleep 0.01; done
 printf 'shell-finished\n'
@@ -38,6 +39,15 @@ exit 7
 	})
 	deadline := time.AfterFunc(2*time.Second, cancel)
 	defer deadline.Stop()
+	// Resizing must not switch the PTY back to blocking reads.
+	if err := stream.Send(&pb.TerminalInput{Payload: &pb.TerminalInput_Resize{
+		Resize: &pb.TerminalResize{Rows: 24, Cols: 80},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&pb.TerminalInput{Payload: &pb.TerminalInput_Data{Data: []byte("finish\n")}}); err != nil {
+		t.Fatal(err)
+	}
 	var output strings.Builder
 	for {
 		frame, err := stream.Recv()
