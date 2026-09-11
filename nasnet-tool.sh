@@ -734,11 +734,15 @@ require_db() {
 # confirm_action "message"
 # Returns 0 if confirmed, 1 otherwise
 confirm_action() {
-    local msg="$1"
+    local msg="$1" default_answer="${2:-no}" answer=""
     echo ""
-    echo -ne "  ${YELLOW}${msg}${RESET} [y/N] "
-    read -r answer
-    [[ "$answer" =~ ^[Yy]$ ]]
+    if [[ "$default_answer" == yes ]]; then
+        echo -ne "  ${YELLOW}${msg}${RESET} [Y/n] "
+    else
+        echo -ne "  ${YELLOW}${msg}${RESET} [y/N] "
+    fi
+    read -r answer || return 1
+    [[ "$answer" =~ ^[Yy]$ || ( -z "$answer" && "$default_answer" == yes ) ]]
 }
 
 # confirm_dangerous "message" "CONFIRMATION_WORD"
@@ -2762,8 +2766,16 @@ wizard_apply_install() {
         fi
     fi
     if [[ -z "$WIZ_ADMIN_HASH" ]]; then
+        if [[ "$WIZ_ROUTER_MODE" == true && -z "$WIZ_ADMIN_PASS" ]]; then
+            WIZ_ADMIN_PASS=$(wizard_gen_password) || return 1
+            [[ ${#WIZ_ADMIN_PASS} -ge 16 ]] || { step_fail "Could not generate an admin password"; return 1; }
+            WIZ_ADMIN_GENERATED=true
+        fi
         WIZ_ADMIN_HASH=$(wizard_gen_bcrypt "$WIZ_ADMIN_PASS") || return 1
         [[ -n "$WIZ_ADMIN_HASH" ]] || { step_fail "Could not hash the admin password"; return 1; }
+    fi
+    if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
+        wizard_save_admin_credentials || return 1
     fi
     local WIZ_ACME_CACHE_DIR="$INSTALL_DIR/data/acme"
     local WIZ_PROM_TARGET="localhost:${WIZ_APP_PORT}"
@@ -2795,6 +2807,71 @@ wizard_apply_install() {
     fi
 }
 
+# Use an address actually assigned to the router, without a public-IP lookup.
+wizard_detect_router_ip() {
+    local router_addresses="" router_candidate="" router_ssh_ip=""
+    if command -v ip &>/dev/null; then
+        router_addresses=$(ip -o -4 addr show scope global 2>/dev/null | awk '
+            $2 !~ /^(lo$|docker|veth|virbr|tun|wg|tailscale)/ && $2 !~ /^br-[0-9a-f]+(@|$)/ { split($4, a, "/"); print a[1] }')
+    else
+        router_addresses=$(hostname -I 2>/dev/null) || router_addresses=""
+    fi
+    # Prefer the panel's management address if that interface is configured.
+    for router_candidate in $router_addresses; do
+        [[ "$router_candidate" != 192.168.99.1 ]] || { echo "$router_candidate"; return 0; }
+    done
+    router_ssh_ip=$(printf '%s' "${SSH_CONNECTION:-}" | awk '{print $3}')
+    for router_candidate in $router_addresses; do
+        if [[ "$router_candidate" == "$router_ssh_ip" ]] && wizard_valid_ip "$router_candidate"; then
+            echo "$router_candidate"; return 0
+        fi
+    done
+    for router_candidate in $router_addresses; do
+        case "$router_candidate" in
+            10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+                if wizard_valid_ip "$router_candidate"; then echo "$router_candidate"; return 0; fi ;;
+        esac
+    done
+    for router_candidate in $router_addresses; do
+        case "$router_candidate" in 127.*|169.254.*|0.*) continue ;; esac
+        if wizard_valid_ip "$router_candidate"; then echo "$router_candidate"; return 0; fi
+    done
+    return 1
+}
+
+wizard_prepare_router_access() {
+    if [[ -z "${WIZ_ROUTER_IP:-}" ]]; then
+        WIZ_ROUTER_IP=$(wizard_detect_router_ip) || {
+            step_fail "No router IPv4 address found; connect a network interface and retry"
+            return 1
+        }
+    fi
+    WIZ_MODE=ip; WIZ_IP="$WIZ_ROUTER_IP"
+    WIZ_APP_PORT="${WIZ_APP_PORT:-9761}"
+    WIZ_BASE_PATH=""; WIZ_PATH_GENERATED=true
+    WIZ_APP_BASE_URL="http://${WIZ_ROUTER_IP}:${WIZ_APP_PORT}"
+    WIZ_SUB_PANEL_URL="$WIZ_APP_BASE_URL"
+    WIZ_COOKIE_DOMAIN=""; WIZ_COOKIE_SECURE=false
+    WIZ_ACME_ENABLED=false; WIZ_ACME_STAGING=false; WIZ_ACME_EMAIL=""
+    WIZ_TLS_CERT_FILE=""; WIZ_TLS_KEY_FILE=""
+    wizard_validate_access
+}
+
+# Keep generated login details recoverable across interrupted installs. This
+# file is separate from .env so the plaintext password is not an app setting.
+wizard_save_admin_credentials() {
+    local credentials_tmp
+    credentials_tmp=$(mktemp) || return 1
+    chmod 600 "$credentials_tmp" || { rm -f "$credentials_tmp"; return 1; }
+    printf 'ADMIN_USERNAME=admin\nADMIN_PASSWORD=%s\n' "$(wizard_env_quote "$WIZ_ADMIN_PASS")" > "$credentials_tmp" || { rm -f "$credentials_tmp"; return 1; }
+    if ! sudo mkdir -p "$INSTALL_DIR" || ! sudo install -m 600 "$credentials_tmp" "$INSTALL_DIR/admin-credentials.env"; then
+        rm -f "$credentials_tmp"
+        step_fail "Could not save generated admin credentials"
+        return 1
+    fi
+    rm -f "$credentials_tmp"
+}
+
 # Collect answers without changing the host. The history contains only steps
 # actually shown, so Back skips systemd-only steps in Docker/offline installs.
 wizard_collect_install_settings() {
@@ -2818,18 +2895,18 @@ wizard_collect_install_settings() {
                 fi
                 ;;
             role)
-                [[ "$WIZ_ROUTER_MODE" == true ]] && ARROW_MENU_DEFAULT=1
+                [[ "$WIZ_ROUTER_MODE" != true ]] && ARROW_MENU_DEFAULT=1
                 wizard_navigation_menu "How will you use this device?" setup_choice \
-                    "VPN Server (recommended for VPS)" "Router" || setup_status=$?
+                    "Router" "VPN Server (recommended for VPS)" || setup_status=$?
                 if [[ $setup_status -eq 0 ]]; then
-                    if [[ $setup_choice -eq 0 ]]; then WIZ_ROUTER_MODE=false; else WIZ_ROUTER_MODE=true; fi
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_ROUTER_MODE=true; else WIZ_ROUTER_MODE=false; fi
                 fi
                 ;;
             database)
-                [[ "$WIZ_DB_DRIVER" == sqlite ]] && ARROW_MENU_DEFAULT=1
-                wizard_navigation_menu "Database" setup_choice "PostgreSQL (recommended)" "SQLite (lightweight)" || setup_status=$?
+                [[ "$WIZ_DB_DRIVER" != sqlite ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Database" setup_choice "SQLite (recommended)" "PostgreSQL" || setup_status=$?
                 if [[ $setup_status -eq 0 ]]; then
-                    if [[ $setup_choice -eq 0 ]]; then WIZ_DB_DRIVER=postgres; else WIZ_DB_DRIVER=sqlite; fi
+                    if [[ $setup_choice -eq 0 ]]; then WIZ_DB_DRIVER=sqlite; else WIZ_DB_DRIVER=postgres; fi
                 fi
                 ;;
             method)
@@ -2841,30 +2918,14 @@ wizard_collect_install_settings() {
                 fi
                 ;;
             access)
-                [[ -n "$WIZ_APP_PORT" ]] || WIZ_APP_PORT=$(wizard_random_port)
-                wizard_prompt_access_mode || setup_status=$?
-                ;;
-            telegram)
-                [[ "$WIZ_TELEGRAM_ENABLED" != true ]] && ARROW_MENU_DEFAULT=1
-                wizard_navigation_menu "Enable Telegram bot?" setup_choice "Yes" "No" || setup_status=$?
-                if [[ $setup_status -eq 0 ]]; then
-                    if [[ $setup_choice -eq 0 ]]; then
-                        WIZ_TELEGRAM_ENABLED=true
-                        echo -ne "  ${CYAN}Telegram bot token${RESET}: "
-                        wizard_read_answer WIZ_BOT_TOKEN true || setup_status=$?
-                        if [[ $setup_status -eq 0 ]]; then
-                            echo -ne "  ${CYAN}Admin Telegram IDs${RESET} [${WIZ_ADMIN_IDS}]: "
-                            wizard_read_answer WIZ_ADMIN_IDS || setup_status=$?
-                        fi
-                        if [[ $setup_status -eq 0 ]]; then
-                            WIZ_ADMIN_IDS="${WIZ_ADMIN_IDS// /}"
-                            if [[ -z "$WIZ_BOT_TOKEN" || ! "$WIZ_ADMIN_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-                                step_fail "A bot token and numeric Telegram IDs are required"; setup_status=1
-                            fi
-                        fi
-                    else
-                        WIZ_TELEGRAM_ENABLED=false
+                if [[ "$WIZ_ROUTER_MODE" == true ]]; then
+                    if wizard_prepare_router_access; then
+                        setup_step=review; continue
                     fi
+                    setup_status=2
+                else
+                    [[ -n "$WIZ_APP_PORT" ]] || WIZ_APP_PORT=$(wizard_random_port)
+                    wizard_prompt_access_mode || setup_status=$?
                 fi
                 ;;
             password)
@@ -2946,8 +3007,7 @@ wizard_collect_install_settings() {
                 fi
                 ;;
             method) setup_step=access ;;
-            access) setup_step=telegram ;;
-            telegram) setup_step=password ;;
+            access) setup_step=password ;;
             password) setup_step=review ;;
         esac
     done
@@ -2962,6 +3022,9 @@ wizard_install_review() {
         "Web panel|${WIZ_SUB_PANEL_URL}" "Backend API|${WIZ_APP_BASE_URL}" \
         "ACME|${WIZ_ACME_ENABLED}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
         "Config|${ENV_FILE}" "Secrets|Existing values kept; missing values generated during install"
+    if [[ "$WIZ_ROUTER_MODE" == true && -z "$WIZ_ADMIN_HASH" ]]; then
+        step_info "An admin password will be generated during installation"
+    fi
     step_info "This installs dependencies, writes the configuration, opens the panel firewall port and starts services"
     if [[ "$WIZ_ROUTER_MODE" == "true" ]]; then
         step_warn "Router setup stops dnsmasq, hostapd and iwd so nasnet can manage them"
@@ -2975,7 +3038,7 @@ wizard_install_review() {
 wizard_install() {
     clear
     draw_box "nasnet-panel-linux Installation Wizard"
-    local WIZ_DEPLOY_MODE="systemd" WIZ_ROUTER_MODE="false" WIZ_DB_DRIVER="postgres"
+    local WIZ_DEPLOY_MODE="systemd" WIZ_ROUTER_MODE="true" WIZ_DB_DRIVER="sqlite"
     local WIZ_INSTALL_METHOD="release" WIZ_MODE="" WIZ_DOMAIN="" WIZ_BASE_PATH=""
     local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL="" WIZ_APP_PORT=""
     local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="false" WIZ_ACME_STAGING="false"
@@ -2985,6 +3048,7 @@ wizard_install() {
     local WIZ_DB_USER="nasnet_panel" WIZ_DB_NAME="nasnet_panel" WIZ_DB_HOST="localhost" WIZ_DB_PORT="5432"
     local WIZ_DB_SSL_MODE="disable" WIZ_DB_PATH="" WIZ_PGSQL_SERVICE_NAME="postgresql" WIZ_INSTALL_STATUS="pending"
     local saved=false choice=-1 WIZ_PROVISIONED=false WIZ_NAVIGATION=true
+    local WIZ_ROUTER_IP="" WIZ_ADMIN_GENERATED=false
     local WIZ_API_DOMAIN="" WIZ_PANEL_DOMAIN="" WIZ_IP="" WIZ_PATH_GENERATED=false
     local WIZ_DERIVED_API="" WIZ_DERIVED_PANEL="" WIZ_ACCESS_PROTO=https
 
@@ -3027,6 +3091,9 @@ wizard_install() {
     while true; do
         if wizard_apply_install; then complete=true; break; fi
         step_fail "Installation is incomplete; your saved settings will be reused"
+        if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
+            step_info "Generated login details: ${INSTALL_DIR}/admin-credentials.env"
+        fi
         arrow_menu "Retry installation" choice "Retry install/start with the same settings" "Retry access checks only" "Finish later"
         case "$choice" in
             0) ;;
@@ -3045,7 +3112,15 @@ wizard_install() {
         _sync_env_to_install_dir || return 1
         draw_header "Installation complete"
         step_ok "Web panel: ${WIZ_SUB_PANEL_URL}"
-        step_info "Log in as admin with your password"
+        if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
+            step_info "Username: admin"
+            step_info "Password: ${WIZ_ADMIN_PASS}"
+        else
+            step_info "Log in as admin with your password"
+        fi
+        if [[ -f "$INSTALL_DIR/admin-credentials.env" ]]; then
+            step_info "Saved login details: ${INSTALL_DIR}/admin-credentials.env"
+        fi
         step_info "Configuration: ${ENV_FILE}"
         if [[ -x /usr/local/bin/nasnet ]]; then
             step_info "Manage: nasnet"
@@ -6492,7 +6567,7 @@ main() {
         echo -e "  ${YELLOW}No .env file found.${RESET}"
         echo -e "  ${DIM}It looks like this is a fresh installation.${RESET}"
         echo ""
-        if confirm_action "Run the installation wizard now?"; then
+        if confirm_action "Run the installation wizard now?" yes; then
             wizard_install
         fi
     fi

@@ -185,14 +185,14 @@ scripted_menu() {
 test_navigation_role_back() {
     answers; WIZ_NAVIGATION=true
     local menu_index=0 menu_script=(
-        'Deployment|0' 'How will you use this device?|1' 'Database|-1'
-        'How will you use this device?|0' 'Database|0' 'Install method|1'
-        'Enable Telegram bot?|2' 'Install method|0' 'Enable Telegram bot?|1'
+        'Deployment|0' 'How will you use this device?|0' 'Database|-1'
+        'How will you use this device?|1' 'Database|1' 'Install method|1'
+        'Install method|0'
         'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     local access_visits=0
-    wizard_prompt_access_mode() { access_visits=$((access_visits+1)); [[ $access_visits -ne 2 ]] || return 2; }
+    wizard_prompt_access_mode() { access_visits=$((access_visits+1)); [[ $access_visits -ne 1 ]] || return 2; }
     wizard_collect_install_settings <<< '' || return 1
     [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_ROUTER_MODE" == false && "$WIZ_INSTALL_METHOD" == release ]] || return 1
     [[ "$WIZ_ADMIN_HASH" == '$2a$10$already-hashed' && "$WIZ_APP_PORT" == 12345 && "$WIZ_BASE_PATH" == /secret ]] || return 1
@@ -201,9 +201,9 @@ test_navigation_role_back() {
 test_navigation_docker_back() {
     answers; WIZ_NAVIGATION=true
     local menu_index=0 menu_script=(
-        'Deployment|0' 'How will you use this device?|1' 'Database|2'
+        'Deployment|0' 'How will you use this device?|0' 'Database|2'
         'How will you use this device?|2' 'Deployment|1' 'Database|2'
-        'Deployment|1' 'Database|1' 'Enable Telegram bot?|1' 'Review installation|0'
+        'Deployment|1' 'Database|0' 'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode() { return 0; }
@@ -214,8 +214,8 @@ test_navigation_docker_back() {
 test_navigation_offline_back() {
     answers; OFFLINE_MODE=true; WIZ_NAVIGATION=true
     local menu_index=0 menu_script=(
-        'How will you use this device?|-1' 'How will you use this device?|0'
-        'Database|0' 'Database|1' 'Enable Telegram bot?|1' 'Review installation|0'
+        'How will you use this device?|-1' 'How will you use this device?|1'
+        'Database|1' 'Database|0' 'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
     local access_visits=0
@@ -226,9 +226,9 @@ test_navigation_offline_back() {
 test_navigation_review_back() {
     answers; WIZ_NAVIGATION=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
     local menu_index=0 menu_script=(
-        'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
-        'Enable Telegram bot?|1' 'Review installation|1'
-        'Enable Telegram bot?|1' 'Review installation|-2'
+        'Deployment|0' 'How will you use this device?|1' 'Database|1' 'Install method|0'
+        'Review installation|1'
+        'Review installation|-2'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_prompt_access_mode() { return 0; }
@@ -347,8 +347,8 @@ INPUT
 }
 test_navigation_install_after_review() {
     local menu_index=0 menu_script=(
-        'Deployment|0' 'How will you use this device?|0' 'Database|1' 'Install method|0'
-        'How will users access this server?|1' 'Public URLs|0' 'Enable Telegram bot?|1'
+        'Deployment|0' 'How will you use this device?|1' 'Database|0' 'Install method|0'
+        'How will users access this server?|1' 'Public URLs|0'
         'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
@@ -415,6 +415,92 @@ INPUT
          /Passwords do not match/ { if (screen != 3) exit 1; mismatch_seen=1 }
          END { if (!short_seen || !mismatch_seen) exit 1 }' "$PROJECT_DIR/password-screen"
 }
+test_first_run_default_yes() {
+    confirm_action 'Run the installation wizard now?' yes <<< '' > "$PROJECT_DIR/confirm" || return 1
+    contains '[Y/n]' "$PROJECT_DIR/confirm" || return 1
+    if confirm_action 'Run the installation wizard now?' yes <<< n > /dev/null; then return 1; fi
+    if confirm_action 'Other confirmation' <<< '' > "$PROJECT_DIR/confirm"; then return 1; fi
+    contains '[y/N]' "$PROJECT_DIR/confirm" || return 1
+    if confirm_action 'Run the installation wizard now?' yes < /dev/null > /dev/null; then return 1; fi
+}
+test_router_address_detection() {
+    local SSH_CONNECTION='198.51.100.4 1234 192.168.8.1 22'
+    local address_list=$'2: eth0    inet 192.168.8.1/24 scope global eth0\n3: mgmt0    inet 192.168.99.1/24 scope global mgmt0'
+    ip() { printf '%s\n' "$address_list"; }
+    [[ "$(wizard_detect_router_ip)" == 192.168.99.1 ]] || return 1
+    address_list=$'2: docker0    inet 172.17.0.1/16 scope global docker0\n3: eth1    inet 192.168.4.1/24 scope global eth1\n4: eth0    inet 192.168.8.1/24 scope global eth0'
+    [[ "$(wizard_detect_router_ip)" == 192.168.8.1 ]] || return 1
+    SSH_CONNECTION=''
+    [[ "$(wizard_detect_router_ip)" == 192.168.4.1 ]] || return 1
+    address_list=$'2: br-abc123    inet 172.18.0.1/16 scope global br-abc123\n3: br-lan    inet 192.168.5.1/24 scope global br-lan'
+    [[ "$(wizard_detect_router_ip)" == 192.168.5.1 ]] || return 1
+    address_list=''
+    if wizard_detect_router_ip; then fail 'missing router address accepted'; return 1; fi
+    [[ ! -s "$EVENT_LOG" ]]
+}
+test_router_review_back() {
+    answers; WIZ_NAVIGATION=true; WIZ_ROUTER_MODE=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
+        'Review installation|1' 'Install method|0' 'Review installation|-2'
+    )
+    arrow_menu() { scripted_menu "$@"; }
+    wizard_detect_router_ip() { echo 192.168.4.1; }
+    wizard_prompt_access_mode() { fail 'Router requested an address'; exit 1; }
+    wizard_read_answer() { fail 'Router requested credentials'; exit 1; }
+    wizard_gen_password() { echo premature-secret-generation >> "$EVENT_LOG"; return 1; }
+    if wizard_collect_install_settings < /dev/null; then return 1; fi
+    [[ $menu_index -eq ${#menu_script[@]} && ! -s "$EVENT_LOG" && ! -f "$ENV_FILE" ]]
+}
+test_router_defaults_and_credentials() {
+    local menu_index=0 menu_script=(
+        'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
+        'Review installation|0'
+    )
+    arrow_menu() {
+        if [[ "$1" == 'How will you use this device?' ]]; then
+            [[ "$3" == Router && "$ARROW_MENU_DEFAULT" == 0 ]] || exit 1
+        elif [[ "$1" == Database ]]; then
+            [[ "$3" == 'SQLite (recommended)' && "$ARROW_MENU_DEFAULT" == 0 ]] || exit 1
+        fi
+        scripted_menu "$@"
+    }
+    wizard_detect_router_ip() { echo 192.168.4.1; }
+    wizard_prompt_access_mode() { fail 'Router requested an address'; exit 1; }
+    wizard_read_answer() { fail 'Router requested credentials'; exit 1; }
+    wizard_prereqs_systemd() { [[ "$1" == sqlite ]]; }
+    wizard_gen_password() { echo generated >> "$EVENT_LOG"; echo fixture-generated-password; }
+    wizard_gen_secret() { echo fixture-jwt; }
+    wizard_gen_bcrypt() { [[ "$1" == fixture-generated-password ]] || return 1; echo fixture-hash; }
+    wizard_open_firewall() { :; }
+    wizard_build_start_systemd() { WIZ_PROVISIONED=true; return 0; }
+    _sync_env_to_install_dir() { :; }
+    sudo() {
+        case "$1" in
+            -v) return 0 ;;
+            mkdir|install) command "$@" ;;
+            *) fail "unexpected sudo: $*"; return 1 ;;
+        esac
+    }
+    wizard_install < /dev/null > "$PROJECT_DIR/router-output" || return 1
+    [[ $menu_index -eq ${#menu_script[@]} ]] || return 1
+    contains 'APP_BASE_URL=http://192.168.4.1:9761' "$ENV_FILE" || return 1
+    contains 'SUB_PANEL_URL=http://192.168.4.1:9761' "$ENV_FILE" || return 1
+    contains 'ROUTER_MODE=true' "$ENV_FILE" || return 1
+    contains 'DB_DRIVER=sqlite' "$ENV_FILE" || return 1
+    contains 'TELEGRAM_ENABLED=false' "$ENV_FILE" || return 1
+    absent fixture-generated-password "$ENV_FILE" || return 1
+    contains 'Password: fixture-generated-password' "$PROJECT_DIR/router-output" || return 1
+    contains 'ADMIN_PASSWORD="fixture-generated-password"' "$INSTALL_DIR/admin-credentials.env" || return 1
+    local mode
+    mode=$(stat -f '%Lp' "$INSTALL_DIR/admin-credentials.env" 2>/dev/null) || mode=$(stat -c '%a' "$INSTALL_DIR/admin-credentials.env")
+    [[ "$mode" == 600 ]] || return 1
+    # Resume an interrupted saved installation; it must keep the same password.
+    menu_index=0; menu_script=("Existing configuration at ${ENV_FILE}|0" 'Review installation|0')
+    wizard_install < /dev/null > "$PROJECT_DIR/retry-output" || return 1
+    [[ "$(cat "$EVENT_LOG")" == generated ]] || return 1
+    contains 'Saved login details:' "$PROJECT_DIR/retry-output"
+}
 test_navigation_menu_keys() {
     local key_result=-1 ARROW_MENU_DEFAULT=1 WIZ_NAVIGATION=true status=0
     tput() { :; }
@@ -426,6 +512,6 @@ test_navigation_menu_keys() {
     wizard_navigation_menu 'Example' key_result 'First' < /dev/null > /dev/null || status=$?
     [[ $status -eq 3 ]]
 }
-for case_name in password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
+for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done
