@@ -337,6 +337,16 @@ func runServe(cmd *cobra.Command, args []string) {
 	agentCfg := agentconfig.DefaultConfig()
 	agentCfg.TLS.Enabled = false
 	agentCfg.Process.ServiceMode = false
+	// Non-standard installs (and local test runs) can move xray's files.
+	if v := os.Getenv("XRAY_BINARY_PATH"); v != "" {
+		agentCfg.Xray.BinaryPath = v
+	}
+	if v := os.Getenv("XRAY_CONFIG_PATH"); v != "" {
+		agentCfg.Xray.ConfigPath = v
+	}
+	if v := os.Getenv("XRAY_ACCESS_LOG_PATH"); v != "" {
+		agentCfg.Xray.AccessLogPath = v
+	}
 	embeddedSrv, err := agentserver.NewServer(agentCfg)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create in-process node agent server")
