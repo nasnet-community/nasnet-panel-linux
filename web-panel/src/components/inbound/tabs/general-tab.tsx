@@ -108,7 +108,7 @@ export function GeneralTab({ form, mode, appliedPresetId, onApplyPreset }: Gener
             </FormSection>
 
             <FormSection title="Listener">
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1.4fr)]">
+                <div className="grid grid-cols-2 items-start gap-4 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1.4fr)]">
                     <FormField
                         control={form.control}
                         name="listen"

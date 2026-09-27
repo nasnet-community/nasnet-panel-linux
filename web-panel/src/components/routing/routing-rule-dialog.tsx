@@ -1225,6 +1225,14 @@ function buildXrayFragment(data: Partial<RoutingRule>, targetKind: "outbound" | 
     if (data.vless_routes?.length) fragment.vlessRoute = data.vless_routes.join(",")
     if (targetKind === "balancer") fragment.balancerTag = data.balancing_tag || ""
     else fragment.outboundTag = data.outbound_tag || ""
+    if ((data.webhook_url || "").trim()) {
+        const webhook: Record<string, unknown> = { url: data.webhook_url }
+        if (data.webhook_deduplication) webhook.deduplication = data.webhook_deduplication
+        if (data.webhook_headers && Object.keys(data.webhook_headers).length) {
+            webhook.headers = data.webhook_headers
+        }
+        fragment.webhook = webhook
+    }
     return JSON.stringify(fragment, null, 2)
 }
 

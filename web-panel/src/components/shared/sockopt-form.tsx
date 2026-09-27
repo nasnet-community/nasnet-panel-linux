@@ -270,12 +270,12 @@ function ExpertSockoptSection({ data, onChange }: { data: SockoptSettings; onCha
                     <div className="space-y-2">
                         <Label>Trusted X-Forwarded-For</Label>
                         <Textarea
-                            placeholder={"10.0.0.0/8\n172.16.0.0/12"}
+                            placeholder={"X-Forwarded-For"}
                             value={(data.trustedXForwardedFor || []).join("\n")}
                             onChange={(e) => update("trustedXForwardedFor", e.target.value.split("\n").filter(Boolean))}
                             rows={3}
                         />
-                        <p className="text-xs text-muted-foreground">One CIDR/IP per line</p>
+                        <p className="text-xs text-muted-foreground">One trusted header name per line (e.g. X-Forwarded-For). xray reads the client IP from these headers when set by a fronting proxy.</p>
                     </div>
 
                     {/* Happy Eyeballs */}
