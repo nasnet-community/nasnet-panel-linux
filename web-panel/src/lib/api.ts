@@ -56,15 +56,23 @@ class ApiClient {
         this.baseUrl = baseUrl
     }
 
-    private fetchWithTimeout(url: string, options: RequestInit, timeoutMs = this.defaultTimeoutMs): Promise<Response> {
+    private async withTimeout<T>(run: (signal: AbortSignal) => Promise<T>, timeoutMs = this.defaultTimeoutMs): Promise<T> {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), timeoutMs)
-        return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout)).catch((error) => {
-            if (error instanceof DOMException && error.name === "AbortError") {
+        try {
+            return await run(controller.signal)
+        } catch (error) {
+            if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
                 throw new ApiError("Request timed out", "TIMEOUT")
             }
             throw error
-        })
+        } finally {
+            clearTimeout(timeout)
+        }
+    }
+
+    private fetchWithTimeout(url: string, options: RequestInit, timeoutMs = this.defaultTimeoutMs): Promise<Response> {
+        return this.withTimeout((signal) => fetch(url, { ...options, signal }), timeoutMs)
     }
 
     private async parseJson<T>(response: Response): Promise<T> {
@@ -84,16 +92,21 @@ class ApiClient {
         const url = `${this.baseUrl}${endpoint}`
 
         try {
-            const response = await this.fetchWithTimeout(url, {
-                ...options,
-                credentials: "include", // Include cookies
-                headers: {
-                    "Content-Type": "application/json",
-                    ...options.headers,
-                },
+            // Streaming endpoints send headers before the operation finishes.
+            // Keep the timeout active until the entire JSON body is consumed.
+            const { response, data } = await this.withTimeout(async (signal) => {
+                const response = await fetch(url, {
+                    ...options,
+                    credentials: "include", // Include cookies
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...options.headers,
+                    },
+                    signal,
+                })
+                const data = await this.parseJson<ApiResponse<T>>(response)
+                return { response, data }
             }, timeoutMs)
-
-            const data: ApiResponse<T> = await this.parseJson(response)
 
             if (!response.ok) {
                 // Handle token expiration (but skip if this is already a refresh attempt)

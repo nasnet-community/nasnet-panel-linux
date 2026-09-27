@@ -6,6 +6,7 @@ export type EventType =
     | 'node.online'
     | 'node.offline'
     | 'node.stats_updated'
+    | 'node.updated'
     | 'payment.created'
     | 'payment.completed'
     | 'payment.failed'

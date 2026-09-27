@@ -592,6 +592,20 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 		go u.triggerBackgroundNodeTasks(node.ID, node.IP, shouldLookupLocation)
 	}
 
+	// Other open panels refetch the node instead of showing stale fields.
+	if u.eventBus != nil {
+		u.eventBus.Publish(events.Event{
+			Type:      events.EventNodeUpdated,
+			Timestamp: time.Now(),
+			Payload: events.NodeLifecyclePayload{
+				NodeID:   node.ID,
+				NodeName: node.Name,
+				IP:       node.IP,
+				Action:   "updated",
+			},
+		})
+	}
+
 	return nil
 }
 

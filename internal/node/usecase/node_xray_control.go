@@ -91,6 +91,10 @@ func (u *nodeUsecase) StartXray(ctx context.Context, nodeID uint) error {
 }
 
 func (u *nodeUsecase) StopXray(ctx context.Context, nodeID uint) error {
+	state := u.getOrCreatePushState(nodeID)
+	state.applyMu.Lock()
+	defer state.applyMu.Unlock()
+
 	node, err := u.nodeRepo.GetNode(ctx, nodeID)
 	if err != nil {
 		return err

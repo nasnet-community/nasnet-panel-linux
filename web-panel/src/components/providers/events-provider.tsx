@@ -155,7 +155,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
 
         // Handle all event types with inline handlers to avoid dependency issues
         const eventTypes: EventType[] = [
-            'node.online', 'node.offline', 'node.stats_updated',
+            'node.online', 'node.offline', 'node.stats_updated', 'node.updated',
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
             'xray.recovery_command', 'xray.recovery_exhausted',
@@ -261,6 +261,12 @@ function handleEvent(
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             invalidateLiveDashboard(queryClient)
             queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+            break
+        }
+        case 'node.updated': {
+            // An edit landed from another tab or admin: refetch, no toast (the
+            // editor already saw their own save).
+            queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             break
         }
         case 'node.stats_updated': {
