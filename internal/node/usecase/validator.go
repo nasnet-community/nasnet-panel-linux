@@ -9,11 +9,16 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
+	"github.com/xtls/xray-core/common/uuid"
 )
 
-var (
-	uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-)
+// isValidUserID reports whether id is one xray-core will accept for a
+// VMess/VLESS user: any 1–30 character string (mapped via SHA-1) or 32–36
+// hex characters, dashes optional — see common/uuid.ParseString.
+func isValidUserID(id string) bool {
+	_, err := uuid.ParseString(id)
+	return err == nil
+}
 
 // ErrInvalidDNSConfig wraps user-facing validation errors from DNS / FakeDNS
 // settings so the HTTP layer can surface them as 400 instead of 500.
@@ -99,13 +104,13 @@ func ValidateOutbound(out *domain.Outbound) error {
 	switch protocol {
 	case "vmess":
 		vm := out.GetVMessSettingsOrDefault()
-		if vm.UUID != "" && !uuidRegex.MatchString(vm.UUID) {
-			return errors.New("invalid VMess UUID format")
+		if vm.UUID != "" && !isValidUserID(vm.UUID) {
+			return errors.New("invalid VMess user ID: use 1-30 characters, or a 32-36 character hex UUID")
 		}
 	case "vless":
 		vl := out.GetVLESSSettingsOrDefault()
-		if vl.UUID != "" && !uuidRegex.MatchString(vl.UUID) {
-			return errors.New("invalid VLESS UUID format")
+		if vl.UUID != "" && !isValidUserID(vl.UUID) {
+			return errors.New("invalid VLESS user ID: use 1-30 characters, or a 32-36 character hex UUID")
 		}
 		// outbound flow: "", vision, or vision-udp443 (udp443 is outbound-only)
 		switch vl.Flow {

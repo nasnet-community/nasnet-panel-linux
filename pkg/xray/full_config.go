@@ -609,14 +609,20 @@ func (b *FullConfigBuilder) buildTCPSettings(ts *nodeDomain.TransportSettings) m
 	settings := map[string]interface{}{}
 
 	if ts.HeaderType != "" && ts.HeaderType != "none" {
-		settings["header"] = map[string]interface{}{
-			"type": ts.HeaderType,
-		}
+		header := map[string]interface{}{"type": ts.HeaderType}
+		// The obfuscated request carries both the path and the Host header the
+		// peer matches on; xray takes them as header.request.{path,headers}.
+		request := map[string]interface{}{}
 		if ts.Path != "" {
-			settings["header"].(map[string]interface{})["request"] = map[string]interface{}{
-				"path": []string{ts.Path},
-			}
+			request["path"] = []string{ts.Path}
 		}
+		if ts.Host != "" {
+			request["headers"] = map[string]interface{}{"Host": []string{ts.Host}}
+		}
+		if len(request) > 0 {
+			header["request"] = request
+		}
+		settings["header"] = header
 	}
 	if ts.AcceptProxyProtocol {
 		settings["acceptProxyProtocol"] = true
@@ -1840,7 +1846,7 @@ func (b *FullConfigBuilder) buildObservatory() map[string]interface{} {
 		switch strings.ToLower(bal.Strategy) {
 		case "leastping", "leastload":
 			needs = true
-		case "random", "":
+		case "random", "roundrobin", "":
 			if bal.FallbackTag != "" {
 				needs = true
 			}
