@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -468,8 +469,12 @@ func runServe(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Telegram bot
-	var bot *telegramTransport.Bot
+	// Telegram bot. telegramBotRef publishes it to consumers built before it
+	// exists: construction reaches api.telegram.org, so it can only succeed
+	// once the outbound path is up, which may be minutes after boot.
+	telegramBotRef := &botHolder{}
+	// The transport wrapper is what the monitor notifier and shutdown need.
+	var transportBotRef atomic.Pointer[telegramTransport.Bot]
 	backupSvc := adminUC.NewBackupService(db, cfg.Database, cfg.App.BackupDir)
 
 	if cfg.Telegram.Enabled {
@@ -505,46 +510,71 @@ func runServe(cmd *cobra.Command, args []string) {
 		accountTelegramHandler := accountTg.NewHandler(uc.Account)
 		adminTelegramHandler := adminTg.NewHandler(uc.Admin, uc.Account, uc.Subscription, userRepo.NewUserRepository(db), stateManager, nil, uc.Audit, uc.Setting, uc.Node, repos.Provisioning, backupSvc, db) // Bot set later
 
-		var err error
-		bot, err = telegramTransport.NewBot(
-			cfg.Telegram,
-			cfg.Admin.InitialAdminIDs,
-			userTelegramHandler,
-			subTelegramHandler,
-			adminTelegramHandler,
-			nodeTelegramHandler,
-			sniTelegramHandler,
-			maintenanceTelegramHandler,
-			adminMW,
-			stateManager,
-			uc.User,
-			uc.Setting,
-			httpFactory,
-		)
-		if err != nil {
-			// Telegram may be unreachable or token invalid (not fatal)
-			log.WithError(err).Error("Failed to initialize Telegram bot; continuing without it")
-			bot = nil
-		} else {
-			// Bind if worked
+		// wireBot binds the finished bot into everything that needs it and
+		// starts polling. It runs on the supervisor goroutine.
+		wireBot := func(bot *telegramTransport.Bot) {
 			accountTg.RegisterHandlers(bot.GetBot(), accountTelegramHandler, adminMW.RequireAdmin)
 			adminTelegramHandler.SetBot(bot.GetBot())
 			uc.Admin.SetBot(bot.GetBot())
 			subTelegramHandler.SetMaintenanceUC(uc.Maintenance)
 			setMaintenanceBroadcastBot(bot.GetBot())
-
+			transportBotRef.Store(bot)
+			telegramBotRef.Set(bot.GetBot())
 			go bot.Start()
 			log.Info("Telegram bot started")
 		}
+
+		// Supervise construction instead of giving up after a fixed window: a
+		// proxy or outbound outage at boot used to leave Telegram dead for the
+		// whole process. The panel keeps serving while this retries.
+		go func() {
+			delay := botInitRetryBase
+			for attempt := 1; ; attempt++ {
+				bot, err := telegramTransport.NewBot(
+					cfg.Telegram,
+					cfg.Admin.InitialAdminIDs,
+					userTelegramHandler,
+					subTelegramHandler,
+					adminTelegramHandler,
+					nodeTelegramHandler,
+					sniTelegramHandler,
+					maintenanceTelegramHandler,
+					adminMW,
+					stateManager,
+					uc.User,
+					uc.Setting,
+					httpFactory,
+				)
+				if err == nil {
+					if attempt > 1 {
+						log.WithField("attempts", attempt).Info("Telegram bot initialized after retries")
+					}
+					wireBot(bot)
+					return
+				}
+				if errors.Is(err, telebot.ErrUnauthorized) {
+					log.WithError(err).Error("Telegram bot token rejected (401 Unauthorized); giving up until the token is fixed and the panel restarted")
+					return
+				}
+				log.WithError(err).WithFields(map[string]interface{}{
+					"attempt":     attempt,
+					"retry_after": delay.String(),
+				}).Warn("Telegram bot init failed; retrying in the background")
+				select {
+				case <-bgCtx.Done():
+					return
+				case <-time.After(delay):
+				}
+				if delay < botInitRetryMax {
+					delay = min(delay*2, botInitRetryMax)
+				}
+			}
+		}()
 	} else {
 		log.Info("Telegram bot disabled (TELEGRAM_ENABLED=false)")
 	}
 
 	// Admin Telegram IDs (config + DB)
-	var telegramBot *telebot.Bot
-	if bot != nil {
-		telegramBot = bot.GetBot()
-	}
 	adminTelegramIDs := append([]int64{}, cfg.Admin.InitialAdminIDs...)
 	if dbAdmins, err := repos.User.ListAdmins(context.Background()); err == nil {
 		for _, admin := range dbAdmins {
@@ -629,9 +659,10 @@ func runServe(cmd *cobra.Command, args []string) {
 		uc.SNI,
 		repos.Notification,
 		repos.User,
-		telegramBot,
+		nil, // the bot arrives through telegramBotRef, maybe after boot
 		schedulerCfg,
 	)
+	telegramBotRef.OnReady(expirationScheduler.SetBot)
 	expirationScheduler.Start()
 	log.Info("Expiration scheduler started")
 
@@ -642,10 +673,8 @@ func runServe(cmd *cobra.Command, args []string) {
 	})
 
 	// Monitor
-	var botNotifier notifPkg.Notifier
-	if bot != nil {
-		botNotifier = bot
-	}
+	// Resolved per send: the bot may still be coming up.
+	botNotifier := notifPkg.Notifier(lazyBotNotifier{ref: &transportBotRef})
 	monitorService := monitor.NewMonitorService(repos.Node, uc.Node, botNotifier, 10*time.Second, eventBus)
 	go monitorService.Start(bgCtx)
 	log.Info("Server Monitor Service started")
@@ -794,8 +823,8 @@ func runServe(cmd *cobra.Command, args []string) {
 	log.WithField("elapsed", time.Since(shutdownStart)).Info("Shutdown phase 2: HTTP server stopped")
 
 	// Stop bot
-	if bot != nil {
-		bot.Stop()
+	if b := transportBotRef.Load(); b != nil {
+		b.Stop()
 	}
 	log.WithField("elapsed", time.Since(shutdownStart)).Info("Shutdown phase 3: bot stopped")
 
@@ -809,6 +838,27 @@ func runServe(cmd *cobra.Command, args []string) {
 	log.WithField("elapsed", time.Since(shutdownStart)).Info("Shutdown phase 4: connections closed")
 
 	log.WithField("total_elapsed", time.Since(shutdownStart)).Info("Server stopped")
+}
+
+// Telegram bot init retry policy: the supervisor in runServe keeps retrying
+// with this backoff so the bot joins whenever the outbound path heals.
+const (
+	botInitRetryBase = 5 * time.Second
+	botInitRetryMax  = 2 * time.Minute
+)
+
+// lazyBotNotifier forwards admin notifications to the Telegram bot once it
+// exists; consumers built at boot can't hold the instance directly.
+type lazyBotNotifier struct {
+	ref *atomic.Pointer[telegramTransport.Bot]
+}
+
+func (n lazyBotNotifier) NotifyAdmin(message string) error {
+	b := n.ref.Load()
+	if b == nil {
+		return nil
+	}
+	return b.NotifyAdmin(message)
 }
 
 type routerModeDeps struct {

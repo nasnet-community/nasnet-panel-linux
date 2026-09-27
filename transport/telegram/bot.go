@@ -28,17 +28,6 @@ import (
 	"gopkg.in/telebot.v3"
 )
 
-// Bot creation retry policy. The initial telebot.NewBot call performs a
-// synchronous getMe request which fails (often with EOF) when api.telegram.org
-// is momentarily unreachable — common behind a flaky proxy. Once the bot is
-// created, telebot's long poller self-heals from runtime network drops, so we
-// only need to retry the initial handshake.
-const (
-	botInitMaxAttempts = 5
-	botInitBaseDelay   = 2 * time.Second
-	botInitMaxDelay    = 30 * time.Second
-)
-
 // stateHandler is a function that handles text input for a specific conversation state.
 type stateHandler func(c telebot.Context) error
 
@@ -86,7 +75,7 @@ func NewBot(
 		}
 	} else {
 		log.Info("Using Long Poller")
-		poller = &telebot.LongPoller{Timeout: 10 * time.Second}
+		poller = newBackoffPoller(10 * time.Second)
 	}
 
 	// Outbound HTTP client selection — precedence:
@@ -133,27 +122,12 @@ func NewBot(
 		},
 	}
 
-	var b *telebot.Bot
-	var err error
-	for attempt := 1; ; attempt++ {
-		b, err = telebot.NewBot(pref)
-		if err == nil {
-			break
-		}
-		if attempt >= botInitMaxAttempts {
-			log.WithError(err).WithField("attempts", attempt).Error("Failed to create Telegram bot after retries")
-			return nil, err
-		}
-		delay := botInitBaseDelay << (attempt - 1)
-		if delay > botInitMaxDelay {
-			delay = botInitMaxDelay
-		}
-		log.WithError(err).WithFields(map[string]interface{}{
-			"attempt":     attempt,
-			"max":         botInitMaxAttempts,
-			"retry_after": delay.String(),
-		}).Warn("Telegram bot init failed; retrying")
-		time.Sleep(delay)
+	// telebot.NewBot performs a synchronous getMe, which fails for as long as
+	// api.telegram.org is unreachable. Retrying is the caller's job: serve()
+	// supervises it so the bot can still come up minutes after boot.
+	b, err := telebot.NewBot(pref)
+	if err != nil {
+		return nil, err
 	}
 
 	// Persist bot username so the sub panel can link to it

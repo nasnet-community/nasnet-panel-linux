@@ -35,7 +35,7 @@ func (s *Scheduler) checkAndSendDailyDigest(ctx context.Context) {
 
 // sendAdminDailyDigest sends a summary to all admins
 func (s *Scheduler) sendAdminDailyDigest(ctx context.Context) {
-	if len(s.adminTelegramIDs) == 0 || s.bot == nil {
+	if len(s.adminTelegramIDs) == 0 || s.currentBot() == nil {
 		return
 	}
 	log := logger.GetLogger()
@@ -100,7 +100,7 @@ func (s *Scheduler) sendAdminDailyDigest(ctx context.Context) {
 
 	for _, adminID := range s.adminTelegramIDs {
 		recipient := &telebot.User{ID: adminID}
-		_, err := s.bot.Send(recipient, msg, telebot.ModeMarkdown)
+		_, err := s.currentBot().Send(recipient, msg, telebot.ModeMarkdown)
 		if err != nil {
 			log.WithError(err).WithField("admin_id", adminID).Warn("Failed to send admin digest")
 		}

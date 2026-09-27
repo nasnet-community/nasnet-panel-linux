@@ -60,7 +60,7 @@ func expiryBucket(expiresAt time.Time) int {
 }
 
 func (s *Scheduler) notifyAdminsCertExpiring(sni *sniDomain.SNI) {
-	if s.bot == nil || len(s.adminTelegramIDs) == 0 {
+	if s.currentBot() == nil || len(s.adminTelegramIDs) == 0 {
 		return
 	}
 	daysLeft := int(time.Until(sni.ExpiresAt).Hours() / 24)
@@ -69,7 +69,7 @@ func (s *Scheduler) notifyAdminsCertExpiring(sni *sniDomain.SNI) {
 		sni.Domain, sni.ExpiresAt.Format("2006-01-02"), daysLeft)
 	for _, adminID := range s.adminTelegramIDs {
 		recipient := &telebot.User{ID: adminID}
-		if _, err := s.bot.Send(recipient, msg, telebot.ModeMarkdown); err != nil {
+		if _, err := s.currentBot().Send(recipient, msg, telebot.ModeMarkdown); err != nil {
 			logger.GetLogger().WithError(err).Warn("Scheduler: Failed to send cert expiry alert")
 		}
 	}

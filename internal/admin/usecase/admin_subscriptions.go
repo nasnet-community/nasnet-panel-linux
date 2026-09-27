@@ -204,7 +204,7 @@ func (u *adminUsecase) CreateManualSubscription(ctx context.Context, req *subUC.
 	}
 
 	// Send notification if user is linked and has valid TelegramID
-	if req.UserID != nil && u.bot != nil {
+	if req.UserID != nil && u.bot.Load() != nil {
 		user, _ := u.userRepo.FindByID(ctx, *req.UserID)
 		if user != nil && user.TelegramID > 0 {
 			endDateStr := "No Expiry"
@@ -217,7 +217,7 @@ func (u *adminUsecase) CreateManualSubscription(ctx context.Context, req *subUC.
 				dataStr = fmt.Sprintf("%.1f GB", gb)
 			}
 			msg := fmt.Sprintf("🎉 *New Subscription Created!*\n\nA subscription has been created for your account.\n\n📋 Label: %s\n📊 Data: %s\n📅 Expires: %s\n\nUse /mysubs to view your subscriptions.", sub.Label, dataStr, endDateStr)
-			_, _ = u.bot.Send(&telebot.User{ID: user.TelegramID}, msg, telebot.ModeMarkdown)
+			_, _ = u.bot.Load().Send(&telebot.User{ID: user.TelegramID}, msg, telebot.ModeMarkdown)
 		}
 	}
 
@@ -290,7 +290,7 @@ func (u *adminUsecase) AssignSubscriptionUser(ctx context.Context, subID uint, u
 	}
 
 	// Send notification if user has valid TelegramID
-	if userID != nil && u.bot != nil {
+	if userID != nil && u.bot.Load() != nil {
 		user, _ := u.userRepo.FindByID(ctx, *userID)
 		if user != nil && user.TelegramID > 0 {
 			endDateStr := "No Expiry"
@@ -303,7 +303,7 @@ func (u *adminUsecase) AssignSubscriptionUser(ctx context.Context, subID uint, u
 				dataStr = fmt.Sprintf("%.1f GB", gb)
 			}
 			msg := fmt.Sprintf("🎉 *New Subscription Assigned!*\n\nA subscription has been linked to your account.\n\n📋 Label: %s\n📊 Data: %s\n📅 Expires: %s\n\nUse /mysubs to view your subscriptions.", sub.Label, dataStr, endDateStr)
-			_, _ = u.bot.Send(&telebot.User{ID: user.TelegramID}, msg, telebot.ModeMarkdown)
+			_, _ = u.bot.Load().Send(&telebot.User{ID: user.TelegramID}, msg, telebot.ModeMarkdown)
 		}
 	}
 

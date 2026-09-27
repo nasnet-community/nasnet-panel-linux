@@ -11,7 +11,7 @@ import (
 
 // sendExpirationNotifications sends alerts to users with expiring subscriptions
 func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
-	if s.notifRepo == nil || s.userRepo == nil || s.bot == nil {
+	if s.notifRepo == nil || s.userRepo == nil || s.currentBot() == nil {
 		return
 	}
 	log := logger.GetLogger()
@@ -102,7 +102,7 @@ func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
 
 		// Send notification
 		recipient := &telebot.User{ID: recipientTelegramID}
-		_, err = s.bot.Send(recipient, msg, telebot.ModeMarkdown, kb)
+		_, err = s.currentBot().Send(recipient, msg, telebot.ModeMarkdown, kb)
 		if err != nil {
 			log.WithError(err).WithField("telegram_id", recipientTelegramID).Warn("Failed to send expiry notification")
 			continue
@@ -127,7 +127,7 @@ func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
 
 // sendDataUsageNotifications checks for high data usage and notifies users
 func (s *Scheduler) sendDataUsageNotifications(ctx context.Context) {
-	if s.notifRepo == nil || s.userRepo == nil || s.bot == nil {
+	if s.notifRepo == nil || s.userRepo == nil || s.currentBot() == nil {
 		return
 	}
 	log := logger.GetLogger()
@@ -196,7 +196,7 @@ func (s *Scheduler) sendDataUsageNotifications(ctx context.Context) {
 
 		// Send notification
 		recipient := &telebot.User{ID: recipientTelegramID}
-		_, err = s.bot.Send(recipient, msg, telebot.ModeMarkdown, kb)
+		_, err = s.currentBot().Send(recipient, msg, telebot.ModeMarkdown, kb)
 		if err != nil {
 			log.WithError(err).WithField("telegram_id", recipientTelegramID).Warn("Failed to send data usage notification")
 			continue
@@ -214,7 +214,7 @@ func (s *Scheduler) sendDataUsageNotifications(ctx context.Context) {
 // sendTrafficExhaustedNotifications sends a one-time renewal prompt when a
 // subscription transitions to traffic_exhausted status.
 func (s *Scheduler) sendTrafficExhaustedNotifications(ctx context.Context) {
-	if s.notifRepo == nil || s.userRepo == nil || s.bot == nil {
+	if s.notifRepo == nil || s.userRepo == nil || s.currentBot() == nil {
 		return
 	}
 	log := logger.GetLogger()
@@ -262,7 +262,7 @@ func (s *Scheduler) sendTrafficExhaustedNotifications(ctx context.Context) {
 		)
 
 		recipient := &telebot.User{ID: recipientTelegramID}
-		_, err = s.bot.Send(recipient, msg, telebot.ModeMarkdown, kb)
+		_, err = s.currentBot().Send(recipient, msg, telebot.ModeMarkdown, kb)
 		if err != nil {
 			log.WithError(err).WithField("telegram_id", recipientTelegramID).Warn("Failed to send traffic exhausted notification")
 			continue

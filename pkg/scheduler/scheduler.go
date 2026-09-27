@@ -18,12 +18,13 @@ type AccountExhaustionChecker interface {
 
 // Scheduler runs periodic tasks for subscription and server management
 type Scheduler struct {
-	subUsecase        SubscriptionUsecase
-	nodeUsecase       NodeUsecase
-	sniUsecase        SNIUsecase
-	notifRepo         NotificationRepository
-	userRepo          UserRepository
-	bot               *telebot.Bot
+	subUsecase  SubscriptionUsecase
+	nodeUsecase NodeUsecase
+	sniUsecase  SNIUsecase
+	notifRepo   NotificationRepository
+	userRepo    UserRepository
+	// bot arrives late: construction is supervised in the background.
+	bot               atomic.Pointer[telebot.Bot]
 	statsInterval     time.Duration
 	expireInterval    time.Duration
 	reconcileInterval time.Duration
@@ -204,13 +205,12 @@ func New(
 		cfg.NotificationRetentionDays = 30
 	}
 
-	return &Scheduler{
+	sched := &Scheduler{
 		subUsecase:               subUsecase,
 		nodeUsecase:              nodeUsecase,
 		sniUsecase:               sniUsecase,
 		notifRepo:                notifRepo,
 		userRepo:                 userRepo,
-		bot:                      bot,
 		statsInterval:            cfg.StatsInterval,
 		expireInterval:           cfg.ExpireInterval,
 		reconcileInterval:        cfg.ReconcileInterval,
@@ -234,6 +234,10 @@ func New(
 		subDailyUsageCleaner:     cfg.SubscriptionDailyUsageCleaner,
 		cfg:                      cfg,
 	}
+	if bot != nil {
+		sched.bot.Store(bot)
+	}
+	return sched
 }
 
 // Start runs the three ambient loops (stats 5s, expiration 30s, reconcile 60s)
@@ -567,3 +571,8 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 		}
 	}
 }
+
+// SetBot hands the scheduler the Telegram bot once it exists.
+func (s *Scheduler) SetBot(b *telebot.Bot) { s.bot.Store(b) }
+
+func (s *Scheduler) currentBot() *telebot.Bot { return s.bot.Load() }

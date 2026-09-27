@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	accountRepo "github.com/nasnet-community/nasnet-panel-linux/internal/account/repository"
@@ -154,8 +155,8 @@ type adminUsecase struct {
 	grpcClient              *xray.GRPCClient
 	provService             provisioning.ProvisioningService
 	inboundTag              string
-	accountUC               contract.AccountManager // Injected later to avoid circular deps
-	bot                     *telebot.Bot
+	accountUC               contract.AccountManager     // Injected later to avoid circular deps
+	bot                     atomic.Pointer[telebot.Bot] // set late, see SetBot
 	settingUC               settingDomain.SettingUsecase
 	accountRepo             accountRepo.AccountRepository
 	usageRepo               userRepo.UserDailyUsageRepository
@@ -242,7 +243,7 @@ func NewAdminUsecase(
 }
 
 func (u *adminUsecase) SetBot(bot *telebot.Bot) {
-	u.bot = bot
+	u.bot.Store(bot)
 }
 
 func (u *adminUsecase) ListAllNodes(ctx context.Context) ([]*nodeDomain.Node, error) {

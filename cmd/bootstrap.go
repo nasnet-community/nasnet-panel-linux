@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 
 	"github.com/nasnet-community/nasnet-panel-linux/config"
 	accountRepo "github.com/nasnet-community/nasnet-panel-linux/internal/account/repository"
@@ -50,11 +52,44 @@ import (
 
 // maintenanceBroadcastBotRef is set once the telegram bot has been built so
 // that the broadcast closure used by the maintenance usecase can reach the
-// real *telebot.Bot. It is read from the closure installed in initUsecases.
-var maintenanceBroadcastBotRef *telebot.Bot
+// real *telebot.Bot. Atomic because bot construction is supervised on its own
+// goroutine and can succeed long after initUsecases returned.
+var maintenanceBroadcastBotRef atomic.Pointer[telebot.Bot]
 
 func setMaintenanceBroadcastBot(b *telebot.Bot) {
-	maintenanceBroadcastBotRef = b
+	maintenanceBroadcastBotRef.Store(b)
+}
+
+// botHolder publishes the Telegram bot to consumers built before it exists.
+// Construction performs a getMe call, so it fails while the outbound path is
+// down and may only succeed minutes into the process; consumers subscribe
+// instead of snapshotting.
+type botHolder struct {
+	mu   sync.Mutex
+	bot  *telebot.Bot
+	subs []func(*telebot.Bot)
+}
+
+// Set publishes the bot and notifies everyone who already subscribed.
+func (h *botHolder) Set(b *telebot.Bot) {
+	h.mu.Lock()
+	h.bot = b
+	subs := append([]func(*telebot.Bot){}, h.subs...)
+	h.mu.Unlock()
+	for _, fn := range subs {
+		fn(b)
+	}
+}
+
+// OnReady registers fn, calling it at once if the bot already arrived.
+func (h *botHolder) OnReady(fn func(*telebot.Bot)) {
+	h.mu.Lock()
+	b := h.bot
+	h.subs = append(h.subs, fn)
+	h.mu.Unlock()
+	if b != nil {
+		fn(b)
+	}
 }
 
 // repositoryBundle holds all repository instances created during bootstrap.
@@ -307,10 +342,11 @@ func initUsecases(
 	// Maintenance mode: broadcast closure reads the bot ref set by root.go
 	// after bot construction. Admin broadcast reuses admin_usecase's path.
 	maintenanceBroadcastFn := func(ctx context.Context, msg string) error {
-		if maintenanceBroadcastBotRef == nil {
+		b := maintenanceBroadcastBotRef.Load()
+		if b == nil {
 			return nil
 		}
-		_, err := adminUsecase.BroadcastMessage(ctx, maintenanceBroadcastBotRef, msg, true)
+		_, err := adminUsecase.BroadcastMessage(ctx, b, msg, true)
 		return err
 	}
 	maintenanceUC := mntUC.NewUsecase(
