@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -413,24 +414,13 @@ func (c *EmbeddedClient) RestartSSH(ctx context.Context) error {
 
 // ===== Self-Update =====
 
+// errBuiltInNode refuses calls that would replace or remove the panel itself.
+var errBuiltInNode = errors.New("not supported on the built-in node")
+
+// SelfUpdate is refused: the built-in node's binary is the panel, which updates
+// through its own release channel.
 func (c *EmbeddedClient) SelfUpdate(ctx context.Context, binaryContent []byte, checksum, version string, restartAfter bool, signature []byte, force bool) (*UpdateResult, error) {
-	resp, err := c.srv.SelfUpdate(ctx, &pb.UpdateRequest{
-		BinaryContent: binaryContent,
-		Checksum:      checksum,
-		Version:       version,
-		RestartAfter:  restartAfter,
-		Signature:     signature,
-		Force:         force,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &UpdateResult{
-		Success:    resp.Success,
-		Message:    resp.Message,
-		OldVersion: resp.OldVersion,
-		NewVersion: resp.NewVersion,
-	}, nil
+	return nil, errBuiltInNode
 }
 
 func (c *EmbeddedClient) GetSelfChecksum(ctx context.Context) (*ChecksumResult, error) {
@@ -767,15 +757,9 @@ func (c *EmbeddedClient) ExecuteCommand(ctx context.Context, command string, tim
 
 // ===== Cleanup =====
 
+// Uninstall is refused: on the built-in node it would delete the panel binary.
 func (c *EmbeddedClient) Uninstall(ctx context.Context) error {
-	resp, err := c.srv.Uninstall(ctx, &pb.Empty{})
-	if err != nil {
-		return err
-	}
-	if !resp.Success {
-		return errFromResp("uninstall agent", resp)
-	}
-	return nil
+	return errBuiltInNode
 }
 
 // ===== Nuke / Wipe =====

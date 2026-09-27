@@ -192,6 +192,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.NodeDailyTraffic{},
 		&nodeDomain.NodeUptimeEvent{},
 		&nodeDomain.StarlinkStat{},
+		&nodeDomain.AgentCertificate{},
 		&nodeDomain.ReverseProxy{},
 		&chatDomain.ChatMessage{},
 		&chatDomain.ChatReaction{},
@@ -349,7 +350,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			DB: db, NftMgr: embeddedSrv.NftManager(),
 			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
 			NetEvents: netEvents, Log: log,
-			PanelPort: cfg.App.Port, NodeRepo: repos.Node, HTTPFactory: httpFactory,
+			PanelPort: cfg.App.Port, NodeRepo: repos.Node, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
 			PoolSettings: poolSettings{uc: uc.Setting},
 		})
 		if rmErr != nil {
@@ -388,15 +389,18 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Fatal("Node usecase wiring incomplete")
 	}
 
-	// Create the single local node
-	if nodes, listErr := uc.Node.ListNodes(context.Background()); listErr != nil {
-		log.WithError(listErr).Warn("Failed to list nodes for local-node bootstrap")
-	} else if len(nodes) == 0 {
-		if _, createErr := uc.Node.CreateNode(context.Background(), "Local", "127.0.0.1", "", "", 10085, 0, "local", false, false); createErr != nil {
-			log.WithError(createErr).Warn("Failed to bootstrap local node")
-		} else {
-			log.Info("Bootstrapped local node")
-		}
+	// Exactly one built-in node; extra "local" rows are demoted first, so the
+	// unique index below can be created on older databases.
+	localNode, err := uc.Node.EnsureLocalNode(context.Background())
+	if err != nil {
+		log.WithError(err).Fatal("Failed to set up the built-in node")
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_nodes_one_local
+		  ON nodes (connect_mode) WHERE connect_mode = 'local' AND deleted_at IS NULL`).Error; err != nil {
+		log.WithError(err).Warn("Failed to create ux_nodes_one_local")
+	}
+	if cfg.Router.Enabled && localNode.ID != 1 {
+		log.WithField("node_id", localNode.ID).Fatal("Router mode needs the built-in node to be node 1 (router tables are pinned to it)")
 	}
 
 	// Apply log level from db settings (overrides config file)
@@ -810,6 +814,8 @@ type routerModeDeps struct {
 	PanelPort int
 	// NodeRepo supplies the inbound rows filter_in derives its accepts from.
 	NodeRepo inboundLister
+	// LocalNodeID names the built-in node whose inbounds filter_in opens.
+	LocalNodeID func() uint
 	// HTTPFactory routes the domestic address-list refresh like every other
 	// outbound the panel makes.
 	HTTPFactory *httpclient.Factory
@@ -869,7 +875,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		RouterMode:   true,
 		EventBus:     deps.Bus,
 		Events:       deps.NetEvents,
-		Inbounds:     inboundSource{repo: deps.NodeRepo, nodeID: 1},
+		Inbounds:     inboundSource{repo: deps.NodeRepo, localNodeID: deps.LocalNodeID},
 		PortMapRepo:  networkRepo.NewPortMapRepository(deps.DB),
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),

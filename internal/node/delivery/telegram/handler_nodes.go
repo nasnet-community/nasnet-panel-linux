@@ -90,6 +90,14 @@ func (h *Handler) HandleNodeView(c telebot.Context) error {
 		len(node.Inbounds), outboundCount)
 
 	kb := &telebot.ReplyMarkup{}
+	// The built-in node can't be deleted from here (it is this box).
+	lastRow := []telebot.Btn{
+		kb.Data("🗑 Delete Node", "admin_node_delete_ask", fmt.Sprintf("%d", node.ID)),
+		kb.Data("🔙 Back", "admin_nodes"),
+	}
+	if node.IsLocal() {
+		lastRow = lastRow[1:]
+	}
 	kb.Inline(
 		kb.Row(
 			kb.Data("📡 Inbounds", "admin_node_inbounds", fmt.Sprintf("%d", node.ID)),
@@ -108,10 +116,7 @@ func (h *Handler) HandleNodeView(c telebot.Context) error {
 		kb.Row(
 			kb.Data("📦 Export Config", "admin_node_export", fmt.Sprintf("%d", node.ID)),
 		),
-		kb.Row(
-			kb.Data("🗑 Delete Node", "admin_node_delete_ask", fmt.Sprintf("%d", node.ID)),
-			kb.Data("🔙 Back", "admin_nodes"),
-		),
+		kb.Row(lastRow...),
 	)
 
 	return c.Edit(msg, telebot.ModeMarkdown, kb)
@@ -259,10 +264,33 @@ func (h *Handler) HandleAddNodeAPIPort(c telebot.Context) error {
 		return c.Send("❌ Failed to create node: " + err.Error())
 	}
 
-	return c.Send("✅ Node Added Successfully!", keyboards.AdminMenu())
+	return c.Send("✅ Node added. Finish setup from the panel's Nodes page: it gives you the agent install command.", keyboards.AdminMenu())
 }
 
+// HandleDeleteNodeAsk asks before deleting; the delete itself is HandleDeleteNodeConfirm.
 func (h *Handler) HandleDeleteNodeAsk(c telebot.Context) error {
+	id, err := strconv.ParseUint(c.Data(), 10, 32)
+	if err != nil || id == 0 {
+		return c.Send("❌ Invalid node ID.")
+	}
+	ctx, cancel := tgctx.FromTelebot(c)
+	defer cancel()
+	node, err := h.nodeUsecase.GetNode(ctx, uint(id))
+	if err != nil {
+		return c.Send("❌ Node not found.")
+	}
+	if node.IsLocal() {
+		return c.Send("❌ The built-in node can't be deleted.")
+	}
+	kb := &telebot.ReplyMarkup{}
+	kb.Inline(kb.Row(
+		kb.Data("🗑 Delete", "admin_node_delete_confirm", fmt.Sprintf("%d", node.ID)),
+		kb.Data("Cancel", "admin_node_view", fmt.Sprintf("%d", node.ID)),
+	))
+	return c.Edit(fmt.Sprintf("Delete *%s*? This removes it from the panel.", utils.EscapeMarkdown(node.Name)), telebot.ModeMarkdown, kb)
+}
+
+func (h *Handler) HandleDeleteNodeConfirm(c telebot.Context) error {
 	id, err := strconv.ParseUint(c.Data(), 10, 32)
 	if err != nil || id == 0 {
 		return c.Send("❌ Invalid node ID.")

@@ -23,6 +23,7 @@ type NodeRepository interface {
 	ListNodes(ctx context.Context) ([]*domain.Node, error)
 	ListActiveNodes(ctx context.Context) ([]*domain.Node, error)
 	UpdateNodeStatus(ctx context.Context, id uint, isOnline bool, lastCheck time.Time) error
+	SetNodeConnectMode(ctx context.Context, id uint, mode string, active bool) error
 	UpdateNodeDNSSettings(ctx context.Context, nodeID uint, settings *domain.DNSSettings) error
 	UpdateNodeFakeDNSSettings(ctx context.Context, nodeID uint, pools []domain.FakeDNSPool) error
 
@@ -268,6 +269,14 @@ func (r *nodeRepository) GetNodeByUUID(ctx context.Context, uuid string) (*domai
 
 func (r *nodeRepository) UpdateNode(ctx context.Context, node *domain.Node) error {
 	return r.db.WithContext(ctx).Save(node).Error
+}
+
+// SetNodeConnectMode changes only a node's connect mode and active flag.
+func (r *nodeRepository) SetNodeConnectMode(ctx context.Context, id uint, mode string, active bool) error {
+	return r.db.WithContext(ctx).Model(&domain.Node{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"connect_mode": mode,
+		"is_active":    active,
+	}).Error
 }
 
 func (r *nodeRepository) UpdateNodeStatus(ctx context.Context, id uint, isOnline bool, lastCheck time.Time) error {

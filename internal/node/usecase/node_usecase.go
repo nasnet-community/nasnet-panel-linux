@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	accountRepo "github.com/nasnet-community/nasnet-panel-linux/internal/account/repository"
@@ -31,6 +32,12 @@ var (
 	ErrOutboundNotFound  = errors.New("outbound not found")
 	ErrNodeHasChildren   = errors.New("node has active inbounds or accounts")
 	ErrInvalidTargetNode = errors.New("invalid target node for migration")
+
+	// ErrLocalNode refuses changes the built-in node can't take: delete,
+	// uninstall, self-update, a connect-mode switch or deactivation.
+	ErrLocalNode = errors.New("the built-in node can't be removed or changed this way")
+	// ErrNodeTransportUnavailable means the node has no agent connection yet.
+	ErrNodeTransportUnavailable = errors.New("this node's agent connection is not available")
 )
 
 // SyncResult holds the result of a sync operation
@@ -98,6 +105,10 @@ type InboundStats struct {
 type NodeUsecase interface {
 	// Node Management
 	CreateNode(ctx context.Context, name, ip, country, datacenter string, apiPort, agentPort int, connectMode string, isStealth, isPersistentStealth bool) (*domain.Node, error)
+	// EnsureLocalNode makes sure exactly one built-in node exists and returns it.
+	EnsureLocalNode(ctx context.Context) (*domain.Node, error)
+	// LocalNodeID is the built-in node's id, 0 until EnsureLocalNode ran.
+	LocalNodeID() uint
 	ListNodes(ctx context.Context) ([]*domain.Node, error)
 	GetNode(ctx context.Context, id uint) (*domain.Node, error)
 	DeleteNode(ctx context.Context, id uint, force bool) error
@@ -374,6 +385,7 @@ type nodeUsecase struct {
 
 	// In process node-agent server used by getAgentClient to bypass grpc in single bin mode
 	embeddedSrv *agentserver.Server
+	localNodeID atomic.Uint32
 
 	// Audit logging (optional — set via SetAuditUsecase after construction to
 	// avoid a cyclic dependency between the node and audit usecases).

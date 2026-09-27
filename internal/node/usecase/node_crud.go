@@ -13,7 +13,48 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
+// EnsureLocalNode makes sure exactly one built-in node exists and returns it.
+// Extra "local" rows, left by the old create handler that hard-coded the mode,
+// are demoted to inactive direct nodes so they stop driving the embedded xray.
+func (u *nodeUsecase) EnsureLocalNode(ctx context.Context) (*domain.Node, error) {
+	nodes, err := u.nodeRepo.ListNodes(ctx) // ordered by id
+	if err != nil {
+		return nil, err
+	}
+	var local *domain.Node
+	for _, n := range nodes {
+		if !n.IsLocal() {
+			continue
+		}
+		if local == nil {
+			local = n
+			continue
+		}
+		if err := u.nodeRepo.SetNodeConnectMode(ctx, n.ID, domain.ConnectModeDirect, false); err != nil {
+			return nil, err
+		}
+		logger.GetLogger().Warnf("node %d (%q) was a second built-in node; demoted to an inactive direct node", n.ID, n.Name)
+	}
+	if local == nil {
+		local, err = u.CreateNode(ctx, "Local", "127.0.0.1", "", "", 10085, 0, domain.ConnectModeLocal, false, false)
+		if err != nil {
+			return nil, err
+		}
+		logger.GetLogger().Info("Bootstrapped the built-in node")
+	}
+	u.localNodeID.Store(uint32(local.ID))
+	return local, nil
+}
+
+func (u *nodeUsecase) LocalNodeID() uint { return uint(u.localNodeID.Load()) }
+
 func (u *nodeUsecase) CreateNode(ctx context.Context, name, ip, country, datacenter string, apiPort, agentPort int, connectMode string, isStealth, isPersistentStealth bool) (*domain.Node, error) {
+	if connectMode == "" {
+		connectMode = domain.ConnectModeDirect
+	}
+	if connectMode == domain.ConnectModeLocal && u.LocalNodeID() != 0 {
+		return nil, ErrLocalNode
+	}
 	node := &domain.Node{
 		Name:                name,
 		IP:                  ip,
@@ -102,6 +143,10 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 		}
 		// force=true: DB cleanup only (agent cleanup impossible without node).
 		log.WithError(err).Warn("[DeleteNode] Node not found or fetch error; proceeding with DB cleanup if possible")
+	}
+
+	if node.IsLocal() {
+		return ErrLocalNode
 	}
 
 	// 1. Check for active children (Inbounds -> Accounts)
@@ -470,6 +515,12 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	existing, err := u.nodeRepo.GetNode(ctx, node.ID)
 	if err != nil {
 		return err
+	}
+	if existing.IsLocal() != node.IsLocal() {
+		return ErrLocalNode // no switching into or out of the built-in node
+	}
+	if node.IsLocal() && (!node.IsActive || node.IsStealth || node.IsPersistentStealth) {
+		return ErrLocalNode
 	}
 
 	// Detect if we need to lookup

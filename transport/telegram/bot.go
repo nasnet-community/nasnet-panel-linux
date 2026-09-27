@@ -722,6 +722,7 @@ func (b *Bot) registerAdminCommands() {
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_view"}, mw(nh.HandleNodeView))
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_add"}, mw(nh.HandleAddNodeStart))
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_delete_ask"}, mw(nh.HandleDeleteNodeAsk))
+	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_delete_confirm"}, mw(nh.HandleDeleteNodeConfirm))
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_inbounds"}, mw(nh.HandleInbounds))
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_discover"}, mw(nh.HandleDiscoverInbounds))
 	b.bot.Handle(&telebot.InlineButton{Unique: "admin_node_sync"}, mw(nh.HandleSyncInbounds))

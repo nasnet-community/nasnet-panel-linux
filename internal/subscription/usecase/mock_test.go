@@ -411,6 +411,10 @@ func (m *mockNodeRepo) ListNodes(_ context.Context) ([]*nodeDomain.Node, error) 
 func (m *mockNodeRepo) ListActiveNodes(_ context.Context) ([]*nodeDomain.Node, error) {
 	return nil, nil
 }
+func (m *mockNodeRepo) SetNodeConnectMode(_ context.Context, _ uint, _ string, _ bool) error {
+	return nil
+}
+
 func (m *mockNodeRepo) UpdateNodeStatus(_ context.Context, _ uint, _ bool, _ time.Time) error {
 	return nil
 }

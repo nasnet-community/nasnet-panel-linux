@@ -10,6 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// Connect modes. The local node is the built-in one: this panel's own xray,
+// driven in-process.
+const (
+	ConnectModeLocal   = "local"
+	ConnectModeDirect  = "direct"  // the panel dials the node's agent
+	ConnectModeReverse = "reverse" // the agent dials the panel's hub port
+)
+
 // Node represents a physical server (VPS/Dedicated) running Xray-core
 type Node struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
@@ -23,7 +31,7 @@ type Node struct {
 
 	// Agent Configuration
 	AgentPort           int    `gorm:"default:9090" json:"agent_port"`               // Node Agent gRPC port
-	ConnectMode         string `gorm:"size:20;default:'direct'" json:"connect_mode"` // "direct" or "reverse"
+	ConnectMode         string `gorm:"size:20;default:'direct'" json:"connect_mode"` // "local", "direct" or "reverse"
 	IsStealth           bool   `gorm:"default:false" json:"is_stealth"`              // Whether to run agent in Stealth Mode
 	IsPersistentStealth bool   `gorm:"default:false" json:"is_persistent_stealth"`   // Whether stealth agent should be persistent
 
@@ -114,6 +122,9 @@ type Node struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
+
+// IsLocal reports whether n is the built-in node that runs inside this panel.
+func (n *Node) IsLocal() bool { return n != nil && n.ConnectMode == ConnectModeLocal }
 
 func (n *Node) BeforeCreate(tx *gorm.DB) error {
 	if n.UUID == "" {

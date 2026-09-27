@@ -112,10 +112,15 @@ func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) [
 	return out
 }
 
-// getAgentClient returns an in process client for the local agent
+// getAgentClient returns the in-process client for the built-in node. Other
+// nodes have no transport yet; handing them the embedded client would let a
+// second node row drive this box's own xray.
 func (u *nodeUsecase) getAgentClient(node *domain.Node) (agent.NodeClient, error) {
 	if node == nil {
 		return nil, nil
+	}
+	if !node.IsLocal() {
+		return nil, ErrNodeTransportUnavailable
 	}
 	if u.embeddedSrv == nil {
 		return nil, fmt.Errorf("embedded node server not initialized")

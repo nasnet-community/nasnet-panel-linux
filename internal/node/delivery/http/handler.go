@@ -319,7 +319,15 @@ func (h *Handler) CreateNode(c *gin.Context) {
 		return
 	}
 
-	// Single binary: the node is always the local machine.
+	// The built-in node is created at boot; new nodes are remote agents.
+	switch req.ConnectMode {
+	case "":
+		req.ConnectMode = domain.ConnectModeDirect
+	case domain.ConnectModeDirect, domain.ConnectModeReverse:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "connect_mode must be direct or reverse"})
+		return
+	}
 	node, err := h.nodeUsecase.CreateNode(
 		c.Request.Context(),
 		req.Name,
@@ -328,7 +336,7 @@ func (h *Handler) CreateNode(c *gin.Context) {
 		req.Datacenter,
 		req.APIPort,
 		req.AgentPort,
-		"local",
+		req.ConnectMode,
 		req.IsStealth,
 		req.IsPersistentStealth,
 	)
@@ -441,6 +449,10 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 	}
 
 	if err := h.nodeUsecase.UpdateNode(c.Request.Context(), node); err != nil {
+		if errors.Is(err, usecase.ErrLocalNode) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -469,6 +481,10 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 	if err := h.nodeUsecase.DeleteNode(c.Request.Context(), uint(id), force); err != nil {
 		if err == usecase.ErrNodeHasChildren {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "NODE_HAS_CHILDREN"})
+			return
+		}
+		if errors.Is(err, usecase.ErrLocalNode) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
