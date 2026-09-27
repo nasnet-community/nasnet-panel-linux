@@ -1,6 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react"
 import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { MemoryRouter } from "react-router"
 import { EventsProvider } from "../events-provider"
 import { queryKeys } from "@/lib/queries/keys"
 
@@ -51,7 +52,7 @@ afterEach(() => {
 })
 
 function mount() {
-    return render(<QueryClientProvider client={client}><EventsProvider><div /></EventsProvider></QueryClientProvider>)
+    return render(<MemoryRouter><QueryClientProvider client={client}><EventsProvider><div /></EventsProvider></QueryClientProvider></MemoryRouter>)
 }
 
 const stats = { node_id: 1, online_users: 4, cpu_percent: 23, total_uplink: 100, total_downlink: 200 }

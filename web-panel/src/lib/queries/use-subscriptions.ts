@@ -26,6 +26,7 @@ import {
     assignSubscriptionToInbound,
 } from "@/lib/api/subscriptions"
 import type { CreateManualSubscriptionRequest } from "@/lib/api/subscriptions"
+import { markSubscriptionCreatedHere } from "@/components/toast/handled-here"
 import {
     bulkManageInbounds,
     getBulkInboundSummary,
@@ -367,6 +368,8 @@ export function useRegenerateUUID() {
 export function useCreateManualSubscription() {
     const queryClient = useQueryClient()
     return useMutation({
+        // The hub publishes the SSE event before it answers, so mark on send.
+        onMutate: () => markSubscriptionCreatedHere(),
         mutationFn: async (req: CreateManualSubscriptionRequest) => {
             const res = await createManualSubscription(req)
             if (!res.success) throw new Error(res.error || "Failed to create subscription")

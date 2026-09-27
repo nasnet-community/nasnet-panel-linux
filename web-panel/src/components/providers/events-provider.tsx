@@ -1,7 +1,9 @@
-import { createContext, useContext, useCallback, useState, useEffect, useRef } from 'react'
+import { createContext, useContext, useCallback, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from '@/lib/config'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useNavigate, type NavigateFunction } from 'react-router'
+import { subscriptionCreatedHereRecently } from '@/components/toast/handled-here'
 import type {
     EventType,
     ServerEvent,
@@ -100,8 +102,10 @@ export function EventsProvider({ children }: EventsProviderProps) {
     const queryClientRef = useRef(queryClient)
     queryClientRef.current = queryClient
 
-    // Store active toast IDs to dismiss them when resolved
-    const activeToastsRef = useRef<Map<number, string | number>>(new Map())
+    // Toast actions navigate; the ref keeps connect() stable across renders.
+    const navigate = useNavigate()
+    const navigateRef = useRef<NavigateFunction>(navigate)
+    useLayoutEffect(() => { navigateRef.current = navigate }, [navigate])
 
     // Debounced invalidator for high-frequency events (node.stats_updated)
     const invalidatorRef = useRef<CoalescedInvalidator>(createCoalescedInvalidator())
@@ -152,7 +156,6 @@ export function EventsProvider({ children }: EventsProviderProps) {
         // Handle all event types with inline handlers to avoid dependency issues
         const eventTypes: EventType[] = [
             'node.online', 'node.offline', 'node.stats_updated',
-            'payment.created', 'payment.completed', 'payment.failed',
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
             'xray.recovery_command', 'xray.recovery_exhausted',
@@ -170,7 +173,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             es.addEventListener(eventType, (e) => {
                 try {
                     const event: ServerEvent = JSON.parse(e.data)
-                    handleEvent(eventType, event, queryClientRef.current, activeToastsRef.current, invalidatorRef.current)
+                    handleEvent(eventType, event, queryClientRef.current, navigateRef.current, invalidatorRef.current)
                     // Notify raw listeners (ActivityFeed, etc.)
                     listenersRef.current.forEach((fn) => fn(eventType, event))
                 } catch (error) {
@@ -229,15 +232,16 @@ function handleEvent(
     eventType: EventType,
     event: ServerEvent,
     queryClient: QueryClient,
-    activeToasts: Map<number, string | number>,
+    navigate: NavigateFunction,
     invalidator: CoalescedInvalidator,
 ) {
     switch (eventType) {
         case 'node.online': {
             const payload = event.payload as NodeStatusPayload
             toast.success(`Node "${payload.node_name}" is back online`, {
+                id: `node-${payload.node_id}`,
                 description: `IP: ${payload.ip}`,
-                duration: 5000,
+                action: { label: 'View node', onClick: () => navigate(`/nodes/${payload.node_id}`) },
             })
             // Node status changed → refresh node lists, detail, and stats
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
@@ -250,8 +254,9 @@ function handleEvent(
         case 'node.offline': {
             const payload = event.payload as NodeStatusPayload
             toast.error(`Node "${payload.node_name}" went offline`, {
+                id: `node-${payload.node_id}`,
                 description: payload.message || `IP: ${payload.ip}`,
-                duration: 8000,
+                action: { label: 'View node', onClick: () => navigate(`/nodes/${payload.node_id}`) },
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             invalidateLiveDashboard(queryClient)
@@ -351,7 +356,8 @@ function handleEvent(
         }
         case 'subscription.created': {
             const payload = event.payload as SubscriptionEventPayload
-            toast.success('New subscription created!', {
+            // A subscription this panel just created already got its own toast.
+            if (!subscriptionCreatedHereRecently()) toast.success('New subscription created!', {
                 description: `${payload.plan_name}`,
             })
             // New sub → sub lists, counts, dashboard active-subs count,
@@ -389,6 +395,7 @@ function handleEvent(
         case 'portmap.acquired': {
             const p = event.payload as PortMapPayload
             toast.success(`${p.proto}/${p.port} open from outside`, {
+                id: `portmap-${p.proto}-${p.port}`,
                 description: p.external ? `Reachable at ${p.external}` : undefined,
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
@@ -399,7 +406,7 @@ function handleEvent(
             const p = event.payload as PortMapPayload
             toast.warning(
                 p.count ? `${p.count} upstream mappings dropped` : `${p.proto}/${p.port} closed upstream`,
-                { description: p.reason || 'Retrying on the next pass.' },
+                { id: p.count ? 'portmap-lost' : `portmap-${p.proto}-${p.port}`, description: p.reason || 'Retrying on the next pass.' },
             )
             queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
             break
@@ -407,6 +414,7 @@ function handleEvent(
 
         case 'portmap.denied': {
             toast.error('The upstream router refuses port mapping', {
+                id: 'portmap-denied',
                 description: 'Turn UPnP on there, or forward the ports by hand.',
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.networkPortMapStatus() })
@@ -424,8 +432,8 @@ function handleEvent(
             const toastFn = payload.success ? toast.success : toast.error
             const maxLabel = payload.max_attempts === 0 ? '\u221e' : String(payload.max_attempts)
             toastFn(`Recovery command ${payload.success ? 'succeeded' : 'failed'} on "${payload.node_name}"`, {
+                id: `recovery-${payload.node_id}`,
                 description: `Exit code: ${payload.exit_code} | Attempt ${payload.attempt_num}/${maxLabel}`,
-                duration: 8000,
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             break
@@ -433,8 +441,8 @@ function handleEvent(
         case 'xray.recovery_exhausted': {
             const payload = event.payload as XrayRecoveryPayload
             toast.error(`Recovery exhausted on "${payload.node_name}"`, {
+                id: `recovery-${payload.node_id}`,
                 description: `${payload.attempt_num} attempt(s) used. Manual intervention required.`,
-                duration: 10000,
             })
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             break
