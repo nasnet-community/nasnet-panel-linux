@@ -5,7 +5,7 @@ import {
     getAccountsBySubscription,
     type CreateAccountRequest
 } from "@/lib/api/accounts"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export function useAccountsByNode(nodeId: number, options?: { refetchInterval?: number | false }) {
     return useQuery({

@@ -60,7 +60,17 @@ export default tseslint.config(
 
             "react-hooks/rules-of-hooks": "error",
             "react-hooks/set-state-in-render": "error",
+
+            "no-restricted-imports": ["error", {
+                paths: [{ name: "sonner", message: "Import toast from @/lib/toast." }],
+            }],
         },
+    },
+
+    // The toast wrapper and the Toaster are the only places that talk to sonner.
+    {
+        files: ["src/lib/toast.tsx", "src/components/providers/toast-provider.tsx"],
+        rules: { "no-restricted-imports": "off" },
     },
 
     {

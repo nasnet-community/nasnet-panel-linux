@@ -44,7 +44,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
 import { motion, AnimatePresence } from "framer-motion"
 import { useConfirm } from "@/components/ui/confirm-dialog"

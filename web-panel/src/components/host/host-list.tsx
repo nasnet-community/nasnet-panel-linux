@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 import {
     HiOutlinePlus,

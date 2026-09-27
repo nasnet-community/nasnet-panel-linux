@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { cleanupDatabase } from "@/lib/api/backup"
 import type { CleanupResult } from "@/lib/api/backup"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export function useDatabaseCleanup() {
     const queryClient = useQueryClient()

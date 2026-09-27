@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { revokeSubscription } from "@/lib/api/subscriptions"
 import { useDeleteAccountMutation } from "@/lib/queries"
 import { useAccountsStore } from "@/store/accounts-store"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { HiExclamationTriangle } from "react-icons/hi2"
 
 export function DeleteAccountDialog() {

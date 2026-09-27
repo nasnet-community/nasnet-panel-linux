@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react"
 import { useSettings, useUpdateSettings } from "@/lib/queries"
 import { restartServer } from "@/lib/api/backup"
 import { useConfirm } from "@/components/ui/confirm-dialog"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from '@/lib/config'
 import { DangerZone } from "@/components/settings/danger-zone"
 import { categoryMeta } from "@/components/settings/settings-constants"

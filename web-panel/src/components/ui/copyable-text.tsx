@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Copy, Check } from "lucide-react"
 import { cn, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface CopyableTextProps {
     text: string

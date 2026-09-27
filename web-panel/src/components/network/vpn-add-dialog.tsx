@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useGenerateVPNKeypair, useParseVPNInput, useSaveVPNProfile } from "@/lib/queries/use-network"
 import { detectFormat } from "@/lib/vpn-labels"
 import type { Verdict, VPNProfile, WireGuardConfig } from "@/lib/types/network"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 const FORMAT_LABEL: Record<"uri" | "conf", string> = {
     uri: "Read as a WireGuard link",

@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AgentCertificate } from "@/lib/types"
 import { Copy, Download, Shield, ShieldAlert, ShieldCheck, Clock, Calendar, Key, FileText, AlertTriangle } from "lucide-react"
 import { cn, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useCertificateDetails } from "@/lib/queries"
 
 interface CertDetailsDialogProps {

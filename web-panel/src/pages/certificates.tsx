@@ -21,7 +21,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { QueryError } from "@/components/ui/query-error"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { AgentCertificate } from "@/lib/types"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export default function CertificatesPage() {
     const queryClient = useQueryClient()

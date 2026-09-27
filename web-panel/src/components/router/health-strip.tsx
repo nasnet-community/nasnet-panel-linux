@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { SlidersHorizontal } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import {

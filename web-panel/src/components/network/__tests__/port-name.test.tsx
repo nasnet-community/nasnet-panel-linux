@@ -10,7 +10,7 @@ const setInterfaceLabel = vi.fn()
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
 
-vi.mock("sonner", () => ({
+vi.mock("@/lib/toast", () => ({
     toast: {
         success: (m: string) => toastSuccess(m),
         error: (m: string) => toastError(m),

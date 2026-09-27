@@ -15,7 +15,7 @@ import {
 } from "react-icons/hi"
 import type { UserDetails } from "@/lib/types"
 import { copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useUpdateTelegramID } from "@/lib/queries"
 import { AdminNotesPanel } from "./admin-notes-panel"
 import { NodeAccessList } from "./node-access-list"

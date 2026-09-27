@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Copy, Pin, PinOff, Pencil, Trash2, Reply, Smile } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
     usePinMessage,
     useUnpinMessage,

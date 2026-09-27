@@ -26,7 +26,7 @@ import { useNodeStats, useNodeStatsHistory, queryKeys } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Node } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Globe } from "lucide-react"
 
 // Import modular components

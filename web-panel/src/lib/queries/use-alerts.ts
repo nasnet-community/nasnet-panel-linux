@@ -9,7 +9,7 @@ import {
     type AlertEvent,
     type AlertThreshold,
 } from "@/lib/api/alerts"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export const alertKeys = {
     all: ["alerts"] as const,

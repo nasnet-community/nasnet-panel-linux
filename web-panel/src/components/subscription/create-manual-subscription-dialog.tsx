@@ -44,7 +44,7 @@ import { useCreateManualSubscription } from "@/lib/queries/use-subscriptions"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
 import { UserSearchSelect } from "@/components/ui/user-search-select"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import type { Node, Inbound, User } from "@/lib/types"
 import { BANDWIDTH_OPTIONS } from "@/lib/types"
 

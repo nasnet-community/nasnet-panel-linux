@@ -20,7 +20,7 @@ import {
     toggleAutoRenew,
 } from "@/lib/api/certificates"
 import { queryKeys } from "./keys"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 

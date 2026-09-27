@@ -13,7 +13,7 @@ import { Loader2 } from "lucide-react"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { useExportSettings, useImportSettings } from "@/lib/queries"
 import type { Setting } from "@/lib/domain/setting"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface SettingsImportExportProps {
     disabled?: boolean

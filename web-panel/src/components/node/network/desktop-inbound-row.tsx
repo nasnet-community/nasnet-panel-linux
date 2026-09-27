@@ -22,7 +22,7 @@ import {
 } from "react-icons/hi"
 import { protocolColors } from "@/components/node/protocol-badge"
 import type { Inbound } from "@/lib/types"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { INBOUND_GRID, EXPIRED_CELL } from "./inbound-grid"
 
 export interface InboundDetail {

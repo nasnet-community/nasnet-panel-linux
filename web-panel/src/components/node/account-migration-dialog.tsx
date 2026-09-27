@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Monitor, Server, ArrowRight, AlertTriangle } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"

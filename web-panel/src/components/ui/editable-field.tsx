@@ -3,7 +3,7 @@ import { Check, Copy, Loader2, RefreshCw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export interface EditableFieldProps {
     /** Canonical server value. Used to determine dirty state. */

@@ -16,7 +16,7 @@ import { HiOutlineRefresh, HiOutlineExclamationCircle } from "react-icons/hi"
 import { Search, Copy, Settings } from "lucide-react"
 import { useAccessLogs } from "@/lib/queries"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface NodeAccessLogsProps {
     nodeId: number

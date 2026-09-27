@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRollbackNetworkApply } from "@/lib/queries/use-network"

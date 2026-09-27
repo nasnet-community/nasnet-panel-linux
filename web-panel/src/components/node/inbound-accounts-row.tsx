@@ -39,7 +39,7 @@ import {
     HiOutlineX,
 } from "react-icons/hi"
 import { cn, formatBytes, formatDataLimit, getExpiryInfo, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { deleteAccount } from "@/lib/api/accounts"
 import { type Account, disableAccount, enableAccount, getAccountLink } from "@/lib/api/accounts"
 import { useQueryClient } from "@tanstack/react-query"

@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { settingsApi } from "@/lib/api/settings"
 import { queryKeys } from "./keys"
 import type { Setting } from "@/lib/domain/setting"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 

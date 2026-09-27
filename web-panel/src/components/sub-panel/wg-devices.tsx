@@ -16,7 +16,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { ConfirmDialogProvider, useConfirm } from "@/components/ui/confirm-dialog"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { cn, copyToClipboard } from "@/lib/utils"
 import {
     ApiError,

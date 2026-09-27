@@ -55,7 +55,7 @@ import type { NodeStatsBulkMap, NodeBulkActionResponse, XrayConfigDiff } from "@
 import { ApiError } from "@/lib/api"
 import { queryKeys } from "./keys"
 import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, OutboundTestEntry, OutboundTestSettings, NodeDataPoint } from "@/lib/types"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 

@@ -20,7 +20,7 @@ import {
 } from "react-icons/hi"
 import { Loader2, GitCompare } from "lucide-react"
 import { XrayConfigDiffDialog } from "@/components/node/xray-config-diff-dialog"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { getXrayConfig, updateXrayConfig, validateXrayConfig } from "@/lib/api/nodes"
 import { useTheme } from "@/components/providers/theme-provider"
 

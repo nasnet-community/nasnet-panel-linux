@@ -20,7 +20,7 @@ import { TemplatePicker, type TemplateItem } from "@/components/connection-dialo
 import { Callout, FormSection } from "@/components/connection-dialog/section"
 import { isConfigLink } from "@/lib/link-parser"
 import { formatRelativeTime } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { NEEDS_ADDRESS_PROTOCOLS } from "../use-outbound-form"
 
 const TEMPLATE_ITEMS: TemplateItem[] = OUTBOUND_PRESETS.map((p) => ({

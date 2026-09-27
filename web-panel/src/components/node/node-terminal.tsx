@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronDown, ChevronUp, Copy, Download, Eraser, Keyboard, Loader2, Maximize2, Minimize2, MoreHorizontal, Power, Search, Settings2, SquareTerminal, Terminal, X } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/providers/theme-provider"

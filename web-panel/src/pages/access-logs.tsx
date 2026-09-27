@@ -45,7 +45,7 @@ import { Search, Copy, Download, Columns3, ArrowUpDown, ArrowUp, ArrowDown, Paus
 import { useAggregatedAccessLogs, useNodes } from "@/lib/queries"
 import { PageHeader } from "@/components/shared/page-header"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { formatDistanceToNowStrict } from "date-fns"
 import { SubscriptionAutocomplete } from "@/components/ui/subscription-autocomplete"
 import type { AggregatedAccessLogEntry, Node } from "@/lib/types"

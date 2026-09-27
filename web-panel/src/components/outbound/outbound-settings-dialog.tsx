@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Form } from "@/components/ui/form"
 import { ConnectionDialogShell } from "@/components/connection-dialog/connection-dialog-shell"

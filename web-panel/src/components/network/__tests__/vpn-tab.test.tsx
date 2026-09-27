@@ -18,7 +18,7 @@ const setVPNPoolOrder = vi.fn()
 const setVPNProfileTransport = vi.fn()
 const toastError = vi.fn()
 const toastSuccess = vi.fn()
-vi.mock("sonner", () => ({
+vi.mock("@/lib/toast", () => ({
     toast: {
         error: (m: string) => toastError(m),
         success: (m: string) => toastSuccess(m),

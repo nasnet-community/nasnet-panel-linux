@@ -11,7 +11,7 @@ import {
     HiOutlineChevronUp,
 } from "react-icons/hi"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { startXrayProcess, stopXrayProcess, restartXrayProcess, getNodeRecentLogs } from "@/lib/api/nodes"
 import { useState, useEffect, useCallback } from "react"
 import type { Node, NodeStats } from "@/lib/types"

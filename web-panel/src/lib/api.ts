@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from './config'
 
 const API_BASE_URL = getApiBaseUrl()

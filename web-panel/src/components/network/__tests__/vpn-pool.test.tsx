@@ -9,7 +9,7 @@ import { poolRowCondition } from "@/lib/vpn-labels"
 import type { PoolStrategy, TunnelStatus, VPNProfile, VPNUplink } from "@/lib/types/network"
 import type { TunnelHealth } from "@/lib/types/health"
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock("@/lib/api/network", async (importOriginal) => ({
     ...(await importOriginal<typeof import("@/lib/api/network")>()),
     setVPNPoolOrder: vi.fn().mockResolvedValue({ success: true, data: null }),

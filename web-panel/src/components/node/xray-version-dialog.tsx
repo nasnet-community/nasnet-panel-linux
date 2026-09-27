@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import { getXrayReleases, updateXrayVersion } from "@/lib/api/nodes"
 import type { XrayRelease } from "@/lib/api/nodes"

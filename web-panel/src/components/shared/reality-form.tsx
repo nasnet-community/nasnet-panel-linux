@@ -10,7 +10,7 @@ import { Disclosure } from "@/components/connection-dialog/section"
 import { RealitySettings, TLS_FINGERPRINTS } from "@/lib/types"
 import { generateX25519Keys } from "@/lib/api/nodes"
 import { copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 function CopyButton({ value, label }: { value?: string; label: string }) {
     return (

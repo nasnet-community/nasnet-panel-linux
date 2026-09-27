@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { startXrayProcess, stopXrayProcess, restartXrayProcess, restartNodeSSH, clearNodeSSHLogs } from "@/lib/api/nodes"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import type { Node } from "@/lib/types"
 import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
 

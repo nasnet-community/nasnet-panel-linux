@@ -13,7 +13,7 @@ import { generateUUID } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
 import { useAccountsStore } from "@/store/accounts-store"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import type { Node, Inbound } from "@/lib/types"
 import { cn } from "@/lib/utils"
 

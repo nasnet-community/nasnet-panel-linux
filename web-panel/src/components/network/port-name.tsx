@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Check, Pencil, X } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useSetInterfaceLabel } from "@/lib/queries/use-network"

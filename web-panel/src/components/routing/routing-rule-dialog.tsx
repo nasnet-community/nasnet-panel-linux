@@ -22,7 +22,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { HiOutlinePlus, HiX, HiOutlineExclamation, HiChevronDown } from "react-icons/hi"
 import { ArrayInput, InboundTagInput, TagList } from "@/components/ui/tag-input"
 import { PRESET_RULE_TAGS } from "@/components/routing/routing-settings-card"

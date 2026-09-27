@@ -85,7 +85,7 @@ import {
 } from "@/lib/queries"
 import { useSubscriptionsStore, type SubscriptionSortField } from "@/store/subscriptions-store"
 import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Plus, Trash2, Pause, Play, X as XIcon, Ban, Wifi, Network } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { SubscriptionDetailsSheet } from "@/components/subscription/subscription-details-sheet"

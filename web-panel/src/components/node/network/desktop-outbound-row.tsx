@@ -22,7 +22,7 @@ import {
     HiOutlineDownload,
 } from "react-icons/hi"
 import { Power } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { protocolColors } from "@/components/node/protocol-badge"
 import type { Outbound, OutboundTestEntry } from "@/lib/types"
 import { OUTBOUND_GRID } from "./outbound-grid"

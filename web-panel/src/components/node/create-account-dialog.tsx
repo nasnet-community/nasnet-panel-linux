@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button"
 import { HiOutlineRefresh } from "react-icons/hi"
 import { useNodeInbounds } from "@/lib/queries/use-nodes"
 import { useCreateAccount } from "@/lib/queries/use-accounts"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 const formSchema = z.object({
     inbound_id: z.string().min(1, "Please select an inbound"),

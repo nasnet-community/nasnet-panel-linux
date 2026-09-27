@@ -14,7 +14,7 @@ import {
     completeSNIDNS01,
 } from "@/lib/api/domains"
 import { queryKeys } from "./keys"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 

@@ -8,7 +8,7 @@ import {
     HiOutlineStop,
 } from "react-icons/hi"
 import { Wrench, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
     restartXrayProcess,
     startXrayProcess,

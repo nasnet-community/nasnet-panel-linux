@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { ShieldAlert, TriangleAlert } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { VpnPool } from "@/components/network/vpn-pool"

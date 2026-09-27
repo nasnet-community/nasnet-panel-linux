@@ -7,7 +7,7 @@ import { UplinkDetailSheet } from "@/components/router/uplink-detail-sheet"
 import type { HealthSample, UplinkHealth, VPNPoolHealth } from "@/lib/types/health"
 import type { NetworkInterfaceView, PortForward, PortMapStatus } from "@/lib/types/network"
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 let forwards: PortForward[] = []
 let portmap: PortMapStatus | undefined

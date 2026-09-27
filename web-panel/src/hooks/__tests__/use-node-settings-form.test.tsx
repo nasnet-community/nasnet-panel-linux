@@ -8,7 +8,7 @@ import type { Node } from "@/lib/types"
 
 vi.mock("@/lib/api/nodes", () => ({ getNodeSSHStatus: vi.fn(), getXrayConfig: vi.fn(), updateNode: vi.fn(), updateNodeSSHConfig: vi.fn(), updateXrayConfig: vi.fn() }))
 vi.mock("@/lib/api/maintenance", () => ({ setNodeMaintenance: vi.fn() }))
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 const node = { id: 6, name: "London", ip: "192.0.2.6", is_online: true, is_active: true, updated_at: "1" } as Node
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 beforeEach(() => {

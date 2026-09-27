@@ -13,7 +13,7 @@ import { useLANDevices, useSetDeviceLabel } from "@/lib/queries/use-network"
 import { deviceName, lastSeenLabel, NAME_PROVENANCE_NOTES } from "@/lib/network-labels"
 import { cn } from "@/lib/utils"
 import type { LANDevice } from "@/lib/types/network"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface Props {
     /** The LAN is off, so there is no bridge to read. */

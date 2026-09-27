@@ -22,7 +22,7 @@ import {
 } from "react-icons/hi"
 import type { Subscription } from "@/lib/types"
 import { cn, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
 import { SubscriptionDetailsSheet } from "@/components/subscription/subscription-details-sheet"

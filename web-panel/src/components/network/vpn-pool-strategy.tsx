@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { useSetPoolStrategy } from "@/lib/queries/use-network"
 import { POOL_STRATEGIES, strategyLabel } from "@/lib/vpn-labels"

@@ -17,7 +17,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog"
 import { useBackups, useCreateBackup, useDeleteBackup, useRestoreBackup, useRestoreFromExisting } from "@/lib/queries"
 import { getBackupDownloadUrl } from "@/lib/api/backup"
 import { formatDateTime } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Loader2 } from "lucide-react"
 import {
     HiOutlineDatabase,

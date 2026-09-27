@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { ChevronRight, Plus, ShieldCheck, ShieldOff } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
     DndContext,
     closestCenter,

@@ -24,7 +24,7 @@ import {
     HiOutlineArrowsExpand,
 } from "react-icons/hi"
 import { cn, formatBytes, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { InboundSettingsDialog } from "@/components/inbound/inbound-settings-dialog"
 import { MigrateInboundDialog } from "@/components/inbound/migrate-inbound-dialog"
 import { OutboundSettingsDialog } from "@/components/outbound/outbound-settings-dialog"

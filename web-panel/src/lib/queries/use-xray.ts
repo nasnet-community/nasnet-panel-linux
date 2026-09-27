@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { listXrayVersions, uploadXrayBinary, deleteXrayVersion, triggerXrayDownload } from "../api/xray"
 
 const KEY = ["xray-versions"]

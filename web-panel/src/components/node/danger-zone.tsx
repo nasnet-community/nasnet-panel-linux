@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import { useNavigate } from "react-router"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { NukeDialog } from "@/components/node/nuke-dialog"

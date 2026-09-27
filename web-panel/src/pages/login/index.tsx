@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HiOutlineEye, HiOutlineEyeOff, HiOutlineUser, HiOutlineLockClosed } from "react-icons/hi"
 import ProxyGlobe from "./proxy-globe"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { motion, useAnimation } from "framer-motion"
 import logo from "@/assets/nasnet-logo.png"
 

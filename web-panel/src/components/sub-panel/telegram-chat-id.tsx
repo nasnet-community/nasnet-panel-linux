@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { BsTelegram } from "react-icons/bs"
 import { Check, Pencil, X, Loader2, Trash2, ExternalLink } from "lucide-react"
 import { motion } from "framer-motion"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from '@/lib/config'
 
 const API_BASE_URL = getApiBaseUrl()

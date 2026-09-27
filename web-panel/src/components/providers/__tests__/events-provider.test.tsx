@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { EventsProvider } from "../events-provider"
 import { queryKeys } from "@/lib/queries/keys"
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), dismiss: vi.fn(), custom: vi.fn() } }))
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), dismiss: vi.fn(), custom: vi.fn() } }))
 
 class MockEventSource {
     static OPEN = 1

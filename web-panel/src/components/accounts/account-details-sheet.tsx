@@ -31,7 +31,7 @@ import {
 import { getAccountLink } from "@/lib/api/accounts"
 import { useAccountsStore } from "@/store/accounts-store"
 import { cn, formatBytes, formatDate, copyToClipboard } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { Link } from "react-router"
 
 function getDaysRemaining(endDate?: string): number {

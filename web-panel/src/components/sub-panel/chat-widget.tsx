@@ -17,7 +17,7 @@ import { WidgetMessageToolbar } from "./widget-message-toolbar"
 import { ReactionsBar } from "@/components/chats/reactions-bar"
 import { ReplyPreview } from "@/components/chats/reply-preview"
 import { cn } from "@/lib/utils"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import type { ChatMessage } from "@/lib/api/chat"
 
 let audioCtx: AudioContext | null = null

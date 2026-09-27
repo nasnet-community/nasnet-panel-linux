@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { listBackups, createBackup, deleteBackup, restoreBackup, restoreFromExisting } from "@/lib/api/backup"
 import { queryKeys } from "./keys"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 

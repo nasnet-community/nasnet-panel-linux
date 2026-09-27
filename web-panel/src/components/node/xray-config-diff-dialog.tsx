@@ -17,7 +17,7 @@ import { useNodeXrayConfigDiff } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"
 import { queryKeys } from "@/lib/queries/keys"
 import { pushNodeConfig } from "@/lib/api/nodes"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 const DiffEditor = lazy(async () => {
     const monaco = await import("monaco-editor")

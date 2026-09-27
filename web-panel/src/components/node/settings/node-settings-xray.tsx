@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 import { HiOutlineSave, HiOutlineRefresh, HiOutlineExclamationCircle } from "react-icons/hi"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import {
     Form,
     FormControl,
