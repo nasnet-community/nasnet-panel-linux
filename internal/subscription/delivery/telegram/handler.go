@@ -22,6 +22,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/conversation"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/i18n"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/keyboards"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/localdate"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/product"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/utils"
@@ -267,6 +268,9 @@ func (h *Handler) HandleMySubscriptions(c telebot.Context) error {
 			if page < 1 {
 				page = 1
 			}
+			if page > 10000 {
+				page = 10000
+			}
 			offset = (page - 1) * limit
 		}
 	}
@@ -297,26 +301,36 @@ func (h *Handler) HandleMySubscriptions(c telebot.Context) error {
 			} else {
 				expiryText = timeText
 			}
+			if sub.GetEffectiveEndDate() == nil {
+				expiryText = i18n.Get(lang, "SubNoExpiry")
+			}
 		} else {
 			expiryText = getStatusText(sub.Status, lang)
 		}
 
 		effectiveLimit := sub.GetEffectiveDataLimit()
 		progressBar := generateProgressBar(sub.DataUsed, effectiveLimit)
-		dataText := formatDataUsageShort(sub.DataUsed, effectiveLimit)
+		dataText := bidiLTR(formatDataUsageShort(sub.DataUsed, effectiveLimit))
+		identity := bidiLTR(fmt.Sprintf("#%d", sub.ID))
+		created := ""
+		if !sub.CreatedAt.IsZero() {
+			created = "   " + i18n.Get(lang, "SubCreatedIdentity", localdate.DateTime(sub.CreatedAt, lang)) + "\n"
+		}
 
 		msg += fmt.Sprintf(
-			"*%d. %s* %s\n"+
+			"*%d. %s* %s · %s\n"+
+				"%s"+
 				"   %s %s\n"+
 				"   `%s` %s\n\n",
-			offset+i+1, utils.EscapeMarkdown(displayName), getProductEmoji(sub.ProductType),
+			offset+i+1, utils.EscapeMarkdown(displayName), getProductEmoji(sub.ProductType), identity, created,
 			statusEmoji, expiryText,
 			progressBar, dataText,
 		)
 
-		btnLabel := fmt.Sprintf("%d. %s", offset+i+1, displayName)
+		btnLabel := fmt.Sprintf("%s %s · %s", statusEmoji, identity, displayName)
 		rows = append(rows, kb.Row(kb.Data(btnLabel, "sub_select", fmt.Sprintf("%d", sub.ID))))
 	}
+	msg += i18n.Get(lang, "SubRenameHint")
 
 	var navRow []telebot.Btn
 	if page > 1 {
@@ -364,9 +378,9 @@ func (h *Handler) HandleSubscriptionDetail(c telebot.Context, subID uint) error 
 
 	// Expiry: a real date, or "Unlimited" when there's no end date.
 	// (Old code left this blank, so the message showed "Expires:" with no value.)
-	expires := i18n.Get(lang, "UnlimitedData")
-	if sub.EndDate != nil {
-		expires = formatDate(*sub.EndDate, lang)
+	expires := i18n.Get(lang, "SubNoExpiry")
+	if end := sub.GetEffectiveEndDate(); end != nil {
+		expires = formatDate(*end, lang)
 	}
 
 	effectiveLimit := sub.GetEffectiveDataLimit()
@@ -424,6 +438,7 @@ func (h *Handler) HandleSubscriptionDetail(c telebot.Context, subID uint) error 
 		serverCount,
 		formatDate(sub.CreatedAt, lang),
 	)
+	msg += "\n" + i18n.Get(lang, "SubStableIdentity", bidiLTR(fmt.Sprintf("#%d", sub.ID)))
 
 	kb := &telebot.ReplyMarkup{}
 
@@ -944,17 +959,17 @@ func getStatusText(status domain.SubscriptionStatus, lang string) string {
 }
 
 func formatDate(t time.Time, lang string) string {
-	if lang == i18n.LangFA {
-		return t.Format("2006/01/02, 15:04")
-	}
-	return t.Format("Jan 02, 15:04")
+	return localdate.Format(t, lang, "Jan 02, 15:04", true)
 }
 
 func formatDateOnly(t time.Time, lang string) string {
-	if lang == i18n.LangFA {
-		return t.Format("2006/01/02")
-	}
-	return t.Format("Jan 02, 2006")
+	return localdate.Date(t, lang)
+}
+
+// bidiLTR wraps a string in Unicode LTR isolates (LRI … PDI) so a left-to-right
+// run — numbers, byte units, dates — embeds cleanly inside RTL text.
+func bidiLTR(s string) string {
+	return "\u2066" + s + "\u2069"
 }
 
 // parseIDGB parses "id" or "id:gb" callback data used by the metered steppers.

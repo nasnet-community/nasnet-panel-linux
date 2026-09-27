@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/i18n"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/localdate"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"gopkg.in/telebot.v3"
 )
@@ -22,7 +23,8 @@ func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
 	}
 
 	for _, sub := range activeSubs {
-		if sub.EndDate == nil {
+		end := sub.GetEffectiveEndDate()
+		if end == nil {
 			continue
 		}
 
@@ -89,9 +91,9 @@ func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
 		if daysLeft <= 0 {
 			msg = i18n.Get(lang, i18nKey, subName)
 		} else if daysLeft == 1 {
-			msg = i18n.Get(lang, i18nKey, subName, sub.EndDate.Format("Jan 02, 2006"))
+			msg = i18n.Get(lang, i18nKey, subName, localdate.Date(*end, lang))
 		} else {
-			msg = i18n.Get(lang, i18nKey, subName, daysLeft, sub.EndDate.Format("Jan 02, 2006"))
+			msg = i18n.Get(lang, i18nKey, subName, daysLeft, localdate.Date(*end, lang))
 		}
 
 		// Create keyboard
