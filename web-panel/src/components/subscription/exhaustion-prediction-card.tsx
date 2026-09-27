@@ -90,7 +90,7 @@ export function ExhaustionPredictionCard({ subscriptionId, compact = false }: Ex
         <div className="space-y-2.5">
             <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exhaustion Forecast</h4>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded ${
                     data.confidence >= 0.8 ? "bg-emerald-500/10 text-emerald-600" :
                     data.confidence >= 0.5 ? "bg-amber-500/10 text-amber-600" :
                     "bg-muted text-muted-foreground"
@@ -106,24 +106,24 @@ export function ExhaustionPredictionCard({ subscriptionId, compact = false }: Ex
                     {/* Prediction details */}
                     <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Daily Average</p>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Daily Average</p>
                             <p className="font-semibold">{formatBytes(data.daily_avg_bytes)}/day</p>
                         </div>
                         <div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Trend</p>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Trend</p>
                             <div className={`flex items-center gap-1 font-semibold ${trendColor}`}>
                                 {trendIcon}
                                 <span>{trendLabel}</span>
                             </div>
                         </div>
                         <div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Data Runs Out</p>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Data Runs Out</p>
                             <p className={`font-semibold ${data.will_exhaust_first ? "text-red-500" : ""}`}>
                                 {data.exhaustion_date ?? "—"}
                             </p>
                         </div>
                         <div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Subscription Ends</p>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Subscription Ends</p>
                             <p className="font-semibold">{data.end_date ?? "No expiry"}</p>
                         </div>
                     </div>

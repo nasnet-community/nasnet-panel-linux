@@ -124,7 +124,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <p className="text-[11px] uppercase font-bold text-muted-foreground tracking-widest">Xray Process</p>
+                        <p className="text-[12px] uppercase font-bold text-muted-foreground tracking-widest">Xray Process</p>
                         {(isLoading || isActionLoading) && (
                             <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
                         )}
@@ -157,7 +157,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                         <span className={`text-sm font-bold tracking-tight ${isRunning ? "text-emerald-500" : "text-red-500"}`}>
                             {isRunning ? "Active" : "Stopped"}
                         </span>
-                        <span className="text-[11px] text-muted-foreground font-mono">
+                        <span className="text-[12px] text-muted-foreground font-mono">
                             {getCleanVersion(stats?.xray_version)}
                         </span>
                     </div>
@@ -165,13 +165,13 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
 
                 {/* Metrics */}
                 <div className="flex flex-col gap-1.5 border-t border-dashed border-border/50 pt-2.5">
-                    <div className="flex justify-between items-center text-[11px] uppercase font-bold tracking-wider">
+                    <div className="flex justify-between items-center text-[12px] uppercase font-bold tracking-wider">
                         <span className="text-muted-foreground">PID</span>
                         <span className="font-mono text-foreground">
                             {stats?.xray_pid ? stats.xray_pid : "—"}
                         </span>
                     </div>
-                    <div className="flex justify-between items-center text-[11px] uppercase font-bold tracking-wider">
+                    <div className="flex justify-between items-center text-[12px] uppercase font-bold tracking-wider">
                         <span className="text-muted-foreground">Uptime</span>
                         <span className="font-mono text-foreground">
                             {stats?.process_uptime ? formatUptime(stats.process_uptime) : "—"}
@@ -184,7 +184,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                     <div className="border-t border-dashed border-border/50 pt-2.5">
                         <button
                             type="button"
-                            className={`flex items-center justify-between w-full text-[11px] uppercase font-bold tracking-wider transition-colors ${
+                            className={`flex items-center justify-between w-full text-[12px] uppercase font-bold tracking-wider transition-colors ${
                                 recovery.exhausted
                                     ? "text-red-400 hover:text-red-300"
                                     : recovery.success
@@ -211,26 +211,26 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
 
                         {showRecovery && (
                             <div className="mt-2 rounded-lg bg-black/50 border border-border/10 p-2 space-y-1.5">
-                                <div className="text-[10px] text-muted-foreground">
+                                <div className="text-[11px] text-muted-foreground">
                                     {new Date(recovery.timestamp).toLocaleString()}
                                 </div>
                                 {recovery.error && (
-                                    <div className="text-[10px] font-mono text-red-400 break-all">
+                                    <div className="text-[11px] font-mono text-red-400 break-all">
                                         RPC Error: {recovery.error}
                                     </div>
                                 )}
                                 {!recovery.exhausted && !recovery.error && (
                                     <>
-                                        <div className="text-[10px] font-mono text-muted-foreground">
+                                        <div className="text-[11px] font-mono text-muted-foreground">
                                             Exit code: {recovery.exit_code}
                                         </div>
                                         {recovery.stdout && (
-                                            <div className="text-[10px] font-mono text-muted-foreground/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+                                            <div className="text-[11px] font-mono text-muted-foreground/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
                                                 {recovery.stdout}
                                             </div>
                                         )}
                                         {recovery.stderr && (
-                                            <div className="text-[10px] font-mono text-red-400/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+                                            <div className="text-[11px] font-mono text-red-400/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
                                                 {recovery.stderr}
                                             </div>
                                         )}
@@ -246,7 +246,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                     <div className="border-t border-dashed border-border/50 pt-2.5">
                         <button
                             type="button"
-                            className="flex items-center justify-between w-full text-[11px] uppercase font-bold tracking-wider text-red-400 hover:text-red-300 transition-colors"
+                            className="flex items-center justify-between w-full text-[12px] uppercase font-bold tracking-wider text-red-400 hover:text-red-300 transition-colors"
                             onClick={() => setShowLogs(!showLogs)}
                         >
                             <span className="flex items-center gap-1.5">
@@ -264,14 +264,14 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                         {showLogs && (
                             <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-black/50 border border-red-500/10 p-2 space-y-0.5">
                                 {actionError && (
-                                    <div className="text-[10px] font-mono text-red-400 whitespace-pre-wrap break-all pb-1 mb-1 border-b border-red-500/10">
+                                    <div className="text-[11px] font-mono text-red-400 whitespace-pre-wrap break-all pb-1 mb-1 border-b border-red-500/10">
                                         {actionError}
                                     </div>
                                 )}
                                 {errorLogs.map((log, i) => (
                                     <div
                                         key={i}
-                                        className={`text-[10px] font-mono leading-relaxed break-all ${
+                                        className={`text-[11px] font-mono leading-relaxed break-all ${
                                             log.level === "error"
                                                 ? "text-red-400"
                                                 : log.level === "warning"
@@ -286,7 +286,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                                     </div>
                                 ))}
                                 {errorLogs.length === 0 && !actionError && (
-                                    <div className="text-[10px] text-muted-foreground italic">No recent logs available</div>
+                                    <div className="text-[11px] text-muted-foreground italic">No recent logs available</div>
                                 )}
                             </div>
                         )}
@@ -300,7 +300,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                     <Button
                         variant="outline"
                         size="sm"
-                        className={`h-7 w-full text-[10px] uppercase font-bold tracking-wider transition-all rounded-lg ${
+                        className={`h-7 w-full text-[11px] uppercase font-bold tracking-wider transition-all rounded-lg ${
                             confirmingStop
                                 ? "bg-red-500/10 text-red-500 border-red-500/50"
                                 : "text-red-500/80 border-red-500/20 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50"
@@ -315,7 +315,7 @@ export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfo
                     <Button
                         variant="default"
                         size="sm"
-                        className="h-7 w-full text-[10px] uppercase font-bold tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 rounded-lg"
+                        className="h-7 w-full text-[11px] uppercase font-bold tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 rounded-lg"
                         onClick={() => handleAction("start")}
                         disabled={isActionLoading}
                     >

@@ -41,7 +41,7 @@ export function BandwidthUtilization({ node, stats, isLoading }: BandwidthUtiliz
         return (
             <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-teal-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                 <div className="flex items-center justify-between mb-3 relative z-10">
-                    <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Bandwidth</p>
+                    <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Bandwidth</p>
                     <HiOutlineLightningBolt className="w-4 h-4 text-muted-foreground/30 group-hover:text-teal-400 transition-colors" />
                 </div>
                 <div className="flex flex-col items-center gap-1">
@@ -57,7 +57,7 @@ export function BandwidthUtilization({ node, stats, isLoading }: BandwidthUtiliz
                         </span>
                     </CircularProgress>
                     <div className="text-center mt-1">
-                        <p className="text-[11px] text-muted-foreground font-medium">
+                        <p className="text-[12px] text-muted-foreground font-medium">
                             {currentSpeedMbps.toFixed(1)} <span className="text-muted-foreground/50">of</span> {totalBwMbps} Mbps
                         </p>
                     </div>
@@ -75,25 +75,25 @@ export function BandwidthUtilization({ node, stats, isLoading }: BandwidthUtiliz
     return (
         <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-teal-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
             <div className="flex items-center justify-between mb-3 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Bandwidth</p>
+                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Bandwidth</p>
                 <HiOutlineLightningBolt className="w-4 h-4 text-muted-foreground/30 group-hover:text-teal-400 transition-colors" />
             </div>
             <div className="flex flex-col gap-2.5 mt-2">
                 <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-medium">Upload</span>
-                    <span className="font-mono font-bold text-foreground text-[13px]">
+                    <span className="font-mono font-bold text-foreground text-[14px]">
                         {formatSpeed(stats?.up_speed || 0)}
                     </span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-medium">Download</span>
-                    <span className="font-mono font-bold text-foreground text-[13px]">
+                    <span className="font-mono font-bold text-foreground text-[14px]">
                         {formatSpeed(stats?.down_speed || 0)}
                     </span>
                 </div>
                 <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5 mt-0.5">
                     <span className="text-muted-foreground font-medium">Limit</span>
-                    <span className="font-mono text-[13px] text-muted-foreground/70">Unlimited</span>
+                    <span className="font-mono text-[14px] text-muted-foreground/70">Unlimited</span>
                 </div>
             </div>
             {isLoading && (
@@ -116,7 +116,7 @@ export function BandwidthUtilizationCompact({ node, stats, isLoading }: Bandwidt
     return (
         <Card className="h-full relative overflow-hidden transition-shadow duration-300 rounded-2xl p-3 bg-card/50 backdrop-blur-sm border-white/5">
             <div className="flex items-center justify-between mb-2 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Bandwidth</p>
+                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Bandwidth</p>
                 <HiOutlineLightningBolt className="w-3.5 h-3.5 text-muted-foreground/30" />
             </div>
             {bwEnabled && totalBwMbps > 0 ? (
@@ -134,7 +134,7 @@ export function BandwidthUtilizationCompact({ node, stats, isLoading }: Bandwidt
                     </div>
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Speed</span>
-                        <span className="font-mono font-bold text-foreground text-[11px]">
+                        <span className="font-mono font-bold text-foreground text-[12px]">
                             {currentSpeedMbps.toFixed(1)} / {totalBwMbps} Mbps
                         </span>
                     </div>
@@ -143,13 +143,13 @@ export function BandwidthUtilizationCompact({ node, stats, isLoading }: Bandwidt
                 <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Up</span>
-                        <span className="font-mono font-bold text-foreground text-[11px]">{formatSpeed(stats?.up_speed || 0)}</span>
+                        <span className="font-mono font-bold text-foreground text-[12px]">{formatSpeed(stats?.up_speed || 0)}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Down</span>
-                        <span className="font-mono font-bold text-foreground text-[11px]">{formatSpeed(stats?.down_speed || 0)}</span>
+                        <span className="font-mono font-bold text-foreground text-[12px]">{formatSpeed(stats?.down_speed || 0)}</span>
                     </div>
-                    <div className="text-[10px] text-muted-foreground/50 text-center">Unlimited</div>
+                    <div className="text-[11px] text-muted-foreground/50 text-center">Unlimited</div>
                 </div>
             )}
             {isLoading && (

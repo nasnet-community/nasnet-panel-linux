@@ -31,13 +31,13 @@ export function InboundDetailPanel({
                 <TabsTrigger value="hosts">
                     Hosts
                     {hostCount > 0 && (
-                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">{hostCount}</Badge>
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">{hostCount}</Badge>
                     )}
                 </TabsTrigger>
                 <TabsTrigger value="clients">
                     Clients
                     {accounts.length > 0 && (
-                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">{accounts.length}</Badge>
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">{accounts.length}</Badge>
                     )}
                 </TabsTrigger>
                 <TabsTrigger value="details">Details</TabsTrigger>
@@ -88,7 +88,7 @@ function InboundDetails({ inbound, details }: { inbound: Inbound; details: Inbou
         <dl className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-0 rounded-lg border bg-card px-4 py-1">
             {rows.map((r, i) => (
                 <div key={`${r.label}-${i}`} className="flex items-baseline gap-3 py-2 border-b border-border/60 last:border-b-0 @xl:[&:nth-last-child(2)]:border-b-0">
-                    <dt className="w-24 shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">{r.label}</dt>
+                    <dt className="w-24 shrink-0 text-[12px] uppercase tracking-wide text-muted-foreground">{r.label}</dt>
                     <dd className="min-w-0 flex-1 font-mono text-xs break-all">{r.value}</dd>
                     {r.copy && (
                         <button

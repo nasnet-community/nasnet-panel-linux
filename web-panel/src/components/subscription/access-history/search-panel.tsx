@@ -93,7 +93,7 @@ export function AccessHistorySearchPanel({ subId, from, to, includeIPs, classNam
             </div>
 
             {!showResults ? (
-                <p className="text-[11px] text-muted-foreground/70">
+                <p className="text-[12px] text-muted-foreground/70">
                     Type at least 2 characters. Matches are limited to the top-100 domains/IPs the
                     agent persisted per hour, so very long-tail keys may not appear.
                 </p>
@@ -135,7 +135,7 @@ function KindToggle({
                     onClick={() => onChange(b.v)}
                     aria-pressed={value === b.v}
                     className={cn(
-                        "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors",
+                        "px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider transition-colors",
                         value === b.v
                             ? "bg-foreground text-background"
                             : "text-muted-foreground hover:text-foreground",
@@ -167,7 +167,7 @@ function SearchResults({ data }: { data: AccessHistorySearchResponse }) {
 
     if (hits.length === 0) {
         return (
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-[12px] text-muted-foreground/70">
                 No matches in this window.
             </p>
         )
@@ -175,7 +175,7 @@ function SearchResults({ data }: { data: AccessHistorySearchResponse }) {
 
     return (
         <div className="space-y-2">
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground/80">
+            <div className="flex items-center gap-3 text-[12px] text-muted-foreground/80">
                 <span>
                     <span className="font-bold text-foreground">{distinctValues}</span> match
                     {distinctValues === 1 ? "" : "es"}
@@ -194,7 +194,7 @@ function SearchResults({ data }: { data: AccessHistorySearchResponse }) {
 
             <div className="overflow-hidden rounded-md ring-1 ring-border max-h-[280px] overflow-y-auto">
                 <table className="w-full text-xs">
-                    <thead className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground/70 sticky top-0">
+                    <thead className="bg-muted/30 text-[11px] uppercase tracking-wider text-muted-foreground/70 sticky top-0">
                         <tr>
                             <th className="text-left px-3 py-1.5 font-bold">Kind</th>
                             <th className="text-left px-3 py-1.5 font-bold">Value</th>
@@ -211,7 +211,7 @@ function SearchResults({ data }: { data: AccessHistorySearchResponse }) {
                                 <td className="px-3 py-1.5">
                                     <span
                                         className={cn(
-                                            "inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
+                                            "inline-block px-1.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider",
                                             KIND_TONE[a.kind],
                                         )}
                                     >

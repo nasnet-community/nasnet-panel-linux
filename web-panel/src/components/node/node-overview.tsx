@@ -143,7 +143,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                     <motion.div variants={cardVariants}>
                         <Card className="h-full relative overflow-hidden transition-shadow duration-300 rounded-2xl p-3 bg-card/50 backdrop-blur-sm border-white/5">
                             <div className="flex items-center justify-between mb-2 relative z-10">
-                                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Network Load</p>
+                                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Network Load</p>
                                 <HiOutlineCollection className="w-3.5 h-3.5 text-muted-foreground/30" />
                             </div>
                             <div className="flex flex-col gap-2">
@@ -171,25 +171,25 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                     <motion.div variants={cardVariants}>
                         <Card className="h-full relative overflow-hidden transition-shadow duration-300 rounded-2xl p-3 bg-card/50 backdrop-blur-sm border-white/5">
                             <div className="flex items-center justify-between mb-2 relative z-10">
-                                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Traffic</p>
+                                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Traffic</p>
                                 <HiOutlineSwitchHorizontal className="w-3.5 h-3.5 text-muted-foreground/30" />
                             </div>
                             <div className="flex flex-col gap-2">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-muted-foreground font-medium">Up</span>
-                                    <span className="font-mono font-bold text-foreground text-[11px]">
+                                    <span className="font-mono font-bold text-foreground text-[12px]">
                                         {stats?.total_uplink ? formatBytes(stats.total_uplink) : "0 B"}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-muted-foreground font-medium">Down</span>
-                                    <span className="font-mono font-bold text-foreground text-[11px]">
+                                    <span className="font-mono font-bold text-foreground text-[12px]">
                                         {stats?.total_downlink ? formatBytes(stats.total_downlink) : "0 B"}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2">
                                     <span className="text-muted-foreground font-medium">Total</span>
-                                    <span className="font-mono font-bold text-foreground text-[11px]">
+                                    <span className="font-mono font-bold text-foreground text-[12px]">
                                         {stats ? formatBytes((stats.total_uplink || 0) + (stats.total_downlink || 0)) : "0 B"}
                                     </span>
                                 </div>
@@ -212,7 +212,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                                     <button
                                         key={tab.key}
                                         onClick={() => setChartTab(tab.key)}
-                                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all ${
+                                        className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-all ${
                                             chartTab === tab.key
                                                 ? "bg-foreground text-background shadow-sm"
                                                 : "text-muted-foreground hover:text-foreground"
@@ -258,7 +258,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                 <motion.div variants={cardVariants}>
                     <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-blue-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                         <div className="flex items-center justify-between mb-3 relative z-10">
-                            <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Processor</p>
+                            <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Processor</p>
                             <HiOutlineChip className="w-4 h-4 text-muted-foreground/30 group-hover:text-blue-400 transition-colors" />
                         </div>
                         <div className="space-y-4">
@@ -267,7 +267,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                                     <p className="text-3xl font-bold tracking-tighter">
                                         {stats?.cpu_percent !== undefined ? `${stats.cpu_percent.toFixed(0)}%` : "—"}
                                     </p>
-                                    <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
+                                    <span className="text-[12px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
                                         Max {Math.max(...liveChartData.map(d => d.cpu || 0)).toFixed(0)}%
                                     </span>
                                 </div>
@@ -282,7 +282,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                 <motion.div variants={cardVariants}>
                     <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-purple-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                         <div className="flex items-center justify-between mb-3 relative z-10">
-                            <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Memory</p>
+                            <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Memory</p>
                             <HiOutlineDatabase className="w-4 h-4 text-muted-foreground/30 group-hover:text-purple-400 transition-colors" />
                         </div>
                         <div className="space-y-4">
@@ -291,7 +291,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                                     <p className="text-3xl font-bold tracking-tighter">
                                         {stats?.memory_percent !== undefined ? `${stats.memory_percent.toFixed(0)}%` : "—"}
                                     </p>
-                                    <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
+                                    <span className="text-[12px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
                                         Max {Math.max(...liveChartData.map(d => d.memory || 0)).toFixed(0)}%
                                     </span>
                                 </div>
@@ -306,7 +306,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                 <motion.div variants={cardVariants}>
                     <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-amber-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                         <div className="flex items-center justify-between mb-3 relative z-10">
-                            <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Storage</p>
+                            <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Storage</p>
                             <HiOutlineServer className="w-4 h-4 text-muted-foreground/30 group-hover:text-amber-400 transition-colors" />
                         </div>
                         <div className="space-y-4">
@@ -315,7 +315,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                                     <p className="text-3xl font-bold tracking-tighter">
                                         {stats?.disk_percent !== undefined ? `${stats.disk_percent.toFixed(0)}%` : "—"}
                                     </p>
-                                    <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
+                                    <span className="text-[12px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5">
                                         Max {Math.max(...liveChartData.map(d => d.disk || 0)).toFixed(0)}%
                                     </span>
                                 </div>
@@ -346,25 +346,25 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                 <motion.div variants={cardVariants}>
                     <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-emerald-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                         <div className="flex items-center justify-between mb-3 relative z-10">
-                            <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Network Load</p>
+                            <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Network Load</p>
                             <HiOutlineCollection className="w-4 h-4 text-muted-foreground/30 group-hover:text-emerald-400 transition-colors" />
                         </div>
                         <div className="flex flex-col gap-2.5 mt-2">
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted-foreground font-medium">TCP Conns</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">{stats?.tcp_count?.toLocaleString() ?? "—"}</span>
+                                <span className="font-mono font-bold text-foreground text-[14px]">{stats?.tcp_count?.toLocaleString() ?? "—"}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted-foreground font-medium">UDP Conns</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">{stats?.udp_count?.toLocaleString() ?? "—"}</span>
+                                <span className="font-mono font-bold text-foreground text-[14px]">{stats?.udp_count?.toLocaleString() ?? "—"}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted-foreground font-medium">Online Users</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">{stats?.online_users?.toLocaleString() ?? "—"}</span>
+                                <span className="font-mono font-bold text-foreground text-[14px]">{stats?.online_users?.toLocaleString() ?? "—"}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5 mt-0.5">
                                 <span className="text-muted-foreground font-medium">Open Files</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">{stats?.fd_count?.toLocaleString() ?? "—"}</span>
+                                <span className="font-mono font-bold text-foreground text-[14px]">{stats?.fd_count?.toLocaleString() ?? "—"}</span>
                             </div>
                         </div>
                         {isLoadingStats && (
@@ -379,25 +379,25 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                 <motion.div variants={cardVariants}>
                     <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-cyan-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
                         <div className="flex items-center justify-between mb-3 relative z-10">
-                            <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Total Traffic</p>
+                            <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Total Traffic</p>
                             <HiOutlineSwitchHorizontal className="w-4 h-4 text-muted-foreground/30 group-hover:text-cyan-400 transition-colors" />
                         </div>
                         <div className="flex flex-col gap-2.5 mt-2">
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted-foreground font-medium">Upload</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">
+                                <span className="font-mono font-bold text-foreground text-[14px]">
                                     {stats?.total_uplink ? formatBytes(stats.total_uplink) : "0 B"}
                                 </span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-muted-foreground font-medium">Download</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">
+                                <span className="font-mono font-bold text-foreground text-[14px]">
                                     {stats?.total_downlink ? formatBytes(stats.total_downlink) : "0 B"}
                                 </span>
                             </div>
                             <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5 mt-0.5">
                                 <span className="text-muted-foreground font-medium">Total</span>
-                                <span className="font-mono font-bold text-foreground text-[13px]">
+                                <span className="font-mono font-bold text-foreground text-[14px]">
                                     {stats ? formatBytes((stats.total_uplink || 0) + (stats.total_downlink || 0)) : "0 B"}
                                 </span>
                             </div>
@@ -451,7 +451,7 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                                 <button
                                     key={tab.key}
                                     onClick={() => setChartTab(tab.key)}
-                                    className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-all ${
+                                    className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-all ${
                                         chartTab === tab.key
                                             ? "bg-foreground text-background shadow-sm"
                                             : "text-muted-foreground hover:text-foreground"
@@ -467,11 +467,11 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                             <div className="flex items-center gap-4">
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">Upload</span>
+                                    <span className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-wider">Upload</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">Download</span>
+                                    <span className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-wider">Download</span>
                                 </div>
                             </div>
                         )}
@@ -479,15 +479,15 @@ export function NodeOverview({ node, stats, history, isLoadingStats, onRefreshSt
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center gap-1.5">
                                     <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider">TCP</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">TCP</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <div className="w-2 h-2 rounded-full bg-purple-500" />
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider">UDP</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">UDP</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <div className="w-2 h-2 rounded-full bg-amber-500" />
-                                    <span className="text-[10px] uppercase font-bold text-muted-foreground/70 tracking-wider">FD</span>
+                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-wider">FD</span>
                                 </div>
                             </div>
                         )}

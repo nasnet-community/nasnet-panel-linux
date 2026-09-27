@@ -68,8 +68,8 @@ export function SidebarFooter({
                     <span className="text-xs font-medium text-primary">{initial}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium truncate">{display}</p>
-                    <p className="font-mono text-[9px] text-muted-foreground tracking-[0.08em] uppercase">
+                    <p className="text-[14px] font-medium truncate">{display}</p>
+                    <p className="font-mono text-[10px] text-muted-foreground tracking-[0.08em] uppercase">
                         Administrator
                     </p>
                 </div>

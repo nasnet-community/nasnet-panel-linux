@@ -1363,7 +1363,7 @@ export function NodeNetworkConfig({
                                         }`}
                                 >
                                     {v.label}
-                                    <span className="text-[11px] px-1.5 rounded bg-white/[0.08]">{count}</span>
+                                    <span className="text-[12px] px-1.5 rounded bg-white/[0.08]">{count}</span>
                                 </button>
                             )
                         })}

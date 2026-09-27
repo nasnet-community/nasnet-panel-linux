@@ -170,7 +170,7 @@ export function ConnectionDialogShell({
                 </div>
 
                 <div className="flex items-center justify-between gap-3 border-t px-6 py-4">
-                    <div className="min-w-0 flex-1 text-[13px] leading-[18px] text-text-tertiary">
+                    <div className="min-w-0 flex-1 text-[14px] leading-[18px] text-text-tertiary">
                         {statusSlot}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -190,7 +190,7 @@ export function ConnectionDialogShell({
                         <Button type="button" onClick={onPrimary} disabled={loading}>
                             {loading ? "Saving…" : primaryLabel}
                             {!loading && (
-                                <kbd className="rounded border border-black/10 bg-gray-300 px-1 font-mono text-[11px] font-normal leading-4 text-gray-600">
+                                <kbd className="rounded border border-black/10 bg-gray-300 px-1 font-mono text-[12px] font-normal leading-4 text-gray-600">
                                     {isMac ? "⌘↵" : "Ctrl↵"}
                                 </kbd>
                             )}

@@ -25,7 +25,7 @@ export function SortableHead<F extends string>({
             onClick={() => onSort(field)}
             aria-label={`Sort by ${field}`}
             className={cn(
-                "flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm",
+                "flex items-center gap-1 text-[12px] font-medium uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm",
                 align === "right" && "justify-end w-full",
                 active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
@@ -40,7 +40,7 @@ export function SortableHead<F extends string>({
 export function PlainHead({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
     return (
         <span className={cn(
-            "block text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
+            "block text-[12px] font-medium uppercase tracking-wide text-muted-foreground",
             align === "right" && "text-right",
         )}>
             {children}

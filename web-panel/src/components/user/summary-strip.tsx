@@ -36,7 +36,7 @@ function SummaryCard({
             )}
         >
             <div className="flex justify-between items-center">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                     {label}
                 </span>
                 <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors text-xs">
@@ -44,7 +44,7 @@ function SummaryCard({
                 </span>
             </div>
             <div className="text-xl font-extrabold mt-1 mb-0.5">{value}</div>
-            <div className="text-[10px] text-muted-foreground/60">{secondary}</div>
+            <div className="text-[11px] text-muted-foreground/60">{secondary}</div>
         </button>
     )
 }

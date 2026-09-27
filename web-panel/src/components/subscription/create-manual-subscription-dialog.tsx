@@ -292,7 +292,7 @@ function StepSelectServers({
                                             <span className="font-semibold text-sm truncate">
                                                 {node.name}
                                             </span>
-                                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex">
+                                            <Badge variant="outline" className="text-[11px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex">
                                                 {node.country_code}
                                             </Badge>
                                             <div className={cn(
@@ -305,7 +305,7 @@ function StepSelectServers({
                                                         : "bg-red-500 shadow-sm shadow-red-500/50"
                                                 )} />
                                                 <span className={cn(
-                                                    "text-[11px] font-medium hidden sm:inline",
+                                                    "text-[12px] font-medium hidden sm:inline",
                                                     node.is_online ? "text-emerald-500" : "text-red-500"
                                                 )}>
                                                     {node.is_online ? "Online" : "Offline"}
@@ -320,7 +320,7 @@ function StepSelectServers({
                                                 </span>
                                             )}
                                             {!someSelected && inbounds.length > 0 && (
-                                                <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                                                <span className="text-[12px] text-muted-foreground hidden sm:inline">
                                                     {inbounds.length} inbound{inbounds.length !== 1 ? "s" : ""}
                                                 </span>
                                             )}
@@ -379,7 +379,7 @@ function StepSelectServers({
                                                                     {/* Protocol badge with unique color */}
                                                                     <span
                                                                         className={cn(
-                                                                            "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider border shrink-0",
+                                                                            "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold font-mono uppercase tracking-wider border shrink-0",
                                                                             pStyle.bg,
                                                                             pStyle.text,
                                                                             pStyle.border
@@ -388,25 +388,25 @@ function StepSelectServers({
                                                                         {inbound.protocol}
                                                                     </span>
                                                                     {/* Port pill */}
-                                                                    <span className="inline-flex items-center rounded-md bg-muted/80 px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
+                                                                    <span className="inline-flex items-center rounded-md bg-muted/80 px-1.5 py-0.5 text-[12px] font-mono text-muted-foreground">
                                                                         :{inbound.port}
                                                                     </span>
                                                                     {/* Network pill */}
-                                                                    <span className="inline-flex items-center rounded-md bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                                                                    <span className="inline-flex items-center rounded-md bg-muted/60 px-1.5 py-0.5 text-[12px] text-muted-foreground">
                                                                         {inbound.network}
                                                                     </span>
                                                                     {/* Security badge */}
                                                                     {inbound.security !== "none" && (
                                                                         <Badge
                                                                             variant={inbound.security === "tls" ? "success" : inbound.security === "reality" ? "warning" : "secondary"}
-                                                                            className="text-[10px] px-1.5 py-0 shrink-0"
+                                                                            className="text-[11px] px-1.5 py-0 shrink-0"
                                                                         >
                                                                             {inbound.security}
                                                                         </Badge>
                                                                     )}
                                                                 </div>
                                                                 {inbound.remark && (
-                                                                    <span className="text-[10px] text-muted-foreground/70 truncate max-w-[120px] italic hidden sm:inline">
+                                                                    <span className="text-[11px] text-muted-foreground/70 truncate max-w-[120px] italic hidden sm:inline">
                                                                         {inbound.remark}
                                                                     </span>
                                                                 )}
@@ -491,7 +491,7 @@ function StepSelectUser({
                             )}>
                                 {opt.label}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">{opt.desc}</span>
+                            <span className="text-[11px] text-muted-foreground">{opt.desc}</span>
                         </button>
                     ))}
                 </div>
@@ -846,13 +846,13 @@ function StepReview({
                     </h4>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Label
                             </p>
                             <p className="text-sm font-medium">{label || "—"}</p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Servers
                             </p>
                             <p className="text-sm font-medium">
@@ -860,7 +860,7 @@ function StepReview({
                             </p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Data Limit
                             </p>
                             <p className="text-sm font-medium">
@@ -868,7 +868,7 @@ function StepReview({
                             </p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Speed Limit
                             </p>
                             <p className="text-sm font-medium">
@@ -876,7 +876,7 @@ function StepReview({
                             </p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Expiration
                             </p>
                             <p className="text-sm font-medium">
@@ -890,7 +890,7 @@ function StepReview({
                             </p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 Max Devices
                             </p>
                             <p className="text-sm font-medium">
@@ -898,7 +898,7 @@ function StepReview({
                             </p>
                         </div>
                         <div className="space-y-1">
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                                 User
                             </p>
                             <p className="text-sm font-medium">
@@ -934,7 +934,7 @@ function StepReview({
                             >
                                 <Badge
                                     variant="outline"
-                                    className="text-[10px] px-1.5 uppercase shrink-0"
+                                    className="text-[11px] px-1.5 uppercase shrink-0"
                                 >
                                     {nodeCountry}
                                 </Badge>
@@ -943,7 +943,7 @@ function StepReview({
                                 </span>
                                 <Badge
                                     variant="default"
-                                    className="text-[10px] px-1.5 font-mono uppercase shrink-0"
+                                    className="text-[11px] px-1.5 font-mono uppercase shrink-0"
                                 >
                                     {inbound.protocol}
                                 </Badge>

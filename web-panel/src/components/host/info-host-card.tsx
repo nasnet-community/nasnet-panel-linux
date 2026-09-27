@@ -72,7 +72,7 @@ export const InfoHostCard = React.memo(function InfoHostCard({
 
             {/* Header: INFO badge + Switch + Menu */}
             <div className="flex items-start justify-between gap-2">
-                <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
+                <Badge variant="outline" className="text-[11px] h-5 px-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
                     <HiOutlineInformationCircle className="h-3 w-3 mr-0.5" />
                     INFO
                 </Badge>
@@ -118,7 +118,7 @@ export const InfoHostCard = React.memo(function InfoHostCard({
 
             {/* Priority */}
             <div className="flex items-center gap-2 mt-2">
-                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                <Badge variant="outline" className="text-[11px] h-5 px-1.5">
                     P:{host.priority}
                 </Badge>
             </div>

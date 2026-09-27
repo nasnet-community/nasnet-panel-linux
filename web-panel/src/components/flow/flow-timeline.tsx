@@ -56,7 +56,7 @@ export function FlowTimeline({ events }: { events: FlowEvent[] }) {
                         title={JSON.stringify(e.payload)}
                     >
                         {e.type}
-                        <span className="text-[10px] opacity-70 tabular-nums">
+                        <span className="text-[11px] opacity-70 tabular-nums">
                             {relativeTime(e.timestamp)}
                         </span>
                     </Badge>

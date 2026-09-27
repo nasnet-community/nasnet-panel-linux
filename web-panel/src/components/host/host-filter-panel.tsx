@@ -200,7 +200,7 @@ export function HostFilterPanel({ nodes, inbounds, hostTags }: HostFilterPanelPr
                         <HiOutlineAdjustments className="h-4 w-4" />
                         Filters
                         {activeFilterCount > 0 && (
-                            <Badge className="h-4 w-4 p-0 flex items-center justify-center text-[9px] absolute -top-1.5 -right-1.5">
+                            <Badge className="h-4 w-4 p-0 flex items-center justify-center text-[10px] absolute -top-1.5 -right-1.5">
                                 {activeFilterCount}
                             </Badge>
                         )}

@@ -242,7 +242,7 @@ function ImportFallback({
     const url = app.getUrl?.()
     return (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-3 py-2.5">
-            <p className="text-[13px] leading-snug text-foreground/85">
+            <p className="text-[14px] leading-snug text-foreground/85">
                 Nothing opened. {app.name} may not be installed on this device.
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -314,7 +314,7 @@ function HeroCard({
                 onClick={() => onImport(app)}
                 whileTap={reduceMotion ? undefined : { scale: 0.985 }}
                 className={cn(
-                    "w-full h-12 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-[13px] font-semibold tracking-wide transition-colors",
+                    "w-full h-12 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-[14px] font-semibold tracking-wide transition-colors",
                     FOCUS_RING
                 )}
             >
@@ -360,7 +360,7 @@ function AppRow({
         >
             <AppIcon app={app} size="row" />
             <span className="flex-1 min-w-0">
-                <span className="block text-[13px] font-medium text-foreground truncate">
+                <span className="block text-[14px] font-medium text-foreground truncate">
                     {app.name}
                 </span>
                 <span className="block text-xs text-muted-foreground truncate">{app.store}</span>
@@ -412,7 +412,7 @@ function PlatformSwitcher({
                         onClick={() => onChange(p)}
                         onKeyDown={(e) => handleKeyDown(e, i)}
                         className={cn(
-                            "relative h-9 rounded-lg text-[13px] font-medium transition-colors",
+                            "relative h-9 rounded-lg text-[14px] font-medium transition-colors",
                             active ? "text-emerald-400" : "text-muted-foreground hover:text-foreground",
                             FOCUS_RING
                         )}
@@ -643,7 +643,7 @@ export function ImportToAppSheet({
                                         type="button"
                                         onClick={handleCopyLink}
                                         className={cn(
-                                            "shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-white/[0.05] hover:bg-white/[0.09] text-[13px] font-medium transition-colors",
+                                            "shrink-0 h-11 px-4 inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-white/[0.05] hover:bg-white/[0.09] text-[14px] font-medium transition-colors",
                                             copied ? "text-emerald-500" : "text-foreground/80",
                                             FOCUS_RING
                                         )}

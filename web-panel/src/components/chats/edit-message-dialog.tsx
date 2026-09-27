@@ -44,7 +44,7 @@ export function EditMessageDialog({ open, onOpenChange, messageId, initialConten
                     autoFocus
                 />
                 {content.length > 1800 && (
-                    <div className="text-[10px] text-muted-foreground text-right">{content.length}/2000</div>
+                    <div className="text-[11px] text-muted-foreground text-right">{content.length}/2000</div>
                 )}
             </div>
         </ResponsiveDialog>

@@ -88,7 +88,7 @@ function Ladder({ carrier, gateway, internet }: { carrier: string; gateway: stri
                         data-layer-status={l.status}
                         className={cn("h-1.5 rounded-full", LAYER_BAR[l.status] ?? LAYER_BAR.unknown)}
                     />
-                    <p className="text-text-tertiary text-center font-mono text-[11px] tracking-wide">
+                    <p className="text-text-tertiary text-center font-mono text-[12px] tracking-wide">
                         {l.label}
                     </p>
                 </div>

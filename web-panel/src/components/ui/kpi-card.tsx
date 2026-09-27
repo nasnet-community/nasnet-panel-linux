@@ -76,7 +76,7 @@ export function KpiCard({
         )}>
             <div className="flex items-start justify-between gap-2 md:gap-3">
                 <div className="space-y-1 min-w-0 flex-1">
-                    <p className="text-[10px] sm:text-[11px] md:text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">{title}</p>
+                    <p className="text-[11px] sm:text-[12px] md:text-xs font-medium text-muted-foreground uppercase tracking-normal md:tracking-wider truncate">{title}</p>
                     <div className={cn("font-bold tracking-tight", compact ? "text-lg md:text-xl lg:text-2xl" : "text-2xl md:text-3xl")}>
                         {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
                     </div>
@@ -88,11 +88,11 @@ export function KpiCard({
             {(description || (trend && trendValue)) && (
                 <div className="mt-2 md:mt-3 flex items-center justify-between gap-2">
                     {description && (
-                        <p className="text-[10px] sm:text-[11px] md:text-xs text-muted-foreground truncate">{description}</p>
+                        <p className="text-[11px] sm:text-[12px] md:text-xs text-muted-foreground truncate">{description}</p>
                     )}
                     {trend && trendValue && (
                         <span className={cn(
-                            "flex items-center text-[10px] sm:text-[11px] font-bold px-1.5 py-0.5 md:px-2 md:py-1 rounded-full shrink-0",
+                            "flex items-center text-[11px] sm:text-[12px] font-bold px-1.5 py-0.5 md:px-2 md:py-1 rounded-full shrink-0",
                             trend === "up" ? "text-emerald-500 bg-emerald-500/10" : "text-red-500 bg-red-500/10"
                         )}>
                             {trend === "up" ? <HiArrowUp className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5 md:mr-1" /> : <HiArrowDown className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5 md:mr-1" />}

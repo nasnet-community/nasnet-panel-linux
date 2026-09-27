@@ -93,7 +93,7 @@ function RangeToggle({ range, onChange }: { range: UsageTrendRange; onChange: (r
 // theme-aware axis tick — uses CSS class instead of hardcoded fill
 function AxisTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: string } }) {
   return (
-    <text x={x} y={y} dy={12} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>
+    <text x={x} y={y} dy={12} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 12 }}>
       {payload ? formatAxisDate(payload.value) : ""}
     </text>
   )

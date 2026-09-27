@@ -115,7 +115,7 @@ function TotalsRow({ totals }: { totals: { accepted_count: number; rejected_coun
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {items.map(it => (
                 <Card key={it.label} className="p-3 md:p-4 lg:p-5">
-                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{it.label}</p>
+                    <p className="text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">{it.label}</p>
                     <p className={cn("text-2xl md:text-3xl font-bold tabular-nums tracking-tight mt-1 font-mono", it.color)}>
                         {formatLargeNumber(it.value)}
                     </p>
@@ -138,7 +138,7 @@ function ChartCard({ series, granularity }: { series: { bucket: string; accepted
                 <p className="text-xs uppercase font-semibold text-muted-foreground tracking-wider">
                     Requests over time
                 </p>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-mono">
                     {granularity === "day" ? "daily" : "hourly"}
                 </span>
             </div>
@@ -156,11 +156,11 @@ function ChartCard({ series, granularity }: { series: { bucket: string; accepted
                             </linearGradient>
                         </defs>
                         <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
-                        <XAxis dataKey="time" tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} interval={Math.max(Math.floor(data.length / 8), 0)} />
-                        <YAxis tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" tickFormatter={formatLargeNumber} width={50} />
+                        <XAxis dataKey="time" tick={{ fontSize: 12, fill: c.axis }} axisLine={false} tickLine={false} interval={Math.max(Math.floor(data.length / 8), 0)} />
+                        <YAxis tick={{ fontSize: 12, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" tickFormatter={formatLargeNumber} width={50} />
                         <Tooltip
-                            contentStyle={{ ...tooltipContentStyle(c), fontSize: 12 }}
-                            labelStyle={{ color: c.tooltipLabel, fontSize: 11 }}
+                            contentStyle={{ ...tooltipContentStyle(c), fontSize: 13 }}
+                            labelStyle={{ color: c.tooltipLabel, fontSize: 12 }}
                         />
                         <Area type="monotone" dataKey="accepted" stroke={c.success} strokeWidth={2} fill="url(#ro-acc)" dot={false} />
                         <Area type="monotone" dataKey="rejected" stroke={c.danger} strokeWidth={2} fill="url(#ro-rej)" dot={false} />

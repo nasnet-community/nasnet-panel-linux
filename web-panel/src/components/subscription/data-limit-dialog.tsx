@@ -140,7 +140,7 @@ export function DataLimitDialog({
                             />
                         </div>
                         {!isUnlimited && effectiveNewLimitGb > 0 && (
-                            <p className={cn("text-[10px] font-medium", getUsageTextColor(usagePercent))}>
+                            <p className={cn("text-[11px] font-medium", getUsageTextColor(usagePercent))}>
                                 {usagePercent.toFixed(1)}% used
                             </p>
                         )}

@@ -94,12 +94,12 @@ function DiffBlock({ oldValues, newValues }: { oldValues?: string; newValues?: s
         <div className="mt-1.5">
             <button
                 onClick={() => setExpanded(!expanded)}
-                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
             >
                 {expanded ? "Hide changes ▲" : "Show changes ▼"}
             </button>
             {expanded && (
-                <div className="bg-muted/30 rounded-md p-2 mt-1 font-mono text-[10px] space-y-0.5">
+                <div className="bg-muted/30 rounded-md p-2 mt-1 font-mono text-[11px] space-y-0.5">
                     {allKeys.map((key) => {
                         const oldVal = oldObj[key]
                         const newVal = newObj[key]
@@ -141,16 +141,16 @@ function ActivityItem({ event }: { event: UserActivityEvent }) {
             </div>
             <div className="pb-3 min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[13px] font-medium truncate">
+                    <p className="text-[14px] font-medium truncate">
                         {formatAction(event.action)}
                         {entityRef && (
-                            <span className="text-[11px] text-muted-foreground/60 font-normal ml-1">{entityRef}</span>
+                            <span className="text-[12px] text-muted-foreground/60 font-normal ml-1">{entityRef}</span>
                         )}
                     </p>
-                    <span className="text-[10px] text-muted-foreground/50 whitespace-nowrap shrink-0">{relativeTime(event.created_at)}</span>
+                    <span className="text-[11px] text-muted-foreground/50 whitespace-nowrap shrink-0">{relativeTime(event.created_at)}</span>
                 </div>
                 {event.actor_name && (
-                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">{event.actor_name}</p>
+                    <p className="text-[12px] text-muted-foreground/50 mt-0.5">{event.actor_name}</p>
                 )}
                 <DiffBlock oldValues={event.old_values} newValues={event.new_values} />
             </div>

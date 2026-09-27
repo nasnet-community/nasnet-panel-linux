@@ -106,13 +106,13 @@ export function StarlinkMetricDetail({ metricType, data, timeRange, onTimeRangeC
                             dataKey="time"
                             axisLine={false}
                             tickLine={false}
-                            tick={{ fontSize: 11, fill: c.axis }}
+                            tick={{ fontSize: 12, fill: c.axis }}
                             interval="preserveStartEnd"
                             minTickGap={56}
                         />
-                        <YAxis tickFormatter={(v) => `${v.toFixed(0)}`} width={40} tick={{ fontSize: 11, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" />
+                        <YAxis tickFormatter={(v) => `${v.toFixed(0)}`} width={40} tick={{ fontSize: 12, fill: c.axis }} axisLine={false} tickLine={false} orientation="right" />
                         {config.refLine && (
-                            <ReferenceLine y={config.refLine.y} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: config.refLine.label, position: "left", fill: c.danger, fontSize: 11 }} />
+                            <ReferenceLine y={config.refLine.y} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: config.refLine.label, position: "left", fill: c.danger, fontSize: 12 }} />
                         )}
                         <Tooltip
                             contentStyle={{
@@ -121,9 +121,9 @@ export function StarlinkMetricDetail({ metricType, data, timeRange, onTimeRangeC
                                 border: "1px solid var(--border)",
                                 borderRadius: "12px",
                                 padding: "8px 12px",
-                                fontSize: 12,
+                                fontSize: 13,
                             }}
-                            labelStyle={{ color: c.label, fontSize: 11 }}
+                            labelStyle={{ color: c.label, fontSize: 12 }}
                             formatter={(value: any) => [`${formatValue(value ?? 0)} ${config.unit}`, config.label]}
                         />
                         <Area type="monotone" dataKey="value" stroke={config.color} strokeWidth={2} fill="url(#sl-detail-grad)" dot={false} activeDot={{ r: 4, fill: config.color, stroke: config.color, strokeWidth: 2 }} isAnimationActive={false} />

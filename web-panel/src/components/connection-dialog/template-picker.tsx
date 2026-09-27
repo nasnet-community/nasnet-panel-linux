@@ -34,7 +34,7 @@ interface TemplatePickerProps {
 
 function Tok({ children }: { children: string }) {
     return (
-        <span className="rounded-[5px] bg-accent px-1.5 py-px font-mono text-[11px] leading-4 text-text-secondary">
+        <span className="rounded-[5px] bg-accent px-1.5 py-px font-mono text-[12px] leading-4 text-text-secondary">
             {children}
         </span>
     )
@@ -53,7 +53,7 @@ function TemplateCard({ item, selected, onClick }: { item: TemplateItem; selecte
                     : "hover:bg-accent/50",
             )}
         >
-            <span className="flex items-center gap-1.5 text-[13px] font-medium leading-[18px] [text-wrap:pretty]">
+            <span className="flex items-center gap-1.5 text-[14px] font-medium leading-[18px] [text-wrap:pretty]">
                 {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                 {item.name}
             </span>
@@ -116,7 +116,7 @@ export function TemplatePicker({
             <div className="flex items-center gap-3 rounded-lg border bg-card py-2.5 pl-3.5 pr-3">
                 <Check className="h-4 w-4 shrink-0 text-status-success" />
                 <span className="text-xs text-text-tertiary">Started from</span>
-                <span className="text-[13px] font-medium leading-[18px]">{applied.name}</span>
+                <span className="text-[14px] font-medium leading-[18px]">{applied.name}</span>
                 <span className="ml-1 hidden items-center gap-1 sm:flex">
                     {applied.tokens.map((t) => <Tok key={t}>{t}</Tok>)}
                 </span>
@@ -143,7 +143,7 @@ export function TemplatePicker({
                 }}
                 placeholder={`Search ${items.length} templates`}
                 aria-label="Search templates"
-                className="h-8 w-full rounded-md border border-input bg-input/30 pl-8 pr-8 text-[13px] shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="h-8 w-full rounded-md border border-input bg-input/30 pl-8 pr-8 text-[14px] shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
             {query ? (
                 <button
@@ -155,7 +155,7 @@ export function TemplatePicker({
                     <X className="h-3.5 w-3.5" />
                 </button>
             ) : (
-                <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border bg-card px-1 font-mono text-[11px] leading-4 text-text-tertiary">/</kbd>
+                <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border bg-card px-1 font-mono text-[12px] leading-4 text-text-tertiary">/</kbd>
             )}
         </div>
     )

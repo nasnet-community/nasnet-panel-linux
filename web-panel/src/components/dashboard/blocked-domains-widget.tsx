@@ -52,7 +52,7 @@ export function BlockedDomainsWidget({ isEditMode }: BlockedDomainsWidgetProps) 
                         <button
                             key={p}
                             onClick={() => setPeriod(p)}
-                            className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
+                            className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${
                                 period === p
                                     ? "bg-primary text-primary-foreground"
                                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -78,15 +78,15 @@ export function BlockedDomainsWidget({ isEditMode }: BlockedDomainsWidgetProps) 
                     {/* Summary stats */}
                     <div className="grid grid-cols-3 gap-3">
                         <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Rejected</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Rejected</p>
                             <p className="text-base font-bold mt-0.5 text-red-500">{formatNumber(data?.total_rejected ?? 0)}</p>
                         </div>
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Accepted</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Accepted</p>
                             <p className="text-base font-bold mt-0.5">{formatNumber(data?.total_accepted ?? 0)}</p>
                         </div>
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Block Rate</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Block Rate</p>
                             <p className="text-base font-bold mt-0.5">{(data?.rejection_rate ?? 0).toFixed(1)}%</p>
                         </div>
                     </div>
@@ -108,7 +108,7 @@ export function BlockedDomainsWidget({ isEditMode }: BlockedDomainsWidgetProps) 
                                         type="number"
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 10 }}
+                                        tick={{ fontSize: 11 }}
                                         tickFormatter={formatNumber}
                                     />
                                     <YAxis
@@ -116,7 +116,7 @@ export function BlockedDomainsWidget({ isEditMode }: BlockedDomainsWidgetProps) 
                                         dataKey="domain"
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 9 }}
+                                        tick={{ fontSize: 10 }}
                                         width={120}
                                     />
                                     <Tooltip

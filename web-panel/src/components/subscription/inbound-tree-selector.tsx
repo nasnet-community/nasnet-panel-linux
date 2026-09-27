@@ -253,7 +253,7 @@ function NodeRow({
                     <span className="font-semibold text-sm truncate">{node.name}</span>
                     <Badge
                         variant="outline"
-                        className="text-[10px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex"
+                        className="text-[11px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex"
                     >
                         {node.country_code}
                     </Badge>
@@ -268,7 +268,7 @@ function NodeRow({
                         />
                         <span
                             className={cn(
-                                "text-[11px] font-medium hidden sm:inline",
+                                "text-[12px] font-medium hidden sm:inline",
                                 node.is_online ? "text-emerald-500" : "text-red-500"
                             )}
                         >
@@ -284,7 +284,7 @@ function NodeRow({
                         </span>
                     )}
                     {!someSelected && inbounds.length > 0 && (
-                        <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                        <span className="text-[12px] text-muted-foreground hidden sm:inline">
                             {inbounds.length} inbound{inbounds.length !== 1 ? "s" : ""}
                         </span>
                     )}
@@ -384,7 +384,7 @@ function InboundRow({
                 {/* Protocol badge */}
                 <span
                     className={cn(
-                        "inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider border shrink-0",
+                        "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold font-mono uppercase tracking-wider border shrink-0",
                         pStyle.bg,
                         pStyle.text,
                         pStyle.border
@@ -393,11 +393,11 @@ function InboundRow({
                     {inbound.protocol}
                 </span>
                 {/* Port pill */}
-                <span className="inline-flex items-center rounded-md bg-muted/80 px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground shrink-0">
+                <span className="inline-flex items-center rounded-md bg-muted/80 px-1.5 py-0.5 text-[12px] font-mono text-muted-foreground shrink-0">
                     :{inbound.port}
                 </span>
                 {/* Network pill */}
-                <span className="inline-flex items-center rounded-md bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground shrink-0">
+                <span className="inline-flex items-center rounded-md bg-muted/60 px-1.5 py-0.5 text-[12px] text-muted-foreground shrink-0">
                     {inbound.network}
                 </span>
                 {/* Security badge */}
@@ -410,14 +410,14 @@ function InboundRow({
                                   ? "warning"
                                   : "secondary"
                         }
-                        className="text-[10px] px-1.5 py-0 shrink-0"
+                        className="text-[11px] px-1.5 py-0 shrink-0"
                     >
                         {inbound.security}
                     </Badge>
                 )}
                 {/* Remark */}
                 {inbound.remark && (
-                    <span className="text-[10px] text-muted-foreground/70 truncate italic hidden sm:inline">
+                    <span className="text-[11px] text-muted-foreground/70 truncate italic hidden sm:inline">
                         {inbound.remark}
                     </span>
                 )}
@@ -425,11 +425,11 @@ function InboundRow({
 
             {/* Disabled label or annotation */}
             {isDisabled ? (
-                <span className="text-[10px] text-muted-foreground italic shrink-0">
+                <span className="text-[11px] text-muted-foreground italic shrink-0">
                     {disabledLabel}
                 </span>
             ) : annotation ? (
-                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
                     {annotation}
                 </span>
             ) : null}

@@ -30,7 +30,7 @@ export function StatsChart({ data, dataKey, color, height = 60 }: StatsChartProp
                     <YAxis domain={[0, 100]} hide />
                     <Tooltip
                         contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }}
-                        itemStyle={{ color: c.tooltipText, fontSize: "12px", fontWeight: 600 }}
+                        itemStyle={{ color: c.tooltipText, fontSize: "13px", fontWeight: 600 }}
                         labelStyle={{ display: "none" }}
                         formatter={(value: any) => [`${Number(value).toFixed(1)}%`]}
                         separator=""

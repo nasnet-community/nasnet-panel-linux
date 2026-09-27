@@ -181,7 +181,7 @@ export function IdentitySection({
                                         <div className="bg-white p-2 rounded-md">
                                             <QRCodeSVG value={subscriptionURL} size={192} level="M" />
                                         </div>
-                                        <p className="text-[10px] text-muted-foreground max-w-[200px] text-center">
+                                        <p className="text-[11px] text-muted-foreground max-w-[200px] text-center">
                                             Scan with your VPN client to import this subscription.
                                         </p>
                                     </div>
@@ -219,7 +219,7 @@ export function IdentitySection({
                     placeholder="Subscription key"
                     ariaLabel="Subscription key"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     Changes the URL only; Xray credentials stay intact.
                 </p>
             </div>
@@ -231,7 +231,7 @@ export function IdentitySection({
                 <SectionHeader
                     right={
                         uuidsDiffer && (
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-500">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-500">
                                 Mixed
                             </span>
                         )
@@ -252,7 +252,7 @@ export function IdentitySection({
                         <Button
                             variant="outline"
                             size="sm"
-                            className="h-6 text-[11px]"
+                            className="h-6 text-[12px]"
                             onClick={() => setUuidEditEnabled(true)}
                         >
                             Override all
@@ -269,7 +269,7 @@ export function IdentitySection({
                         ariaLabel="Shared account UUID"
                     />
                 )}
-                <p className={cn("text-[10px] text-muted-foreground", uuidsDiffer && "text-amber-600 dark:text-amber-400")}>
+                <p className={cn("text-[11px] text-muted-foreground", uuidsDiffer && "text-amber-600 dark:text-amber-400")}>
                     {uuidsDiffer
                         ? `This subscription has ${accounts.length} account${accounts.length === 1 ? "" : "s"} with divergent UUIDs.`
                         : "Applied atomically to all accounts under this subscription."}

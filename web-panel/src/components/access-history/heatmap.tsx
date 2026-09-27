@@ -48,9 +48,9 @@ export function Heatmap({ hits, nodes }: Props) {
                 <table className="border-separate border-spacing-[3px]">
                     <thead>
                         <tr>
-                            <th className="text-left pr-3 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Hour</th>
+                            <th className="text-left pr-3 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Hour</th>
                             {visibleNodes.map(n => (
-                                <th key={n.id} className="px-1 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground whitespace-nowrap text-center">
+                                <th key={n.id} className="px-1 text-[11px] uppercase tracking-wider font-semibold text-muted-foreground whitespace-nowrap text-center">
                                     {n.name}
                                 </th>
                             ))}
@@ -59,7 +59,7 @@ export function Heatmap({ hits, nodes }: Props) {
                     <tbody>
                         {hours.map(h => (
                             <tr key={h}>
-                                <td className="pr-3 text-[11px] text-muted-foreground tabular-nums font-mono">
+                                <td className="pr-3 text-[12px] text-muted-foreground tabular-nums font-mono">
                                     {String(h).padStart(2, "0")}
                                 </td>
                                 {visibleNodes.map(n => {
@@ -93,7 +93,7 @@ export function Heatmap({ hits, nodes }: Props) {
 function Legend({ max }: { max: number }) {
     const steps = 5
     return (
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="uppercase tracking-wider font-semibold">Low</span>
             <div className="flex">
                 {Array.from({ length: steps }, (_, i) => {

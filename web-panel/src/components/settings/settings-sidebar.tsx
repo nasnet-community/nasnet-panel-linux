@@ -42,7 +42,7 @@ export function SettingsSidebar({ items, active, onSelect, mode = "desktop" }: S
                         {ActiveIcon && <ActiveIcon className="w-4 h-4 shrink-0" />}
                         <span className="truncate">{activeItem ? getCategoryLabel(activeItem.key) : "Select category"}</span>
                         {dirtyCount > 0 && (
-                            <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                            <Badge variant="warning" className="text-[11px] px-1.5 py-0">
                                 {dirtyCount}
                             </Badge>
                         )}
@@ -75,12 +75,12 @@ export function SettingsSidebar({ items, active, onSelect, mode = "desktop" }: S
                                         <Icon className="w-5 h-5 shrink-0" />
                                         <span className="flex-1">{getCategoryLabel(item.key)}</span>
                                         {item.settingCount !== undefined && (
-                                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                            <Badge variant="secondary" className="text-[11px] px-1.5 py-0">
                                                 {item.settingCount}
                                             </Badge>
                                         )}
                                         {item.dirty && (
-                                            <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                                            <Badge variant="warning" className="text-[11px] px-1.5 py-0">
                                                 Modified
                                             </Badge>
                                         )}
@@ -117,7 +117,7 @@ export function SettingsSidebar({ items, active, onSelect, mode = "desktop" }: S
                         <Icon className="w-4 h-4 shrink-0" />
                         <span className="flex-1">{getCategoryLabel(item.key)}</span>
                         {item.dirty && (
-                            <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                            <Badge variant="warning" className="text-[11px] px-1.5 py-0">
                                 Modified
                             </Badge>
                         )}

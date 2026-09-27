@@ -544,11 +544,11 @@ export default function UsersPage() {
                                         </TableCell>
                                         <TableCell className="py-2">
                                             {user.is_banned ? (
-                                                <Badge variant="danger" className="py-0 h-5 text-[10px]">Banned</Badge>
+                                                <Badge variant="danger" className="py-0 h-5 text-[11px]">Banned</Badge>
                                             ) : user.is_admin ? (
-                                                <Badge variant="default" className="py-0 h-5 text-[10px]">Admin</Badge>
+                                                <Badge variant="default" className="py-0 h-5 text-[11px]">Admin</Badge>
                                             ) : (
-                                                <Badge variant="success" className="py-0 h-5 text-[10px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Active</Badge>
+                                                <Badge variant="success" className="py-0 h-5 text-[11px] bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Active</Badge>
                                             )}
                                         </TableCell>
                                         <TableCell className="text-muted-foreground text-xs py-2">
@@ -666,8 +666,8 @@ export default function UsersPage() {
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-2">
                                             <p className="font-medium text-sm truncate">{getDisplayName(user)}</p>
-                                            {user.is_admin && <Badge variant="secondary" className="px-1 py-0 text-[10px] h-4">Admin</Badge>}
-                                            {user.is_banned && <Badge variant="danger" className="px-1 py-0 text-[10px] h-4">Banned</Badge>}
+                                            {user.is_admin && <Badge variant="secondary" className="px-1 py-0 text-[11px] h-4">Admin</Badge>}
+                                            {user.is_banned && <Badge variant="danger" className="px-1 py-0 text-[11px] h-4">Banned</Badge>}
                                         </div>
                                         <p className="text-xs text-muted-foreground truncate">
                                             {user.active_subscriptions > 0

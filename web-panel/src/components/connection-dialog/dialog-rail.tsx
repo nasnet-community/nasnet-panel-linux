@@ -54,7 +54,7 @@ export function DialogRail({ items, activeId, onChange }: DialogRailProps) {
                             </span>
                         </span>
                         {hasErrors && (
-                            <span className="mt-[3px] grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-status-danger-soft px-1.5 text-[11px] font-semibold leading-4 text-status-danger">
+                            <span className="mt-[3px] grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-status-danger-soft px-1.5 text-[12px] font-semibold leading-4 text-status-danger">
                                 {item.errorCount}
                             </span>
                         )}

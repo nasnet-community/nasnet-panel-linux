@@ -48,7 +48,7 @@ export function ActivityHeatmap({ isEditMode }: ActivityHeatmapProps) {
             icon={<Grid3x3 className="w-4 h-4 text-emerald-500" />}
             isEditMode={isEditMode}
             headerRight={
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <span>Less</span>
                     <div className="flex gap-0.5">
                         <div className="w-2.5 h-2.5 rounded-sm bg-muted/30" />
@@ -66,7 +66,7 @@ export function ActivityHeatmap({ isEditMode }: ActivityHeatmapProps) {
                     <div className="text-center">
                         <Grid3x3 className="w-8 h-8 mx-auto mb-2 opacity-30" />
                         <p>No activity data available</p>
-                        <p className="text-[10px] mt-1">Heatmap will populate when the API provides data</p>
+                        <p className="text-[11px] mt-1">Heatmap will populate when the API provides data</p>
                     </div>
                 </div>
             ) : (
@@ -76,7 +76,7 @@ export function ActivityHeatmap({ isEditMode }: ActivityHeatmapProps) {
                         {grid.hours.map((h) => (
                             <div key={h} className="flex-1 text-center">
                                 {h % 3 === 0 && (
-                                    <span className="text-[8px] text-muted-foreground">{h}</span>
+                                    <span className="text-[9px] text-muted-foreground">{h}</span>
                                 )}
                             </div>
                         ))}
@@ -84,7 +84,7 @@ export function ActivityHeatmap({ isEditMode }: ActivityHeatmapProps) {
                     {/* Grid rows */}
                     {grid.days.map((day, dayIdx) => (
                         <div key={day} className="flex items-center gap-1">
-                            <span className="text-[9px] text-muted-foreground w-7 text-right shrink-0">{day}</span>
+                            <span className="text-[10px] text-muted-foreground w-7 text-right shrink-0">{day}</span>
                             <div className="flex gap-[2px] flex-1">
                                 {grid.hours.map((_, hourIdx) => (
                                     <div

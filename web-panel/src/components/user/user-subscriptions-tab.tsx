@@ -94,7 +94,7 @@ function DataUsageBar({ used, limit, maxUsage = 0, isTerminated = false }: { use
                 />
             </div>
             {!isUnlimited && percentage > 0 && (
-                <p className="text-[10px] text-muted-foreground">{percentage.toFixed(1)}% used</p>
+                <p className="text-[11px] text-muted-foreground">{percentage.toFixed(1)}% used</p>
             )}
         </div>
     )
@@ -332,7 +332,7 @@ export function UserSubscriptionsTab({
                                             <div title={expiryDate ? new Date(expiryDate).toLocaleString() : "Unlimited duration"}>
                                                 <Badge
                                                     variant={expiryInfo.variant}
-                                                    className={`text-[10px] px-1.5 py-0 font-medium ${expiryInfo.variant === "secondary" ? "bg-blue-900 text-blue-100" : ""}`}
+                                                    className={`text-[11px] px-1.5 py-0 font-medium ${expiryInfo.variant === "secondary" ? "bg-blue-900 text-blue-100" : ""}`}
                                                 >
                                                     {expiryInfo.text}
                                                 </Badge>

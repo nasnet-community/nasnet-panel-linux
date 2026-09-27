@@ -281,6 +281,12 @@
   --radius-4xl: calc(var(--radius) + 16px);
   --radius-pill: var(--radius-pill);
 
+  /* Small type sits one step above Tailwind's default: text-xs is 13px, not
+     12px, with its line box kept at 16px so rows don't grow. The fixed sizes
+     below 14px across the panel were raised by the same 1px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
+
   /* Surface + text */
   --color-background:         var(--background);
   --color-foreground:         var(--foreground);

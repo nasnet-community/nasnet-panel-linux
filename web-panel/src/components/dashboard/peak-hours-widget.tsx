@@ -75,7 +75,7 @@ export function PeakHoursWidget({ isEditMode }: PeakHoursWidgetProps) {
                         <button
                             key={p}
                             onClick={() => setPeriod(p)}
-                            className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${
+                            className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${
                                 period === p
                                     ? "bg-primary text-primary-foreground"
                                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -100,11 +100,11 @@ export function PeakHoursWidget({ isEditMode }: PeakHoursWidgetProps) {
                     {/* Summary */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Total Connections</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Total Connections</p>
                             <p className="text-base font-bold mt-0.5">{formatNumber(totalConnections)}</p>
                         </div>
                         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Peak Hour</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Peak Hour</p>
                             <p className="text-base font-bold mt-0.5 text-emerald-500">
                                 {peakHour ? HOUR_LABELS[peakHour.hour] : "\u2014"}
                             </p>
@@ -130,14 +130,14 @@ export function PeakHoursWidget({ isEditMode }: PeakHoursWidgetProps) {
                                         dataKey="hour"
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 9 }}
+                                        tick={{ fontSize: 10 }}
                                         interval={2}
                                         dy={8}
                                     />
                                     <YAxis
                                         axisLine={false}
                                         tickLine={false}
-                                        tick={{ fontSize: 10 }}
+                                        tick={{ fontSize: 11 }}
                                         tickFormatter={formatNumber}
                                         width={42}
                                     />
@@ -169,7 +169,7 @@ export function PeakHoursWidget({ isEditMode }: PeakHoursWidgetProps) {
                     )}
 
                     {/* Legend */}
-                    <div className="flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
+                    <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                             <div className="w-2 h-2 rounded-sm bg-emerald-500" />
                             <span>Accepted</span>

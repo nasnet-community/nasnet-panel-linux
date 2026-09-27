@@ -152,7 +152,7 @@ function DataUsageBar({ used, limit, maxUsage = 0, isDisabled = false }: { used:
                 />
             </div>
             {!isUnlimited && percentage > 0 && (
-                <p className="text-[10px] text-muted-foreground">{percentage.toFixed(1)}% used</p>
+                <p className="text-[11px] text-muted-foreground">{percentage.toFixed(1)}% used</p>
             )}
         </div>
     )
@@ -569,7 +569,7 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                             {/* Line 2: Traffic bar + duration */}
                             <div className="flex items-center gap-2 ml-[36px]">
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                    <div className="flex justify-between text-[11px] mb-0.5">
                                         <span className="font-mono">{formatBytes(dataUsed)}</span>
                                         <span className="text-muted-foreground font-mono">
                                             {isUnlimitedMobile ? "Unlimited" : formatDataLimit(dataLimit)}
@@ -587,13 +587,13 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                                         />
                                     </div>
                                     {!isUnlimitedMobile && usagePercent > 0 && (
-                                        <p className="text-[9px] text-muted-foreground mt-0.5">{usagePercent.toFixed(1)}% used</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">{usagePercent.toFixed(1)}% used</p>
                                     )}
                                 </div>
                                 <Badge
                                     variant={expiryInfo.variant}
                                     className={cn(
-                                        "text-[10px] px-1.5 py-0 font-medium shrink-0",
+                                        "text-[11px] px-1.5 py-0 font-medium shrink-0",
                                         expiryInfo.variant === "secondary" && "bg-blue-900 text-blue-100"
                                     )}
                                 >
@@ -720,17 +720,17 @@ export function InboundAccountsRow({ accounts, nodeId, isOnline, onAccountChange
                                                         </span>
                                                     )}
                                                     {isOnlineNow && (
-                                                        <span className="text-[9px] font-semibold uppercase tracking-wider text-green-500">
+                                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-green-500">
                                                             online
                                                         </span>
                                                     )}
                                                     {isExhausted && (
-                                                        <Badge variant="danger" className="text-[9px] px-1.5 py-0 font-medium">
+                                                        <Badge variant="danger" className="text-[10px] px-1.5 py-0 font-medium">
                                                             Exhausted
                                                         </Badge>
                                                     )}
                                                     {isDisabled && !isExhausted && (
-                                                        <Badge variant="warning" className="text-[9px] px-1.5 py-0 font-medium">
+                                                        <Badge variant="warning" className="text-[10px] px-1.5 py-0 font-medium">
                                                             Disabled
                                                         </Badge>
                                                     )}

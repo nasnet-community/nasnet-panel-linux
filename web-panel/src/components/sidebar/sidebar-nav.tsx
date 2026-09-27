@@ -75,7 +75,7 @@ export function SidebarNav({ sections, collapsed, onNavClick, getBadge }: Sideba
                                 <div className="mx-2 my-2 border-t border-border/40" />
                             ) : (
                                 <div className="px-4 mt-3 mb-1.5">
-                                    <span className="text-[11px] font-medium tracking-[0.08em] uppercase text-muted-foreground/70">
+                                    <span className="text-[12px] font-medium tracking-[0.08em] uppercase text-muted-foreground/70">
                                         {section.label}
                                     </span>
                                 </div>
@@ -139,7 +139,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
             >
                 <item.icon className="w-5 h-5" />
                 {showBadge && (
-                    <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-white font-mono text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
+                    <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-white font-mono text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
                         {badge}
                     </span>
                 )}
@@ -164,11 +164,11 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
                     )}
                     <item.icon className="w-[18px] h-[18px] shrink-0" />
-                    <span className="text-[13.5px] font-medium lowercase whitespace-nowrap">
+                    <span className="text-[14.5px] font-medium lowercase whitespace-nowrap">
                         {item.label}
                     </span>
                     {showBadge && (
-                        <span className="ml-auto bg-amber-500 text-white font-mono text-[11px] font-bold rounded-full min-w-[20px] h-[16px] flex items-center justify-center px-1 tabular-nums">
+                        <span className="ml-auto bg-amber-500 text-white font-mono text-[12px] font-bold rounded-full min-w-[20px] h-[16px] flex items-center justify-center px-1 tabular-nums">
                             {badge}
                         </span>
                     )}
@@ -215,7 +215,7 @@ function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge 
                                     <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-primary" />
                                 )}
                                 <child.icon className="w-4 h-4 shrink-0" />
-                                <span className="text-[13px] font-medium lowercase whitespace-nowrap">
+                                <span className="text-[14px] font-medium lowercase whitespace-nowrap">
                                     {child.label}
                                 </span>
                             </Link>

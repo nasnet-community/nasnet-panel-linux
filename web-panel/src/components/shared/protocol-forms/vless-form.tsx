@@ -104,7 +104,7 @@ export function VLESSForm({ data, onChange, mode, network, security }: VLESSForm
                         </Tooltip>
                     </TooltipProvider>
                     {!canUseVision && (data.flow === 'xtls-rprx-vision' || data.flow === 'xtls-rprx-vision-udp443') && (
-                        <span className="flex items-center gap-1 text-[10px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
+                        <span className="flex items-center gap-1 text-[11px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
                             <AlertTriangle className="w-3 h-3" />
                             Incompatible Network/Security
                         </span>
@@ -188,9 +188,9 @@ export function VLESSForm({ data, onChange, mode, network, security }: VLESSForm
                                             </span>
                                         </div>
                                         {isPostQuantum ? (
-                                            <span className="text-[10px] font-medium text-emerald-500">Post-Quantum Safe</span>
+                                            <span className="text-[11px] font-medium text-emerald-500">Post-Quantum Safe</span>
                                         ) : (
-                                            <span className="text-[10px] text-muted-foreground">Classic</span>
+                                            <span className="text-[11px] text-muted-foreground">Classic</span>
                                         )}
                                     </button>
                                 );

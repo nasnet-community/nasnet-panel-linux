@@ -40,10 +40,10 @@ function getProgressColor(days: number) {
 }
 
 function getStatusBadge(cert: AgentCertificate) {
-    if (cert.is_revoked) return <Badge variant="danger" className="text-[10px] px-1.5 py-0">Revoked</Badge>
-    if (cert.days_until_expiry < 0) return <Badge variant="danger" className="text-[10px] px-1.5 py-0">Expired</Badge>
-    if (cert.days_until_expiry <= 30) return <Badge variant="warning" className="text-[10px] px-1.5 py-0">Expiring</Badge>
-    return <Badge variant="success" className="text-[10px] px-1.5 py-0">Valid</Badge>
+    if (cert.is_revoked) return <Badge variant="danger" className="text-[11px] px-1.5 py-0">Revoked</Badge>
+    if (cert.days_until_expiry < 0) return <Badge variant="danger" className="text-[11px] px-1.5 py-0">Expired</Badge>
+    if (cert.days_until_expiry <= 30) return <Badge variant="warning" className="text-[11px] px-1.5 py-0">Expiring</Badge>
+    return <Badge variant="success" className="text-[11px] px-1.5 py-0">Valid</Badge>
 }
 
 interface SwipeableCertRowProps {
@@ -150,7 +150,7 @@ export const SwipeableCertRow = React.memo(function SwipeableCertRow({
                         onClick={() => handleAction(() => onViewDetails(cert))}
                     >
                         <Eye className="w-5 h-5" />
-                        <span className="text-[10px] font-medium">View</span>
+                        <span className="text-[11px] font-medium">View</span>
                     </button>
                     {!cert.is_revoked && cert.type !== "ca" && (
                         <>
@@ -159,14 +159,14 @@ export const SwipeableCertRow = React.memo(function SwipeableCertRow({
                                 onClick={() => handleAction(() => onRenew(cert))}
                             >
                                 <RefreshCw className="w-5 h-5" />
-                                <span className="text-[10px] font-medium">Renew</span>
+                                <span className="text-[11px] font-medium">Renew</span>
                             </button>
                             <button
                                 className="w-16 flex flex-col items-center justify-center gap-1 bg-amber-600 text-white active:bg-amber-700"
                                 onClick={() => handleAction(() => onRevoke(cert))}
                             >
                                 <XCircle className="w-5 h-5" />
-                                <span className="text-[10px] font-medium">Revoke</span>
+                                <span className="text-[11px] font-medium">Revoke</span>
                             </button>
                         </>
                     )}
@@ -176,7 +176,7 @@ export const SwipeableCertRow = React.memo(function SwipeableCertRow({
                             onClick={() => handleAction(() => onDelete(cert))}
                         >
                             <Trash2 className="w-5 h-5" />
-                            <span className="text-[10px] font-medium">Delete</span>
+                            <span className="text-[11px] font-medium">Delete</span>
                         </button>
                     )}
                 </motion.div>
@@ -208,7 +208,7 @@ export const SwipeableCertRow = React.memo(function SwipeableCertRow({
                         {/* Row 1: Type badge + CN + Status */}
                         <div className="flex items-center gap-2">
                             <Badge variant="outline" className={cn(
-                                "capitalize text-[10px] px-1.5 py-0 font-normal shrink-0",
+                                "capitalize text-[11px] px-1.5 py-0 font-normal shrink-0",
                                 getTypeBadgeClass(cert.type)
                             )}>
                                 {cert.type}

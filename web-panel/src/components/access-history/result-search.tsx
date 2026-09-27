@@ -42,7 +42,7 @@ function KindTag({ kind }: { kind: AccessHistorySearchKind }) {
     return (
         <span
             className={cn(
-                "inline-flex items-center px-1.5 py-px rounded text-[10px] font-mono font-semibold uppercase tracking-wider border ml-2 align-middle",
+                "inline-flex items-center px-1.5 py-px rounded text-[11px] font-mono font-semibold uppercase tracking-wider border ml-2 align-middle",
                 KIND_TONE[kind],
             )}
         >

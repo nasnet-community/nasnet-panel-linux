@@ -206,7 +206,7 @@ export function CreateAccountDialog({ open: propOpen, onOpenChange: propOnOpenCh
                                                         <span className="text-xs text-muted-foreground font-mono">{node.ip}</span>
                                                     </div>
                                                 </div>
-                                                <Badge variant={node.is_online ? "outline" : "secondary"} className="text-[10px] h-5">
+                                                <Badge variant={node.is_online ? "outline" : "secondary"} className="text-[11px] h-5">
                                                     {node.is_online ? "Online" : "Offline"}
                                                 </Badge>
                                             </div>
@@ -247,7 +247,7 @@ export function CreateAccountDialog({ open: propOpen, onOpenChange: propOnOpenCh
                                                                 </div>
 
                                                                 <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                                                    <Badge variant="secondary" className="text-[10px] bg-background">
+                                                                    <Badge variant="secondary" className="text-[11px] bg-background">
                                                                         {inbound.protocol}
                                                                     </Badge>
                                                                 </div>

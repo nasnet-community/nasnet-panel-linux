@@ -68,7 +68,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
     return (
         <Card className="relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-emerald-500/10 rounded-2xl p-5 bg-card/50 backdrop-blur-sm border-white/5 h-full">
             <div className="flex items-center justify-between mb-4 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground tracking-widest">System Specifications</p>
+                <p className="text-[12px] uppercase font-bold text-muted-foreground tracking-widest">System Specifications</p>
                 <HiOutlineServer className="w-4 h-4 text-muted-foreground/50 group-hover:text-emerald-500 transition-colors" />
             </div>
 
@@ -82,7 +82,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                             <span className="text-sm font-semibold capitalize text-foreground leading-none">
                                 {info.platform || info.os} <span className="text-muted-foreground font-normal">{info.platform_version}</span>
                             </span>
-                            <span className="text-[11px] text-muted-foreground font-mono mt-0.5 truncate" title={info.kernel_version}>
+                            <span className="text-[12px] text-muted-foreground font-mono mt-0.5 truncate" title={info.kernel_version}>
                                 {info.kernel_version}
                             </span>
                         </div>
@@ -98,7 +98,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                             <span className="text-sm font-semibold text-foreground leading-none truncate" title={info.cpu_model_name}>
                                 {info.cpu_model_name || "Unknown CPU"}
                             </span>
-                            <span className="text-[11px] text-muted-foreground mt-0.5">
+                            <span className="text-[12px] text-muted-foreground mt-0.5">
                                 {info.cpu_cores} Cores / {info.arch}
                             </span>
                         </div>
@@ -115,7 +115,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                                 {formatBytes(info.total_memory)} <span className="text-muted-foreground font-normal text-xs">RAM</span>
                             </span>
                             {info.virtualization_system && (
-                                <span className="text-[11px] text-muted-foreground mt-0.5 capitalize">
+                                <span className="text-[12px] text-muted-foreground mt-0.5 capitalize">
                                     {info.virtualization_system} {info.virtualization_role}
                                 </span>
                             )}
@@ -132,7 +132,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                             <span className="text-sm font-semibold text-foreground leading-none">
                                 {formatUptimeFromBoot(info.boot_time)}
                             </span>
-                            <span className="text-[11px] text-muted-foreground mt-0.5">
+                            <span className="text-[12px] text-muted-foreground mt-0.5">
                                 Since Boot
                             </span>
                         </div>
@@ -150,7 +150,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                             </span>
                             <CopyableText
                                 text={ip || "—"}
-                                className="text-[11px] text-muted-foreground mt-0.5"
+                                className="text-[12px] text-muted-foreground mt-0.5"
                             />
                         </div>
                     </div>
@@ -165,7 +165,7 @@ export function NodeSystemInfo({ nodeId, countryCode, datacenter, ip, hostname }
                             <span className="text-sm font-semibold text-foreground truncate" title={datacenter}>
                                 {datacenter || "—"}
                             </span>
-                            <span className="text-[11px] text-muted-foreground mt-0.5 truncate" title={info.hostname}>
+                            <span className="text-[12px] text-muted-foreground mt-0.5 truncate" title={info.hostname}>
                                 {info.hostname || "—"}
                             </span>
                         </div>

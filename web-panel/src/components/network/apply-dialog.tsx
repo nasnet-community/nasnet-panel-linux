@@ -167,7 +167,7 @@ export function ApplyDialog({
 
                         {plan && (plan.ops?.length ?? 0) > 0 && (
                             <div className="space-y-2">
-                                <p className="text-text-tertiary text-[11px] font-medium uppercase tracking-[0.12em]">
+                                <p className="text-text-tertiary text-[12px] font-medium uppercase tracking-[0.12em]">
                                     Steps, in order
                                 </p>
                                 <ol className="space-y-1.5">

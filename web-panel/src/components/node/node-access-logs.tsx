@@ -135,7 +135,7 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-[140px]">Time</TableHead>
+                                <TableHead className="w-[156px]">Time</TableHead>
                                 <TableHead className="w-[90px]">Status</TableHead>
                                 <TableHead className="w-[60px]">Net</TableHead>
                                 <TableHead>Domain</TableHead>
@@ -174,7 +174,7 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
                             ) : (
                                 filteredEntries.map((entry, i) => (
                                     <TableRow key={`${entry.timestamp}-${entry.email}-${i}`}>
-                                        <TableCell className="font-mono text-xs text-muted-foreground">
+                                        <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
                                             <span className="hidden sm:inline">{formatDateTime(entry.timestamp)}</span>
                                             <span className="sm:hidden">{formatTime(entry.timestamp)}</span>
                                         </TableCell>
@@ -182,7 +182,7 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
                                             <Badge
                                                 variant="outline"
                                                 className={cn(
-                                                    "text-[11px] font-medium",
+                                                    "text-[12px] font-medium",
                                                     entry.status === "accepted"
                                                         ? "text-emerald-600 border-emerald-600/30"
                                                         : "text-red-500 border-red-500/30"

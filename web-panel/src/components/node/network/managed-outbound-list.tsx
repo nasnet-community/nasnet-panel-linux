@@ -31,8 +31,8 @@ export function ManagedOutboundList({ outbounds, usage, defaultTag, onOpenRules 
                                 <span className="ml-1 inline-flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 align-middle">
                                     <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                                     <span className="break-all font-mono text-sm font-semibold">{outbound.tag}</span>
-                                    <Badge variant="secondary" className="text-[10px]">Managed</Badge>
-                                    {isDefault && <Badge variant="outline" className="text-[10px]">Default</Badge>}
+                                    <Badge variant="secondary" className="text-[11px]">Managed</Badge>
+                                    {isDefault && <Badge variant="outline" className="text-[11px]">Default</Badge>}
                                     <span className="text-xs text-muted-foreground">{route}</span>
                                 </span>
                             </summary>

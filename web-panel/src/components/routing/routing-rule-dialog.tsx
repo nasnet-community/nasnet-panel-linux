@@ -473,7 +473,7 @@ export function RoutingRuleDialog({
                             <PopoverTrigger asChild>
                                 <button
                                     type="button"
-                                    className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[11.5px] border border-amber-500/35 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.14]"
+                                    className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-[12.5px] border border-amber-500/35 bg-amber-500/[0.08] text-amber-300 hover:bg-amber-500/[0.14]"
                                 >
                                     <HiOutlineExclamation className="w-3.5 h-3.5" />
                                     {presetOwner} preset
@@ -481,7 +481,7 @@ export function RoutingRuleDialog({
                                 </button>
                             </PopoverTrigger>
                             <PopoverContent align="end" className="w-[300px] border-amber-500/30">
-                                <p className="text-[12px] leading-relaxed text-amber-200">
+                                <p className="text-[13px] leading-relaxed text-amber-200">
                                     Owned by the <b>{presetOwner}</b> preset. Saving here detaches the rule — the next
                                     preset save stops managing it.
                                 </p>
@@ -529,7 +529,7 @@ export function RoutingRuleDialog({
                                 value={formData.rule_tag || ""}
                                 onChange={(e) => updateField("rule_tag", e.target.value)}
                             />
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="text-[12px] text-muted-foreground">
                                 Letters, numbers, <span className="font-mono">- _ : .</span> — unique on this node.
                                 {position && <> Drag in the table to reorder.</>}
                             </p>
@@ -634,14 +634,14 @@ export function RoutingRuleDialog({
                                     </Select>
                                     {selectedBalancer && (
                                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                            <Badge variant="outline" className="text-[10.5px] text-emerald-300 border-emerald-500/30 bg-emerald-500/[0.08]">
+                                            <Badge variant="outline" className="text-[11.5px] text-emerald-300 border-emerald-500/30 bg-emerald-500/[0.08]">
                                                 {STRATEGIES.find(s => s.value === selectedBalancer.strategy)?.label.toLowerCase() ?? selectedBalancer.strategy}
                                             </Badge>
-                                            <Badge variant="outline" className="text-[10.5px]">
+                                            <Badge variant="outline" className="text-[11.5px]">
                                                 {selectedBalancer.outbound_selectors.length} outbound{selectedBalancer.outbound_selectors.length !== 1 ? "s" : ""}
                                             </Badge>
                                             {selectedBalancer.fallback_tag && (
-                                                <Badge variant="outline" className="text-[10.5px]">
+                                                <Badge variant="outline" className="text-[11.5px]">
                                                     fallback <span className="font-mono ml-1">{selectedBalancer.fallback_tag}</span>
                                                 </Badge>
                                             )}
@@ -650,7 +650,7 @@ export function RoutingRuleDialog({
                                     <button
                                         type="button"
                                         onClick={() => setBalancerDialogOpen(true)}
-                                        className="text-[11px] text-muted-foreground underline underline-offset-2 mt-2 hover:text-foreground"
+                                        className="text-[12px] text-muted-foreground underline underline-offset-2 mt-2 hover:text-foreground"
                                     >
                                         Create another balancer
                                     </button>
@@ -659,7 +659,7 @@ export function RoutingRuleDialog({
                         </TargetCard>
                     </div>
                     {danglingTarget && (
-                        <div className="flex gap-2 items-start rounded-lg border border-red-500/30 bg-red-500/[0.07] px-3 py-2 text-[12px] text-red-200">
+                        <div className="flex gap-2 items-start rounded-lg border border-red-500/30 bg-red-500/[0.07] px-3 py-2 text-[13px] text-red-200">
                             <HiOutlineExclamation className="w-4 h-4 shrink-0 mt-0.5" />
                             <div>
                                 <span className="font-mono">{targetTag}</span> no longer exists on this node. xray rejects
@@ -680,7 +680,7 @@ export function RoutingRuleDialog({
 
                     {activeConditions.length === 0 ? (
                         <div className="rounded-xl border border-dashed border-white/10 p-5 text-center">
-                            <p className="text-[13px] font-semibold mb-1">No conditions yet</p>
+                            <p className="text-[14px] font-semibold mb-1">No conditions yet</p>
                             <p className="text-xs text-muted-foreground mb-3">
                                 A rule with no condition is rejected by xray, so this one can&apos;t be saved.
                                 <br />Start with what you&apos;re matching on:
@@ -832,7 +832,7 @@ export function RoutingRuleDialog({
                                                     onAdd={(v) => addToArray("inbound_tags", v)}
                                                     onRemove={(i) => removeFromArray("inbound_tags", i)}
                                                 />
-                                                <p className="text-[11px] text-muted-foreground">
+                                                <p className="text-[12px] text-muted-foreground">
                                                     Pick a configured inbound, or type a synthetic tag (e.g. <code>dns-in</code> for DNS queries).
                                                 </p>
                                             </div>
@@ -884,7 +884,7 @@ export function RoutingRuleDialog({
                                             <div className="space-y-2">
                                                 <ArrayInput placeholder="443, 8443" onAdd={(v) => addToArray("vless_routes", v)} />
                                                 <TagList items={formData.vless_routes || []} onRemove={(i) => removeFromArray("vless_routes", i)} />
-                                                <p className="text-[11px] text-muted-foreground">
+                                                <p className="text-[12px] text-muted-foreground">
                                                     Matches the route port a VLESS Reverse Proxy request carries. Hysteria
                                                     inbounds honor it too.
                                                 </p>
@@ -900,8 +900,8 @@ export function RoutingRuleDialog({
                 {/* ═══ Notify ═══ */}
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3 space-y-2.5">
                     <div>
-                        <p className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70">Notify</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                        <p className="text-[11.5px] uppercase tracking-[0.12em] text-muted-foreground/70">Notify</p>
+                        <p className="text-[12px] text-muted-foreground mt-0.5">
                             Optional. The node POSTs to this URL every time the rule matches — useful for
                             abuse alerts. Leave empty to disable.
                         </p>
@@ -922,7 +922,7 @@ export function RoutingRuleDialog({
                                     value={formData.webhook_deduplication ?? 0}
                                     onChange={(e) => updateField("webhook_deduplication", parseInt(e.target.value) || 0)}
                                 />
-                                <p className="text-[11px] text-muted-foreground">
+                                <p className="text-[12px] text-muted-foreground">
                                     0 posts on every match. A busy rule can be very chatty.
                                 </p>
                             </div>
@@ -943,8 +943,8 @@ export function RoutingRuleDialog({
                 {/* ═══ Result ═══ */}
                 {matcherCount > 0 && targetTag && (
                     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
-                        <p className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70 mb-1.5">Result</p>
-                        <p className="text-[13px] leading-relaxed">
+                        <p className="text-[11.5px] uppercase tracking-[0.12em] text-muted-foreground/70 mb-1.5">Result</p>
+                        <p className="text-[14px] leading-relaxed">
                             {describeRule(formData, targetKind, selectedBalancer)}
                         </p>
                         <Button
@@ -956,7 +956,7 @@ export function RoutingRuleDialog({
                             {showJson ? "Hide xray JSON" : "Show xray JSON"}
                         </Button>
                         {showJson && (
-                            <pre className="mt-2 text-[12px] font-mono text-muted-foreground bg-black/35 border border-white/[0.06] rounded-lg px-3 py-2.5 overflow-x-auto">
+                            <pre className="mt-2 text-[13px] font-mono text-muted-foreground bg-black/35 border border-white/[0.06] rounded-lg px-3 py-2.5 overflow-x-auto">
                                 {buildXrayFragment(formData, targetKind)}
                             </pre>
                         )}
@@ -989,8 +989,8 @@ export function RoutingRuleDialog({
 function SectionLabel({ children, right }: { children: React.ReactNode; right?: string }) {
     return (
         <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">{children}</span>
-            {right && <span className="text-[11px] text-muted-foreground">{right}</span>}
+            <span className="text-[11.5px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">{children}</span>
+            {right && <span className="text-[12px] text-muted-foreground">{right}</span>}
             <span className="flex-1 h-px bg-white/[0.06]" />
         </div>
     )
@@ -1017,9 +1017,9 @@ function TargetCard({
         >
             <div className="flex items-center gap-2">
                 <span className={`w-3.5 h-3.5 rounded-full border shrink-0 ${active ? "border-primary bg-primary" : "border-white/25"}`} />
-                <span className="text-[13px] font-semibold">{title}</span>
+                <span className="text-[14px] font-semibold">{title}</span>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-0.5 mb-2.5 ml-[22px]">{subtitle}</p>
+            <p className="text-[12px] text-muted-foreground mt-0.5 mb-2.5 ml-[22px]">{subtitle}</p>
             {/* Controls stay live while the card is unselected: acting on one picks the
                 card in the same click, instead of making the user select then act. */}
             <div className={`ml-[22px] ${active ? "" : "opacity-50"}`}>{children}</div>
@@ -1039,8 +1039,8 @@ function ConditionCard({
     return (
         <div className="rounded-xl border border-white/[0.06] bg-white/[0.014] px-3.5 py-3">
             <div className="flex items-center gap-2 mb-2.5">
-                <span className="text-[12.5px] font-semibold">{spec.label}</span>
-                <Badge variant="outline" className="text-[10px] text-muted-foreground">{spec.scope}</Badge>
+                <span className="text-[13.5px] font-semibold">{spec.label}</span>
+                <Badge variant="outline" className="text-[11px] text-muted-foreground">{spec.scope}</Badge>
                 <button
                     type="button"
                     onClick={onRemove}
@@ -1070,13 +1070,13 @@ function ConditionMenu({ options, onPick }: { options: ConditionSpec[]; onPick: 
             <DropdownMenuContent align="end" className="w-[300px]">
                 {destination.length > 0 && (
                     <>
-                        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">
                             Destination — what is being reached
                         </DropdownMenuLabel>
                         {destination.map(o => (
                             <DropdownMenuItem key={o.key} onSelect={() => onPick(o.key)}>
                                 {o.label}
-                                <span className="ml-auto text-[11px] text-muted-foreground">{o.example}</span>
+                                <span className="ml-auto text-[12px] text-muted-foreground">{o.example}</span>
                             </DropdownMenuItem>
                         ))}
                     </>
@@ -1084,13 +1084,13 @@ function ConditionMenu({ options, onPick }: { options: ConditionSpec[]; onPick: 
                 {destination.length > 0 && source.length > 0 && <DropdownMenuSeparator />}
                 {source.length > 0 && (
                     <>
-                        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">
                             Source — who is asking
                         </DropdownMenuLabel>
                         {source.map(o => (
                             <DropdownMenuItem key={o.key} onSelect={() => onPick(o.key)}>
                                 {o.label}
-                                <span className="ml-auto text-[11px] text-muted-foreground">{o.example}</span>
+                                <span className="ml-auto text-[12px] text-muted-foreground">{o.example}</span>
                             </DropdownMenuItem>
                         ))}
                     </>
@@ -1127,7 +1127,7 @@ function AttributeInput({
 
     return (
         <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">{hint}</p>
+            <p className="text-[12px] text-muted-foreground">{hint}</p>
             <div className="flex gap-2">
                 <Input placeholder={keyPlaceholder} value={key} onChange={(e) => setKey(e.target.value)} className="flex-1" />
                 <Input

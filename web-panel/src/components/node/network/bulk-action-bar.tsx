@@ -52,7 +52,7 @@ export function BulkActionBar({ count, onCancel, onDisable, onEnable, onDelete, 
                             <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold font-mono tabular-nums">
                                 {count}
                             </div>
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-foreground/80">Selected</span>
+                            <span className="text-[12px] font-semibold uppercase tracking-[0.15em] text-foreground/80">Selected</span>
                             <button
                                 onClick={onCancel}
                                 aria-label="Clear selection (Esc)"
@@ -173,7 +173,7 @@ function DockAction({ label, kbd, icon: Icon, onClick, loading, color, destructi
         >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Icon className="w-3.5 h-3.5" />}
             <span>{label}</span>
-            <kbd className="ml-1 hidden lg:inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded border border-white/15 bg-muted/30 text-[10px] font-mono text-muted-foreground">
+            <kbd className="ml-1 hidden lg:inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded border border-white/15 bg-muted/30 text-[11px] font-mono text-muted-foreground">
                 {kbd}
             </kbd>
         </button>
@@ -200,7 +200,7 @@ function SheetAction({ label, icon: Icon, onClick, loading, color, destructive }
             disabled={loading}
             aria-label={label}
             className={cn(
-                "h-11 rounded-xl border flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+                "h-11 rounded-xl border flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
                 cm[color],
                 destructive && "font-bold",
             )}

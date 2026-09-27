@@ -132,7 +132,7 @@ export function DesktopOutboundRow(props: DesktopOutboundRowProps) {
                                 <TooltipTrigger asChild>
                                     <Badge
                                         variant="outline"
-                                        className="h-4 px-1 text-[9px] uppercase tracking-wide font-medium text-primary border-primary/30 bg-primary/5 shrink-0"
+                                        className="h-4 px-1 text-[10px] uppercase tracking-wide font-medium text-primary border-primary/30 bg-primary/5 shrink-0"
                                     >
                                         Default
                                     </Badge>
@@ -141,7 +141,7 @@ export function DesktopOutboundRow(props: DesktopOutboundRowProps) {
                             </Tooltip>
                         )}
                     </div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground truncate">
+                    <div className="flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground truncate">
                         {disabled && <span className="font-medium text-foreground/70 shrink-0">Disabled</span>}
                         {disabled && <span className="text-muted-foreground/50 shrink-0">·</span>}
                         <span className="truncate" title={route}>{route}</span>
@@ -159,7 +159,7 @@ export function DesktopOutboundRow(props: DesktopOutboundRowProps) {
                     <Badge
                         variant="outline"
                         className={cn(
-                            "font-mono text-[10px] px-1.5 py-0 h-5 shrink-0",
+                            "font-mono text-[11px] px-1.5 py-0 h-5 shrink-0",
                             protocolColors[outbound.protocol.toLowerCase()] || "",
                             disabled && "opacity-60",
                         )}
@@ -167,7 +167,7 @@ export function DesktopOutboundRow(props: DesktopOutboundRowProps) {
                         {outbound.protocol.toUpperCase()}
                     </Badge>
                     {streamed && (
-                        <span className="font-mono text-[11px] text-muted-foreground truncate">
+                        <span className="font-mono text-[12px] text-muted-foreground truncate">
                             {(outbound.network || "tcp").toUpperCase()}
                             {outbound.security && outbound.security !== "none" && ` · ${outbound.security.toUpperCase()}`}
                         </span>
@@ -179,7 +179,7 @@ export function DesktopOutboundRow(props: DesktopOutboundRowProps) {
                     {usageCount > 0 ? (
                         <>
                             <div className="font-mono text-sm tabular-nums">{usageCount}</div>
-                            <div className="text-[11px] text-muted-foreground">{usageCount === 1 ? "rule" : "rules"}</div>
+                            <div className="text-[12px] text-muted-foreground">{usageCount === 1 ? "rule" : "rules"}</div>
                         </>
                     ) : (
                         <span className="font-mono text-sm text-muted-foreground/40">—</span>

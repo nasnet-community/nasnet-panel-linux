@@ -38,7 +38,7 @@ export function InboxTabs({
                     >
                         {t.label}
                         {typeof counts?.[t.id] === "number" && counts[t.id]! > 0 && (
-                            <span className="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full bg-primary/15 text-[10px] items-center justify-center">
+                            <span className="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full bg-primary/15 text-[11px] items-center justify-center">
                                 {counts[t.id]}
                             </span>
                         )}

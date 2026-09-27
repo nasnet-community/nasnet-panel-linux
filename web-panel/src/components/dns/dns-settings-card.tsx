@@ -322,15 +322,15 @@ function ServerEditor({
             {/* Advanced indicator */}
             {!expanded && hasAdvanced && (
                 <div className="flex flex-wrap gap-1 ml-7">
-                    {(server.domains?.length ?? 0) > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{server.domains!.length} domains</Badge>}
-                    {(server.expected_ips?.length ?? 0) > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{server.expected_ips!.length} expected IPs</Badge>}
-                    {server.skip_fallback && <Badge variant="outline" className="text-[10px] px-1.5 py-0">skip fallback</Badge>}
-                    {server.query_strategy && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{server.query_strategy}</Badge>}
-                    {server.tag && <Badge variant="outline" className="text-[10px] px-1.5 py-0">tag: {server.tag}</Badge>}
-                    {server.final_query && <Badge variant="outline" className="text-[10px] px-1.5 py-0">final query</Badge>}
-                    {server.client_ip && <Badge variant="outline" className="text-[10px] px-1.5 py-0">ECS: {server.client_ip}</Badge>}
-                    {(server.timeout_ms ?? 0) > 0 && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{server.timeout_ms}ms</Badge>}
-                    {server.disable_cache != null && <Badge variant="outline" className="text-[10px] px-1.5 py-0">cache: {server.disable_cache ? "off" : "on"}</Badge>}
+                    {(server.domains?.length ?? 0) > 0 && <Badge variant="outline" className="text-[11px] px-1.5 py-0">{server.domains!.length} domains</Badge>}
+                    {(server.expected_ips?.length ?? 0) > 0 && <Badge variant="outline" className="text-[11px] px-1.5 py-0">{server.expected_ips!.length} expected IPs</Badge>}
+                    {server.skip_fallback && <Badge variant="outline" className="text-[11px] px-1.5 py-0">skip fallback</Badge>}
+                    {server.query_strategy && <Badge variant="outline" className="text-[11px] px-1.5 py-0">{server.query_strategy}</Badge>}
+                    {server.tag && <Badge variant="outline" className="text-[11px] px-1.5 py-0">tag: {server.tag}</Badge>}
+                    {server.final_query && <Badge variant="outline" className="text-[11px] px-1.5 py-0">final query</Badge>}
+                    {server.client_ip && <Badge variant="outline" className="text-[11px] px-1.5 py-0">ECS: {server.client_ip}</Badge>}
+                    {(server.timeout_ms ?? 0) > 0 && <Badge variant="outline" className="text-[11px] px-1.5 py-0">{server.timeout_ms}ms</Badge>}
+                    {server.disable_cache != null && <Badge variant="outline" className="text-[11px] px-1.5 py-0">cache: {server.disable_cache ? "off" : "on"}</Badge>}
                 </div>
             )}
 
@@ -369,7 +369,7 @@ function ServerEditor({
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Skip Fallback</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Skip this server during fallback</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Skip this server during fallback</p>
                         </div>
                         <Switch
                             checked={server.skip_fallback || false}
@@ -380,7 +380,7 @@ function ServerEditor({
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Final Query</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Stop after this server, no fallback</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Stop after this server, no fallback</p>
                         </div>
                         <Switch
                             checked={server.final_query || false}
@@ -828,8 +828,8 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                         <CardTitle className="text-base font-semibold">DNS Configuration</CardTitle>
                         {(serverCount > 0 || hostCount > 0) && (
                             <div className="flex gap-1.5">
-                                {serverCount > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{serverCount} server{serverCount !== 1 ? "s" : ""}</Badge>}
-                                {hostCount > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{hostCount} host{hostCount !== 1 ? "s" : ""}</Badge>}
+                                {serverCount > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0">{serverCount} server{serverCount !== 1 ? "s" : ""}</Badge>}
+                                {hostCount > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0">{hostCount} host{hostCount !== 1 ? "s" : ""}</Badge>}
                             </div>
                         )}
                     </div>
@@ -908,7 +908,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                             value={settings.client_ip || ""}
                             onChange={(e) => updateField("client_ip", e.target.value)}
                         />
-                        <p className="text-[10px] text-muted-foreground">IP to use for EDNS Client Subnet</p>
+                        <p className="text-[11px] text-muted-foreground">IP to use for EDNS Client Subnet</p>
                     </div>
                     <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Tag</Label>
@@ -918,7 +918,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                             value={settings.tag || ""}
                             onChange={(e) => updateField("tag", e.target.value)}
                         />
-                        <p className="text-[10px] text-muted-foreground">Inbound tag for DNS queries</p>
+                        <p className="text-[11px] text-muted-foreground">Inbound tag for DNS queries</p>
                     </div>
                 </div>
 
@@ -927,7 +927,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Disable Cache</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Disable DNS response cache</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Disable DNS response cache</p>
                         </div>
                         <Switch
                             checked={settings.disable_cache || false}
@@ -937,7 +937,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Disable Fallback</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Disable DNS server fallback</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Disable DNS server fallback</p>
                         </div>
                         <Switch
                             checked={settings.disable_fallback || false}
@@ -947,7 +947,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Disable Fallback If Match</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Skip fallback when match found</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Skip fallback when match found</p>
                         </div>
                         <Switch
                             checked={settings.disable_fallback_if_match || false}
@@ -961,7 +961,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Serve Stale</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Serve expired cache while refreshing</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Serve expired cache while refreshing</p>
                         </div>
                         <Switch
                             checked={settings.serve_stale || false}
@@ -971,7 +971,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Parallel Query</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Query DNS servers concurrently</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Query DNS servers concurrently</p>
                         </div>
                         <Switch
                             checked={settings.enable_parallel_query || false}
@@ -981,7 +981,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04]">
                         <div>
                             <Label className="text-xs font-medium cursor-pointer">Use System Hosts</Label>
-                            <p className="text-[10px] text-muted-foreground leading-tight">Read /etc/hosts into static hosts</p>
+                            <p className="text-[11px] text-muted-foreground leading-tight">Read /etc/hosts into static hosts</p>
                         </div>
                         <Switch
                             checked={settings.use_system_hosts || false}
@@ -1001,7 +1001,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                             value={settings.serve_expired_ttl ?? ""}
                             onChange={(e) => updateField("serve_expired_ttl", e.target.value ? parseInt(e.target.value) : undefined)}
                         />
-                        <p className="text-[10px] text-muted-foreground">Max staleness in seconds. 0 = unlimited.</p>
+                        <p className="text-[11px] text-muted-foreground">Max staleness in seconds. 0 = unlimited.</p>
                     </div>
                 )}
 
@@ -1013,7 +1013,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Label className="text-sm font-medium">DNS Servers</Label>
-                            {serverCount > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{serverCount}</Badge>}
+                            {serverCount > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0">{serverCount}</Badge>}
                         </div>
                         <div className="flex items-center gap-1.5">
                             {/* Quick-add presets */}
@@ -1023,7 +1023,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                                         key={preset.label}
                                         variant="outline"
                                         size="sm"
-                                        className="h-7 text-[10px] px-2"
+                                        className="h-7 text-[11px] px-2"
                                         onClick={() => addServer({ ...preset.server })}
                                     >
                                         {preset.label}
@@ -1049,7 +1049,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                                 key={preset.label}
                                 variant="outline"
                                 size="sm"
-                                className="h-7 text-[10px] px-2"
+                                className="h-7 text-[11px] px-2"
                                 onClick={() => addServer({ ...preset.server })}
                             >
                                 {preset.label}
@@ -1073,7 +1073,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                         <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                             <HiOutlineGlobeAlt className="w-10 h-10 opacity-30 mb-2" />
                             <p className="text-xs">No DNS servers configured</p>
-                            <p className="text-[10px] text-muted-foreground">DNS section will be omitted from xray config</p>
+                            <p className="text-[11px] text-muted-foreground">DNS section will be omitted from xray config</p>
                         </div>
                     )}
                 </div>
@@ -1085,9 +1085,9 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                 <div className="space-y-3">
                     <div className="flex items-center gap-2">
                         <Label className="text-sm font-medium">Static Hosts</Label>
-                        {hostCount > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{hostCount}</Badge>}
+                        {hostCount > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0">{hostCount}</Badge>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground -mt-1">
+                    <p className="text-[11px] text-muted-foreground -mt-1">
                         Map domains to static IP addresses. Values can be IPs, other domains, or <span className="font-mono">#&lt;rcode&gt;</span> (e.g. <span className="font-mono">#3</span> for NXDOMAIN). Bare hostnames match <em>exactly</em>; use <span className="font-mono">domain:</span> for suffix match, <span className="font-mono">regexp:</span> for regex, <span className="font-mono">keyword:</span> for substring.
                     </p>
                     <HostsEditor
@@ -1104,13 +1104,13 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Label className="text-sm font-medium">FakeDNS Pools</Label>
-                            {fakeDNSPools.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{fakeDNSPools.length}</Badge>}
+                            {fakeDNSPools.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0">{fakeDNSPools.length}</Badge>}
                         </div>
                         <div className="flex items-center gap-1.5">
                             <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 text-[10px] px-2"
+                                className="h-7 text-[11px] px-2"
                                 onClick={() => setFakeDNSPools([...fakeDNSPools, { ip_pool: "198.18.0.0/15", lru_size: 65535 }])}
                             >
                                 + IPv4 Pool
@@ -1118,7 +1118,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                             <Button
                                 variant="outline"
                                 size="sm"
-                                className="h-7 text-[10px] px-2"
+                                className="h-7 text-[11px] px-2"
                                 onClick={() => setFakeDNSPools([...fakeDNSPools, { ip_pool: "fc00::/18", lru_size: 65535 }])}
                             >
                                 + IPv6 Pool
@@ -1135,7 +1135,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                                             <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">#{i + 1}</span>
                                             <div className="flex-1 grid grid-cols-2 gap-2">
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] text-muted-foreground">IP Pool (CIDR)</Label>
+                                                    <Label className="text-[11px] text-muted-foreground">IP Pool (CIDR)</Label>
                                                     <Input
                                                         className="h-8 text-xs font-mono"
                                                         placeholder="198.18.0.0/15"
@@ -1148,7 +1148,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label className="text-[10px] text-muted-foreground">LRU Size</Label>
+                                                    <Label className="text-[11px] text-muted-foreground">LRU Size</Label>
                                                     <Input
                                                         className="h-8 text-xs font-mono"
                                                         type="number"
@@ -1172,7 +1172,7 @@ export function DNSSettingsCard({ nodeId, onSettingsSaved }: DNSSettingsCardProp
                                             </Button>
                                         </div>
                                         {err && (
-                                            <p className="text-[10px] text-red-400 ml-7">{err}</p>
+                                            <p className="text-[11px] text-red-400 ml-7">{err}</p>
                                         )}
                                     </div>
                                 )

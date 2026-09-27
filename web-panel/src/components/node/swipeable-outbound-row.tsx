@@ -175,7 +175,7 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                     onClick={() => handleAction(() => onEdit(outbound))}
                 >
                     <HiOutlineCog className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Edit</span>
+                    <span className="text-[11px] font-medium">Edit</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-emerald-600 text-white active:bg-emerald-700 disabled:opacity-50"
@@ -183,7 +183,7 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                     disabled={!canTest || isTesting || testDisabled}
                 >
                     <HiOutlineStatusOnline className={cn("w-5 h-5", isTesting && "animate-pulse")} />
-                    <span className="text-[10px] font-medium">{isTesting ? "…" : "Test"}</span>
+                    <span className="text-[11px] font-medium">{isTesting ? "…" : "Test"}</span>
                 </button>
                 <button
                     className={cn(
@@ -193,14 +193,14 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                     onClick={() => handleAction(() => onToggleDisabled(outbound))}
                 >
                     {disabled ? <Power className="w-5 h-5" /> : <HiOutlineBan className="w-5 h-5" />}
-                    <span className="text-[10px] font-medium">{disabled ? "Enable" : "Disable"}</span>
+                    <span className="text-[11px] font-medium">{disabled ? "Enable" : "Disable"}</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-red-600 text-white active:bg-red-700"
                     onClick={() => handleAction(() => onDelete(outbound))}
                 >
                     <Trash2 className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Delete</span>
+                    <span className="text-[11px] font-medium">Delete</span>
                 </button>
             </motion.div>
 
@@ -243,11 +243,11 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                             {outbound.tag}
                         </span>
                         {isDefault && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] uppercase tracking-wide font-medium text-primary border-primary/30 bg-primary/5 shrink-0">
+                            <Badge variant="outline" className="h-4 px-1 text-[10px] uppercase tracking-wide font-medium text-primary border-primary/30 bg-primary/5 shrink-0">
                                 Default
                             </Badge>
                         )}
-                        {disabled && <span className="text-[11px] text-muted-foreground shrink-0">Disabled</span>}
+                        {disabled && <span className="text-[12px] text-muted-foreground shrink-0">Disabled</span>}
                     </div>
 
                     <div className="shrink-0">
@@ -258,16 +258,16 @@ export const SwipeableOutboundRow = React.memo(function SwipeableOutboundRow({
                 </div>
 
                 {/* Line 2: where it sends traffic */}
-                <p className="mt-0.5 ml-[34px] font-mono text-[11px] text-muted-foreground truncate" title={route}>
+                <p className="mt-0.5 ml-[34px] font-mono text-[12px] text-muted-foreground truncate" title={route}>
                     {route}
                 </p>
 
                 {/* Line 3: protocol, traffic, test */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 ml-[34px] font-mono text-[11px] text-muted-foreground tabular-nums">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 ml-[34px] font-mono text-[12px] text-muted-foreground tabular-nums">
                     <Badge
                         variant="outline"
                         className={cn(
-                            "font-mono text-[10px] px-1.5 py-0 h-5",
+                            "font-mono text-[11px] px-1.5 py-0 h-5",
                             protocolColors[outbound.protocol.toLowerCase()] || "",
                             disabled && "opacity-60",
                         )}

@@ -327,7 +327,7 @@ export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
                     <div className="flex items-center gap-1.5">
                         <Label className="text-xs text-muted-foreground whitespace-nowrap">Lines:</Label>
                         <Select value={tailCount} onValueChange={setTailCount}>
-                            <SelectTrigger className="h-7 w-[100px] text-xs">
+                            <SelectTrigger className="h-7 w-[112px] text-xs">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -344,7 +344,7 @@ export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
                     <div className="flex items-center gap-1.5">
                         <Label className="text-xs text-muted-foreground whitespace-nowrap">Since:</Label>
                         <Select value={timeFilter} onValueChange={setTimeFilter}>
-                            <SelectTrigger className="h-7 w-[110px] text-xs">
+                            <SelectTrigger className="h-7 w-[120px] text-xs">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -369,7 +369,7 @@ export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
                     <div className="flex items-center gap-1.5">
                         <Label className="text-xs text-muted-foreground whitespace-nowrap">Level:</Label>
                         <Select value={levelFilter} onValueChange={setLevelFilter}>
-                            <SelectTrigger className="h-7 w-[90px] text-xs">
+                            <SelectTrigger className="h-7 w-[100px] text-xs">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -454,7 +454,7 @@ export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
                                     )}
                                     <Badge
                                         variant="outline"
-                                        className={cn("text-[10px] px-1.5 py-0 h-4 shrink-0 font-semibold uppercase leading-none", colorClass)}
+                                        className={cn("text-[11px] px-1.5 py-0 h-4 shrink-0 font-semibold uppercase leading-none", colorClass)}
                                     >
                                         {LEVEL_LABELS[level] || log.level}
                                     </Badge>

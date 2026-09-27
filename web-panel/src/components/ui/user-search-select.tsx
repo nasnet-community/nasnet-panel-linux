@@ -136,7 +136,7 @@ export function UserSearchSelect({ value, onChange, onCreateNew, placeholder = "
                                             </p>
                                         </div>
                                         {user.telegram_id > 0 && (
-                                            <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">
+                                            <Badge variant="outline" className="text-[11px] px-1.5 shrink-0">
                                                 <FaTelegram className="w-3 h-3 mr-1 text-[#229ED9]" />
                                                 {user.telegram_id}
                                             </Badge>

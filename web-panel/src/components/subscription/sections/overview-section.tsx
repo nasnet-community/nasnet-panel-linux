@@ -45,14 +45,14 @@ export function OverviewSection({ subscription, derived }: OverviewSectionProps)
                     />
                 </div>
                 {!derived.isUnlimitedData && (
-                    <p className="text-[10px] text-muted-foreground">{derived.usagePercent.toFixed(1)}% used</p>
+                    <p className="text-[11px] text-muted-foreground">{derived.usagePercent.toFixed(1)}% used</p>
                 )}
             </div>
 
             {/* Sparkline — only renders when at least two days of data accrued */}
             {sparklineData.length >= 2 && sparklineData.some((v) => v > 0) && (
                 <div className="space-y-0.5">
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground uppercase tracking-wider">
                         <span>Last {sparklineData.length} days</span>
                         <span>daily usage</span>
                     </div>
@@ -93,7 +93,7 @@ export function OverviewSection({ subscription, derived }: OverviewSectionProps)
                 </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground border-t pt-1.5">
+            <div className="flex items-center justify-between text-[12px] text-muted-foreground border-t pt-1.5">
                 <span>Created {formatDate(subscription.created_at, "long")}</span>
                 <span>
                     {derived.isUnlimitedExpiry

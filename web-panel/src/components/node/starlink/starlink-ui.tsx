@@ -13,15 +13,15 @@ import { cn } from "@/lib/utils"
 
 export const T = {
     /** Card titles, column labels, legend keys. */
-    eyebrow: "text-[11px] leading-5 font-medium uppercase tracking-[0.08em] text-muted-foreground/70",
+    eyebrow: "text-[12px] leading-5 font-medium uppercase tracking-[0.08em] text-muted-foreground/70",
     /** The one number a card exists to show. */
     value: "text-[28px] leading-8 font-bold tracking-[-0.02em] tabular-nums",
     /** The unit that trails a value. */
-    unit: "text-[13px] leading-4 font-medium text-muted-foreground",
+    unit: "text-[14px] leading-4 font-medium text-muted-foreground",
     /** Key-value rows, badges, inline facts. */
     body: "text-xs leading-4",
     /** Deltas, axis ticks, footnotes. The floor — nothing renders smaller. */
-    meta: "text-[11px] leading-4 text-muted-foreground",
+    meta: "text-[12px] leading-4 text-muted-foreground",
 } as const
 
 // ─── Card shell ─────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export function SegmentedControl<V extends string>({
                     onClick={() => onChange(opt.value)}
                     className={cn(
                         "flex shrink-0 items-center whitespace-nowrap rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        lg ? "h-10 px-3.5 text-[13px]" : "h-6 px-2.5 text-xs",
+                        lg ? "h-10 px-3.5 text-[14px]" : "h-6 px-2.5 text-xs",
                         value === opt.value
                             ? "bg-foreground text-background"
                             : "text-muted-foreground hover:text-foreground",

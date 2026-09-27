@@ -112,7 +112,7 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = []
                                                     {rule.outbound_selectors.length + extras.length} outbound{rule.outbound_selectors.length + extras.length !== 1 ? "s" : ""}
                                                 </Badge>
                                                 {extras.length > 0 && (
-                                                    <span className="text-[11px] text-amber-300">
+                                                    <span className="text-[12px] text-amber-300">
                                                         +{extras.length} by prefix
                                                     </span>
                                                 )}
@@ -122,7 +122,7 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = []
                                                     </span>
                                                 )}
                                             </div>
-                                            <p className="text-[11px] text-muted-foreground mt-1">
+                                            <p className="text-[12px] text-muted-foreground mt-1">
                                                 {used.length === 0 ? (
                                                     "No routing rule targets it yet"
                                                 ) : (

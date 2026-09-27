@@ -148,7 +148,7 @@ export function LimitsSection({
                                     </div>
                                     <div
                                         className={cn(
-                                            "px-2.5 py-0.5 rounded-full font-bold text-[11px]",
+                                            "px-2.5 py-0.5 rounded-full font-bold text-[12px]",
                                             derived.daysRemaining > 7
                                                 ? "bg-emerald-500/15 text-emerald-500"
                                                 : derived.daysRemaining > 3
@@ -251,7 +251,7 @@ export function LimitsSection({
                     </Button>
                 </div>
                 {dataLimitDraftNum != null && Number.isFinite(dataLimitDraftNum) && dataLimitDraftNum !== currentDataLimitGb && (
-                    <p className="text-[10px]">
+                    <p className="text-[11px]">
                         <span className="text-muted-foreground">
                             {currentDataLimitGb > 0 ? `${currentDataLimitGb} GB` : "Unlimited"}
                         </span>
@@ -270,7 +270,7 @@ export function LimitsSection({
                         )}
                     </p>
                 )}
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     Empty = plan default. 0 = unlimited.
                     {subscription.is_data_limit_custom && (
                         <span className="text-amber-500 ml-1">(custom override active)</span>
@@ -315,7 +315,7 @@ export function LimitsSection({
                         Reset
                     </button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     0 = unlimited.
                     {subscription.is_bandwidth_custom && (
                         <span className="text-amber-500 ml-1">(custom override active)</span>
@@ -370,7 +370,7 @@ export function LimitsSection({
                         Reset
                     </button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     Empty or 0 = unlimited. Caps
                     concurrent WireGuard devices for this subscription only.
                     {subscription.max_devices != null && subscription.max_devices > 0 && (

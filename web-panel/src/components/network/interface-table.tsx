@@ -178,7 +178,7 @@ function Identity({ iface, all }: { iface: NetworkInterfaceView; all: NetworkInt
             <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-sm font-medium">{iface.if_name}</span>
                 {!iface.present && (
-                    <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
+                    <Badge variant="warning" className="px-1.5 py-0 text-[11px]">
                         absent
                     </Badge>
                 )}
@@ -236,7 +236,7 @@ function Addresses({ iface }: { iface: NetworkInterfaceView }) {
                     type="button"
                     onClick={() => setOpen((v) => !v)}
                     aria-expanded={open}
-                    className="text-text-tertiary hover:text-foreground focus-visible:ring-ring flex items-center gap-1 rounded text-[11px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                    className="text-text-tertiary hover:text-foreground focus-visible:ring-ring flex items-center gap-1 rounded text-[12px] transition-colors focus-visible:ring-2 focus-visible:outline-none"
                 >
                     <ChevronDown
                         className={cn(

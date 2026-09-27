@@ -64,7 +64,7 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
             icon={<Activity className="w-4 h-4 text-blue-500" />}
             isEditMode={isEditMode}
             headerRight={
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-[11px] text-muted-foreground">
                     {onlineCount} node{onlineCount !== 1 ? "s" : ""} online
                 </span>
             }
@@ -88,7 +88,7 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
                     <div className="grid grid-cols-2 gap-3">
                         {/* Total Traffic card */}
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 space-y-1.5">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Total Traffic</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Total Traffic</p>
                             <p className="text-base font-bold">{formatBytes(totalTraffic)}</p>
                             <CategoryBar
                                 values={[
@@ -96,7 +96,7 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
                                     { value: totalDownlink, color: "bg-orange-500", label: "Download" },
                                 ]}
                             />
-                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                                 <span className="flex items-center gap-0.5">
                                     <ArrowUp className="w-2.5 h-2.5 text-violet-500" />
                                     {formatBytes(totalUplink)}
@@ -110,9 +110,9 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
 
                         {/* Live Bandwidth card */}
                         <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 space-y-1.5">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Live Bandwidth</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Live Bandwidth</p>
                             <p className="text-base font-bold">{formatSpeed(liveBandwidth)}</p>
-                            <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-2">
+                            <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-2">
                                 <span className="flex items-center gap-0.5">
                                     <ArrowUp className="w-2.5 h-2.5 text-violet-500" />
                                     {formatSpeed(liveUpSpeed)}
@@ -128,7 +128,7 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
                     {/* Per-node breakdown */}
                     {nodeBreakdown.length > 0 && (
                         <div className="flex-1 space-y-1.5 min-h-0 overflow-auto">
-                            <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Per-Node Breakdown</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Per-Node Breakdown</p>
                             <div className="space-y-1.5">
                                 {nodeBreakdown.map((node, i) => {
                                     const pct = totalTraffic > 0 ? (node.totalBytes / totalTraffic) * 100 : 0
@@ -146,8 +146,8 @@ export function NetworkTrafficWidget({ isEditMode }: NetworkTrafficWidgetProps) 
                                                     style={{ width: `${barWidth}%` }}
                                                 />
                                             </div>
-                                            <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">{pct.toFixed(0)}%</span>
-                                            <span className="text-[10px] font-medium w-16 text-right shrink-0">{formatBytes(node.totalBytes)}</span>
+                                            <span className="text-[11px] text-muted-foreground w-8 text-right shrink-0">{pct.toFixed(0)}%</span>
+                                            <span className="text-[11px] font-medium w-16 text-right shrink-0">{formatBytes(node.totalBytes)}</span>
                                         </div>
                                     )
                                 })}

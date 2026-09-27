@@ -189,12 +189,12 @@ export default function UserDetailPage() {
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm font-bold truncate max-w-[200px]">{user.username || `User #${user.id}`}</span>
                                     {user.is_banned ? (
-                                        <Badge variant="danger" className="text-[9px] px-1.5 py-0">Banned</Badge>
+                                        <Badge variant="danger" className="text-[10px] px-1.5 py-0">Banned</Badge>
                                     ) : (
-                                        <Badge variant="success" className="bg-emerald-500/15 text-emerald-600 border-emerald-200 text-[9px] px-1.5 py-0">Active</Badge>
+                                        <Badge variant="success" className="bg-emerald-500/15 text-emerald-600 border-emerald-200 text-[10px] px-1.5 py-0">Active</Badge>
                                     )}
                                     {user.language && (
-                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 hidden sm:inline-flex">{user.language.toUpperCase()}</Badge>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:inline-flex">{user.language.toUpperCase()}</Badge>
                                     )}
                                 </div>
                                 <span className="text-xs text-muted-foreground hidden sm:block truncate">

@@ -207,7 +207,7 @@ export default function AccessHistoryPage() {
                                 placeholder="Search domain, IP, or rejected host (min 2 characters)…"
                                 className="pl-9 pr-16 h-10 text-sm"
                             />
-                            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono text-muted-foreground">
+                            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none px-1.5 py-0.5 rounded border bg-muted text-[11px] font-mono text-muted-foreground">
                                 /
                             </kbd>
                         </div>
@@ -292,10 +292,10 @@ function EmptyHint() {
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span>Press</span>
-                <kbd className="px-1.5 py-0.5 rounded border bg-muted font-mono text-[10px]">/</kbd>
+                <kbd className="px-1.5 py-0.5 rounded border bg-muted font-mono text-[11px]">/</kbd>
                 <span>to focus search</span>
                 <span className="mx-2">·</span>
-                <kbd className="px-1.5 py-0.5 rounded border bg-muted font-mono text-[10px]">Esc</kbd>
+                <kbd className="px-1.5 py-0.5 rounded border bg-muted font-mono text-[11px]">Esc</kbd>
                 <span>to clear</span>
             </div>
         </Card>
@@ -305,7 +305,7 @@ function EmptyHint() {
 function ScopeStrip({ subLabel, subId }: { subLabel: string; subId: number }) {
     return (
         <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-muted/30">
-            <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Overview scope</span>
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Overview scope</span>
             <span className="text-sm font-medium">{subLabel}</span>
             <span className="text-xs text-muted-foreground font-mono">#{subId}</span>
         </div>

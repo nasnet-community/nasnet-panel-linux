@@ -49,21 +49,21 @@ export function ConnectionChart({ data }: ConnectionChartProps) {
                         dataKey="displayTime"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 10, fill: c.axis }}
+                        tick={{ fontSize: 11, fill: c.axis }}
                         interval={Math.floor(data.length / 5)}
                     />
                     <YAxis
                         tickFormatter={formatCount}
                         width={55}
-                        tick={{ fontSize: 11, fill: c.axis }}
+                        tick={{ fontSize: 12, fill: c.axis }}
                         axisLine={false}
                         tickLine={false}
                         orientation="right"
                     />
                     <Tooltip
                         contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }}
-                        itemStyle={{ fontSize: "12px", fontWeight: 600, padding: "2px 0" }}
-                        labelStyle={{ color: c.tooltipLabel, fontSize: "10px", marginBottom: "8px", letterSpacing: "0.05em" }}
+                        itemStyle={{ fontSize: "13px", fontWeight: 600, padding: "2px 0" }}
+                        labelStyle={{ color: c.tooltipLabel, fontSize: "11px", marginBottom: "8px", letterSpacing: "0.05em" }}
                         labelFormatter={(label) => {
                             const s = String(label)
                             return s === "now" ? "Now" : `${s.replace("-", "")} ago`

@@ -169,7 +169,7 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
         <Card className="relative overflow-hidden transition-shadow duration-300 hover:shadow-lg rounded-2xl p-4 md:p-5 bg-card/50 backdrop-blur-sm border-white/5">
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                    <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Uptime</p>
+                    <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Uptime</p>
                     {isLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/50" />}
                 </div>
                 <div className="flex items-center gap-3">
@@ -181,7 +181,7 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
                             <button
                                 key={h}
                                 onClick={() => setHours(h)}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                                className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all ${
                                     hours === h
                                         ? "bg-foreground text-background shadow-sm"
                                         : "text-muted-foreground hover:text-foreground"
@@ -194,7 +194,7 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
                     {/* Current status indicator */}
                     <div className="flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                        <span className="text-[11px] font-bold text-muted-foreground uppercase">
                             {isOnline ? "Online" : "Offline"}
                         </span>
                     </div>
@@ -233,8 +233,8 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
                             <div className="bg-card/95 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-1.5 shadow-xl whitespace-nowrap">
                                 <div className="flex items-center gap-1.5">
                                     <div className={`w-1.5 h-1.5 rounded-full ${segments[hoveredSeg].status === "online" ? "bg-emerald-500" : "bg-red-500"}`} />
-                                    <span className="text-[11px] font-bold capitalize">{segments[hoveredSeg].status}</span>
-                                    <span className="text-[10px] text-muted-foreground font-mono">{formatDuration(segments[hoveredSeg].durationMs)}</span>
+                                    <span className="text-[12px] font-bold capitalize">{segments[hoveredSeg].status}</span>
+                                    <span className="text-[11px] text-muted-foreground font-mono">{formatDuration(segments[hoveredSeg].durationMs)}</span>
                                 </div>
                             </div>
                         </div>
@@ -246,7 +246,7 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true }: UptimeTimel
                     {timeLabels.map((tl, i) => (
                         <span
                             key={i}
-                            className="absolute text-[9px] md:text-[10px] text-muted-foreground/50 font-mono"
+                            className="absolute text-[10px] md:text-[11px] text-muted-foreground/50 font-mono"
                             style={{
                                 left: `${tl.pct}%`,
                                 transform: i === 0 ? "none" : i === timeLabels.length - 1 ? "translateX(-100%)" : "translateX(-50%)",

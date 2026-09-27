@@ -97,7 +97,7 @@ export function ClassificationLadder(props: Props) {
                         <span
                             aria-hidden
                             className={cn(
-                                "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px]",
+                                "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[12px]",
                                 r.live
                                     ? "border-border-strong bg-surface-1 text-text-secondary"
                                     : "border-border-subtle bg-surface-2 text-text-disabled",
@@ -170,7 +170,7 @@ export function ClassificationStrip(props: Props) {
                         <span
                             aria-hidden
                             className={cn(
-                                "flex h-4 w-4 items-center justify-center rounded-full border font-mono text-[10px]",
+                                "flex h-4 w-4 items-center justify-center rounded-full border font-mono text-[11px]",
                                 r.live
                                     ? "border-border-strong text-text-tertiary"
                                     : "border-border-subtle text-text-disabled",

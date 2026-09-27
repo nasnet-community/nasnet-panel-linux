@@ -68,7 +68,7 @@ export function NukeProgress({
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
           {doneCount}/{totalCount}
         </span>
       </div>
@@ -107,13 +107,13 @@ export function NukeProgress({
                 </span>
 
                 {r && (status === 'ok' || status === 'skipped') && (
-                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/60">
                     {r.files_removed}f&nbsp;/&nbsp;{formatBytes(r.bytes_removed)}&nbsp;·&nbsp;{r.duration_ms}ms
                   </span>
                 )}
 
                 {r && status === 'failed' && (
-                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-red-500/80">
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-red-500/80">
                     {r.duration_ms}ms
                   </span>
                 )}
@@ -121,7 +121,7 @@ export function NukeProgress({
 
               {/* Inline error — only when failed and error text is present */}
               {r && !r.ok && r.error && (
-                <p className="pl-6 font-mono text-[10px] leading-tight text-red-400/80">
+                <p className="pl-6 font-mono text-[11px] leading-tight text-red-400/80">
                   {r.error}
                 </p>
               )}

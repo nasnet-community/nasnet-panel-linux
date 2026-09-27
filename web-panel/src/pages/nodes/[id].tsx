@@ -268,7 +268,7 @@ export default function NodeDetailPage() {
                         <h1 className="text-lg font-bold text-foreground">{node.name}</h1>
                         <Badge
                             variant={node.is_online ? "success" : "danger"}
-                            className="px-1.5 py-0 text-[11px] uppercase font-bold tracking-wider"
+                            className="px-1.5 py-0 text-[12px] uppercase font-bold tracking-wider"
                         >
                             {node.is_online ? "Online" : "Offline"}
                         </Badge>

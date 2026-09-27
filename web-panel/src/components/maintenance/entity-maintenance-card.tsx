@@ -101,7 +101,7 @@ export function EntityMaintenanceCard({
                 {enabled ? `${capitalize(label)} in maintenance` : `Put ${label} in maintenance`}
               </p>
               {initialEnabled && initialSince && (
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <p className="text-[11px] text-muted-foreground mt-0.5">
                   since {new Date(initialSince).toLocaleString()}
                 </p>
               )}
@@ -109,7 +109,7 @@ export function EntityMaintenanceCard({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {initialEnabled && !dirty && (
-              <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+              <Badge variant="warning" className="text-[11px] px-1.5 py-0">
                 Active
               </Badge>
             )}
@@ -129,7 +129,7 @@ export function EntityMaintenanceCard({
         )}
 
         {!dirty && (
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             Blocks purchase, renewal and config regeneration for linked users. Others unaffected.
           </p>
         )}

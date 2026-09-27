@@ -100,7 +100,7 @@ export function CertTimeline({ certificates, onCertClick }: CertTimelineProps) {
                         <div className="flex-1 min-w-0 pl-1">
                             <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium truncate">{cert.common_name}</span>
-                                <Badge variant="outline" className="capitalize text-[9px] px-1 py-0 font-normal shrink-0">
+                                <Badge variant="outline" className="capitalize text-[10px] px-1 py-0 font-normal shrink-0">
                                     {cert.type}
                                 </Badge>
                             </div>
@@ -132,7 +132,7 @@ export function CertTimeline({ certificates, onCertClick }: CertTimelineProps) {
                     {months.map((month, i) => (
                         <div
                             key={i}
-                            className="flex-1 text-[10px] text-muted-foreground font-medium border-l border-border/50 pl-1"
+                            className="flex-1 text-[11px] text-muted-foreground font-medium border-l border-border/50 pl-1"
                         >
                             {month.label}
                         </div>
@@ -146,7 +146,7 @@ export function CertTimeline({ certificates, onCertClick }: CertTimelineProps) {
                         className="absolute top-0 bottom-0 w-0.5 bg-primary z-10"
                         style={{ left: `${todayPosition}%` }}
                     >
-                        <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-semibold text-primary whitespace-nowrap">
+                        <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-primary whitespace-nowrap">
                             Today
                         </div>
                     </div>
@@ -168,9 +168,9 @@ export function CertTimeline({ certificates, onCertClick }: CertTimelineProps) {
                             <TooltipContent side="top" className="max-w-[220px]">
                                 <div className="space-y-1">
                                     <p className="text-xs font-medium truncate">{cert.common_name}</p>
-                                    <p className="text-[10px] text-muted-foreground capitalize">{cert.type} certificate</p>
+                                    <p className="text-[11px] text-muted-foreground capitalize">{cert.type} certificate</p>
                                     <p className={cn(
-                                        "text-[10px] font-medium",
+                                        "text-[11px] font-medium",
                                         cert.days_until_expiry <= 7 ? "text-red-500" :
                                             cert.days_until_expiry <= 30 ? "text-amber-500" : "text-emerald-500"
                                     )}>
@@ -179,7 +179,7 @@ export function CertTimeline({ certificates, onCertClick }: CertTimelineProps) {
                                             : "Expired"
                                         }
                                     </p>
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-[11px] text-muted-foreground">
                                         {new Date(cert.not_after).toLocaleDateString()}
                                     </p>
                                 </div>

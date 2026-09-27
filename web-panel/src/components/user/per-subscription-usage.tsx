@@ -43,7 +43,7 @@ export function PerSubscriptionUsage({ subscriptions }: PerSubscriptionUsageProp
                                             style={{ width: isUnlimited ? "2%" : `${pct}%` }}
                                         />
                                     </div>
-                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                                         {formatBytes(sub.data_used)} / {isUnlimited ? "\u221E" : formatBytes(limit)}
                                     </span>
                                 </div>

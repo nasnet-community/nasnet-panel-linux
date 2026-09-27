@@ -264,7 +264,7 @@ function TagChip({ label, onRemove }: { label: string; onRemove: () => void }) {
     return (
         <Badge
             variant="secondary"
-            className="gap-1 font-mono text-[11px] h-6 px-2 group/tag transition-colors"
+            className="gap-1 font-mono text-[12px] h-6 px-2 group/tag transition-colors"
         >
             {getTagLabel(label)}
             <button
@@ -299,7 +299,7 @@ function PresetRow({
                 <button
                     key={preset.value}
                     type="button"
-                    className="text-[11px] px-2 py-0.5 rounded-md border border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/5 transition-all"
+                    className="text-[12px] px-2 py-0.5 rounded-md border border-white/10 text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/5 transition-all"
                     onClick={() => onAdd(preset.value)}
                 >
                     + {preset.label}
@@ -330,7 +330,7 @@ function SettingsSection({
             <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</Label>
                 {items.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground/60">{items.length}</span>
+                    <span className="text-[11px] text-muted-foreground/60">{items.length}</span>
                 )}
             </div>
             <ArrayInput placeholder={placeholder} onAdd={onAdd} />
@@ -379,7 +379,7 @@ function CategoryCard({
                     <span className="text-sm font-semibold">{title}</span>
                 </div>
                 {count !== undefined && count > 0 && (
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono">
+                    <Badge variant="secondary" className="text-[11px] h-5 px-1.5 font-mono">
                         {count}
                     </Badge>
                 )}
@@ -643,7 +643,7 @@ export function RoutingSettingsCard({ nodeId, existingRules, outbounds, onSettin
                             value={settings.outbound_test_url || ""}
                             onChange={(e) => updateField("outbound_test_url", e.target.value)}
                         />
-                        <p className="text-[10px] text-muted-foreground">Default URL for outbound connectivity tests</p>
+                        <p className="text-[11px] text-muted-foreground">Default URL for outbound connectivity tests</p>
                     </div>
                 </div>
 
@@ -665,7 +665,7 @@ export function RoutingSettingsCard({ nodeId, existingRules, outbounds, onSettin
                                 <HiOutlineBan className="w-3.5 h-3.5 text-red-400/70" />
                                 <div>
                                     <Label className="text-xs font-medium cursor-pointer">Block BitTorrent</Label>
-                                    <p className="text-[10px] text-muted-foreground leading-tight">Block P2P protocol</p>
+                                    <p className="text-[11px] text-muted-foreground leading-tight">Block P2P protocol</p>
                                 </div>
                             </div>
                             <Switch
@@ -726,7 +726,7 @@ export function RoutingSettingsCard({ nodeId, existingRules, outbounds, onSettin
                         color="blue"
                         count={ipv4Count}
                     >
-                        <p className="text-[11px] text-muted-foreground -mt-2">
+                        <p className="text-[12px] text-muted-foreground -mt-2">
                             Force traffic to specific domains via IPv4
                         </p>
                         <SettingsSection
@@ -753,7 +753,7 @@ export function RoutingSettingsCard({ nodeId, existingRules, outbounds, onSettin
                         <div className="flex items-center justify-between py-2 px-3 rounded-md bg-white/[0.02] border border-white/[0.04] -mt-1">
                             <div>
                                 <Label className="text-xs font-medium cursor-pointer">Enable WARP</Label>
-                                <p className="text-[10px] text-muted-foreground leading-tight">Route via Cloudflare WARP</p>
+                                <p className="text-[11px] text-muted-foreground leading-tight">Route via Cloudflare WARP</p>
                             </div>
                             <Switch
                                 checked={settings.warp_enabled}
@@ -764,7 +764,7 @@ export function RoutingSettingsCard({ nodeId, existingRules, outbounds, onSettin
                         {settings.warp_enabled && (
                             <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
                                 {outbounds && !outbounds.some(o => o.tag === "warp") && (
-                                    <div className="text-[11px] rounded-md border border-amber-500/30 bg-amber-500/[0.06] text-amber-300 px-3 py-2 leading-snug">
+                                    <div className="text-[12px] rounded-md border border-amber-500/30 bg-amber-500/[0.06] text-amber-300 px-3 py-2 leading-snug">
                                         WARP rules target an outbound tagged <span className="font-mono">warp</span>, which is not configured on this node. Add a WireGuard outbound with tag <span className="font-mono">warp</span> in the Outbounds tab — xray will refuse to load otherwise.
                                     </div>
                                 )}

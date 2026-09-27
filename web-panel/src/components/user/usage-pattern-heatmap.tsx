@@ -70,7 +70,7 @@ export function UsagePatternHeatmap({ userId }: UsagePatternHeatmapProps) {
                             : "No activity data available"}
                     </p>
                 </div>
-                <span className="text-[10px] text-muted-foreground">Last 30 days</span>
+                <span className="text-[11px] text-muted-foreground">Last 30 days</span>
             </div>
 
             {/* Heatmap grid: 24 hours */}
@@ -84,7 +84,7 @@ export function UsagePatternHeatmap({ userId }: UsagePatternHeatmapProps) {
                         />
                     ))}
                 </div>
-                <div className="flex justify-between text-[9px] text-muted-foreground px-0.5">
+                <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
                     <span>12am</span>
                     <span>6am</span>
                     <span>12pm</span>
@@ -94,7 +94,7 @@ export function UsagePatternHeatmap({ userId }: UsagePatternHeatmapProps) {
             </div>
 
             {/* Legend */}
-            <div className="flex items-center justify-end gap-1.5 text-[9px] text-muted-foreground">
+            <div className="flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
                 <span>Less</span>
                 <div className="flex gap-0.5">
                     <div className="w-3 h-3 rounded-sm bg-muted/30" />

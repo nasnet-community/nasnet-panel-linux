@@ -64,7 +64,7 @@ export function UsageChart({ userId }: UsageChartProps) {
                             key={r.days}
                             onClick={() => setSelectedRange(r.days)}
                             className={cn(
-                                "px-2.5 py-1 text-[11px] font-medium transition-colors",
+                                "px-2.5 py-1 text-[12px] font-medium transition-colors",
                                 selectedRange === r.days
                                     ? "bg-primary text-primary-foreground"
                                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -91,14 +91,14 @@ export function UsageChart({ userId }: UsageChartProps) {
                                 dataKey="date"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 11 }}
                                 tickFormatter={(value: string) => formatDate(value)}
                                 interval={Math.max(Math.floor(chartData.length / 7) - 1, 0)}
                             />
                             <YAxis
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 11 }}
                                 tickFormatter={safeFormatBytes}
                                 width={52}
                                 domain={[0, Math.ceil(maxValue * 1.15)]}
@@ -132,7 +132,7 @@ export function UsageChart({ userId }: UsageChartProps) {
                             onClick={() => hasUploadDownload && setMode(s.key)}
                             disabled={!hasUploadDownload && s.key !== "combined"}
                             className={cn(
-                                "flex items-center gap-1.5 text-[10px] transition-colors",
+                                "flex items-center gap-1.5 text-[11px] transition-colors",
                                 mode === s.key ? "text-foreground font-semibold" : "text-muted-foreground",
                                 !hasUploadDownload && s.key !== "combined" && "opacity-40 cursor-not-allowed"
                             )}

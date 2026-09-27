@@ -232,7 +232,7 @@ export function SubscriptionAutocomplete({
                                             )}
                                         </span>
                                         {context && (
-                                            <span className="text-[10px] text-muted-foreground truncate">
+                                            <span className="text-[11px] text-muted-foreground truncate">
                                                 {context}
                                             </span>
                                         )}

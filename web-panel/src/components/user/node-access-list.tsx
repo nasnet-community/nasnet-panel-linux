@@ -62,9 +62,9 @@ export function NodeAccessList({ userId }: NodeAccessListProps) {
                             <span className="truncate">{first.node_name}</span>
                         </div>
                         {nodeAccounts.map(a => (
-                            <div key={a.account_id} className="flex items-center gap-1.5 pl-5 text-[11px] text-muted-foreground">
+                            <div key={a.account_id} className="flex items-center gap-1.5 pl-5 text-[12px] text-muted-foreground">
                                 <StatusDot status={a.status} />
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 font-mono uppercase">
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-mono uppercase">
                                     {a.protocol}
                                 </Badge>
                                 <span className="truncate">{a.inbound_tag}</span>

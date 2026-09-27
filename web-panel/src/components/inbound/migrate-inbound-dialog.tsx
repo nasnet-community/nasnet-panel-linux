@@ -104,7 +104,7 @@ export function MigrateInboundDialog({
                                             <SelectItem key={inb.id} value={String(inb.id)}>
                                                 <span className="flex items-center gap-2">
                                                     {inb.tag}
-                                                    <Badge variant="outline" className="text-[10px] h-4 px-1">
+                                                    <Badge variant="outline" className="text-[11px] h-4 px-1">
                                                         {inb.protocol}
                                                     </Badge>
                                                     :{inb.port}

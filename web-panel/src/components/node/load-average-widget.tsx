@@ -39,9 +39,9 @@ export function LoadAverageWidget({ nodeId, stats, isLoading }: LoadAverageWidge
     return (
         <Card className="h-full relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-orange-500/10 rounded-2xl p-4 bg-card/50 backdrop-blur-sm border-white/5">
             <div className="flex items-center justify-between mb-3 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Load Average</p>
+                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">Load Average</p>
                 <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-muted-foreground/50 font-mono">{cores} cores</span>
+                    <span className="text-[11px] text-muted-foreground/50 font-mono">{cores} cores</span>
                     <HiOutlineChartBar className="w-4 h-4 text-muted-foreground/30 group-hover:text-orange-400 transition-colors" />
                 </div>
             </div>
@@ -52,14 +52,14 @@ export function LoadAverageWidget({ nodeId, stats, isLoading }: LoadAverageWidge
 
                     return (
                         <div key={key} className="flex items-center gap-2.5">
-                            <span className="text-[11px] text-muted-foreground font-bold w-6 shrink-0">{label}</span>
+                            <span className="text-[12px] text-muted-foreground font-bold w-6 shrink-0">{label}</span>
                             <div className="flex-1 h-2 rounded-full bg-muted/30 overflow-hidden">
                                 <div
                                     className={`h-full rounded-full transition-all duration-700 ease-out ${getLoadColor(value, cores)}`}
                                     style={{ width: `${pct}%` }}
                                 />
                             </div>
-                            <span className={`font-mono font-bold text-[13px] w-10 text-right tabular-nums ${getLoadTextColor(value, cores)}`}>
+                            <span className={`font-mono font-bold text-[14px] w-10 text-right tabular-nums ${getLoadTextColor(value, cores)}`}>
                                 {value.toFixed(2)}
                             </span>
                         </div>
@@ -83,8 +83,8 @@ export function LoadAverageCompact({ nodeId, stats, isLoading }: LoadAverageWidg
     return (
         <Card className="h-full relative overflow-hidden transition-shadow duration-300 rounded-2xl p-3 bg-card/50 backdrop-blur-sm border-white/5">
             <div className="flex items-center justify-between mb-2 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Load Avg</p>
-                <span className="text-[10px] text-muted-foreground/50 font-mono">{cores}c</span>
+                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.12em]">Load Avg</p>
+                <span className="text-[11px] text-muted-foreground/50 font-mono">{cores}c</span>
             </div>
             <div className="flex flex-col gap-1.5">
                 {periods.map(({ key, label }) => {

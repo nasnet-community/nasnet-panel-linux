@@ -97,14 +97,14 @@ export const SwipeableRoutingRow = React.memo(function SwipeableRoutingRow({
                         onClick={() => handleAction(() => onEdit(rule))}
                     >
                         <HiOutlinePencil className="w-5 h-5" />
-                        <span className="text-[10px] font-medium">Edit</span>
+                        <span className="text-[11px] font-medium">Edit</span>
                     </button>
                     <button
                         className="w-16 flex flex-col items-center justify-center gap-1 bg-red-600 text-white active:bg-red-700"
                         onClick={() => handleAction(() => onDelete(rule))}
                     >
                         <Trash2 className="w-5 h-5" />
-                        <span className="text-[10px] font-medium">Delete</span>
+                        <span className="text-[11px] font-medium">Delete</span>
                     </button>
                 </motion.div>
             )}
@@ -146,16 +146,16 @@ export const SwipeableRoutingRow = React.memo(function SwipeableRoutingRow({
                 <div className="flex items-center gap-2">
                     <span className="font-mono font-semibold text-sm flex-1 min-w-0 truncate">{rule.rule_tag}</span>
                     {isUnsaved && (
-                        <Badge className="text-[10px] px-1.5 py-0 h-5 shrink-0 bg-blue-500/15 text-blue-400 border-blue-500/30">Unsaved</Badge>
+                        <Badge className="text-[11px] px-1.5 py-0 h-5 shrink-0 bg-blue-500/15 text-blue-400 border-blue-500/30">Unsaved</Badge>
                     )}
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 shrink-0">{rule.priority}</Badge>
+                    <Badge variant="outline" className="text-[11px] px-1.5 py-0 h-5 shrink-0">{rule.priority}</Badge>
                     {isUnsaved ? (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 shrink-0 text-blue-400 border-blue-500/30">Pending</Badge>
+                        <Badge variant="outline" className="text-[11px] px-1.5 py-0 h-5 shrink-0 text-blue-400 border-blue-500/30">Pending</Badge>
                     ) : (
                         <button onClick={(e) => { e.stopPropagation(); onToggle?.(rule) }}>
                             <Badge
                                 variant={rule.enabled ? "success" : "secondary"}
-                                className="text-[10px] px-1.5 py-0 h-5 shrink-0"
+                                className="text-[11px] px-1.5 py-0 h-5 shrink-0"
                             >
                                 {rule.enabled ? "On" : "Off"}
                             </Badge>
@@ -171,13 +171,13 @@ export const SwipeableRoutingRow = React.memo(function SwipeableRoutingRow({
 
                 {/* Line 3: Matcher badges */}
                 <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                    {rule.domain_rules?.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">domains</Badge>}
-                    {rule.geoip_rules?.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">geoip</Badge>}
-                    {rule.port_rules?.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">ports</Badge>}
-                    {rule.protocol_rules?.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">protocol</Badge>}
-                    {rule.inbound_tags?.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">inbounds</Badge>}
+                    {rule.domain_rules?.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5">domains</Badge>}
+                    {rule.geoip_rules?.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5">geoip</Badge>}
+                    {rule.port_rules?.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5">ports</Badge>}
+                    {rule.protocol_rules?.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5">protocol</Badge>}
+                    {rule.inbound_tags?.length > 0 && <Badge variant="secondary" className="text-[11px] px-1.5 py-0 h-5">inbounds</Badge>}
                     {!rule.domain_rules?.length && !rule.geoip_rules?.length && !rule.port_rules?.length && !rule.protocol_rules?.length && !rule.inbound_tags?.length && (
-                        <span className="text-muted-foreground text-[10px]">no matchers</span>
+                        <span className="text-muted-foreground text-[11px]">no matchers</span>
                     )}
                 </div>
                     </div>

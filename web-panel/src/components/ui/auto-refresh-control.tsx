@@ -37,7 +37,7 @@ export function AutoRefreshControl({ isRefreshing, dataUpdatedAt }: AutoRefreshC
     return (
         <div className="flex items-center gap-2">
             {lastRefreshedLabel && (
-                <span className="hidden sm:inline text-[10px] text-muted-foreground/60 whitespace-nowrap">
+                <span className="hidden sm:inline text-[11px] text-muted-foreground/60 whitespace-nowrap">
                     {lastRefreshedLabel}
                 </span>
             )}

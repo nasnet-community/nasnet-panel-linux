@@ -41,7 +41,7 @@ export function StarlinkQuickStats({ nodeId, isOnline, variant, onNavigate }: St
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate() } }}
         >
             <div className="flex items-center justify-between mb-3 relative z-10">
-                <p className="text-[11px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">
+                <p className="text-[12px] uppercase font-bold text-muted-foreground/70 tracking-[0.15em]">
                     {variant === "signal" ? "Starlink Signal" : "Starlink Throughput"}
                 </p>
                 <Satellite className={`w-4 h-4 text-muted-foreground/30 ${status.available ? "group-hover:text-sky-400" : "text-red-400"} transition-colors`} />
@@ -52,24 +52,24 @@ export function StarlinkQuickStats({ nodeId, isOnline, variant, onNavigate }: St
                 <div className="flex flex-col gap-2.5 mt-2">
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Latency</span>
-                        <span className="font-mono font-bold text-foreground text-[13px]">
+                        <span className="font-mono font-bold text-foreground text-[14px]">
                             {status.pop_ping_latency_ms.toFixed(0)} ms
                         </span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Drop Rate</span>
-                        <span className="font-mono font-bold text-foreground text-[13px]">
+                        <span className="font-mono font-bold text-foreground text-[14px]">
                             {(status.pop_ping_drop_rate * 100).toFixed(1)}%
                         </span>
                     </div>
                     <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5 mt-0.5">
                         <span className="text-muted-foreground font-medium">Obstruction</span>
                         <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-foreground text-[13px]">
+                            <span className="font-mono font-bold text-foreground text-[14px]">
                                 {(status.obstruction_fraction * 100).toFixed(1)}%
                             </span>
                             {alertCount > 0 && (
-                                <Badge variant="danger" className="text-[10px] px-1.5 py-0">
+                                <Badge variant="danger" className="text-[11px] px-1.5 py-0">
                                     {alertCount}
                                 </Badge>
                             )}
@@ -80,19 +80,19 @@ export function StarlinkQuickStats({ nodeId, isOnline, variant, onNavigate }: St
                 <div className="flex flex-col gap-2.5 mt-2">
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Download</span>
-                        <span className="font-mono font-bold text-foreground text-[13px]">
+                        <span className="font-mono font-bold text-foreground text-[14px]">
                             {(status.downlink_throughput_bps / 1_000_000).toFixed(0)} Mbps
                         </span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
                         <span className="text-muted-foreground font-medium">Upload</span>
-                        <span className="font-mono font-bold text-foreground text-[13px]">
+                        <span className="font-mono font-bold text-foreground text-[14px]">
                             {(status.uplink_throughput_bps / 1_000_000).toFixed(0)} Mbps
                         </span>
                     </div>
                     <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2.5 mt-0.5">
                         <span className="text-muted-foreground font-medium">Ethernet</span>
-                        <span className="font-mono font-bold text-foreground text-[13px]">
+                        <span className="font-mono font-bold text-foreground text-[14px]">
                             {status.eth_speed_mbps >= 1000
                                 ? `${(status.eth_speed_mbps / 1000).toFixed(0)} Gbps`
                                 : `${status.eth_speed_mbps} Mbps`}

@@ -31,7 +31,7 @@ interface ProfileTabProps {
 function CopyableField({ label, value }: { label: string; value: string }) {
     return (
         <div className="space-y-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                 {label}
             </span>
             <button
@@ -71,7 +71,7 @@ export function ProfileTab({ user, onToggleAdmin, actionLoading }: ProfileTabPro
             {/* Section 1: User Info */}
             <Card className="border-0 shadow-sm bg-card/50">
                 <CardContent className="p-5 space-y-4">
-                    <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                    <h3 className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                         User Info
                     </h3>
 
@@ -79,7 +79,7 @@ export function ProfileTab({ user, onToggleAdmin, actionLoading }: ProfileTabPro
 
                     {/* Chat ID (editable) */}
                     <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                        <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                             Chat ID
                         </span>
                         {editingTelegramId ? (
@@ -146,13 +146,13 @@ export function ProfileTab({ user, onToggleAdmin, actionLoading }: ProfileTabPro
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Language</span>
+                            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Language</span>
                             <div className="text-sm">{user.language?.toUpperCase() || "—"}</div>
                         </div>
                     </div>
 
                     <div className="space-y-1">
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Joined</span>
+                        <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Joined</span>
                         <div className="text-sm">{new Date(user.created_at).toLocaleDateString(undefined, { dateStyle: "long" })}</div>
                     </div>
                 </CardContent>
@@ -161,7 +161,7 @@ export function ProfileTab({ user, onToggleAdmin, actionLoading }: ProfileTabPro
             {/* Section 2: Chat & Communication */}
             <Card className="border-0 shadow-sm bg-card/50">
                 <CardContent className="p-5 space-y-4">
-                    <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                    <h3 className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                         Chat & Communication
                     </h3>
 
@@ -205,7 +205,7 @@ export function ProfileTab({ user, onToggleAdmin, actionLoading }: ProfileTabPro
             {/* Section 3: Admin Tools */}
             <Card className="border-0 shadow-sm bg-card/50">
                 <CardContent className="p-5 space-y-4">
-                    <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
+                    <h3 className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">
                         Admin Tools
                     </h3>
 

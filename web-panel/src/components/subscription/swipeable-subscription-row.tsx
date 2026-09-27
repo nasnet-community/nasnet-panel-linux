@@ -168,7 +168,7 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                     onClick={() => handleAction(() => onCopyLink(sub))}
                 >
                     <HiOutlineClipboardCopy className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Copy</span>
+                    <span className="text-[11px] font-medium">Copy</span>
                 </button>
                 <button
                     className={cn(
@@ -185,7 +185,7 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                     ) : (
                         <HiOutlinePause className="w-5 h-5" />
                     )}
-                    <span className="text-[10px] font-medium">
+                    <span className="text-[11px] font-medium">
                         {sub.status === "paused" ? "Resume" : "Pause"}
                     </span>
                 </button>
@@ -194,7 +194,7 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                     onClick={() => handleAction(() => onDelete(sub))}
                 >
                     <Trash2 className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Delete</span>
+                    <span className="text-[11px] font-medium">Delete</span>
                 </button>
             </motion.div>
 
@@ -248,22 +248,22 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                     {/* Right side: connected IPs + expiry info */}
                     <div className="shrink-0 flex items-center gap-1.5">
                         {connectedIPs.length > 0 && (
-                            <span className="inline-flex items-center gap-0.5 text-[11px] text-emerald-500">
+                            <span className="inline-flex items-center gap-0.5 text-[12px] text-emerald-500">
                                 <HiOutlineGlobeAlt className="w-3 h-3" />
                                 {connectedIPs.length}
                             </span>
                         )}
                         {isPaused ? (
-                            <span className="text-[11px] text-amber-500">Paused</span>
+                            <span className="text-[12px] text-amber-500">Paused</span>
                         ) : isTerminated ? (
-                            <span className={cn("text-[11px]", sub.status === "expired" ? "text-red-400" : "text-muted-foreground")}>
+                            <span className={cn("text-[12px]", sub.status === "expired" ? "text-red-400" : "text-muted-foreground")}>
                                 {sub.status === "expired" ? "Expired" : "Cancelled"}
                             </span>
                         ) : (() => {
                             const info = getExpiryInfo(expiryDate)
                             return (
                                 <span className={cn(
-                                    "text-[11px]",
+                                    "text-[12px]",
                                     info.variant === "danger" ? "text-red-400" :
                                     info.variant === "warning" ? "text-amber-400" :
                                     "text-muted-foreground"
@@ -293,7 +293,7 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                     </div>
                     <div className="flex justify-between mt-0.5">
                         <span className={cn(
-                            "text-[10px] font-medium",
+                            "text-[11px] font-medium",
                             isTerminated ? "text-muted-foreground" :
                                 isPaused ? "text-amber-500/50" :
                                 isUnlimited ? "text-emerald-500" :
@@ -303,7 +303,7 @@ export const SwipeableSubscriptionRow = React.memo(function SwipeableSubscriptio
                                 ? `${formatCompact(sub.data_used)} used`
                                 : `${Math.round(usagePercent)}% used`}
                         </span>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[11px] text-muted-foreground">
                             {isTerminated ? (
                                 formatCompact(sub.data_used)
                             ) : isUnlimited ? (

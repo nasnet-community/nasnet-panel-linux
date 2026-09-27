@@ -101,7 +101,7 @@ export function ActivityFeed({ isEditMode }: ActivityFeedProps) {
             icon={<Rss className="w-4 h-4 text-emerald-500" />}
             isEditMode={isEditMode}
             headerRight={
-                <span className="text-[10px] text-muted-foreground">{events.length} events</span>
+                <span className="text-[11px] text-muted-foreground">{events.length} events</span>
             }
             noPadding
         >
@@ -111,7 +111,7 @@ export function ActivityFeed({ isEditMode }: ActivityFeedProps) {
                         <div className="text-center">
                             <Rss className="w-8 h-8 mx-auto mb-2 opacity-30" />
                             <p>Waiting for events...</p>
-                            <p className="text-[10px] mt-1">Events will appear here in real-time</p>
+                            <p className="text-[11px] mt-1">Events will appear here in real-time</p>
                         </div>
                     </div>
                 ) : (
@@ -127,10 +127,10 @@ export function ActivityFeed({ isEditMode }: ActivityFeedProps) {
                                 )} />
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                                             {EVENT_LABELS[event.type] || "EVT"}
                                         </span>
-                                        <span className="text-[10px] text-muted-foreground/70 font-mono">
+                                        <span className="text-[11px] text-muted-foreground/70 font-mono">
                                             {formatTime(event.timestamp)}
                                         </span>
                                     </div>

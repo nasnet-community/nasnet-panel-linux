@@ -50,7 +50,7 @@ export function TrafficSummaryChart({ nodeId, enabled = true }: TrafficSummaryCh
                             <button
                                 key={p}
                                 onClick={() => setPeriod(p)}
-                                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                className={`px-2.5 py-1 rounded-md text-[12px] font-bold transition-all ${
                                     period === p
                                         ? "bg-foreground text-background shadow-sm"
                                         : "text-muted-foreground hover:text-foreground"
@@ -62,7 +62,7 @@ export function TrafficSummaryChart({ nodeId, enabled = true }: TrafficSummaryCh
                     </div>
                     {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground/50" />}
                 </div>
-                <div className="flex items-center gap-4 text-[11px]">
+                <div className="flex items-center gap-4 text-[12px]">
                     <div className="flex items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full bg-blue-500" />
                         <span className="text-muted-foreground font-bold uppercase tracking-wider">Up</span>
@@ -77,15 +77,15 @@ export function TrafficSummaryChart({ nodeId, enabled = true }: TrafficSummaryCh
             {/* Summary stats */}
             <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground/60 tracking-wider">Upload</span>
+                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Upload</span>
                     <span className="text-sm font-bold font-mono text-blue-400">{formatBytes(totals.uplink)}</span>
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground/60 tracking-wider">Download</span>
+                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Download</span>
                     <span className="text-sm font-bold font-mono text-emerald-400">{formatBytes(totals.downlink)}</span>
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground/60 tracking-wider">Total</span>
+                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Total</span>
                     <span className="text-sm font-bold font-mono">{formatBytes(totals.total)}</span>
                 </div>
             </div>
@@ -118,20 +118,20 @@ export function TrafficSummaryChart({ nodeId, enabled = true }: TrafficSummaryCh
                                 dataKey="date"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fontSize: 10, fill: c.axis }}
+                                tick={{ fontSize: 11, fill: c.axis }}
                                 interval={period === 30 ? 4 : 0}
                             />
                             <YAxis
                                 tickFormatter={formatTrafficAxis}
-                                width={50}
-                                tick={{ fontSize: 10, fill: c.axis }}
+                                width={54}
+                                tick={{ fontSize: 11, fill: c.axis }}
                                 axisLine={false}
                                 tickLine={false}
                             />
                             <Tooltip
                                 contentStyle={{ ...tooltipContentStyle(c), backdropFilter: "blur(8px)" }}
-                                itemStyle={{ fontSize: "12px", fontWeight: 600, padding: "2px 0" }}
-                                labelStyle={{ color: c.tooltipLabel, fontSize: "10px", marginBottom: "8px" }}
+                                itemStyle={{ fontSize: "13px", fontWeight: 600, padding: "2px 0" }}
+                                labelStyle={{ color: c.tooltipLabel, fontSize: "11px", marginBottom: "8px" }}
                                 formatter={(value, name) => [formatBytes(Number(value)), String(name ?? "")]}
                                 cursor={{ fill: "rgba(255,255,255,0.03)" }}
                             />

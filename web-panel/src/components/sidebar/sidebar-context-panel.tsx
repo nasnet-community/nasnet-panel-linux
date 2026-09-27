@@ -510,12 +510,12 @@ function LabelRow({
     // with no distribution) render as a static div — no chevron, no cursor.
     const content = (
         <>
-            <span className="font-mono text-[10.5px] font-semibold tracking-[0.08em] uppercase text-primary">
+            <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">
                 {config.label}
             </span>
             <span className="flex items-center gap-1.5">
                 <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", STATUS_DOT[status])} />
-                <span className="font-mono text-[10.5px] font-semibold tracking-[0.08em] uppercase text-primary">
+                <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">
                     {STATUS_LABEL[status]}
                 </span>
                 {toggleable && (
@@ -560,13 +560,13 @@ function HeroRow({ hero, loading }: { hero: HeroData; loading: boolean }) {
                     {hero.value}
                 </span>
                 {hero.unit && (
-                    <span className="font-mono text-[10.5px] text-primary/80">{hero.unit}</span>
+                    <span className="font-mono text-[11.5px] text-primary/80">{hero.unit}</span>
                 )}
             </div>
             {hero.delta && (
                 <span
                     className={cn(
-                        "ml-auto self-start font-mono text-[10px] leading-none px-1.5 py-1 rounded-[3px] tabular-nums tracking-tight",
+                        "ml-auto self-start font-mono text-[11px] leading-none px-1.5 py-1 rounded-[3px] tabular-nums tracking-tight",
                         hero.delta.tone === "up" && "bg-primary/10 text-primary ring-1 ring-primary/20",
                         hero.delta.tone === "down" && "bg-red-500/8 text-red-400/90 ring-1 ring-red-500/20",
                         hero.delta.tone === "flat" && "bg-white/[0.04] text-muted-foreground ring-1 ring-white/5",
@@ -585,7 +585,7 @@ function SparklineRow({ data }: { data: SparklineData }) {
     if (points.length < 3) {
         return (
             <div className="h-8 mt-2 mb-2 flex items-center">
-                <span className="font-mono text-[9.5px] text-muted-foreground/60 tracking-wider">
+                <span className="font-mono text-[10.5px] text-muted-foreground/60 tracking-wider">
                     WARMING UP · collecting samples…
                 </span>
             </div>
@@ -682,7 +682,7 @@ function TileValue({ value, tone }: { value: string; tone: Tone }) {
             </span>
             <span
                 className={cn(
-                    "font-mono text-[9px] font-medium tabular-nums tracking-[0.04em] opacity-55 mt-0.5 truncate",
+                    "font-mono text-[10px] font-medium tabular-nums tracking-[0.04em] opacity-55 mt-0.5 truncate",
                     toneClass,
                 )}
             >
@@ -716,7 +716,7 @@ function TilesRow({ tiles, loading }: { tiles: Tile[]; loading: boolean }) {
                 >
                     <div
                         className={cn(
-                            "font-mono text-[9px] tracking-[0.08em] uppercase leading-[1.3]",
+                            "font-mono text-[10px] tracking-[0.08em] uppercase leading-[1.3]",
                             t.tone === "neutral" && "text-muted-foreground/80",
                             t.tone === "ok" && "text-primary/90",
                             t.tone === "warn" && "text-amber-400/90",
@@ -728,7 +728,7 @@ function TilesRow({ tiles, loading }: { tiles: Tile[]; loading: boolean }) {
                     <div className="flex items-baseline gap-1 min-w-0">
                         <TileValue value={loading ? "·" : t.value} tone={t.tone} />
                         {t.delta && (
-                            <span className="font-mono text-[9.5px] opacity-60 tabular-nums">
+                            <span className="font-mono text-[10.5px] opacity-60 tabular-nums">
                                 {t.delta}
                             </span>
                         )}
@@ -750,11 +750,11 @@ function DistributionBar({ dist }: { dist: Distribution }) {
                 Asymmetric weight: portfolio label is tertiary, % healthy is the
                 takeaway and gets a bigger, emphasized treatment. */}
             <div className="flex items-end justify-between mb-1.5">
-                <span className="font-mono text-[9px] tracking-[0.1em] uppercase text-muted-foreground/60">
+                <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-muted-foreground/60">
                     portfolio · {dist.total}
                 </span>
-                <span className="font-mono text-[10.5px] font-semibold tabular-nums text-primary tracking-tight leading-none">
-                    {pct}% <span className="text-primary/70 font-normal tracking-[0.08em] uppercase text-[9px]">healthy</span>
+                <span className="font-mono text-[11.5px] font-semibold tabular-nums text-primary tracking-tight leading-none">
+                    {pct}% <span className="text-primary/70 font-normal tracking-[0.08em] uppercase text-[10px]">healthy</span>
                 </span>
             </div>
             {/* h-2.5 stacked bar with 1px inset dividers between segments for crisp
@@ -778,7 +778,7 @@ function DistributionBar({ dist }: { dist: Distribution }) {
             {/* Two-column grid keeps the legend aligned instead of flex-wrap's
                 3-then-1 orphaning. tabular-nums on the value locks the number
                 columns so counts align visually. */}
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 font-mono text-[9.5px] text-muted-foreground/80">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 font-mono text-[10.5px] text-muted-foreground/80">
                 {dist.segments.map((s) => (
                     <span key={s.key} className="inline-flex items-center gap-1.5 min-w-0">
                         <span

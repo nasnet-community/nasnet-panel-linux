@@ -50,7 +50,7 @@ export function CertStatsRow({ certificates }: CertStatsRowProps) {
                     >
                         {chip.label}
                         <span className={cn(
-                            "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-semibold px-1",
+                            "inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[11px] font-semibold px-1",
                             isActive
                                 ? "bg-white/20"
                                 : "bg-muted"

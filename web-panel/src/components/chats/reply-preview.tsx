@@ -18,7 +18,7 @@ export function ReplyPreview({ target, onClear, selfReactor }: Props) {
         <div className="flex items-start gap-2 px-3 py-2 border-t border-border bg-muted/40">
             <CornerUpLeft className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
             <div className="flex-1 min-w-0">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
                     Replying to {senderLabel}
                 </div>
                 <div className="text-xs truncate">{target.content}</div>

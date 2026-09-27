@@ -67,7 +67,7 @@ function Block({
 
 function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
     return (
-        <div className="border-border-subtle flex items-baseline justify-between gap-3 border-b py-1.5 text-[13px] last:border-b-0">
+        <div className="border-border-subtle flex items-baseline justify-between gap-3 border-b py-1.5 text-[14px] last:border-b-0">
             <span className="text-text-tertiary shrink-0">{k}</span>
             <span className="min-w-0 text-right">{v}</span>
         </div>
@@ -86,14 +86,14 @@ function AddressPath({ up, address }: { up: UplinkHealth; address: string | null
             <Wire state={gatewayUp && inetUp ? "live" : gatewayUp ? "cut" : "off"} />
             <span className="relative shrink-0 tabular-nums">
                 {up.gateway_ip || "unknown"}
-                <span className="text-text-tertiary absolute top-[17px] left-1/2 -translate-x-1/2 font-sans text-[11px]">
+                <span className="text-text-tertiary absolute top-[17px] left-1/2 -translate-x-1/2 font-sans text-[12px]">
                     upstream router
                 </span>
             </span>
             <Wire state={gatewayUp ? "live" : "off"} />
             <span className="relative shrink-0 tabular-nums">
                 {address ?? "no address"}
-                <span className="text-text-tertiary absolute top-[17px] left-1/2 -translate-x-1/2 font-sans text-[11px]">
+                <span className="text-text-tertiary absolute top-[17px] left-1/2 -translate-x-1/2 font-sans text-[12px]">
                     this box
                 </span>
             </span>
@@ -229,12 +229,12 @@ export function UplinkDetailSheet({
                                             LAYER_BAR[r.status] ?? LAYER_BAR.unknown,
                                         )}
                                     />
-                                    <span className="text-text-tertiary font-mono text-[11px] tracking-wide">
+                                    <span className="text-text-tertiary font-mono text-[12px] tracking-wide">
                                         {r.key}
                                     </span>
                                     <span
                                         className={cn(
-                                            "text-[13px]",
+                                            "text-[14px]",
                                             r.status === "down"
                                                 ? "text-status-danger"
                                                 : "text-text-secondary",
@@ -293,7 +293,7 @@ export function UplinkDetailSheet({
                                         <div
                                             key={t.address}
                                             data-check={t.address}
-                                            className="flex items-center gap-2.5 py-1.5 text-[13px]"
+                                            className="flex items-center gap-2.5 py-1.5 text-[14px]"
                                         >
                                             <span
                                                 aria-hidden
@@ -315,7 +315,7 @@ export function UplinkDetailSheet({
                                                     {t.address}
                                                 </span>
                                             )}
-                                            <span className="bg-surface-3 text-text-tertiary shrink-0 rounded px-1.5 font-mono text-[11px]">
+                                            <span className="bg-surface-3 text-text-tertiary shrink-0 rounded px-1.5 font-mono text-[12px]">
                                                 {protoLabel(t.proto)}
                                             </span>
                                             <span
@@ -363,11 +363,11 @@ export function UplinkDetailSheet({
                                                     "border-border-strong bg-surface-2",
                                             )}
                                         >
-                                            <span className="bg-surface-3 text-text-secondary flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[11px]">
+                                            <span className="bg-surface-3 text-text-secondary flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[12px]">
                                                 {slotPosition(m.slot)}
                                             </span>
                                             <div className="min-w-0">
-                                                <p className="truncate text-[13px] font-medium">
+                                                <p className="truncate text-[14px] font-medium">
                                                     {labelOf(m.if_name)}
                                                     {m.if_name === up.if_name && (
                                                         <span className="text-text-tertiary font-normal">
@@ -414,7 +414,7 @@ export function UplinkDetailSheet({
                                                     )}
                                                 />
                                                 <div className="min-w-0">
-                                                    <p className="truncate text-[13px] font-medium">
+                                                    <p className="truncate text-[14px] font-medium">
                                                         {t.name}
                                                     </p>
                                                     <p className="text-text-tertiary text-xs">
@@ -465,13 +465,13 @@ export function UplinkDetailSheet({
                         <Block title="Data used" note="Since the last restart.">
                             <div className="flex gap-6">
                                 <div>
-                                    <p className="text-text-tertiary text-[11px]">downloaded</p>
+                                    <p className="text-text-tertiary text-[12px]">downloaded</p>
                                     <p className="text-lg font-medium tabular-nums">
                                         {bytesLabel(up.rx_bytes)}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-text-tertiary text-[11px]">uploaded</p>
+                                    <p className="text-text-tertiary text-[12px]">uploaded</p>
                                     <p className="text-lg font-medium tabular-nums">
                                         {bytesLabel(up.tx_bytes)}
                                     </p>
@@ -499,7 +499,7 @@ export function UplinkDetailSheet({
                                 <p className="text-text-tertiary text-xs">Not checked yet.</p>
                             ) : (
                                 <>
-                                    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                                    <div className="flex flex-wrap items-center gap-2 text-[14px]">
                                         <ReachPill verdict={pm.verdict} suspended={pm.suspended} />
                                         {pm.external_ip && (
                                             <span className="text-text-secondary">
@@ -563,9 +563,9 @@ export function UplinkDetailSheet({
                                     {mineEvents.map((e, i) => (
                                         <div
                                             key={`${e.type}-${e.timestamp}-${i}`}
-                                            className="flex items-baseline gap-2.5 py-1.5 text-[13px]"
+                                            className="flex items-baseline gap-2.5 py-1.5 text-[14px]"
                                         >
-                                            <span className="text-text-tertiary shrink-0 font-mono text-[11px]">
+                                            <span className="text-text-tertiary shrink-0 font-mono text-[12px]">
                                                 {shortTime(e.timestamp)}
                                             </span>
                                             <span className="text-text-secondary">
@@ -582,7 +582,7 @@ export function UplinkDetailSheet({
                                 type="button"
                                 aria-expanded={techOpen}
                                 onClick={() => setTechOpen((v) => !v)}
-                                className="border-border flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-[13px]"
+                                className="border-border flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-[14px]"
                             >
                                 <span>Technical details</span>
                                 <ChevronDown

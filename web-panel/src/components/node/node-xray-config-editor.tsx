@@ -158,7 +158,7 @@ export function NodeXrayConfigEditor({ nodeId, isOnline }: NodeXrayConfigEditorP
                     <div>
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             Xray Configuration
-                            {isModified && <Badge variant="warning" className="text-[10px] px-1 py-0 h-5">Modified</Badge>}
+                            {isModified && <Badge variant="warning" className="text-[11px] px-1 py-0 h-5">Modified</Badge>}
                         </h3>
                         <p className="text-sm text-muted-foreground">Directly edit the running Xray configuration JSON</p>
                     </div>

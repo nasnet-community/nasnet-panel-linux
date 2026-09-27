@@ -24,7 +24,7 @@ export function DialogTabBarMobile({ items, activeId, onChange }: DialogTabBarMo
                         type="button"
                         onClick={() => onChange(item.id)}
                         className={cn(
-                            "relative flex flex-col items-center gap-1 px-1 pb-1.5 pt-2.5 text-[11px] font-medium leading-[14px] transition-colors",
+                            "relative flex flex-col items-center gap-1 px-1 pb-1.5 pt-2.5 text-[12px] font-medium leading-[14px] transition-colors",
                             isActive ? "text-foreground" : "text-muted-foreground",
                             item.disabled && !isActive && "opacity-50",
                         )}
@@ -33,7 +33,7 @@ export function DialogTabBarMobile({ items, activeId, onChange }: DialogTabBarMo
                         <span className="relative">
                             <Icon className="h-5 w-5" />
                             {item.errorCount > 0 && (
-                                <span className="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-status-danger px-1 text-[10px] font-semibold leading-[14px] text-white">
+                                <span className="absolute -right-2.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-status-danger px-1 text-[11px] font-semibold leading-[14px] text-white">
                                     {item.errorCount}
                                 </span>
                             )}

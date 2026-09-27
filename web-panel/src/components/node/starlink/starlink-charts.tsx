@@ -70,14 +70,14 @@ const tooltipStyle = {
     border: "1px solid var(--border)",
     borderRadius: "12px",
     padding: "8px 12px",
-    fontSize: 12,
+    fontSize: 13,
     boxShadow: "0 8px 32px rgb(0 0 0 / 0.25)",
 }
 
 export function StarlinkCharts({ data, isLoading, compact = false, timeRange, onTimeRangeChange }: StarlinkChartsProps) {
     const c = useChartPalette()
-    const tooltipLabelStyle = { color: c.tooltipLabel, fontSize: 11 }
-    const tickStyle = { fontSize: 11, fill: c.axis }
+    const tooltipLabelStyle = { color: c.tooltipLabel, fontSize: 12 }
+    const tickStyle = { fontSize: 12, fill: c.axis }
     const [tab, setTab] = useState<ChartTab>("throughput")
 
     const chartData = useMemo(() => data.map((d) => ({
@@ -180,7 +180,7 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
                             {xAxis}
                             <YAxis tickFormatter={(v) => v.toFixed(0)} width={40} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" />
-                            <ReferenceLine y={50} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "50ms", position: "left", fill: c.danger, fontSize: 11 }} />
+                            <ReferenceLine y={50} stroke={c.danger} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "50ms", position: "left", fill: c.danger, fontSize: 12 }} />
                             <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
                                 formatter={(value: any) => [`${(value ?? 0).toFixed(1)} ms`, "Latency"]}
                             />
@@ -211,7 +211,7 @@ export function StarlinkCharts({ data, isLoading, compact = false, timeRange, on
                             <CartesianGrid vertical={false} stroke={c.grid} strokeDasharray="3 3" />
                             {xAxis}
                             <YAxis tickFormatter={(v) => v.toFixed(1)} width={40} tick={tickStyle} axisLine={false} tickLine={false} orientation="right" domain={[0, "auto"]} />
-                            <ReferenceLine y={5} stroke={c.warning} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "5%", position: "left", fill: c.warning, fontSize: 11 }} />
+                            <ReferenceLine y={5} stroke={c.warning} strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "5%", position: "left", fill: c.warning, fontSize: 12 }} />
                             <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle}
                                 formatter={(value: any) => [`${(value ?? 0).toFixed(2)}%`, "Obstruction"]}
                             />

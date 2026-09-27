@@ -35,7 +35,7 @@ export function StarlinkDetailDrawer({ isOpen, onClose, title, description, chil
                 `}
             >
                 <SheetHeader className="p-0 pr-8">
-                    <SheetTitle className="text-[11px] font-medium uppercase leading-5 tracking-[0.08em] text-muted-foreground/70">
+                    <SheetTitle className="text-[12px] font-medium uppercase leading-5 tracking-[0.08em] text-muted-foreground/70">
                         {title}
                     </SheetTitle>
                     <SheetDescription className="sr-only">

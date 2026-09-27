@@ -234,7 +234,7 @@ export function BalancingRuleDialog({
                         value={form.tag}
                         onChange={e => setForm(prev => ({ ...prev, tag: e.target.value }))}
                     />
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[12px] text-muted-foreground">
                         {usedBy.length > 0
                             ? `Rules point at this name. Renaming it detaches the ${usedBy.length} rule${usedBy.length !== 1 ? "s" : ""} below.`
                             : "Routing rules target a balancer by this name."}
@@ -273,14 +273,14 @@ export function BalancingRuleDialog({
                             >
                                 <div className="flex items-center gap-2">
                                     <span className={`w-3.5 h-3.5 rounded-full border shrink-0 ${active ? "border-primary bg-primary" : "border-white/25"}`} />
-                                    <span className="text-[13px] font-semibold">{s.label}</span>
+                                    <span className="text-[14px] font-semibold">{s.label}</span>
                                     {s.probes && (
-                                        <Badge variant="outline" className="ml-auto text-[9px] uppercase tracking-wide text-amber-300 border-amber-500/35">
+                                        <Badge variant="outline" className="ml-auto text-[10px] uppercase tracking-wide text-amber-300 border-amber-500/35">
                                             probes
                                         </Badge>
                                     )}
                                 </div>
-                                <p className="text-[11px] text-muted-foreground mt-1 ml-[22px] leading-snug">{s.description}</p>
+                                <p className="text-[12px] text-muted-foreground mt-1 ml-[22px] leading-snug">{s.description}</p>
                             </button>
                         )
                     })}
@@ -343,13 +343,13 @@ export function BalancingRuleDialog({
                                         onClick={() => toggleSelector(ob.tag)}
                                         className="w-full flex items-center gap-3 px-3 py-2 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.03] text-left"
                                     >
-                                        <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center text-[10px] font-bold ${checked ? "bg-primary border-primary text-primary-foreground" : "border-white/25"}`}>
+                                        <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center text-[11px] font-bold ${checked ? "bg-primary border-primary text-primary-foreground" : "border-white/25"}`}>
                                             {checked ? "✓" : ""}
                                         </span>
-                                        <span className="font-mono text-[13px]">{ob.tag}</span>
-                                        <Badge variant="outline" className="text-[10px]">{ob.protocol}</Badge>
+                                        <span className="font-mono text-[14px]">{ob.tag}</span>
+                                        <Badge variant="outline" className="text-[11px]">{ob.protocol}</Badge>
                                         {viaPrefix && (
-                                            <span className="ml-auto text-[10px] text-amber-300">matched by prefix</span>
+                                            <span className="ml-auto text-[11px] text-amber-300">matched by prefix</span>
                                         )}
                                     </button>
                                 )
@@ -388,7 +388,7 @@ export function BalancingRuleDialog({
                             ))}
                         </SelectContent>
                     </Select>
-                    <p className="text-[11px] text-muted-foreground leading-snug">
+                    <p className="text-[12px] text-muted-foreground leading-snug">
                         Used when nothing in the pool answers, or the strategy comes back empty. Leave as None to drop the connection.
                     </p>
                 </div>
@@ -401,14 +401,14 @@ export function BalancingRuleDialog({
                         Used by
                     </SectionLabel>
                     {usedBy.length === 0 ? (
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-[12px] text-muted-foreground">
                             No routing rule targets this balancer yet — it has no effect until one does.
                         </p>
                     ) : (
                         <>
                             <div className="flex flex-wrap gap-1.5">
                                 {usedBy.map(r => (
-                                    <Badge key={r.id} variant="secondary" className="font-mono text-[11px]">{r.rule_tag}</Badge>
+                                    <Badge key={r.id} variant="secondary" className="font-mono text-[12px]">{r.rule_tag}</Badge>
                                 ))}
                             </div>
                             <Notice tone="danger">
@@ -426,8 +426,8 @@ export function BalancingRuleDialog({
 function SectionLabel({ children, right }: { children: React.ReactNode; right?: string }) {
     return (
         <div className="flex items-center gap-2">
-            <span className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">{children}</span>
-            {right && <span className="text-[11px] text-muted-foreground">{right}</span>}
+            <span className="text-[11.5px] uppercase tracking-[0.12em] text-muted-foreground/70 font-medium">{children}</span>
+            {right && <span className="text-[12px] text-muted-foreground">{right}</span>}
             <span className="flex-1 h-px bg-white/[0.06]" />
         </div>
     )
@@ -441,7 +441,7 @@ function Notice({ tone, children }: { tone: "info" | "warn" | "danger"; children
     }[tone]
     const Icon = tone === "info" ? HiOutlineInformationCircle : HiOutlineExclamation
     return (
-        <div className={`flex gap-2 items-start rounded-lg border px-3 py-2 text-[12px] leading-relaxed ${styles}`}>
+        <div className={`flex gap-2 items-start rounded-lg border px-3 py-2 text-[13px] leading-relaxed ${styles}`}>
             <Icon className="w-4 h-4 shrink-0 mt-0.5" />
             <div>{children}</div>
         </div>

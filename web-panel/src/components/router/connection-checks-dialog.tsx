@@ -267,7 +267,7 @@ function ChecksForm({
                                 aria-pressed={scope === o.value}
                                 onClick={() => setScope(o.value)}
                                 className={cn(
-                                    "px-3 py-1.5 text-[13px] transition-colors",
+                                    "px-3 py-1.5 text-[14px] transition-colors",
                                     scope === o.value
                                         ? "bg-surface-3 text-text-primary font-medium"
                                         : "text-text-tertiary hover:text-text-secondary hover:bg-surface-3/50",
@@ -318,11 +318,11 @@ function ChecksForm({
                                         <span className="text-text-tertiary font-mono text-xs">
                                             {t.address}
                                         </span>
-                                        <span className="bg-surface-3 text-text-tertiary rounded px-1.5 font-mono text-[11px]">
+                                        <span className="bg-surface-3 text-text-tertiary rounded px-1.5 font-mono text-[12px]">
                                             {protoLabel(t.proto)}
                                         </span>
                                         {!splitAddress(t.address).port && (
-                                            <span className="text-status-warning text-[11px]">
+                                            <span className="text-status-warning text-[12px]">
                                                 no port
                                             </span>
                                         )}
@@ -373,7 +373,7 @@ function ChecksForm({
                                         setDraft({ ...draft, proto: p, port: defaultPort(p) })
                                     }
                                     className={cn(
-                                        "px-2.5 py-1.5 text-[13px] transition-colors",
+                                        "px-2.5 py-1.5 text-[14px] transition-colors",
                                         draft.proto === p
                                             ? "bg-surface-3 text-text-primary font-medium"
                                             : "text-text-tertiary hover:text-text-secondary hover:bg-surface-3/50",

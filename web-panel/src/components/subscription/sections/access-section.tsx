@@ -133,7 +133,7 @@ export function AccessSection({
                                 <div className="flex items-center gap-2 min-w-0">
                                     <Globe className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                                     <span className="text-sm font-medium truncate">{account.email}</span>
-                                    <Badge variant="outline" className="h-4 px-1 text-[10px] shrink-0">
+                                    <Badge variant="outline" className="h-4 px-1 text-[11px] shrink-0">
                                         {account.inbound?.tag || "?"}
                                     </Badge>
                                 </div>
@@ -186,7 +186,7 @@ export function AccessSection({
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                                        className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                                         onClick={async () => {
                                             const all = ips.map((ip) => ip.ip).join("\n")
                                             await copyToClipboard(all)
@@ -234,14 +234,14 @@ export function AccessSection({
                                                 {isActive && (
                                                     <Badge
                                                         variant="outline"
-                                                        className="h-4 px-1 text-[10px] text-emerald-600 border-emerald-600/30 shrink-0"
+                                                        className="h-4 px-1 text-[11px] text-emerald-600 border-emerald-600/30 shrink-0"
                                                     >
                                                         active
                                                     </Badge>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                                                <span className="text-[11px] text-muted-foreground">
+                                                <span className="text-[12px] text-muted-foreground">
                                                     {format(new Date(ip.last_seen), "MMM d, HH:mm")}
                                                 </span>
                                                 <Copy className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors" />

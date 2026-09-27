@@ -84,7 +84,7 @@ export function XrayConfigDiffDialog({ nodeId, open, onOpenChange }: XrayConfigD
                             <DialogTitle className="flex items-center gap-2">
                                 Config Diff
                                 {data && (
-                                    <Badge variant={data.differs ? "warning" : "success"} className="text-[10px]">
+                                    <Badge variant={data.differs ? "warning" : "success"} className="text-[11px]">
                                         {data.differs ? "Changes pending" : "In sync"}
                                     </Badge>
                                 )}
@@ -161,7 +161,7 @@ export function XrayConfigDiffDialog({ nodeId, open, onOpenChange }: XrayConfigD
                                         readOnly: true,
                                         renderSideBySide: true,
                                         minimap: { enabled: false },
-                                        fontSize: 13,
+                                        fontSize: 14,
                                         wordWrap: "on",
                                         automaticLayout: true,
                                         scrollBeyondLastLine: false,

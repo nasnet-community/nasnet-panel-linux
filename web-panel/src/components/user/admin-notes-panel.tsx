@@ -48,12 +48,12 @@ export function AdminNotesPanel({ userId, initialNotes }: AdminNotesPanelProps) 
     return (
         <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Admin Notes</span>
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground/70 font-semibold">Admin Notes</span>
                 {saved && (
-                    <span className="text-[10px] text-emerald-500 font-medium animate-in fade-in duration-200">Saved</span>
+                    <span className="text-[11px] text-emerald-500 font-medium animate-in fade-in duration-200">Saved</span>
                 )}
                 {updateNotes.isPending && (
-                    <span className="text-[10px] text-muted-foreground font-medium">Saving...</span>
+                    <span className="text-[11px] text-muted-foreground font-medium">Saving...</span>
                 )}
             </div>
             <textarea

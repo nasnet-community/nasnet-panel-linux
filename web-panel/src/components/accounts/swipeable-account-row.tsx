@@ -164,7 +164,7 @@ export const SwipeableAccountRow = React.memo(function SwipeableAccountRow({
                     onClick={() => handleAction(() => onCopyLink(acc))}
                 >
                     <HiOutlineClipboardCopy className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Copy</span>
+                    <span className="text-[11px] font-medium">Copy</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-amber-600 text-white active:bg-amber-700"
@@ -172,14 +172,14 @@ export const SwipeableAccountRow = React.memo(function SwipeableAccountRow({
                     disabled={isAnyMutationPending}
                 >
                     <HiOutlineRefresh className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Sync</span>
+                    <span className="text-[11px] font-medium">Sync</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-red-600 text-white active:bg-red-700"
                     onClick={() => handleAction(() => onDelete(acc))}
                 >
                     <Trash2 className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Delete</span>
+                    <span className="text-[11px] font-medium">Delete</span>
                 </button>
             </motion.div>
 

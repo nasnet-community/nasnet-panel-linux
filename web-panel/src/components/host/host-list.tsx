@@ -101,7 +101,7 @@ export function HostList({ inboundId, initialHosts, inbound, showHeader = true }
                         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                             Hosts
                         </span>
-                        <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                        <Badge variant="secondary" className="text-[11px] h-4 px-1.5">
                             {hosts.length}
                         </Badge>
                     </div>
@@ -149,11 +149,11 @@ export function HostList({ inboundId, initialHosts, inbound, showHeader = true }
                             <span className="font-medium text-xs truncate">
                                 {host.remark || (host.address || "Default")}
                             </span>
-                            <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
+                            <Badge variant="outline" className="text-[11px] h-4 px-1 shrink-0">
                                 P:{host.priority}
                             </Badge>
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                        <div className="flex items-center gap-2 text-[12px] text-muted-foreground mt-0.5">
                             {host.address && <span>{host.address}</span>}
                             {host.port != null && <span>:{host.port}</span>}
                             {host.sni && (
@@ -186,7 +186,7 @@ export function HostList({ inboundId, initialHosts, inbound, showHeader = true }
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    className="h-7 text-[10px] px-2"
+                                    className="h-7 text-[11px] px-2"
                                     onClick={() => handleDelete(host.id)}
                                 >
                                     Confirm
@@ -194,7 +194,7 @@ export function HostList({ inboundId, initialHosts, inbound, showHeader = true }
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 text-[10px] px-2"
+                                    className="h-7 text-[11px] px-2"
                                     onClick={() => setDeleteConfirm(null)}
                                 >
                                     Cancel

@@ -202,7 +202,7 @@ export function AccountDetailsSheet() {
                         {account.inbound?.tag && (
                             <>
                                 <span>·</span>
-                                <Badge variant="outline" className="text-[10px] h-4 px-1">{account.inbound.tag}</Badge>
+                                <Badge variant="outline" className="text-[11px] h-4 px-1">{account.inbound.tag}</Badge>
                             </>
                         )}
                     </div>
@@ -231,7 +231,7 @@ export function AccountDetailsSheet() {
                                 />
                             </div>
                             {stats.totalLimit > 0 && (
-                                <p className="text-[10px] text-muted-foreground">
+                                <p className="text-[11px] text-muted-foreground">
                                     {stats.usagePercent.toFixed(1)}% used{stats.isShared ? " (pool)" : ""}
                                 </p>
                             )}
@@ -479,7 +479,7 @@ export function AccountDetailsSheet() {
                                 Delete
                             </Button>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-[11px] text-muted-foreground">
                             Disable temporarily blocks access. Delete removes the record permanently.
                         </p>
                     </div>

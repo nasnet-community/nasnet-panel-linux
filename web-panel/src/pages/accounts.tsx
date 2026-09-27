@@ -297,7 +297,7 @@ export default function AccountsPage() {
                             <HiOutlineFunnel className="w-4 h-4" />
                             Filters
                             {activeFilterCount > 0 && (
-                                <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center text-[10px]">
+                                <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center text-[11px]">
                                     {activeFilterCount}
                                 </Badge>
                             )}

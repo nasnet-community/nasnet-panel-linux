@@ -148,7 +148,7 @@ export function DangerSection({
                         </Button>
                     </div>
                 )}
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     {modes.find((m) => m.value === panelPwMode)?.hint}
                 </p>
             </div>
@@ -214,7 +214,7 @@ export function DangerSection({
                         Delete
                     </Button>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                     Revoke disables access; the record stays. Delete removes everything permanently.
                 </p>
             </div>

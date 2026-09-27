@@ -28,8 +28,8 @@ export function MetricBar({ value, max = 100, label, showValue = true, size = "s
         <div className={cn("space-y-1", className)}>
             {(label || showValue) && (
                 <div className="flex items-center justify-between">
-                    {label && <span className="text-[10px] sm:text-xs md:text-[13px] text-muted-foreground font-medium uppercase tracking-wider">{label}</span>}
-                    {showValue && <span className={cn("text-[10px] sm:text-xs md:text-[13px] font-bold", getTextColor(percent))}>{percent.toFixed(0)}%</span>}
+                    {label && <span className="text-[11px] sm:text-xs md:text-[14px] text-muted-foreground font-medium uppercase tracking-wider">{label}</span>}
+                    {showValue && <span className={cn("text-[11px] sm:text-xs md:text-[14px] font-bold", getTextColor(percent))}>{percent.toFixed(0)}%</span>}
                 </div>
             )}
             <div

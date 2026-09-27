@@ -152,21 +152,21 @@ export const SwipeableHostCard = React.memo(function SwipeableHostCard({
                     onClick={() => handleAction(onEdit)}
                 >
                     <HiOutlinePencil className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Edit</span>
+                    <span className="text-[11px] font-medium">Edit</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-muted-foreground text-white active:bg-muted-foreground/80"
                     onClick={() => handleAction(onDuplicate)}
                 >
                     <HiOutlineDuplicate className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Duplicate</span>
+                    <span className="text-[11px] font-medium">Duplicate</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-red-600 text-white active:bg-red-700"
                     onClick={() => handleAction(onDelete)}
                 >
                     <HiOutlineTrash className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Delete</span>
+                    <span className="text-[11px] font-medium">Delete</span>
                 </button>
             </motion.div>
 

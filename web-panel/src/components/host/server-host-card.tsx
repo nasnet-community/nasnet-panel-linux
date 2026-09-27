@@ -131,14 +131,14 @@ export const ServerHostCard = React.memo(function ServerHostCard({
             {/* Badges: protocol, security, priority */}
             <div className="flex items-center gap-1.5 flex-wrap mt-2">
                 {protocol && (
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono">
+                    <Badge variant="secondary" className="text-[11px] h-5 px-1.5 font-mono">
                         {protocol}
                     </Badge>
                 )}
-                <Badge variant={securityBadge.variant} className="text-[10px] h-5 px-1.5">
+                <Badge variant={securityBadge.variant} className="text-[11px] h-5 px-1.5">
                     {securityBadge.label}
                 </Badge>
-                <Badge variant="outline" className="text-[10px] h-5 px-1.5">
+                <Badge variant="outline" className="text-[11px] h-5 px-1.5">
                     P:{host.priority}
                 </Badge>
             </div>
@@ -162,7 +162,7 @@ export const ServerHostCard = React.memo(function ServerHostCard({
                 <div className="flex flex-wrap gap-1 mt-2">
                     {host.tags.map((tag) => (
                         <button key={tag} onClick={(e) => { e.stopPropagation(); onTagClick(tag) }}>
-                            <Badge variant="secondary" className="text-[10px] h-4 px-1 cursor-pointer hover:bg-primary/20">
+                            <Badge variant="secondary" className="text-[11px] h-4 px-1 cursor-pointer hover:bg-primary/20">
                                 #{tag}
                             </Badge>
                         </button>

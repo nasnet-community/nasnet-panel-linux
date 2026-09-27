@@ -173,9 +173,9 @@ function TiltDial({ status }: { status: StarlinkStatus }) {
             {/* Without these the arc's two ends are indistinguishable. Both
                 are nudged off-axis so the needle can't sit on top of them. */}
             <text x={horizonLx - 4} y={horizonLy - 8} textAnchor="end"
-                className="fill-muted-foreground text-[13px] font-medium">0°</text>
+                className="fill-muted-foreground text-[14px] font-medium">0°</text>
             <text x={zenithLx - 8} y={zenithLy + 10} textAnchor="end"
-                className="fill-muted-foreground text-[13px] font-medium">90°</text>
+                className="fill-muted-foreground text-[14px] font-medium">90°</text>
         </svg>
     )
 }

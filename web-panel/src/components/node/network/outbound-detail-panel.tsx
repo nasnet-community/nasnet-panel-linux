@@ -32,7 +32,7 @@ export function OutboundDetailPanel({
                 <TabsTrigger value="rules">
                     Used by
                     {usageTotal > 0 && (
-                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[10px]">{usageTotal}</Badge>
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-[11px]">{usageTotal}</Badge>
                     )}
                 </TabsTrigger>
             </TabsList>
@@ -91,7 +91,7 @@ function OutboundDetails({ outbound, route, details }: { outbound: Outbound; rou
         <dl className="grid grid-cols-1 @xl:grid-cols-2 gap-x-8 gap-y-0 rounded-lg border bg-card px-4 py-1">
             {rows.map((r, i) => (
                 <div key={`${r.label}-${i}`} className="flex items-baseline gap-3 py-2 border-b border-border/60 last:border-b-0 @xl:[&:nth-last-child(2)]:border-b-0">
-                    <dt className="w-24 shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">{r.label}</dt>
+                    <dt className="w-24 shrink-0 text-[12px] uppercase tracking-wide text-muted-foreground">{r.label}</dt>
                     <dd className="min-w-0 flex-1 font-mono text-xs break-all">{r.value}</dd>
                     {r.copy && (
                         <button
@@ -147,7 +147,7 @@ function OutboundUsageList({ usage, isDefault, onOpenRules }: { usage: OutboundU
                             )} />
                             <span className="font-mono text-xs font-medium truncate">{rule.rule_tag}</span>
                             {rule.remark && <span className="text-xs text-muted-foreground truncate">{rule.remark}</span>}
-                            <span className="ml-auto text-[11px] text-muted-foreground shrink-0">rule</span>
+                            <span className="ml-auto text-[12px] text-muted-foreground shrink-0">rule</span>
                         </button>
                     ))}
                     {usage.balancers.map(b => (
@@ -160,7 +160,7 @@ function OutboundUsageList({ usage, isDefault, onOpenRules }: { usage: OutboundU
                             <HiOutlineScale className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                             <span className="font-mono text-xs font-medium truncate">{b.tag}</span>
                             <span className="text-xs text-muted-foreground">{b.strategy}</span>
-                            <span className="ml-auto text-[11px] text-muted-foreground shrink-0">balancer</span>
+                            <span className="ml-auto text-[12px] text-muted-foreground shrink-0">balancer</span>
                         </button>
                     ))}
                 </div>

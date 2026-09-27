@@ -122,7 +122,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
           <span className="font-mono text-sm font-semibold tracking-tight text-red-500/90">
             Danger Zone
           </span>
-          <span className="ml-auto font-mono text-[10px] uppercase tracking-widest text-red-500/40">
+          <span className="ml-auto font-mono text-[11px] uppercase tracking-widest text-red-500/40">
             Irreversible operations
           </span>
         </div>
@@ -143,7 +143,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                     Removes this server from the panel and attempts to uninstall its local agent and Xray.
                     Force deletion also removes linked accounts and configuration.
                   </p>
-                  <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                  <p className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground/60">
                     Panel record removal · local agent and Xray uninstall
                   </p>
                 </div>
@@ -176,7 +176,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                   node OS and agent stay intact. Optionally removes the hub
                   record.
                 </p>
-                <p className="font-mono text-[10px] uppercase tracking-wide text-amber-500/70">
+                <p className="font-mono text-[11px] uppercase tracking-wide text-amber-500/70">
                   Partially reversible · configs are lost
                 </p>
               </div>
@@ -208,7 +208,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                   keys, swap, TLS certs, journals and agent state. Streams
                   live progress. Cannot be undone.
                 </p>
-                <p className="font-mono text-[10px] uppercase tracking-wide text-red-500/70">
+                <p className="font-mono text-[11px] uppercase tracking-wide text-red-500/70">
                   Catastrophic · permanent · no recovery
                 </p>
               </div>

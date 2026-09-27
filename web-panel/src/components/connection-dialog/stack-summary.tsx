@@ -27,7 +27,7 @@ export function StackSummary({ tokens, onJump, className }: StackSummaryProps) {
                 const chip = (
                     <span
                         className={cn(
-                            "font-mono text-[11px] leading-4",
+                            "font-mono text-[12px] leading-4",
                             t.dim
                                 ? "text-text-tertiary"
                                 : "rounded-[5px] bg-accent px-1.5 py-px text-text-secondary",
@@ -39,7 +39,7 @@ export function StackSummary({ tokens, onJump, className }: StackSummaryProps) {
                 )
                 return (
                     <Fragment key={`${t.label}-${i}`}>
-                        {i > 0 && <span className="text-[11px] leading-4 text-text-disabled">·</span>}
+                        {i > 0 && <span className="text-[12px] leading-4 text-text-disabled">·</span>}
                         {clickable ? (
                             <button type="button" onClick={() => onJump?.(t.tab!)} className="rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
                                 {chip}

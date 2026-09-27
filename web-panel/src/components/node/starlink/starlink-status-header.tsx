@@ -100,7 +100,7 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
                         {status.available && status.software_version && (
                             <span className="hidden items-center gap-2 sm:flex">
                                 <Dot />
-                                <span className="truncate font-mono text-[11px]">{status.software_version}</span>
+                                <span className="truncate font-mono text-[12px]">{status.software_version}</span>
                             </span>
                         )}
 
@@ -135,7 +135,7 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
                 >
                     <Bell className={`h-3.5 w-3.5 ${alerts.length === 0 ? "text-muted-foreground" : hasCritical ? "text-red-400" : "text-amber-400"}`} aria-hidden />
                     Alerts
-                    <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                    <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[12px] font-semibold tabular-nums ${
                         alerts.length === 0
                             ? "bg-foreground/10 text-muted-foreground"
                             : hasCritical

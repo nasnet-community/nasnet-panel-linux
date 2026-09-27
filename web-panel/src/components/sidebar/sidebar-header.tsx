@@ -49,7 +49,7 @@ export function SidebarHeader({ collapsed }: SidebarHeaderProps) {
                 </div>
                 {!collapsed && (
                     <>
-                        <span className="font-mono text-[11px] font-semibold tracking-[0.06em] uppercase text-primary whitespace-nowrap">
+                        <span className="font-mono text-[12px] font-semibold tracking-[0.06em] uppercase text-primary whitespace-nowrap">
                             NASNET·PANEL
                         </span>
                         <span

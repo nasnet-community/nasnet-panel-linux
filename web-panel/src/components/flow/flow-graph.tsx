@@ -190,7 +190,7 @@ function EdgeShape({
                     x={mx}
                     y={(y1 + y2) / 2 - 8}
                     textAnchor="middle"
-                    fontSize="10"
+                    fontSize="11"
                     fill={labelColor}
                 >
                     {edge.label}
@@ -201,7 +201,7 @@ function EdgeShape({
                     x={mx}
                     y={(y1 + y2) / 2 + 16}
                     textAnchor="middle"
-                    fontSize="10"
+                    fontSize="11"
                     fill={labelColor}
                     className="tabular-nums"
                 >
@@ -285,12 +285,12 @@ function NodeShape({
                 strokeWidth={selected ? 2.5 : 1.5}
                 strokeDasharray={ghost ? "5 4" : undefined}
             />
-            <text x="12" y="21" fontSize="12.5" fontWeight="500" fill={palette.foreground}>
+            <text x="12" y="21" fontSize="13.5" fontWeight="500" fill={palette.foreground}>
                 {node.label}
             </text>
             {node.sublabel && (
-                <text x="12" y="37" fontSize="10.5" fill={palette.mutedForeground}>
-                    {truncate(node.sublabel, 22)}
+                <text x="12" y="37" fontSize="11.5" fill={palette.mutedForeground}>
+                    {truncate(node.sublabel, 21)}
                 </text>
             )}
             {flagged && <circle cx={NODE_W - 12} cy="12" r="4.5" fill={palette.danger || "#ef4444"} />}

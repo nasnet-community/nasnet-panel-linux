@@ -20,7 +20,7 @@ export function SystemHealth({ isEditMode }: SystemHealthProps) {
             isEditMode={isEditMode}
             headerRight={
                 data && (
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                         {data.nodes.filter((n) => n.isOnline).length}/{data.nodes.length} online
                     </span>
                 )
@@ -53,12 +53,12 @@ export function SystemHealth({ isEditMode }: SystemHealthProps) {
                                     )} />
                                     <span className="text-sm font-medium truncate">{node.name}</span>
                                     {node.countryCode && (
-                                        <span className="text-[9px] text-muted-foreground bg-muted px-1 rounded">
+                                        <span className="text-[10px] text-muted-foreground bg-muted px-1 rounded">
                                             {node.countryCode}
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
+                                <div className="flex items-center gap-2 text-[11px] text-muted-foreground shrink-0">
                                     {node.isOnline && (
                                         <>
                                             <span>&uarr;{formatBytes(node.totalUplink)}</span>
@@ -74,7 +74,7 @@ export function SystemHealth({ isEditMode }: SystemHealthProps) {
                                     <MetricBar value={node.diskPercent} label="Disk" size="sm" />
                                 </div>
                             ) : (
-                                <p className="text-[10px] text-muted-foreground">
+                                <p className="text-[11px] text-muted-foreground">
                                     {node.isOnline ? "No agent stats" : "Offline"}
                                 </p>
                             )}

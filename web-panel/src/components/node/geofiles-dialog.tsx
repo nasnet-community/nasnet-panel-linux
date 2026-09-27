@@ -131,7 +131,7 @@ export function GeofilesDialog({
                         </span>
                         <div className="min-w-0">
                             <div className="font-medium text-sm">{region.label}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">
+                            <div className="text-[12px] text-muted-foreground truncate">
                                 {region.description}
                             </div>
                         </div>

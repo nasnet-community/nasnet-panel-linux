@@ -152,7 +152,7 @@ export function FilterRail({ value, onChange, onClearAll, className, retentionDa
                             <Badge
                                 key={e}
                                 variant="secondary"
-                                className="gap-1 pr-1 text-[10px] font-mono"
+                                className="gap-1 pr-1 text-[11px] font-mono"
                             >
                                 <span className="truncate max-w-[140px]">{e}</span>
                                 <button
@@ -221,7 +221,7 @@ function RailSection({
                 <div className="flex items-center gap-2">
                     <Label className="text-xs uppercase tracking-wider font-semibold text-muted-foreground">{label}</Label>
                     {badge && (
-                        <span className="px-1.5 py-px rounded text-[10px] font-mono font-semibold bg-foreground/10 text-foreground tabular-nums">
+                        <span className="px-1.5 py-px rounded text-[11px] font-mono font-semibold bg-foreground/10 text-foreground tabular-nums">
                             {badge}
                         </span>
                     )}
@@ -230,7 +230,7 @@ function RailSection({
                     <button
                         type="button"
                         onClick={onClear}
-                        className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                        className="text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
                     >
                         Clear
                     </button>

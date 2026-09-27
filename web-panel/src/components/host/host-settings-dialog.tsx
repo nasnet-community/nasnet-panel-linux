@@ -463,7 +463,7 @@ export function HostSettingsDialog({
     const tagSuggestions = existingTags.filter((t) => !tags.includes(t))
 
     const note = (text: string) => (
-        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">{text}</p>
+        <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">{text}</p>
     )
 
     return (
@@ -477,18 +477,18 @@ export function HostSettingsDialog({
                     </DialogDescription>
                     {targetInbound && (
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px] uppercase">
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[11px] uppercase">
                                 {protocol || "unknown"}
                             </Badge>
                             {network && (
-                                <Badge variant="outline" className="h-5 px-1.5 text-[10px] uppercase">
+                                <Badge variant="outline" className="h-5 px-1.5 text-[11px] uppercase">
                                     {network}
                                 </Badge>
                             )}
-                            <Badge variant="outline" className="h-5 px-1.5 text-[10px] uppercase">
+                            <Badge variant="outline" className="h-5 px-1.5 text-[11px] uppercase">
                                 {effSecurity || "none"}
                             </Badge>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[11px] text-muted-foreground">
                                 {targetInbound.tag} — only fields this inbound uses are shown
                             </span>
                         </div>
@@ -605,7 +605,7 @@ export function HostSettingsDialog({
                                     <button
                                         key={v.var}
                                         type="button"
-                                        className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                                        className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                                         title={v.desc}
                                         onClick={() => setRemark((prev) => prev + v.var)}
                                     >
@@ -675,7 +675,7 @@ export function HostSettingsDialog({
                                     placeholder="0"
                                     className="h-9 text-sm"
                                 />
-                                <p className="text-[10px] text-muted-foreground">Lower = higher priority</p>
+                                <p className="text-[11px] text-muted-foreground">Lower = higher priority</p>
                             </div>
                             <div className="flex items-center justify-between pt-6">
                                 <Label className="text-xs">Disabled</Label>
@@ -695,7 +695,7 @@ export function HostSettingsDialog({
                                     placeholder={inheritPlaceholder(targetInbound?.address)}
                                     className="h-9 text-sm"
                                 />
-                                <p className="text-[10px] text-muted-foreground">CDN hostname or IP clients dial</p>
+                                <p className="text-[11px] text-muted-foreground">CDN hostname or IP clients dial</p>
                             </div>
                             <div className="space-y-1.5">
                                 <Label className="text-xs">Port</Label>
@@ -808,7 +808,7 @@ export function HostSettingsDialog({
                                                         />
                                                     </div>
                                                 </div>
-                                                <p className="text-[10px] text-muted-foreground">
+                                                <p className="text-[11px] text-muted-foreground">
                                                     Override only when this host fronts a different Reality server than the
                                                     inbound advertises.
                                                 </p>
@@ -875,7 +875,7 @@ export function HostSettingsDialog({
                                     placeholder={inheritPlaceholder(targetInbound?.transport_settings?.serviceName)}
                                     className="h-9 text-sm"
                                 />
-                                <p className="text-[10px] text-muted-foreground">
+                                <p className="text-[11px] text-muted-foreground">
                                     Left empty, Path is mirrored into serviceName.
                                 </p>
                             </div>
@@ -950,7 +950,7 @@ export function HostSettingsDialog({
                                             ))}
                                         </SelectContent>
                                     </Select>
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-[11px] text-muted-foreground">
                                         Vision needs raw TCP + TLS/Reality — clear it for CDN hosts.
                                     </p>
                                 </div>
@@ -962,7 +962,7 @@ export function HostSettingsDialog({
                                         placeholder={inheritPlaceholder(targetInbound?.vless_settings?.encryption || "none")}
                                         className="h-9 text-sm font-mono"
                                     />
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-[11px] text-muted-foreground">
                                         Post-quantum (mlkem768…) client string; "none" for classic VLESS.
                                     </p>
                                 </div>
@@ -1003,7 +1003,7 @@ export function HostSettingsDialog({
                                         placeholder="Inherit from inbound finalmask"
                                         className="h-9 text-sm font-mono"
                                     />
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-[11px] text-muted-foreground">
                                         Must match the server's mask password, or the QUIC packets never decode.
                                     </p>
                                 </div>
@@ -1015,7 +1015,7 @@ export function HostSettingsDialog({
                                         placeholder={inheritPlaceholder(targetInbound?.port_range)}
                                         className="h-9 text-sm"
                                     />
-                                    <p className="text-[10px] text-muted-foreground">e.g. 20000-25000 — the listener must bind that range.</p>
+                                    <p className="text-[11px] text-muted-foreground">e.g. 20000-25000 — the listener must bind that range.</p>
                                 </div>
                             </div>
                         )}
@@ -1058,7 +1058,7 @@ export function HostSettingsDialog({
                                     />
                                 </div>
                             </div>
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="text-[11px] text-muted-foreground">
                                 Emitted as fragment=packets,length,interval. Clients that don't support it ignore the value.
                             </p>
                         </div>

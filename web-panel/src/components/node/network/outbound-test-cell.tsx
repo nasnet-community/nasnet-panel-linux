@@ -41,7 +41,7 @@ export function OutboundTestCell({
             <div className={wrap}>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <span className="text-[11px] font-mono text-muted-foreground/50 cursor-help">n/a</span>
+                        <span className="text-[12px] font-mono text-muted-foreground/50 cursor-help">n/a</span>
                     </TooltipTrigger>
                     <TooltipContent>A {protocol} outbound has no upstream to probe</TooltipContent>
                 </Tooltip>
@@ -51,7 +51,7 @@ export function OutboundTestCell({
 
     if (isTesting) {
         return (
-            <div className={cn(wrap, "gap-1.5 text-[11px] text-muted-foreground")}>
+            <div className={cn(wrap, "gap-1.5 text-[12px] text-muted-foreground")}>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Testing…
             </div>
@@ -102,7 +102,7 @@ export function OutboundTestCell({
                                 <span className={cn("font-medium", latencyTone(result.latency_ms))}>{result.latency_ms}ms</span>
                             )}
                         </span>
-                        <span className="text-[10px] text-muted-foreground/70">{formatRelativeTime(entry.tested_at)}</span>
+                        <span className="text-[11px] text-muted-foreground/70">{formatRelativeTime(entry.tested_at)}</span>
                     </button>
                 </TooltipTrigger>
                 <TooltipContent>{tip}</TooltipContent>

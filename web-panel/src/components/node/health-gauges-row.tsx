@@ -89,14 +89,14 @@ export function HealthGaugesRow({ cpu, memory, disk, chartData, isLoading }: Hea
                                 )}
                             </div>
                             <div className="flex items-center gap-1">
-                                <span className="text-[11px] uppercase font-bold text-muted-foreground tracking-wider">
+                                <span className="text-[12px] uppercase font-bold text-muted-foreground tracking-wider">
                                     {metric.label}
                                 </span>
                                 <ChevronDown
                                     className={`w-3 h-3 text-muted-foreground/50 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
                                 />
                             </div>
-                            <span className="text-[11px] text-muted-foreground/70 font-medium">
+                            <span className="text-[12px] text-muted-foreground/70 font-medium">
                                 Max {getMax(metric.dataKey).toFixed(0)}%
                             </span>
                         </button>
@@ -119,15 +119,15 @@ export function HealthGaugesRow({ cpu, memory, disk, chartData, isLoading }: Hea
                             {/* Min / Avg / Max stats row */}
                             <div className="flex justify-between px-2 mb-2">
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Min</span>
+                                    <span className="text-[12px] uppercase font-bold text-muted-foreground/60 tracking-wider">Min</span>
                                     <span className="text-xs font-bold font-mono">{getMin(expandedConfig.dataKey).toFixed(1)}%</span>
                                 </div>
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Avg</span>
+                                    <span className="text-[12px] uppercase font-bold text-muted-foreground/60 tracking-wider">Avg</span>
                                     <span className="text-xs font-bold font-mono">{getAvg(expandedConfig.dataKey).toFixed(1)}%</span>
                                 </div>
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[11px] uppercase font-bold text-muted-foreground/60 tracking-wider">Max</span>
+                                    <span className="text-[12px] uppercase font-bold text-muted-foreground/60 tracking-wider">Max</span>
                                     <span className="text-xs font-bold font-mono">{getMax(expandedConfig.dataKey).toFixed(1)}%</span>
                                 </div>
                             </div>

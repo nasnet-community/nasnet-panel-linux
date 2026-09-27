@@ -54,7 +54,7 @@ export function Callout({ tone = "info", children, className }: { tone?: Callout
     const Icon = calloutIcon[tone]
     return (
         <div className={cn(
-            "flex items-start gap-2.5 rounded-md border border-border-subtle bg-card px-3 py-2.5 text-[13px] leading-[18px] text-muted-foreground",
+            "flex items-start gap-2.5 rounded-md border border-border-subtle bg-card px-3 py-2.5 text-[14px] leading-[18px] text-muted-foreground",
             className,
         )}>
             <Icon className={cn("mt-px h-4 w-4 shrink-0", calloutIconColor[tone])} />
@@ -114,7 +114,7 @@ export function Disclosure({ title, summary, defaultOpen = false, open, onOpenCh
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/40"
             >
                 <ChevronRight className={cn("h-4 w-4 shrink-0 text-text-tertiary transition-transform", isOpen && "rotate-90")} />
-                <span className="text-[13px] font-medium leading-[18px]">{title}</span>
+                <span className="text-[14px] font-medium leading-[18px]">{title}</span>
                 {summary && !isOpen && (
                     <span className="ml-auto truncate text-xs text-text-tertiary">{summary}</span>
                 )}

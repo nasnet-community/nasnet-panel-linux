@@ -194,7 +194,7 @@ function AddDeviceSheet({
                                 </SelectContent>
                             </Select>
                             {selectedServer?.endpoint && (
-                                <p className="text-[11px] text-muted-foreground font-mono">
+                                <p className="text-[12px] text-muted-foreground font-mono">
                                     {selectedServer.endpoint}
                                 </p>
                             )}

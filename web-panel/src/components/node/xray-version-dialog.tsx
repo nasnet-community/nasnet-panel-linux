@@ -119,17 +119,17 @@ export function XrayVersionDialog({ nodeId, currentVersion, isOnline, onRefresh 
                                                         v{release.version}
                                                     </span>
                                                     {isCurrent && (
-                                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 uppercase font-bold text-emerald-500 border-emerald-500/30">
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 uppercase font-bold text-emerald-500 border-emerald-500/30">
                                                             Current
                                                         </Badge>
                                                     )}
                                                     {isSelected && (
-                                                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 uppercase font-bold text-indigo-500 border-indigo-500/30">
+                                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 uppercase font-bold text-indigo-500 border-indigo-500/30">
                                                             Selected
                                                         </Badge>
                                                     )}
                                                 </div>
-                                                <span className="text-[11px] text-muted-foreground">
+                                                <span className="text-[12px] text-muted-foreground">
                                                     {formatDate(release.published_at, "long")}
                                                 </span>
                                             </div>

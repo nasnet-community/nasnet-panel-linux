@@ -180,7 +180,7 @@ function RuleRowCells({
                     {rule.remark && (
                         <p className="text-xs text-muted-foreground truncate">
                             {rule.remark.startsWith("[reverse]") ? (
-                                <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1 text-purple-400 border-purple-500/30">Reverse</Badge>
+                                <Badge variant="outline" className="text-[11px] px-1 py-0 mr-1 text-purple-400 border-purple-500/30">Reverse</Badge>
                             ) : null}
                             {rule.remark.startsWith("[reverse]") ? rule.remark.replace(/^\[reverse\]\s*/, "") : rule.remark}
                         </p>

@@ -70,12 +70,12 @@ function ConversationItem({ conv, isSelected, isOnline, onClick }: ConversationI
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
                     {conv.last_message_at && (
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                             {relativeTime}
                         </span>
                     )}
                     {hasUnread && (
-                        <Badge className="h-5 min-w-5 px-1 text-[10px] rounded-full flex items-center justify-center">
+                        <Badge className="h-5 min-w-5 px-1 text-[11px] rounded-full flex items-center justify-center">
                             {conv.unread_count}
                         </Badge>
                     )}
@@ -443,12 +443,12 @@ function ChatViewPanel({ conv, subscriptionId, isMobile, onBack, onUserOnlineCha
                             <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shrink-0" title="User is online" />
                         )}
                         {conv?.subscription_status && (
-                            <Badge variant={statusVariant} className="text-[10px] px-1.5 py-0 shrink-0">
+                            <Badge variant={statusVariant} className="text-[11px] px-1.5 py-0 shrink-0">
                                 {conv.subscription_status}
                             </Badge>
                         )}
                         {ws.status !== "connected" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                            <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
                                 {ws.status === "connecting" ? "Connecting..." : "Reconnecting..."}
                             </span>
                         )}
@@ -490,7 +490,7 @@ function ChatViewPanel({ conv, subscriptionId, isMobile, onBack, onUserOnlineCha
                             {pinnedMessages[0].content}
                         </span>
                         {pinnedMessages.length > 1 && (
-                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-foreground">
+                            <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-full bg-primary/15 text-foreground">
                                 +{pinnedMessages.length - 1}
                             </span>
                         )}
@@ -579,7 +579,7 @@ function ChatViewPanel({ conv, subscriptionId, isMobile, onBack, onUserOnlineCha
                     </Button>
                 </div>
                 {input.length > 1800 && (
-                    <div className="text-[10px] text-muted-foreground text-right mt-1">
+                    <div className="text-[11px] text-muted-foreground text-right mt-1">
                         {input.length}/2000
                     </div>
                 )}

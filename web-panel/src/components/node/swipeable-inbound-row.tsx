@@ -171,14 +171,14 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                     onClick={() => handleAction(() => onEdit(inbound))}
                 >
                     <HiOutlineCog className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Edit</span>
+                    <span className="text-[11px] font-medium">Edit</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-amber-600 text-white active:bg-amber-700"
                     onClick={() => handleAction(() => onCopy(inbound))}
                 >
                     <HiOutlineClipboardCopy className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Copy</span>
+                    <span className="text-[11px] font-medium">Copy</span>
                 </button>
                 <button
                     className={cn(
@@ -188,21 +188,21 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                     onClick={() => handleAction(() => onToggleDisabled(inbound))}
                 >
                     {inbound.is_disabled ? <Power className="w-5 h-5" /> : <HiOutlineBan className="w-5 h-5" />}
-                    <span className="text-[10px] font-medium">{inbound.is_disabled ? "Enable" : "Disable"}</span>
+                    <span className="text-[11px] font-medium">{inbound.is_disabled ? "Enable" : "Disable"}</span>
                 </button>
                 <button
                     className="w-16 h-full flex flex-col items-center justify-center text-white bg-blue-500"
                     onClick={() => handleAction(() => onMigrate(inbound))}
                 >
                     <ArrowRightLeft className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Migrate</span>
+                    <span className="text-[11px] font-medium">Migrate</span>
                 </button>
                 <button
                     className="w-16 flex flex-col items-center justify-center gap-1 bg-red-600 text-white active:bg-red-700"
                     onClick={() => handleAction(() => onDelete(inbound))}
                 >
                     <Trash2 className="w-5 h-5" />
-                    <span className="text-[10px] font-medium">Delete</span>
+                    <span className="text-[11px] font-medium">Delete</span>
                 </button>
             </motion.div>
 
@@ -253,7 +253,7 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                         </span>
                         <span className="font-mono text-sm text-muted-foreground shrink-0">:{inbound.port}</span>
                         {inbound.is_disabled && (
-                            <span className="text-[11px] text-muted-foreground shrink-0">Disabled</span>
+                            <span className="text-[12px] text-muted-foreground shrink-0">Disabled</span>
                         )}
                     </div>
 
@@ -267,11 +267,11 @@ export const SwipeableInboundRow = React.memo(function SwipeableInboundRow({
                 </div>
 
                 {/* One meta line: protocol, who is on, how much, what lapsed. */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 ml-[34px] font-mono text-[11px] text-muted-foreground tabular-nums">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 ml-[34px] font-mono text-[12px] text-muted-foreground tabular-nums">
                     <Badge
                         variant="outline"
                         className={cn(
-                            "font-mono text-[10px] px-1.5 py-0 h-5",
+                            "font-mono text-[11px] px-1.5 py-0 h-5",
                             protocolColors[inbound.protocol.toLowerCase()] || "",
                             inbound.is_disabled && "opacity-60"
                         )}

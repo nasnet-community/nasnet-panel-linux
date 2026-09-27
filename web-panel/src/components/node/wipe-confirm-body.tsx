@@ -21,7 +21,7 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
     <div className="space-y-4">
       {/* Risk banner */}
       <div className="rounded-md border border-amber-500/30 bg-amber-500/6 px-4 py-3">
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-widest text-amber-400">
+        <p className="font-mono text-[12px] font-semibold uppercase tracking-widest text-amber-400">
           Partially reversible
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -34,7 +34,7 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
 
       {/* What gets wiped */}
       <div>
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/60">
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-muted-foreground/60">
           Affected data
         </p>
         <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -50,7 +50,7 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
           ].map((item) => (
             <li
               key={item}
-              className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground"
+              className="flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground"
             >
               <span className="size-1 rounded-full bg-amber-500/70 shrink-0" />
               {item}

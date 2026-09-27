@@ -118,7 +118,7 @@ export function DesktopInboundRow(props: DesktopInboundRowProps) {
                         </span>
                         <span className="font-mono text-sm text-muted-foreground shrink-0">:{inbound.port}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground truncate">
+                    <div className="flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground truncate">
                         {disabled && <span className="font-medium text-foreground/70 shrink-0">Disabled</span>}
                         {disabled && <span className="text-muted-foreground/50 shrink-0">·</span>}
                         <span className="shrink-0">{inbound.listen || "0.0.0.0"}</span>
@@ -136,14 +136,14 @@ export function DesktopInboundRow(props: DesktopInboundRowProps) {
                     <Badge
                         variant="outline"
                         className={cn(
-                            "font-mono text-[10px] px-1.5 py-0 h-5 shrink-0",
+                            "font-mono text-[11px] px-1.5 py-0 h-5 shrink-0",
                             protocolColors[inbound.protocol.toLowerCase()] || "",
                             disabled && "opacity-60",
                         )}
                     >
                         {inbound.protocol.toUpperCase()}
                     </Badge>
-                    <span className="font-mono text-[11px] text-muted-foreground truncate">
+                    <span className="font-mono text-[12px] text-muted-foreground truncate">
                         {(inbound.network || "tcp").toUpperCase()}
                         {inbound.security && inbound.security !== "none" && ` · ${inbound.security.toUpperCase()}`}
                     </span>
@@ -158,7 +158,7 @@ export function DesktopInboundRow(props: DesktopInboundRowProps) {
                         <span className="text-muted-foreground/50"> / </span>
                         <span className={cn(accountCount === 0 && "text-muted-foreground")}>{accountCount}</span>
                     </div>
-                    <div className="text-[11px] text-muted-foreground">online</div>
+                    <div className="text-[12px] text-muted-foreground">online</div>
                 </div>
 
                 {/* Traffic */}

@@ -103,7 +103,7 @@ export default function AuditPage() {
             {/* Summary Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 lg:gap-5">
                 <div className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[10px] sm:text-[11px] md:text-xs">
+                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
                         <Activity className="w-3.5 h-3.5 md:w-4 md:h-4" />
                         <span className="uppercase tracking-wider font-medium">Total Events</span>
                     </div>
@@ -111,7 +111,7 @@ export default function AuditPage() {
                 </div>
                 {Object.entries(entityBreakdown).slice(0, 3).map(([type, count]) => (
                     <div key={type} className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                        <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[10px] sm:text-[11px] md:text-xs">
+                        <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
                             <span className="uppercase tracking-wider font-medium">{type}</span>
                         </div>
                         <p className="text-lg md:text-xl lg:text-2xl font-bold">{count}</p>

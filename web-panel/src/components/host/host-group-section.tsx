@@ -46,7 +46,7 @@ export function HostGroupSection({
                 <span className={cn(isInfo && "text-amber-600 dark:text-amber-400")}>
                     {label}
                 </span>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-1">
+                <Badge variant="secondary" className="text-[11px] h-4 px-1.5 ml-1">
                     {count}
                 </Badge>
             </button>

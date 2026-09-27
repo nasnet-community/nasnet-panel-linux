@@ -128,9 +128,9 @@ function RuleRow({ rule, onEdit }: { rule: AlertRule; onEdit: () => void }) {
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold">{rule.name}</h3>
-                    <Badge variant="outline" className="text-[10px] font-mono">{meta.label}</Badge>
+                    <Badge variant="outline" className="text-[11px] font-mono">{meta.label}</Badge>
                     {rule.last_fired_at && (
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge variant="secondary" className="text-[11px]">
                             last fired {formatRelativeTime(rule.last_fired_at)}
                         </Badge>
                     )}
@@ -305,10 +305,10 @@ function EventsTimeline({ events, rules }: { events: AlertEvent[]; rules: AlertR
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium text-sm">{ev.title}</span>
-                                {rule && <Badge variant="outline" className="text-[10px]">{rule.name}</Badge>}
+                                {rule && <Badge variant="outline" className="text-[11px]">{rule.name}</Badge>}
                                 <Badge
                                     variant={ev.status === "fired" ? "danger" : "success"}
-                                    className="text-[10px]"
+                                    className="text-[11px]"
                                 >
                                     {ev.status}
                                 </Badge>

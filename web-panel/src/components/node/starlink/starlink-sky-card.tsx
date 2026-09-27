@@ -62,11 +62,11 @@ export function StarlinkSkyCard({ status, mapData, onClick }: StarlinkSkyCardPro
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
                     <KeyValue label="SNR">
                         {status.is_snr_above_noise_floor && !status.is_snr_persistently_low ? (
-                            <Badge variant="outline" className="border-emerald-400/30 bg-emerald-400/5 px-2 py-0 text-[11px] text-emerald-400">Good</Badge>
+                            <Badge variant="outline" className="border-emerald-400/30 bg-emerald-400/5 px-2 py-0 text-[12px] text-emerald-400">Good</Badge>
                         ) : status.is_snr_persistently_low ? (
-                            <Badge variant="outline" className="border-red-400/30 bg-red-400/5 px-2 py-0 text-[11px] text-red-400">Low</Badge>
+                            <Badge variant="outline" className="border-red-400/30 bg-red-400/5 px-2 py-0 text-[12px] text-red-400">Low</Badge>
                         ) : (
-                            <Badge variant="outline" className="border-amber-400/30 bg-amber-400/5 px-2 py-0 text-[11px] text-amber-400">Fair</Badge>
+                            <Badge variant="outline" className="border-amber-400/30 bg-amber-400/5 px-2 py-0 text-[12px] text-amber-400">Fair</Badge>
                         )}
                     </KeyValue>
                     <KeyValue label="GPS">

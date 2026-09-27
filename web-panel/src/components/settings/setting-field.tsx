@@ -128,7 +128,7 @@ export function SettingField({ setting, isModified, isHighlighted, onChange, ret
             </Label>
             {isModified && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
             {setting.requires_restart && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-500/50 text-orange-500 shrink-0">
+                <Badge variant="outline" className="text-[11px] px-1.5 py-0 border-orange-500/50 text-orange-500 shrink-0">
                     Restart required
                 </Badge>
             )}
@@ -299,7 +299,7 @@ export function SettingField({ setting, isModified, isHighlighted, onChange, ret
                         {isForever ? (
                             <Badge
                                 variant="outline"
-                                className="text-[10px] font-medium whitespace-nowrap shrink-0 border-primary/40 bg-primary/10 text-primary uppercase tracking-wider"
+                                className="text-[11px] font-medium whitespace-nowrap shrink-0 border-primary/40 bg-primary/10 text-primary uppercase tracking-wider"
                                 title="Setting is 0 — rows will never be auto-cleaned. Enter a positive number of days to enable cleanup."
                             >
                                 keep forever
@@ -312,7 +312,7 @@ export function SettingField({ setting, isModified, isHighlighted, onChange, ret
                     </div>
                 </div>
                 {showStat && (
-                    <p className="text-[11px] text-muted-foreground/80 mt-1.5 font-mono tabular-nums">
+                    <p className="text-[12px] text-muted-foreground/80 mt-1.5 font-mono tabular-nums">
                         <span className="text-foreground/70">{formatRowCount(retentionStat!.rows)}</span>
                         <span className="opacity-60"> rows</span>
                         {retentionStat!.oldest_at && (

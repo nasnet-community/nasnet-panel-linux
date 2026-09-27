@@ -252,7 +252,7 @@ export function DashboardLayout() {
                                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-full bg-primary" />
                                     )}
                                     <tab.icon className="w-5 h-5" />
-                                    <span className="text-[10px] font-medium lowercase">{tab.mobileLabel || tab.label}</span>
+                                    <span className="text-[11px] font-medium lowercase">{tab.mobileLabel || tab.label}</span>
                                 </Link>
                             )
                         })}
@@ -269,7 +269,7 @@ export function DashboardLayout() {
                                 <div className="absolute top-1.5 right-1/2 translate-x-3 w-2 h-2 rounded-full bg-amber-500" />
                             )}
                             <HiDotsHorizontal className="w-5 h-5" />
-                            <span className="text-[10px] font-medium lowercase">More</span>
+                            <span className="text-[11px] font-medium lowercase">More</span>
                         </button>
                     </div>
                 </nav>
@@ -300,7 +300,7 @@ export function DashboardLayout() {
                                     <div key={section.label || "top"}>
                                         {section.label && (
                                             <div className="px-4 pt-3 pb-1">
-                                                <span className="font-mono text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground/70">
+                                                <span className="font-mono text-[11px] font-semibold tracking-[0.12em] uppercase text-muted-foreground/70">
                                                     // {section.label.toLowerCase()}
                                                 </span>
                                             </div>
@@ -324,9 +324,9 @@ export function DashboardLayout() {
                                                     )}
                                                 >
                                                     <item.icon className={cn(isNested ? "w-4 h-4" : "w-5 h-5")} />
-                                                    <span className={cn("flex-1 lowercase", isNested ? "text-[13px]" : "text-sm")}>{item.label}</span>
+                                                    <span className={cn("flex-1 lowercase", isNested ? "text-[14px]" : "text-sm")}>{item.label}</span>
                                                     {showBadge && (
-                                                        <span className="bg-amber-500 text-white text-[9px] font-bold rounded-full min-w-[18px] h-4.5 flex items-center justify-center px-1.5">
+                                                        <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-4.5 flex items-center justify-center px-1.5">
                                                             {mobileBadgeCount}
                                                         </span>
                                                     )}

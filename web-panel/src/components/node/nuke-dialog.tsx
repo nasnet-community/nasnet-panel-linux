@@ -94,7 +94,7 @@ function StepBadge({ step }: { step: Step }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px] tracking-widest",
+        "inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[11px] tracking-widest",
         colors[step],
       )}
     >
@@ -105,7 +105,7 @@ function StepBadge({ step }: { step: Step }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 font-mono text-[10px] tracking-widest text-muted-foreground/60 uppercase">
+    <p className="mb-2 font-mono text-[11px] tracking-widest text-muted-foreground/60 uppercase">
       {children}
     </p>
   )
@@ -341,7 +341,7 @@ export function NukeDialog({
 
         {/* Error */}
         {error && (
-          <p className="rounded-md border border-red-500/30 bg-red-500/8 px-3 py-2 font-mono text-[11px] text-red-400">
+          <p className="rounded-md border border-red-500/30 bg-red-500/8 px-3 py-2 font-mono text-[12px] text-red-400">
             {error}
           </p>
         )}
@@ -464,7 +464,7 @@ export function NukeDialog({
           <SectionLabel>Type to confirm</SectionLabel>
           <label className="block text-xs text-muted-foreground">
             Enter{" "}
-            <span className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-foreground">
+            <span className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[12px] font-semibold text-foreground">
               NUKE {nodeName}
             </span>{" "}
             exactly
@@ -483,12 +483,12 @@ export function NukeDialog({
             autoComplete="off"
           />
           {typed.length > 0 && !canExecute && (
-            <p className="font-mono text-[10px] text-red-400/70">
+            <p className="font-mono text-[11px] text-red-400/70">
               ✗ Does not match — keep typing
             </p>
           )}
           {canExecute && (
-            <p className="font-mono text-[10px] text-emerald-400">
+            <p className="font-mono text-[11px] text-emerald-400">
               ✓ Confirmed — ready to execute
             </p>
           )}
@@ -613,7 +613,7 @@ export function NukeDialog({
                 {resultLabel(finalReport) === "PARTIAL" && "Partial completion — some phases failed"}
                 {resultLabel(finalReport) === "FAILED" && "Nuke failed — manual cleanup required"}
               </p>
-              <div className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+              <div className="mt-2 flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
                 <ClockIcon className="size-3" />
                 <span>Total duration: {formatMs(finalReport.total_duration_ms)}</span>
               </div>
@@ -625,7 +625,7 @@ export function NukeDialog({
               <p className="font-mono text-xs font-semibold uppercase tracking-widest text-red-400">
                 Stream error
               </p>
-              <p className="mt-1 font-mono text-[11px] text-muted-foreground">{error}</p>
+              <p className="mt-1 font-mono text-[12px] text-muted-foreground">{error}</p>
             </div>
           )}
         </div>

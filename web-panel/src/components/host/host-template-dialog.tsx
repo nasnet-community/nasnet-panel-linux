@@ -179,9 +179,9 @@ export function HostTemplateDialog({ open, onOpenChange }: HostTemplateDialogPro
                                         <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>
                                     )}
                                     <div className="flex flex-wrap gap-1 mt-1">
-                                        {t.address && <Badge variant="secondary" className="text-[10px] h-4 px-1">{t.address}</Badge>}
-                                        {t.security && <Badge variant="outline" className="text-[10px] h-4 px-1">{t.security}</Badge>}
-                                        {t.sni && <Badge variant="outline" className="text-[10px] h-4 px-1">SNI: {t.sni}</Badge>}
+                                        {t.address && <Badge variant="secondary" className="text-[11px] h-4 px-1">{t.address}</Badge>}
+                                        {t.security && <Badge variant="outline" className="text-[11px] h-4 px-1">{t.security}</Badge>}
+                                        {t.sni && <Badge variant="outline" className="text-[11px] h-4 px-1">SNI: {t.sni}</Badge>}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">

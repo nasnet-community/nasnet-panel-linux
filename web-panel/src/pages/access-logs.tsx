@@ -180,7 +180,7 @@ export default function AccessLogsPage() {
                 <Badge
                     variant="outline"
                     className={cn(
-                        "text-[11px] font-medium",
+                        "text-[12px] font-medium",
                         info.getValue() === "accepted"
                             ? "text-emerald-600 border-emerald-600/30"
                             : "text-red-500 border-red-500/30"

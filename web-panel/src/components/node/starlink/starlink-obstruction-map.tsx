@@ -366,7 +366,7 @@ export function StarlinkObstructionMapView({ data, compact = false }: StarlinkOb
                         <span
                             key={l.text}
                             aria-hidden
-                            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-[13px] font-bold leading-none text-white/90"
+                            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-[14px] font-bold leading-none text-white/90"
                             style={{
                                 left: `${50 + LABEL_RADIUS_PCT * Math.sin(rad)}%`,
                                 top: `${50 - LABEL_RADIUS_PCT * Math.cos(rad)}%`,
