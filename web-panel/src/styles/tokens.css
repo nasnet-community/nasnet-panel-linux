@@ -174,6 +174,15 @@
   --sidebar-accent-foreground:     var(--gray-900);
   --sidebar-border:                var(--gray-200);
   --sidebar-ring:                  var(--gray-400);
+
+  /* Toast — card surface and status glyphs (light glyphs use the strong ramps for contrast on the soft chips) */
+  --toast-surface:       var(--popover);
+  --toast-border:        var(--border);
+  --toast-shadow:        0 12px 32px -8px oklch(0 0 0 / 0.16), 0 4px 8px -4px oklch(0 0 0 / 0.06);
+  --toast-glyph-success: var(--success-strong);
+  --toast-glyph-danger:  var(--danger-strong);
+  --toast-glyph-warning: oklch(0.6 0.16 60);
+  --toast-glyph-info:    var(--info-strong);
 }
 
 /* -----------------------------------------------------------------------------
@@ -261,6 +270,15 @@
   --sidebar-accent-foreground:     var(--gray-50);
   --sidebar-border:                oklch(1 0 0 / 10%);
   --sidebar-ring:                  var(--gray-500);
+
+  /* Toast — one step above popovers so it stands off the page */
+  --toast-surface:       oklch(0.235 0 0);
+  --toast-border:        oklch(1 0 0 / 10%);
+  --toast-shadow:        0 16px 40px -12px oklch(0 0 0 / 0.7), 0 4px 12px -4px oklch(0 0 0 / 0.5), inset 0 1px 0 oklch(1 0 0 / 0.04);
+  --toast-glyph-success: var(--status-success);
+  --toast-glyph-danger:  var(--status-danger);
+  --toast-glyph-warning: var(--status-warning);
+  --toast-glyph-info:    var(--status-info);
 }
 
 /* -----------------------------------------------------------------------------

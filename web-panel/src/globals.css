@@ -114,3 +114,53 @@
     animation: nuke-border-pulse 1.4s var(--ease-in-out) infinite;
   }
 }
+
+/* Toasts. Every toast is a custom (unstyled) sonner toast rendering ToastCard,
+   so the card surface sits on sonner's <li> and the peeks of a collapsed stack
+   stay visible. Sonner injects its CSS at runtime after ours; the :root prefix
+   outranks it without !important. */
+:root [data-sonner-toaster] {
+  font-family: inherit;
+  /* A Radix modal sets pointer-events: none on body; keep toasts usable. */
+  pointer-events: auto;
+}
+
+:root [data-sonner-toast][data-styled='false'] {
+  box-sizing: border-box;
+  background: var(--toast-surface);
+  border: 1px solid var(--toast-border);
+  border-radius: 14px;
+  box-shadow: var(--toast-shadow);
+  color: var(--foreground);
+  transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out),
+    height var(--dur-slow) var(--ease-out), box-shadow var(--dur-base);
+}
+
+/* The transition above outranks sonner's own "no transition while dragging". */
+:root [data-sonner-toast][data-swiping='true'] {
+  transition: none;
+}
+
+:root [data-sonner-toast][data-styled='false']:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+:root [data-sonner-toast][data-expanded='false'][data-front='false'] {
+  overflow: hidden;
+}
+
+:root [data-sonner-toast][data-expanded='false'][data-front='false'] > * {
+  opacity: 0;
+}
+
+@media (min-width: 601px) {
+  :root [data-sonner-toast][data-styled='false'] {
+    width: var(--width);
+  }
+}
+
+/* Keyboard focus on the toast itself (sonner's <li>) reveals a hover-only close button. */
+:root [data-sonner-toast]:focus-visible [data-toast-close] {
+  opacity: 1;
+}
