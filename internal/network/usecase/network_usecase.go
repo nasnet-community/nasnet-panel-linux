@@ -213,6 +213,8 @@ type Deps struct {
 	// PanelPort is the port filter_in must keep open, or the operator is
 	// locked out of the box they just firewalled.
 	PanelPort int
+	// HubPort is the reverse-mode node hub's port, 0 when the hub is off.
+	HubPort int
 	// Inbounds is optional: with no source, filter_in stays off rather than
 	// dropping every VPN it does not know about.
 	Inbounds InboundSource

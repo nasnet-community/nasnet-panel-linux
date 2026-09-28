@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/x509"
 	"embed"
 	"errors"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 
 	agentconfig "github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -354,6 +356,13 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.WithError(err).Fatal("Failed to create in-process node agent server")
 	}
 
+	// Reverse-mode hub: off unless HUB_ENABLED or the hub_enabled setting.
+	hubEnabled, hubPort := resolveHub(cfg, uc.Setting)
+	firewallHubPort := 0
+	if hubEnabled {
+		firewallHubPort = hubPort
+	}
+
 	// Reconcile the network BEFORE the agent starts! (xray needs routing path)
 	var networkUC networkUsecase.NetworkUsecase
 	if cfg.Router.Enabled {
@@ -362,7 +371,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			DB: db, NftMgr: embeddedSrv.NftManager(),
 			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
 			NetEvents: netEvents, Log: log,
-			PanelPort: cfg.App.Port, NodeRepo: repos.Node, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
+			PanelPort: cfg.App.Port, HubPort: firewallHubPort, NodeRepo: repos.Node, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
 			PoolSettings: poolSettings{uc: uc.Setting},
 		})
 		if rmErr != nil {
@@ -687,6 +696,34 @@ func runServe(cmd *cobra.Command, args []string) {
 	uc.Node.StartHeartbeats(bgCtx)
 	log.Info("Heartbeat Manager started")
 
+	// --- Reverse-mode node hub ---
+	reverseRegistry := hub.NewRegistry()
+	hubServer := hub.NewHubServer(reverseRegistry, func(ctx context.Context, uuid string) (uint, string, bool) {
+		node, err := repos.Node.GetNodeByUUID(ctx, uuid)
+		if err != nil || node == nil {
+			return 0, "", false
+		}
+		return node.ID, node.ConnectMode, true
+	})
+	if uc.CertWatch != nil {
+		w := uc.CertWatch
+		hubServer.SetCertGate(func(nodeID uint, leaf *x509.Certificate) error {
+			return w.Gate(nodeID, "reverse", leaf)
+		})
+	}
+	if hubEnabled {
+		hubListenAddr := fmt.Sprintf(":%d", hubPort)
+		hubCreds := &hubTLS{certUC: uc.Certificate, settings: uc.Setting, watch: uc.CertWatch, baseURL: cfg.App.BaseURL, log: log}
+		go func() {
+			if err := hubServer.ListenAndServe(hubListenAddr, hubCreds.Config()); err != nil {
+				log.WithError(err).Error("Hub server failed")
+			}
+		}()
+		log.WithField("address", hubListenAddr).Info("Reverse-mode node hub started")
+	} else {
+		log.Info("Reverse-mode node hub is off")
+	}
+
 	// Notification Dispatcher
 	telegramCh := notifPkg.NewTelegramChannel(botNotifier)
 	discordCh := notifPkg.NewDiscordChannel(uc.Setting, httpFactory)
@@ -808,6 +845,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		networkUC.StopPortMap(relCtx)
 		relCancel()
 	}
+	hubServer.Stop()
 	embeddedSrv.Stop(shutdownCtx) // stop in process xray
 	uc.Node.StopHeartbeats()
 	uc.AlertEngine.Stop()
@@ -873,6 +911,8 @@ type routerModeDeps struct {
 	// PanelPort is what filter_in must keep open, or arming it locks the
 	// operator out of the box they just firewalled.
 	PanelPort int
+	// HubPort is the reverse-mode node hub, 0 when the hub is off.
+	HubPort int
 	// NodeRepo supplies the inbound rows filter_in derives its accepts from.
 	NodeRepo inboundLister
 	// LocalNodeID names the built-in node whose inbounds filter_in opens.
@@ -929,6 +969,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		VPNRepo:      networkRepo.NewVPNRepository(deps.DB),
 		PoolSettings: deps.PoolSettings,
 		PanelPort:    deps.PanelPort,
+		HubPort:      deps.HubPort,
 		Backend:      backend,
 		Nft:          deps.NftMgr,
 		Agent:        deps.Agent,
@@ -953,4 +994,20 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 	uc.StartPortMapLoop(ctx, 0)
 	deps.Log.Info("Router mode active")
 	return uc, nil
+}
+
+// resolveHub reads whether the reverse-mode hub runs and on which port:
+// HUB_ENABLED or the hub_enabled setting turns it on, the hub_port setting
+// overrides HUB_LISTEN_ADDR.
+func resolveHub(cfg *config.Config, settings settingDomain.SettingUsecase) (bool, int) {
+	enabled, port := cfg.App.HubEnabled, cfg.App.HubPort
+	if v, err := settings.GetByKey(context.Background(), "hub_enabled"); err == nil && v == "true" {
+		enabled = true
+	}
+	if v, err := settings.GetByKey(context.Background(), "hub_port"); err == nil && v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 && p <= 65535 {
+			port = p
+		}
+	}
+	return enabled, port
 }

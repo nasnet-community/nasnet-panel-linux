@@ -73,6 +73,8 @@ type FilterInputSpec struct {
 	Uplinks      []Uplink
 	LocalIfNames []string
 	PanelPort    int
+	// HubPort is the reverse-mode node hub, 0 when the hub is off.
+	HubPort int
 	// AdvertisedIfNames are the lines clients dial in on; the panel is open
 	// there only.
 	AdvertisedIfNames []string
@@ -141,6 +143,7 @@ func (u *networkUsecase) reapplyFilterInput(ctx context.Context) error {
 		Uplinks:           uplinks,
 		LocalIfNames:      local,
 		PanelPort:         u.PanelPort,
+		HubPort:           u.HubPort,
 		AdvertisedIfNames: u.ingressUplinkIfNames(ctx),
 		Inbounds:          inbounds,
 		PortForwards:      pfs,
@@ -207,6 +210,14 @@ func DeriveFilterInput(spec FilterInputSpec) *nft.FilterInput {
 
 	seen := map[string]bool{}
 	key := func(proto string, port int) string { return proto + ":" + strconv.Itoa(port) }
+	if spec.HubPort > 0 {
+		// Remote nodes dial in from anywhere; mTLS guards it.
+		f.Accepts = append(f.Accepts, nft.InputAccept{
+			IfNames: allUplinks, Proto: "tcp", Port: spec.HubPort,
+			Comment: "node hub (reverse-mode remote nodes)",
+		})
+		seen[key("tcp", spec.HubPort)] = true
+	}
 	for _, ib := range spec.Inbounds {
 		if !ib.Enabled || ib.Port <= 0 || seen[key(ib.Proto, ib.Port)] {
 			continue

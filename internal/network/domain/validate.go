@@ -510,6 +510,7 @@ type PortForwardInput struct {
 	New       PortForward
 	LANCIDR   string
 	PanelPort int
+	HubPort   int
 	SSHPort   int
 	// InboundPorts is proto -> ports, derived from the enabled xray inbound
 	// rows. Passed in rather than looked up so this stays pure.
@@ -598,6 +599,10 @@ func ValidatePortForward(in PortForwardInput) []Verdict {
 	if pf.Proto == "tcp" && in.PanelPort > 0 && pf.DPort == in.PanelPort {
 		confirm("V28", "this forward takes over port %d on that uplink, so the panel "+
 			"stops answering there. Type CONFIRM to continue.", pf.DPort)
+	}
+	if pf.Proto == "tcp" && in.HubPort > 0 && pf.DPort == in.HubPort {
+		confirm("V28", "this forward takes over port %d on that uplink, so reverse-mode "+
+			"nodes can no longer reach the hub there. Type CONFIRM to continue.", pf.DPort)
 	}
 	if pf.Proto == "tcp" && (pf.ToPort == in.PanelPort || pf.ToPort == in.SSHPort) {
 		what := "the panel"

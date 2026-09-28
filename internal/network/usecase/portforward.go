@@ -149,7 +149,7 @@ func (u *networkUsecase) portForwardInput(ctx context.Context, pf domain.PortFor
 
 	in := domain.PortForwardInput{
 		Existing: existing, New: pf,
-		PanelPort: u.PanelPort, SSHPort: 22,
+		PanelPort: u.PanelPort, HubPort: u.HubPort, SSHPort: 22,
 		InboundPorts: u.inboundPorts(ctx),
 		UplinkKeys:   keys, Confirmed: confirmed,
 	}

@@ -28,6 +28,7 @@ type InitialConfig struct {
 	MetricsPassword string
 	LogLevel        string
 	PanelBasePath   string
+	HubPort         int
 	ProxyEnabled    bool
 	ProxyType       string
 	ProxyHost       string
@@ -537,6 +538,9 @@ func (u *settingUsecase) buildEnvSettings() []*domain.Setting {
 		{Key: "metrics_password", Value: u.initialCfg.MetricsPassword, Type: "string", Category: "server", Description: "Password for /metrics Basic Auth (empty = public)", Label: "Metrics Password", RequiresRestart: true, Sensitive: true},
 		{Key: "log_level", Value: u.initialCfg.LogLevel, Type: "string", Category: "server", Description: "Application log level (debug, info, warn, error)", Label: "Log Level"},
 		{Key: "panel_base_path", Value: u.initialCfg.PanelBasePath, Type: "string", Category: "server", Description: "URL path prefix for the admin panel (e.g., /x7k2m9). Requires restart.", Label: "Panel Base Path", RequiresRestart: true},
+		{Key: "hub_enabled", Value: "false", Type: "bool", Category: "server", Description: "Serve the hub that reverse-mode remote nodes dial into", Label: "Hub Enabled", RequiresRestart: true},
+		{Key: "hub_port", Value: fmt.Sprintf("%d", u.initialCfg.HubPort), Type: "int", Category: "server", Description: "Port for the reverse-mode node hub", Label: "Hub Port", RequiresRestart: true},
+		{Key: "agent_hub_url", Value: "", Type: "string", Category: "server", Description: "Address remote nodes use to reach this panel (host or https URL). Set it when the panel sits on a LAN address; empty uses the base URL.", Label: "Agent Hub Address"},
 		{Key: "telegram_proxy_enabled", Value: boolStr(u.initialCfg.ProxyEnabled), Type: "bool", Category: "telegram", Description: "Route Telegram API traffic through a SOCKS5 proxy", Label: "Proxy Enabled", RequiresRestart: true},
 		{Key: "telegram_proxy_type", Value: u.initialCfg.ProxyType, Type: "string", Category: "telegram", Description: "Proxy protocol type", Label: "Proxy Type", RequiresRestart: true},
 		{Key: "telegram_proxy_host", Value: u.initialCfg.ProxyHost, Type: "string", Category: "telegram", Description: "Proxy server hostname or IP address", Label: "Proxy Host", RequiresRestart: true},

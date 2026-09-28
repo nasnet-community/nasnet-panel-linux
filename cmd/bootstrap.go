@@ -193,6 +193,7 @@ func initUsecases(
 		MetricsPassword: cfg.Metrics.Password,
 		LogLevel:        cfg.Log.Level,
 		PanelBasePath:   cfg.App.PanelBasePath,
+		HubPort:         cfg.App.HubPort,
 		ProxyEnabled:    cfg.Telegram.Proxy.Enabled,
 		ProxyType:       cfg.Telegram.Proxy.Type,
 		ProxyHost:       cfg.Telegram.Proxy.Host,

@@ -48,6 +48,8 @@ type AppConfig struct {
 	Env           string
 	Port          int
 	BaseURL       string   // Base URL for subscription links (e.g. https://sub.example.com)
+	HubEnabled    bool     // Serve the reverse-agent hub (remote nodes)
+	HubPort       int      // Port for the reverse-agent hub
 	BackupDir     string   // Directory for database backups
 	SubPanelURL   string   // URL of the subscription panel (e.g. https://panel.example.com). When set, browser requests to /sub/:uuid are redirected here.
 	TLSCertFile   string   // Path to TLS certificate PEM file
@@ -120,9 +122,11 @@ func Load() *Config {
 
 	return &Config{
 		App: AppConfig{
-			Env:     getEnv("APP_ENV", "development"),
-			Port:    getEnvAsInt("APP_PORT", 9761),
-			BaseURL: getEnv("APP_BASE_URL", ""),
+			Env:        getEnv("APP_ENV", "development"),
+			Port:       getEnvAsInt("APP_PORT", 9761),
+			BaseURL:    getEnv("APP_BASE_URL", ""),
+			HubEnabled: getEnvAsBool("HUB_ENABLED", false),
+			HubPort:    parseHubPort(getEnv("HUB_LISTEN_ADDR", ":9091")),
 
 			BackupDir:     getEnv("BACKUP_DIR", "./data/backups"),
 			SubPanelURL:   getEnv("SUB_PANEL_URL", ""),
@@ -267,4 +271,13 @@ func CleanBasePath(p string) string {
 		return ""
 	}
 	return p
+}
+
+// parseHubPort extracts the port number from a listen address like ":9091".
+func parseHubPort(addr string) int {
+	addr = strings.TrimPrefix(addr, ":")
+	if p, err := strconv.Atoi(addr); err == nil && p > 0 && p <= 65535 {
+		return p
+	}
+	return 9091
 }
