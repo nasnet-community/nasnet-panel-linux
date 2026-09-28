@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -406,12 +407,13 @@ func (h *Handler) BanUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.adminUsecase.BanUser(c.Request.Context(), uint(id)); err != nil {
+	changes, err := h.adminUsecase.BanUser(c.Request.Context(), uint(id))
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	h.logAudit(c, auditDomain.AuditUserBan, "user", uint(id))
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "user banned"})
+	h.logAuditWithValues(c, auditDomain.AuditUserBan, "user", uint(id), "", subscriptionChangesJSON("paused_subscriptions", changes))
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "user banned", "data": changes})
 }
 
 func (h *Handler) UnbanUser(c *gin.Context) {
@@ -421,12 +423,24 @@ func (h *Handler) UnbanUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.adminUsecase.UnbanUser(c.Request.Context(), uint(id)); err != nil {
+	changes, err := h.adminUsecase.UnbanUser(c.Request.Context(), uint(id))
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	h.logAudit(c, auditDomain.AuditUserUnban, "user", uint(id))
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "user unbanned"})
+	h.logAuditWithValues(c, auditDomain.AuditUserUnban, "user", uint(id), "", subscriptionChangesJSON("resumed_subscriptions", changes))
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "user unbanned", "data": changes})
+}
+
+// subscriptionChangesJSON renders a ban/unban result for the audit log's
+// new values, e.g. {"paused_subscriptions":[112]}.
+func subscriptionChangesJSON(key string, ch *usecase.SubscriptionChanges) string {
+	vals := map[string][]uint{key: ch.Changed}
+	if len(ch.Failed) > 0 {
+		vals["failed_subscriptions"] = ch.Failed
+	}
+	b, _ := json.Marshal(vals)
+	return string(b)
 }
 
 type setAdminRequest struct {

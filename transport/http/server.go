@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -269,6 +270,10 @@ func NewServer(deps ServerDeps) *Server {
 			sub, err := deps.Core.SubUsecase.GetByConfigID(ctx, configID)
 			if err != nil {
 				return 0, err
+			}
+			if sub.User != nil && sub.User.IsBanned {
+				// Banned customers can't chat; refuse the socket like an unknown sub.
+				return 0, errors.New("chat closed")
 			}
 			return sub.ID, nil
 		},

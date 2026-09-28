@@ -23,6 +23,13 @@ const (
 	SubscriptionStatusTrafficExhausted SubscriptionStatus = "traffic_exhausted"
 )
 
+// Pause reasons, stored with a paused status so each pause can be undone by
+// whoever made it. Unbanning a user resumes only the ban's pauses.
+const (
+	PauseReasonAdmin = "admin"
+	PauseReasonBan   = "ban"
+)
+
 type Subscription struct {
 	ID     uint             `gorm:"primaryKey" json:"id"`
 	UserID *uint            `gorm:"index" json:"user_id"`
@@ -32,6 +39,10 @@ type Subscription struct {
 	Status      SubscriptionStatus  `gorm:"size:50;default:'pending';index:idx_sub_status_deleted,priority:1" json:"status"`
 	IsManual    bool                `gorm:"default:false" json:"is_manual"`
 	MaxDevices  int                 `gorm:"default:0" json:"max_devices"`
+
+	// PauseReason says who paused the subscription (PauseReason*); empty
+	// unless paused.
+	PauseReason string `gorm:"size:16;not null;default:''" json:"pause_reason,omitempty"`
 
 	// Custom Label for User
 	Label string `gorm:"size:100" json:"label"`

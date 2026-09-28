@@ -8,6 +8,7 @@ import (
 	adminDomain "github.com/nasnet-community/nasnet-panel-linux/internal/admin/domain"
 	subDomain "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
 	userDomain "github.com/nasnet-community/nasnet-panel-linux/internal/user/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
 func (u *adminUsecase) ListUsers(ctx context.Context, search, filter, sort, order string, offset, limit int) ([]*adminDomain.UserListItem, int64, error) {
@@ -70,11 +71,72 @@ func (u *adminUsecase) GetUserDetails(ctx context.Context, id uint) (*adminDomai
 	}, nil
 }
 
-func (u *adminUsecase) BanUser(ctx context.Context, id uint) error {
-	return u.userRepo.UpdateBanStatus(ctx, id, true)
+// SubscriptionChanges lists the subscriptions a ban or unban paused or
+// resumed, and the ones it failed to change (logged, not fatal).
+type SubscriptionChanges struct {
+	Changed []uint `json:"changed"`
+	Failed  []uint `json:"failed,omitempty"`
 }
-func (u *adminUsecase) UnbanUser(ctx context.Context, id uint) error {
-	return u.userRepo.UpdateBanStatus(ctx, id, false)
+
+// BanUser marks the user banned and pauses their active subscriptions with
+// the ban as the reason. A failed pause does not undo the ban.
+func (u *adminUsecase) BanUser(ctx context.Context, id uint) (*SubscriptionChanges, error) {
+	if err := u.userRepo.UpdateBanStatus(ctx, id, true); err != nil {
+		return nil, err
+	}
+	out := &SubscriptionChanges{Changed: []uint{}}
+	subs, err := u.subRepo.ListByUserID(ctx, id, 0, 1000)
+	if err != nil {
+		logger.GetLogger().WithError(err).WithField("user_id", id).Warn("ban: failed to list subscriptions to pause")
+		return out, nil
+	}
+	for _, sub := range subs {
+		if sub.Status != subDomain.SubscriptionStatusActive {
+			continue
+		}
+		if err := u.PauseSubscriptionFor(ctx, sub.ID, subDomain.PauseReasonBan); err != nil {
+			logger.GetLogger().WithError(err).WithField("subscription_id", sub.ID).Warn("ban: failed to pause subscription")
+			out.Failed = append(out.Failed, sub.ID)
+			continue
+		}
+		out.Changed = append(out.Changed, sub.ID)
+	}
+	return out, nil
+}
+
+// UnbanUser lifts the ban and resumes the subscriptions the ban paused;
+// expiry is not extended. Ones that expired meanwhile go back to active
+// without tunnel access, which is how the expiry sweep finds them and
+// expires them properly (the sweep only picks up active subscriptions).
+func (u *adminUsecase) UnbanUser(ctx context.Context, id uint) (*SubscriptionChanges, error) {
+	if err := u.userRepo.UpdateBanStatus(ctx, id, false); err != nil {
+		return nil, err
+	}
+	out := &SubscriptionChanges{Changed: []uint{}}
+	subs, err := u.subRepo.ListByUserID(ctx, id, 0, 1000)
+	if err != nil {
+		logger.GetLogger().WithError(err).WithField("user_id", id).Warn("unban: failed to list subscriptions to resume")
+		return out, nil
+	}
+	for _, sub := range subs {
+		if sub.Status != subDomain.SubscriptionStatusPaused || sub.PauseReason != subDomain.PauseReasonBan {
+			continue
+		}
+		if sub.IsExpired() {
+			if err := u.subRepo.UpdateStatusWithPauseReason(ctx, sub.ID, subDomain.SubscriptionStatusActive, ""); err != nil {
+				logger.GetLogger().WithError(err).WithField("subscription_id", sub.ID).Warn("unban: failed to hand expired subscription to the expiry sweep")
+				out.Failed = append(out.Failed, sub.ID)
+			}
+			continue
+		}
+		if err := u.ResumeSubscription(ctx, sub.ID); err != nil {
+			logger.GetLogger().WithError(err).WithField("subscription_id", sub.ID).Warn("unban: failed to resume subscription")
+			out.Failed = append(out.Failed, sub.ID)
+			continue
+		}
+		out.Changed = append(out.Changed, sub.ID)
+	}
+	return out, nil
 }
 func (u *adminUsecase) SetAdmin(ctx context.Context, id uint, isAdmin bool) error {
 	return u.userRepo.UpdateAdminStatus(ctx, id, isAdmin)

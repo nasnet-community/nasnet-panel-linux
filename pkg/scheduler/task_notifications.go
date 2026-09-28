@@ -71,6 +71,9 @@ func (s *Scheduler) sendExpirationNotifications(ctx context.Context) {
 		}
 
 		user, err := s.userRepo.FindByID(ctx, sub.GetUserID())
+		if err == nil && user != nil && user.IsBanned {
+			continue // banned customers get no notices
+		}
 		if err == nil && user != nil {
 			lang = user.Language
 			if recipientTelegramID == 0 {
@@ -156,6 +159,9 @@ func (s *Scheduler) sendDataUsageNotifications(ctx context.Context) {
 		}
 
 		user, err := s.userRepo.FindByID(ctx, sub.GetUserID())
+		if err == nil && user != nil && user.IsBanned {
+			continue // banned customers get no notices
+		}
 		if err == nil && user != nil {
 			lang = user.Language
 			if recipientTelegramID == 0 {
@@ -241,6 +247,9 @@ func (s *Scheduler) sendTrafficExhaustedNotifications(ctx context.Context) {
 		}
 
 		user, err := s.userRepo.FindByID(ctx, sub.GetUserID())
+		if err == nil && user != nil && user.IsBanned {
+			continue // banned customers get no notices
+		}
 		if err == nil && user != nil {
 			lang = user.Language
 			if recipientTelegramID == 0 {

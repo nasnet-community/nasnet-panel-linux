@@ -398,9 +398,9 @@ func (h *Handler) HandleUserBanToggle(c telebot.Context) error {
 
 	var err error
 	if isBan {
-		err = h.adminUC.BanUser(ctx, id)
+		_, err = h.adminUC.BanUser(ctx, id)
 	} else {
-		err = h.adminUC.UnbanUser(ctx, id)
+		_, err = h.adminUC.UnbanUser(ctx, id)
 	}
 
 	if err != nil {
@@ -445,7 +445,7 @@ func (h *Handler) HandleBan(c telebot.Context) error {
 	ctx, cancel := tgctx.FromTelebot(c)
 	defer cancel()
 
-	if err := h.adminUC.BanUser(ctx, uint(userID)); err != nil {
+	if _, err := h.adminUC.BanUser(ctx, uint(userID)); err != nil {
 		return c.Send("❌ Failed: " + err.Error())
 	}
 	return c.Send(fmt.Sprintf("🚫 User #%d has been banned", userID))
@@ -464,7 +464,7 @@ func (h *Handler) HandleUnban(c telebot.Context) error {
 	ctx, cancel := tgctx.FromTelebot(c)
 	defer cancel()
 
-	if err := h.adminUC.UnbanUser(ctx, uint(userID)); err != nil {
+	if _, err := h.adminUC.UnbanUser(ctx, uint(userID)); err != nil {
 		return c.Send("❌ Failed: " + err.Error())
 	}
 	return c.Send(fmt.Sprintf("✅ User #%d has been unbanned", userID))

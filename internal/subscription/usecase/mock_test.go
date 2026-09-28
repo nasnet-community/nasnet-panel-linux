@@ -120,6 +120,14 @@ func (m *mockSubscriptionRepo) FindActiveByUserID(_ context.Context, _ uint) ([]
 	return nil, nil
 }
 
+func (m *mockSubscriptionRepo) UpdateStatusWithPauseReason(ctx context.Context, id uint, status domain.SubscriptionStatus, reason string) error {
+	if err := m.UpdateStatus(ctx, id, status); err != nil {
+		return err
+	}
+	m.subs[id].PauseReason = reason
+	return nil
+}
+
 func (m *mockSubscriptionRepo) UpdateStatus(_ context.Context, id uint, status domain.SubscriptionStatus) error {
 	if m.updateStatusErr != nil {
 		return m.updateStatusErr

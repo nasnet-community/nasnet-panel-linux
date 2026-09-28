@@ -202,6 +202,10 @@ func (h *Handler) SendSubChatMessage(c *gin.Context) {
 		c.JSON(http.StatusNotFound, jsonResponse{Success: false, Error: "Subscription not found"})
 		return
 	}
+	if sub.User != nil && sub.User.IsBanned {
+		c.JSON(http.StatusForbidden, jsonResponse{Success: false, Error: "chat is closed"})
+		return
+	}
 
 	var req struct {
 		Content          string `json:"content" binding:"required"`

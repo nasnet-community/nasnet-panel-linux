@@ -62,8 +62,10 @@ type AdminUsecase interface {
 	// User management
 	ListUsers(ctx context.Context, search, filter, sort, order string, offset, limit int) ([]*adminDomain.UserListItem, int64, error)
 	GetUserDetails(ctx context.Context, id uint) (*adminDomain.UserDetails, error)
-	BanUser(ctx context.Context, id uint) error
-	UnbanUser(ctx context.Context, id uint) error
+	// BanUser pauses the user's active subscriptions; UnbanUser resumes the
+	// ones the ban paused.
+	BanUser(ctx context.Context, id uint) (*SubscriptionChanges, error)
+	UnbanUser(ctx context.Context, id uint) (*SubscriptionChanges, error)
 	SetAdmin(ctx context.Context, id uint, isAdmin bool) error
 
 	ListAllNodes(ctx context.Context) ([]*nodeDomain.Node, error)
@@ -75,6 +77,7 @@ type AdminUsecase interface {
 	ExtendSubscription(ctx context.Context, id uint, days int) error
 	RevokeSubscription(ctx context.Context, id uint) error
 	PauseSubscription(ctx context.Context, id uint) error
+	PauseSubscriptionFor(ctx context.Context, id uint, reason string) error
 	ResumeSubscription(ctx context.Context, id uint) error
 	RegenerateSubscriptionKey(ctx context.Context, id uint, customKey string) (*subDomain.Subscription, error)
 	RegenerateSubscriptionUUID(ctx context.Context, id uint) (*subDomain.Subscription, error)

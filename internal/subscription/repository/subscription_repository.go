@@ -36,6 +36,10 @@ type SubscriptionRepository interface {
 	ListByUserID(ctx context.Context, userID uint, offset, limit int) ([]*domain.Subscription, error)
 	FindActiveByUserID(ctx context.Context, userID uint) ([]*domain.Subscription, error)
 	UpdateStatus(ctx context.Context, id uint, status domain.SubscriptionStatus) error
+	// UpdateStatusWithPauseReason sets status and pause_reason together;
+	// pass "" to clear the reason. Pausing an already-paused subscription
+	// is a no-op.
+	UpdateStatusWithPauseReason(ctx context.Context, id uint, status domain.SubscriptionStatus, reason string) error
 	UpdateDataUsed(ctx context.Context, id uint, dataUsed int64) error
 	ListExpired(ctx context.Context) ([]*domain.Subscription, error)
 	ListDataExhausted(ctx context.Context) ([]*domain.Subscription, error)
@@ -166,6 +170,16 @@ func (r *subscriptionRepository) UpdateStatus(ctx context.Context, id uint, stat
 		Model(&domain.Subscription{}).
 		Where("id = ?", id).
 		Update("status", status).Error
+}
+
+func (r *subscriptionRepository) UpdateStatusWithPauseReason(ctx context.Context, id uint, status domain.SubscriptionStatus, reason string) error {
+	q := database.GetExecutor(r.db, ctx).Model(&domain.Subscription{}).Where("id = ?", id)
+	if status == domain.SubscriptionStatusPaused {
+		// Already paused: keep whoever paused it first, so a later admin or
+		// bulk pause can't turn a ban's pause into one unban won't undo.
+		q = q.Where("status <> ?", domain.SubscriptionStatusPaused)
+	}
+	return q.Updates(map[string]interface{}{"status": status, "pause_reason": reason}).Error
 }
 
 func (r *subscriptionRepository) UpdateDataUsed(ctx context.Context, id uint, dataUsed int64) error {

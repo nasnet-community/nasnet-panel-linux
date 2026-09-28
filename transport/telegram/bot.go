@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -172,6 +173,7 @@ func NewBot(
 	}
 
 	b.Use(bot.BotEnabledMiddleware)
+	b.Use(bot.BannedUserMiddleware)
 
 	bot.registerHandlers()
 
@@ -184,6 +186,27 @@ func (b *Bot) BotEnabledMiddleware(next telebot.HandlerFunc) telebot.HandlerFunc
 	return func(c telebot.Context) error {
 		if !b.enabled.Load() {
 			log.WithField("user_id", c.Sender().ID).Debug("Bot disabled, dropping update")
+			return nil
+		}
+		return next(c)
+	}
+}
+
+// BannedUserMiddleware silently drops updates from banned users. Admins from
+// the bot config are never dropped; unknown senders pass so /start can
+// register them.
+func (b *Bot) BannedUserMiddleware(next telebot.HandlerFunc) telebot.HandlerFunc {
+	log := logger.GetLogger()
+	return func(c telebot.Context) error {
+		sender := c.Sender()
+		if sender == nil || slices.Contains(b.adminIDs, sender.ID) {
+			return next(c)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		user, err := b.userUsecase.GetByTelegramID(ctx, sender.ID)
+		cancel()
+		if err == nil && user != nil && user.IsBanned {
+			log.WithField("user_id", sender.ID).Debug("Banned user, dropping update")
 			return nil
 		}
 		return next(c)

@@ -23,6 +23,17 @@ func (u *subscriptionUsecase) UpdateDataUsage(ctx context.Context, id uint, byte
 	return u.subRepo.UpdateDataUsed(ctx, id, bytesUsed)
 }
 
+// ownerBanned reports whether the subscription's user is banned. Lookup
+// errors count as not banned so a DB hiccup doesn't cancel renewals.
+func (u *subscriptionUsecase) ownerBanned(ctx context.Context, sub *domain.Subscription) bool {
+	uid := sub.GetUserID()
+	if uid == 0 || u.userRepo == nil {
+		return false
+	}
+	user, err := u.userRepo.FindByID(ctx, uid)
+	return err == nil && user != nil && user.IsBanned
+}
+
 func (u *subscriptionUsecase) CheckAndExpireSubscriptions(ctx context.Context) error {
 	log := logger.GetLogger()
 	expired, err := u.subRepo.ListExpired(ctx)

@@ -56,8 +56,14 @@ func (u *adminUsecase) RevokeSubscription(ctx context.Context, id uint) error {
 }
 
 func (u *adminUsecase) PauseSubscription(ctx context.Context, id uint) error {
+	return u.PauseSubscriptionFor(ctx, id, subDomain.PauseReasonAdmin)
+}
+
+// PauseSubscriptionFor pauses and records who asked (subDomain.PauseReason*),
+// so the matching resume path can find its own pauses.
+func (u *adminUsecase) PauseSubscriptionFor(ctx context.Context, id uint, reason string) error {
 	u.setTunnelAccess(ctx, id, false)
-	return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusPaused)
+	return u.subRepo.UpdateStatusWithPauseReason(ctx, id, subDomain.SubscriptionStatusPaused, reason)
 }
 
 func (u *adminUsecase) ResumeSubscription(ctx context.Context, id uint) error {
@@ -71,7 +77,7 @@ func (u *adminUsecase) ResumeSubscription(ctx context.Context, id uint) error {
 
 	u.setTunnelAccess(ctx, id, true)
 
-	return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusActive)
+	return u.subRepo.UpdateStatusWithPauseReason(ctx, id, subDomain.SubscriptionStatusActive, "")
 }
 
 func (u *adminUsecase) RegenerateSubscriptionKey(ctx context.Context, id uint, customKey string) (*subDomain.Subscription, error) {
