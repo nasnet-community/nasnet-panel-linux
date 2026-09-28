@@ -237,14 +237,22 @@ func (r *subscriptionRepository) applyFilter(db *gorm.DB, f SubscriptionFilter) 
 	}
 	if f.Search != "" {
 		like := "%" + f.Search + "%"
-		clause := fmt.Sprintf("%s OR %s OR %s OR %s",
+		conds := []string{
 			database.ILike("subscriptions.label", "?"),
 			database.ILike("subscriptions.config_email", "?"),
 			database.ILike("users.username", "?"),
 			database.ILike("users.first_name", "?"),
-		)
+		}
+		args := []any{like, like, like, like}
+		// A pasted UUID matches on top of the text search rather than instead
+		// of it, so a term that merely happens to be hex never costs the
+		// operator their label and user matches.
+		if idClause, idArgs, ok := identifierSearchClause(f.Search); ok {
+			conds = append(conds, idClause)
+			args = append(args, idArgs...)
+		}
 		db = db.Joins("LEFT JOIN users ON users.id = subscriptions.user_id AND users.deleted_at IS NULL").
-			Where(clause, like, like, like, like)
+			Where(strings.Join(conds, " OR "), args...)
 	}
 	if f.IsManual != nil {
 		db = db.Where("subscriptions.is_manual = ?", *f.IsManual)

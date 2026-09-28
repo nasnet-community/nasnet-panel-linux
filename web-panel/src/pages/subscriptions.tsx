@@ -63,7 +63,8 @@ import {
     HiOutlineSortDescending,
     HiOutlineAdjustments,
 } from "react-icons/hi"
-import { HiOutlineFunnel } from "react-icons/hi2"
+import { HiOutlineFunnel, HiOutlineLink } from "react-icons/hi2"
+import { readSearchInput, isFullUUID } from "@/lib/uuid-search"
 import type { Subscription } from "@/lib/types"
 import { BANDWIDTH_OPTIONS } from "@/lib/types"
 import { cn, formatBytes as formatBytesUtil, formatCompact, getExpiryInfo, copyToClipboard } from "@/lib/utils"
@@ -223,6 +224,20 @@ export default function SubscriptionsPage() {
         return () => clearTimeout(timer)
     }, [search])
 
+    // A pasted subscription link collapses to the key it carries. The field
+    // changing under the operator needs a word of explanation, which this flag
+    // drives; it clears as soon as they edit what was extracted.
+    const [pulledFromLink, setPulledFromLink] = useState(false)
+    const handleSearchChange = (raw: string) => {
+        const { value, fromLink } = readSearchInput(raw)
+        setSearch(value)
+        setPulledFromLink(fromLink)
+    }
+    const clearSearch = () => {
+        setSearch("")
+        setPulledFromLink(false)
+    }
+
     // Data limit dialog state
     const [dataLimitSub, setDataLimitSub] = useState<Subscription | null>(null)
 
@@ -254,6 +269,30 @@ export default function SubscriptionsPage() {
 
     // Subscription counts
     const { data: counts } = useSubscriptionCounts()
+
+    // Searching a full UUID is never a browse — the operator wants that one
+    // subscription. When it resolves to a single row, open it rather than making
+    // them click the only result. Keyed on the query so closing the sheet does
+    // not reopen it on the next refetch.
+    const autoOpenedFor = useRef<string | null>(null)
+    useEffect(() => {
+        if (!isFullUUID(debouncedSearch)) {
+            autoOpenedFor.current = null
+            return
+        }
+        if (isLoading || subscriptions.length !== 1) return
+        if (autoOpenedFor.current === debouncedSearch) return
+        autoOpenedFor.current = debouncedSearch
+        openDetailsSheet(subscriptions[0])
+    }, [debouncedSearch, subscriptions, isLoading, openDetailsSheet])
+
+    // "Adjust your filters" is useless advice for a UUID that simply isn't
+    // here — say what the miss actually means instead.
+    const emptyStateHint = isFullUUID(debouncedSearch)
+        ? "No subscription carries that UUID. Check for a typo, or the key may have been regenerated since."
+        : search || activeFilterCount > 0
+            ? "Try adjusting your search or filters"
+            : undefined
 
     // Auto-correct page when beyond results (e.g. after filter/delete changes)
     useEffect(() => {
@@ -431,9 +470,9 @@ export default function SubscriptionsPage() {
                         <div className="relative flex-1 max-w-md">
                             <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <Input
-                                placeholder="Search by user or label..."
+                                placeholder="Search label, user, email, or a UUID / sub link"
                                 value={search}
-                                onChange={(e) => setSearch(e.target.value)}
+                                onChange={(e) => handleSearchChange(e.target.value)}
                                 className="pl-9 h-9 text-sm"
                             />
                             {search && (
@@ -441,11 +480,26 @@ export default function SubscriptionsPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
-                                    onClick={() => setSearch("")}
+                                    onClick={clearSearch}
                                 >
                                     <HiOutlineX className="w-3.5 h-3.5" />
                                 </Button>
                             )}
+                            <AnimatePresence>
+                                {pulledFromLink && (
+                                    <motion.p
+                                        key="link-hint"
+                                        initial={{ opacity: 0, y: -3 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -3 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="absolute z-10 top-full left-0 mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground"
+                                    >
+                                        <HiOutlineLink className="w-3 h-3 shrink-0" />
+                                        Pulled the UUID from your link
+                                    </motion.p>
+                                )}
+                            </AnimatePresence>
                         </div>
                         <Button
                             variant="outline"
@@ -836,7 +890,7 @@ export default function SubscriptionsPage() {
                                             <EmptyState
                                                 icon={HiOutlineGlobeAlt}
                                                 title="No subscriptions found"
-                                                description={search || activeFilterCount > 0 ? "Try adjusting your search or filters" : undefined}
+                                                description={emptyStateHint}
                                             />
                                         </TableCell>
                                     </TableRow>
@@ -906,34 +960,42 @@ export default function SubscriptionsPage() {
                             {mobileSearchExpanded && (
                                 <motion.div
                                     key="search-input"
-                                    className="flex items-center gap-2 px-4 py-2 border-b"
+                                    className="px-4 py-2 border-b"
                                     initial={{ height: 0, opacity: 0 }}
                                     animate={{ height: "auto", opacity: 1 }}
                                     exit={{ height: 0, opacity: 0 }}
                                     transition={{ duration: 0.2 }}
                                 >
-                                    <div className="relative flex-1">
-                                        <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                        <Input
-                                            ref={mobileSearchRef}
-                                            placeholder="Search..."
-                                            value={search}
-                                            onChange={(e) => setSearch(e.target.value)}
-                                            className="pl-9 h-9"
-                                            autoFocus
-                                        />
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                            <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                            <Input
+                                                ref={mobileSearchRef}
+                                                placeholder="Search or paste a UUID / sub link"
+                                                value={search}
+                                                onChange={(e) => handleSearchChange(e.target.value)}
+                                                className="pl-9 h-9"
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-9 w-9 shrink-0"
+                                            onClick={() => {
+                                                clearSearch()
+                                                setMobileSearchExpanded(false)
+                                            }}
+                                        >
+                                            <HiOutlineX className="w-4 h-4" />
+                                        </Button>
                                     </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-9 w-9 shrink-0"
-                                        onClick={() => {
-                                            setSearch("")
-                                            setMobileSearchExpanded(false)
-                                        }}
-                                    >
-                                        <HiOutlineX className="w-4 h-4" />
-                                    </Button>
+                                    {pulledFromLink && (
+                                        <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                                            <HiOutlineLink className="w-3 h-3 shrink-0" />
+                                            Pulled the UUID from your link
+                                        </p>
+                                    )}
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -986,7 +1048,7 @@ export default function SubscriptionsPage() {
                         <EmptyState
                             icon={HiOutlineGlobeAlt}
                             title="No subscriptions found"
-                            description={search || activeFilterCount > 0 ? "Try adjusting your search or filters" : undefined}
+                            description={emptyStateHint}
                         />
                     )}
                 </div>
