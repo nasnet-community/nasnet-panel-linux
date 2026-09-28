@@ -50,6 +50,7 @@ export async function searchGlobalAccessHistory(
             from: params.from,
             to: params.to,
             q: params.q,
+            match: params.match,
             kinds: params.kinds,
             node_ids: params.node_ids,
             subscription_ids: params.subscription_ids,

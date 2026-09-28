@@ -35,6 +35,7 @@ export interface Node {
     last_crash_recovery?: LastCrashRecovery
     outbound_test_settings?: OutboundTestSettings
     enable_access_log?: boolean
+    last_access_log_synced_at?: string
     // System stats (populated from agent)
     cpu_usage?: number
     memory_used?: number

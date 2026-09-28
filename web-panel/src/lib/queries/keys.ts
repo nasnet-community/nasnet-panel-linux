@@ -73,6 +73,7 @@ export const queryKeys = {
         emails: string[],
         includeIps: boolean,
         limit: number,
+        match: string,
     ) =>
         [
             'access-history',
@@ -80,6 +81,7 @@ export const queryKeys = {
             from,
             to,
             q,
+            match,
             kinds.slice().sort().join(','),
             nodeIds.slice().sort().join(','),
             subscriptionIds.slice().sort().join(','),

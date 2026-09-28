@@ -37,6 +37,17 @@ export interface AccessHistoryTotals {
     tcp_count: number
     udp_count: number
     hour_buckets: number
+    active_hours?: number
+    first_seen?: string
+    last_seen?: string
+}
+
+// Hostnames and raw-IP destinations of one column, split apart.
+export interface AccessHistoryDestinationSplit {
+    domains: AccessHistoryDomainCount[] | null
+    ips: AccessHistoryDomainCount[] | null
+    domain_count: number
+    ip_count: number
 }
 
 export interface AccessHistoryResponse {
@@ -47,6 +58,9 @@ export interface AccessHistoryResponse {
     top_domains: AccessHistoryDomainCount[] | null
     top_rejected: AccessHistoryDomainCount[] | null
     top_source_ips?: AccessHistoryIPCount[] | null
+    source_ip_count?: number
+    destinations?: AccessHistoryDestinationSplit
+    rejected_destinations?: AccessHistoryDestinationSplit
     totals: AccessHistoryTotals
     nodes_queried: number[] | null
     emails_resolved: number
@@ -100,10 +114,13 @@ export interface AccessHistorySearchResponse {
 
 // ─── Global search (cross-subscription) ─────────────────────────────
 
+export type AccessHistoryMatch = "contains" | "domain"
+
 export interface AccessHistoryGlobalSearchParams {
     from: string
     to: string
     q: string
+    match?: AccessHistoryMatch
     kinds?: AccessHistorySearchKind[]
     node_ids?: number[]
     subscription_ids?: number[]
@@ -124,14 +141,25 @@ export interface AccessHistoryGlobalHit {
     count: number
 }
 
-export interface AccessHistoryGlobalSubAggregate {
+export interface AccessHistoryGlobalSubValue {
     kind: AccessHistorySearchKind
     value: string
+    count: number
+    hours: number
+}
+
+export interface AccessHistoryGlobalSubscription {
     subscription_id: number
     user_id: number
     subscription_label?: string
-    count: number
+    hits: number
     hours: number
+    values: number
+    emails: number
+    node_ids: number[] | null
+    first_seen: string
+    last_seen: string
+    top_values: AccessHistoryGlobalSubValue[] | null
 }
 
 export interface AccessHistoryGlobalValueAggregate {
@@ -142,15 +170,39 @@ export interface AccessHistoryGlobalValueAggregate {
     hours: number
 }
 
+export interface AccessHistoryGlobalTotals {
+    hits: number
+    values: number
+    subscriptions: number
+    records: number
+    hours: number
+    first_seen?: string
+    last_seen?: string
+}
+
+export interface AccessHistoryGlobalSeriesBucket {
+    bucket: string
+    accepted: number
+    rejected: number
+    source_ip: number
+    nodes: Record<string, number>
+}
+
 export interface AccessHistoryGlobalSearchResponse {
     from: string
     to: string
     query: string
+    match: AccessHistoryMatch
     kinds: AccessHistorySearchKind[] | null
-    hits: AccessHistoryGlobalHit[] | null
-    by_subscription: AccessHistoryGlobalSubAggregate[] | null
+    totals: AccessHistoryGlobalTotals
+    subscriptions: AccessHistoryGlobalSubscription[] | null
     by_value: AccessHistoryGlobalValueAggregate[] | null
+    series: AccessHistoryGlobalSeriesBucket[] | null
+    hits: AccessHistoryGlobalHit[] | null
+    // hits holds only the newest `limit` records
     truncated: boolean
+    // the scan cap was reached; rollups cover the newest matches only
+    approximate: boolean
     retention_days: number
     nodes_queried: number[] | null
     last_synced_at: Record<string, string>

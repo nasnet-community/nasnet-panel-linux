@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { queryKeys } from "./keys"
 import {
     getSubscriptionAccessHistory,
@@ -94,6 +94,7 @@ export function useGlobalAccessHistorySearch(
             emails,
             !!params.include_ips,
             params.limit ?? 0,
+            params.match ?? "contains",
         ),
         queryFn: async () => {
             const res = await searchGlobalAccessHistory(params)
@@ -109,6 +110,8 @@ export function useGlobalAccessHistorySearch(
         // re-run, but the data answers an exploratory question — admins
         // typically iterate quickly on the same window.
         staleTime: 60_000,
+        // Keep the last answer on screen while a refined search loads.
+        placeholderData: keepPreviousData,
         refetchInterval: false,
         refetchOnWindowFocus: false,
     })
