@@ -22,7 +22,7 @@ export function NodeSettingsGeneral({ node, settingsForm }: NodeSettingsGeneralP
     return (
         <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
-                <CardTitle className="text-base">Server identity</CardTitle>
+                <CardTitle className="text-base">Node identity</CardTitle>
                 <CardDescription>Name and location shown across the panel.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -32,7 +32,7 @@ export function NodeSettingsGeneral({ node, settingsForm }: NodeSettingsGeneralP
                         name="name"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel>Server Name</FormLabel>
+                                <FormLabel>Node name</FormLabel>
                                 <FormControl>
                                     <Input {...field} />
                                 </FormControl>

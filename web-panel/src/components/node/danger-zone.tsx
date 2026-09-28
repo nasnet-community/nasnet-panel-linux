@@ -46,13 +46,15 @@ export interface DangerZoneProps {
   nodeName: string
   onDelete?: () => void | Promise<void>
   deleteLabel?: string
+  /** False for the built-in node: its record can't be removed. */
+  canRemoveRecord?: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DangerZone
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZoneProps) {
+export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveRecord = true }: DangerZoneProps) {
   const navigate = useNavigate()
   const confirm = useConfirm()
 
@@ -81,6 +83,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
         <WipeConfirmBody
           nodeName={nodeName}
           onAlsoRemoveChange={updateAlsoRemoveHubRecord}
+          canRemoveRecord={canRemoveRecord}
         />
       ),
       onConfirm: async () => {
@@ -99,7 +102,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
           throw new Error(result.error)
         }
         if (alsoRemove) {
-          toast.success(`${nodeName} wiped and removed from hub`)
+          toast.success(`${nodeName} wiped and removed from the panel`)
           navigate("/nodes")
         } else {
           toast.success(`${nodeName} wiped successfully`)
@@ -128,7 +131,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
         </div>
 
         <div className="divide-y divide-border/40">
-          {/* ── Row 0: Delete from hub (least destructive) ──────────────── */}
+          {/* ── Row 0: Delete from the panel (least destructive) ───────── */}
           {onDelete && (
             <div className="flex flex-col items-start justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
               <div className="flex items-start gap-3 min-w-0">
@@ -137,14 +140,14 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                 </div>
                 <div className="space-y-0.5 min-w-0">
                   <p className="text-sm font-semibold leading-none text-foreground">
-                    {deleteLabel || "Delete from hub"}
+                    {deleteLabel || "Delete from panel"}
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Removes this server from the panel and attempts to uninstall its local agent and Xray.
+                    Removes this node from the panel and attempts to uninstall its agent and Xray.
                     Force deletion also removes linked accounts and configuration.
                   </p>
                   <p className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground/60">
-                    Panel record removal · local agent and Xray uninstall
+                    Panel record removal · agent and Xray uninstall
                   </p>
                 </div>
               </div>
@@ -173,8 +176,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel }: DangerZo
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Remove proxy configs, keys, logs and temporary data. The
-                  node OS and agent stay intact. Optionally removes the hub
-                  record.
+                  node OS and agent stay intact.{canRemoveRecord && " Optionally removes the panel record."}
                 </p>
                 <p className="font-mono text-[11px] uppercase tracking-wide text-amber-500/70">
                   Partially reversible · configs are lost

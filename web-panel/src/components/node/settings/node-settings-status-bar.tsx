@@ -12,19 +12,19 @@ export function NodeSettingsStatusBar({ node, settingsForm }: { node: Node; sett
         <Card className="border-border/60 bg-card shadow-none">
             <CardHeader className="pb-4">
                 <CardTitle className="text-base">Availability</CardTitle>
-                <CardDescription>Control server availability and the notice users see.</CardDescription>
+                <CardDescription>Control node availability and the notice users see.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="divide-y divide-border/60 rounded-lg border border-border/60">
                     <FormField control={form.control} name="is_active" render={({ field }) => (
                         <FormItem className="flex items-center justify-between gap-5 p-4">
-                            <div className="space-y-1"><FormLabel>Enable server</FormLabel><FormDescription>Include this server in health checks and service management.</FormDescription></div>
+                            <div className="space-y-1"><FormLabel>Enable node</FormLabel><FormDescription>Include this node in health checks and service management.</FormDescription></div>
                             <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                         </FormItem>
                     )} />
                     <FormField control={form.control} name="maintenance_mode" render={({ field }) => (
                         <FormItem className="flex items-center justify-between gap-5 p-4">
-                            <div className="space-y-1"><FormLabel>Maintenance mode</FormLabel><FormDescription>Show a maintenance notice to users of this server.</FormDescription></div>
+                            <div className="space-y-1"><FormLabel>Maintenance mode</FormLabel><FormDescription>Show a maintenance notice to users of this node.</FormDescription></div>
                             <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                         </FormItem>
                     )} />

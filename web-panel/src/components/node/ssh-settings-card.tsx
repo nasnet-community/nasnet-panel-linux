@@ -45,7 +45,7 @@ export function SSHSettingsCard({ settingsForm, isStealth, isOnline = true }: SS
                 </div>
             </CardHeader>
             <CardContent className="space-y-6">
-                {!isOnline ? <p className="text-sm text-muted-foreground">Restore the server connection to view and change SSH access.</p> : isStealth ? (
+                {!isOnline ? <p className="text-sm text-muted-foreground">Restore the node connection to view and change SSH access.</p> : isStealth ? (
                     <p className="text-sm text-muted-foreground">
                         SSH configuration is not available for stealth nodes.
                     </p>

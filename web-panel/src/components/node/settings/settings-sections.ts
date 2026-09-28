@@ -2,18 +2,18 @@ import type { NodeSettingsFormData } from "@/lib/validations/node-settings-schem
 
 export const settingsSections = [
     { id: "general", label: "General", description: "Identity, availability, and customer notices." },
-    { id: "connection", label: "Connection", description: "SSH access to this server." },
+    { id: "connection", label: "Connection", description: "SSH access to this node." },
     { id: "logging", label: "Logging", description: "Xray diagnostics and destination tracking." },
     { id: "automation", label: "Automation", description: "Starlink monitoring and crash recovery." },
-    { id: "danger", label: "Danger zone", description: "Remove the server record or erase its data." },
+    { id: "danger", label: "Danger zone", description: "Remove the node record or erase its data." },
 ] as const
 export type SettingsSection = typeof settingsSections[number]["id"]
 export const settingsFields: Record<keyof NodeSettingsFormData, { label: string; section: SettingsSection }> = {
-    name: { label: "Server name", section: "general" },
+    name: { label: "Node name", section: "general" },
     ip: { label: "IP address", section: "general" },
     country_code: { label: "Country code", section: "general" },
     datacenter: { label: "Datacenter", section: "general" },
-    is_active: { label: "Server enabled", section: "general" },
+    is_active: { label: "Node enabled", section: "general" },
     maintenance_mode: { label: "Maintenance mode", section: "general" },
     maintenance_message: { label: "Maintenance message", section: "general" },
     agent_port: { label: "Agent port", section: "connection" },

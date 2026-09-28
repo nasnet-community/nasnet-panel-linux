@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { Check, Loader2, SlidersHorizontal, Plug, ScrollText, Workflow, TriangleAlert, ArrowRight } from "lucide-react"
 import { DangerZone } from "@/components/node/danger-zone"
+import { isLocalNode } from "@/lib/node-kind"
 import type { Node } from "@/lib/types"
 
 interface NodeSettingsProps {
@@ -62,14 +63,14 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
     const handleDelete = async () => {
         if (!await confirmDelete({
             title: forceDelete ? "Force delete node?" : "Delete node?",
-            description: `Remove ${node.name} from the panel and attempt to uninstall its local agent and Xray.${forceDelete ? " Linked accounts and configuration will also be deleted." : " Servers with linked accounts or inbounds require force deletion."}`,
+            description: `Remove ${node.name} from the panel and attempt to uninstall its agent and Xray.${forceDelete ? " Linked accounts and configuration will also be deleted." : " Nodes with linked accounts or inbounds require force deletion."}`,
             variant: "destructive", typeToConfirm: node.name, confirmLabel: forceDelete ? "Force delete" : "Delete node",
         })) return
         try {
             const res = await deleteNode(node.id, forceDelete)
             if (res.success) {
                 toast.success("Node deleted")
-                navigate("/server")
+                navigate("/nodes")
             } else {
                 if (res.error?.includes("has active")) {
                     setForceDelete(true)
@@ -88,11 +89,11 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
             <div className="relative min-w-0 space-y-5 pb-4">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
                     <div className="space-y-1.5">
-                        <h2 className="text-lg font-semibold tracking-tight">Server settings</h2>
+                        <h2 className="text-lg font-semibold tracking-tight">Node settings</h2>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <Badge variant={node.is_online ? "success" : "secondary"} className="gap-1.5"><span className={cn("size-1.5 rounded-full", node.is_online ? "bg-emerald-500" : "bg-muted-foreground")} />{node.is_online ? "Server online" : "Server offline"}</Badge>
-                            <span className="capitalize">Local server</span>
-                            <span aria-hidden="true" className="hidden sm:inline">·</span><span className="hidden font-mono sm:inline">Server #{node.id}</span>
+                            <Badge variant={node.is_online ? "success" : "secondary"} className="gap-1.5"><span className={cn("size-1.5 rounded-full", node.is_online ? "bg-emerald-500" : "bg-muted-foreground")} />{node.is_online ? "Online" : "Offline"}</Badge>
+                            <span className="capitalize">{isLocalNode(node) ? "Built in" : node.connect_mode}</span>
+                            <span aria-hidden="true" className="hidden sm:inline">·</span><span className="hidden font-mono sm:inline">Node #{node.id}</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -137,7 +138,7 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
                         <NodeSettingsStarlink settingsForm={settingsForm} isStealth={isStealth} />
                         <NodeSettingsCrashRecovery settingsForm={settingsForm} isStealth={isStealth} lastRecovery={node.last_crash_recovery} />
                     </>}
-                    {section === "danger" && <DangerZone nodeId={node.id} nodeName={node.name} onDelete={handleDelete} deleteLabel={forceDelete ? "Force delete node" : "Delete node"} />}
+                    {section === "danger" && <DangerZone nodeId={node.id} nodeName={node.name} onDelete={isLocalNode(node) ? undefined : handleDelete} canRemoveRecord={!isLocalNode(node)} deleteLabel={forceDelete ? "Force delete node" : "Delete node"} />}
                 </fieldset>
 
                 <NodeSettingsSaveBar settingsForm={settingsForm} onSave={() => void handleSave()} onReview={() => setReviewOpen(true)} />

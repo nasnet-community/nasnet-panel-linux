@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/guards/auth-guard"
 import { GuestGuard } from "@/components/guards/guest-guard"
 import { DashboardLayout } from "@/components/layouts/dashboard-layout"
 import { RouteErrorBoundary } from "@/components/ui/route-error-boundary"
+import { LocalNodeRedirect } from "@/components/node/local-node-redirect"
 
 const Login = lazy(() => import("@/pages/login"))
 const Dashboard = lazy(() => import("@/pages/dashboard"))
@@ -14,7 +15,7 @@ const Users = lazy(() => import("@/pages/users"))
 const UserDetail = lazy(() => import("@/pages/users/[id]"))
 const Subscriptions = lazy(() => import("@/pages/subscriptions"))
 const Accounts = lazy(() => import("@/pages/accounts"))
-const Server = lazy(() => import("@/pages/nodes/[id]"))
+const NodeDetail = lazy(() => import("@/pages/nodes/[id]"))
 const XrayBinaries = lazy(() => import("@/pages/xray-binaries"))
 const Settings = lazy(() => import("@/pages/settings"))
 const Certificates = lazy(() => import("@/pages/certificates"))
@@ -59,14 +60,15 @@ export const router = createBrowserRouter([
         { path: "/dashboard", element: r(<Dashboard />) },
         { path: "/users", element: r(<Users />) },
         { path: "/users/:id", element: r(<UserDetail />) },
-        { path: "/server", element: r(<Server />) },
-        { path: "/nodes", element: <Navigate to="/server" replace /> },
+        // The built-in node's address; keeps ?tab= and bookmarks.
+        { path: "/server", element: r(<LocalNodeRedirect />) },
+        { path: "/nodes", element: r(<LocalNodeRedirect />) },
+        { path: "/nodes/:id", element: r(<NodeDetail />) },
         { path: "/router", element: r(<Router />) },
         { path: "/router/flow", element: r(<RouterFlow />) },
         // The old address; shared trace URLs must keep working.
         { path: "/network", element: <RedirectWithSearch to="/router" /> },
         { path: "/network/flow", element: <RedirectWithSearch to="/router/flow" /> },
-        { path: "/nodes/:id", element: <Navigate to="/server" replace /> },
         { path: "/xray-binaries", element: r(<XrayBinaries />) },
         { path: "/subscriptions", element: r(<Subscriptions />) },
         { path: "/accounts", element: r(<Accounts />) },

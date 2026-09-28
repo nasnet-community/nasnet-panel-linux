@@ -59,7 +59,7 @@ const NAV_SECTIONS: NavSection[] = [
                 ],
             },
             {
-                label: "Server", href: "/server", icon: HiOutlineServer, mobileQuickAccess: true,
+                label: "Nodes", href: "/nodes", icon: HiOutlineServer, mobileQuickAccess: true,
                 children: [
                     { label: "Hosts", href: "/hosts", icon: HiOutlineLink },
                     { label: "Access Logs", href: "/access-logs", icon: HiOutlineGlobeAlt },
@@ -110,7 +110,7 @@ const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed"
 export function DashboardLayout() {
     const navigate = useNavigate()
     const { pathname, search } = useLocation()
-    const terminalWorkspace = /^\/server\/?$/.test(pathname) && new URLSearchParams(search).get("tab") === "terminal"
+    const terminalWorkspace = /^\/nodes\/[^/]+\/?$/.test(pathname) && new URLSearchParams(search).get("tab") === "terminal"
     const user = useAuthStore((state) => state.user)
     const logout = useAuthStore((state) => state.logout)
     const isLoading = useAuthStore((state) => state.isLoading)

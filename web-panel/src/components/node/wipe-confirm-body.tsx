@@ -7,9 +7,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 export interface WipeConfirmBodyProps {
   nodeName: string
   onAlsoRemoveChange: (v: boolean) => void
+  /** False for the built-in node: its record can't be removed. */
+  canRemoveRecord?: boolean
 }
 
-export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBodyProps) {
+export function WipeConfirmBody({ nodeName, onAlsoRemoveChange, canRemoveRecord = true }: WipeConfirmBodyProps) {
   const [checked, setChecked] = useState(false)
 
   const handleChange = (v: boolean) => {
@@ -28,7 +30,7 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
           Wipe removes xray configs, VPN keys, iptables rules, logs and
           temporary files from{" "}
           <span className="font-semibold text-foreground">{nodeName}</span>.
-          The node record in the hub is preserved unless you opt-in below.
+          {canRemoveRecord ? "The node record in the panel is preserved unless you opt in below." : "The node record in the panel is preserved."}
         </p>
       </div>
 
@@ -59,8 +61,8 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
         </ul>
       </div>
 
-      {/* Hub record checkbox */}
-      <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
+      {/* Panel record checkbox */}
+      {canRemoveRecord && <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border/50 bg-muted/30 px-3 py-2.5">
         <Checkbox
           checked={checked}
           onCheckedChange={(v) => handleChange(!!v)}
@@ -68,14 +70,14 @@ export function WipeConfirmBody({ nodeName, onAlsoRemoveChange }: WipeConfirmBod
         />
         <div className="space-y-0.5">
           <p className="text-sm font-medium leading-none">
-            Also remove node from hub
+            Also remove node from the panel
           </p>
           <p className="text-xs text-muted-foreground">
-            Deletes the hub database record — you will be redirected to the
+            Deletes the panel's record of it — you will be redirected to the
             nodes list after wipe completes.
           </p>
         </div>
-      </label>
+      </label>}
     </div>
   )
 }

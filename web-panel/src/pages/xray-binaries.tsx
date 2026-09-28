@@ -224,7 +224,7 @@ export default function XrayBinaries() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Delete {deleteTarget}?</DialogTitle>
-                        <DialogDescription>Removes the cached binary from the hub. Nodes already running it are unaffected.</DialogDescription>
+                        <DialogDescription>Removes the cached binary from the panel. Nodes already running it are unaffected.</DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>

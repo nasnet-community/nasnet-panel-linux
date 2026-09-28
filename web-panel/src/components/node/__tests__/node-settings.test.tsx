@@ -14,7 +14,7 @@ vi.mock("@/lib/api/nodes", () => ({
 }))
 vi.mock("@/lib/api/maintenance", () => ({ setNodeMaintenance: vi.fn() }))
 vi.mock("../danger-zone", () => ({ DangerZone: () => <div>Destructive operations</div> }))
-const node = { id: 6, name: "London", ip: "192.0.2.6", is_online: true, is_active: true, updated_at: "1" } as Node
+const node = { id: 6, name: "London", ip: "192.0.2.6", connect_mode: "local", is_online: true, is_active: true, updated_at: "1" } as Node
 beforeEach(() => { vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); vi.clearAllMocks(); vi.mocked(getXrayConfig).mockResolvedValue({ success: true, data: '{"log":{"loglevel":"warning"}}' }) })
 function setup() { return render(<MemoryRouter><ConfirmDialogProvider><NodeSettings node={node} onRefresh={vi.fn()} /></ConfirmDialogProvider></MemoryRouter>) }
 describe("node settings workspace", () => {
@@ -22,7 +22,7 @@ describe("node settings workspace", () => {
         const onDirtyChange = vi.fn()
         const user = userEvent.setup()
         const view = render(<MemoryRouter><ConfirmDialogProvider><NodeSettings node={node} onRefresh={vi.fn()} onDirtyChange={onDirtyChange} /></ConfirmDialogProvider></MemoryRouter>)
-        await user.type(screen.getByRole("textbox", { name: "Server Name" }), " draft")
+        await user.type(screen.getByRole("textbox", { name: "Node name" }), " draft")
         await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
         view.unmount()
         expect(onDirtyChange).toHaveBeenLastCalledWith(false)
@@ -38,14 +38,14 @@ describe("node settings workspace", () => {
     })
     it("keeps edits across categories and reviews changes before saving", async () => {
         const user = userEvent.setup(); setup()
-        const name = screen.getByRole("textbox", { name: "Server Name" })
+        const name = screen.getByRole("textbox", { name: "Node name" })
         await user.clear(name); await user.type(name, "New name")
         await user.click(screen.getByRole("button", { name: "Automation" }))
         expect(screen.getByText("Starlink Monitoring")).toBeVisible()
         expect(screen.queryByText("Bandwidth Shaping")).not.toBeInTheDocument()
         expect(screen.queryByText("Destructive operations")).not.toBeInTheDocument()
         await user.click(screen.getByRole("button", { name: "General" }))
-        expect(screen.getByRole("textbox", { name: "Server Name" })).toHaveValue("New name")
+        expect(screen.getByRole("textbox", { name: "Node name" })).toHaveValue("New name")
         await user.click(screen.getByRole("button", { name: /1 unsaved change/ }))
         const dialog = screen.getByRole("dialog")
         expect(within(dialog).getByText("London")).toBeVisible()

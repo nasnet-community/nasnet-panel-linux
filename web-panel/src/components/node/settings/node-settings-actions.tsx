@@ -33,7 +33,7 @@ export function NodeSettingsActions({ node, settingsForm, onRefresh }: {
             <DropdownMenuLabel>Xray service</DropdownMenuLabel>
             <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Start Xray", () => startXrayProcess(node.id))}>Start Xray</DropdownMenuItem>
             <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Restart Xray", () => restartXrayProcess(node.id), "Active connections may briefly reconnect.")}>Restart Xray</DropdownMenuItem>
-            <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Stop Xray", () => stopXrayProcess(node.id), "This stops proxy traffic on this server until Xray is started again.")}>Stop Xray</DropdownMenuItem>
+            <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Stop Xray", () => stopXrayProcess(node.id), "This stops proxy traffic on this node until Xray is started again.")}>Stop Xray</DropdownMenuItem>
             {!node.is_stealth && <>
                 <DropdownMenuSeparator /><DropdownMenuLabel>SSH service</DropdownMenuLabel>
                 <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Restart SSH", () => restartNodeSSH(node.id), "Active SSH connections may drop.", true)}>Restart SSH</DropdownMenuItem>

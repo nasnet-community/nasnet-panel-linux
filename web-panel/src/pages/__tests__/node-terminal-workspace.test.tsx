@@ -5,14 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes, Link } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import NodeDetailPage from "../nodes/[id]"
+import { LocalNodeRedirect } from "@/components/node/local-node-redirect"
 
 const lifecycle = vi.hoisted(() => ({ mounted: vi.fn(), disposed: vi.fn() }))
 vi.mock("@/lib/api/nodes", () => ({
-    listNodes: vi.fn(async () => ({ success: true, data: [{ id: 1 }] })),
-    getNode: vi.fn(async () => ({ success: true, data: { id: 1, name: "Local server", ip: "127.0.0.1", is_online: true } })),
+    getNode: vi.fn(async () => ({ success: true, data: { id: 1, name: "Home router", ip: "127.0.0.1", connect_mode: "local", is_online: true } })),
     restartXrayProcess: vi.fn(),
 }))
 vi.mock("@/lib/queries", () => ({
+    useNodes: () => ({ data: [{ id: 7, connect_mode: "direct" }, { id: 1, connect_mode: "local" }], isLoading: false }),
     useNodeStats: () => ({ data: undefined, refetch: vi.fn() }),
     useNodeStatsHistory: () => ({ data: undefined }),
     queryKeys: { nodeStats: (id: number) => ["stats", id], nodeStatsHistory: (id: number) => ["history", id] },
@@ -36,11 +37,15 @@ vi.mock("@/components/node/starlink/starlink-dashboard", () => ({ StarlinkDashbo
 vi.mock("@/components/node/geofiles-dialog", () => ({ GeofilesDialog: () => null }))
 vi.mock("@/components/accounts/account-details-sheet", () => ({ AccountDetailsSheet: () => null }))
 
-function mount(tab = "overview") {
+function mount(tab = "overview", path = "/nodes/1") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/server?tab=${tab}`]}>
-        <Link to="/dashboard">Leave server</Link>
-        <Routes><Route path="/server" element={<NodeDetailPage />} /><Route path="/dashboard" element={<p>Dashboard</p>} /></Routes>
+    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`${path}?tab=${tab}`]}>
+        <Link to="/dashboard">Leave node</Link>
+        <Routes>
+            <Route path="/nodes/:id" element={<NodeDetailPage />} />
+            <Route path="/server" element={<LocalNodeRedirect />} />
+            <Route path="/dashboard" element={<p>Dashboard</p>} />
+        </Routes>
     </MemoryRouter></QueryClientProvider>)
 }
 beforeEach(() => {
@@ -49,7 +54,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-describe("local server workspace", () => {
+describe("built-in node workspace", () => {
     it("omits the retired Accounts section", async () => {
         mount()
         await screen.findByText("Overview content")
@@ -76,8 +81,13 @@ describe("local server workspace", () => {
         await user.click(screen.getByRole("tab", { name: /^Terminal/ }))
         expect(screen.getByRole("textbox", { name: "Shell draft" })).toHaveValue("pwd")
         expect(lifecycle.mounted).toHaveBeenCalledOnce()
-        await user.click(screen.getByRole("link", { name: "Leave server" }))
+        await user.click(screen.getByRole("link", { name: "Leave node" }))
         expect(lifecycle.disposed).toHaveBeenCalledOnce()
+    })
+    it("sends /server to the built-in node and keeps the tab", async () => {
+        mount("network", "/server")
+        expect(await screen.findByText("Network content")).toBeVisible()
+        expect(screen.getByText("This router")).toBeVisible()
     })
     it("keeps dirty settings until the operator confirms leaving the section", async () => {
         const user = userEvent.setup()

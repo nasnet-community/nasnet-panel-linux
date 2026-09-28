@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react"
-import { useNavigate, useSearchParams, useLocation } from "react-router"
+import { useNavigate, useParams, useSearchParams, useLocation } from "react-router"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import {
+    HiOutlineArrowLeft,
     HiOutlineServer,
     HiOutlineRefresh,
     HiOutlineChartBar,
@@ -20,7 +21,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { getNode, listNodes, restartXrayProcess } from "@/lib/api/nodes"
+import { getNode, restartXrayProcess } from "@/lib/api/nodes"
 import { Loader2, Satellite } from "lucide-react"
 import { useNodeStats, useNodeStatsHistory, queryKeys } from "@/lib/queries"
 import { useQueryClient } from "@tanstack/react-query"
@@ -40,26 +41,29 @@ import { GeofilesDialog } from "@/components/node/geofiles-dialog"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { AccountDetailsSheet } from "@/components/accounts/account-details-sheet"
 import { StarlinkDashboard } from "@/components/node/starlink/starlink-dashboard"
+import { LocalNodeBadge } from "@/components/node/local-node-badge"
+import { isLocalNode, nodeAddress } from "@/lib/node-kind"
 
 const nodeTabs = [
     { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
     { value: "network", label: "Network", description: "Inbounds & Outbounds", icon: HiOutlineGlobeAlt },
     { value: "starlink", label: "Starlink", description: "Satellite Link", icon: Satellite },
-    { value: "settings", label: "Settings", description: "Server Configuration", icon: HiOutlineCog },
+    { value: "settings", label: "Settings", description: "Node Configuration", icon: HiOutlineCog },
     { value: "access-logs", label: "Access Logs", description: "Destinations & Domains", icon: HiOutlineGlobeAlt },
     { value: "logs", label: "Logs", description: "System & Activity", icon: HiOutlineTerminal },
     { value: "terminal", label: "Terminal", description: "Interactive Shell", icon: HiOutlineTerminal },
 ] as const
 
 export default function NodeDetailPage() {
+    const params = useParams()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const { pathname } = useLocation()
     const queryClient = useQueryClient()
+    const nodeId = Number(params.id)
 
-    // one node (local machine)
     const [node, setNode] = useState<Node | null>(null)
-    const nodeId = node?.id ?? 0
+    const requestGenerationRef = useRef(0)
 
     const [settingsDirty, setSettingsDirty] = useState(false)
     const [pendingSettingsNavigation, setPendingSettingsNavigation] = useState<string | null>(null)
@@ -193,33 +197,27 @@ export default function NodeDetailPage() {
     )
 
     const loadData = useCallback(async () => {
+        // A late answer for the node we just left must not replace this one.
+        const generation = ++requestGenerationRef.current
         try {
-            if (!node) setIsLoading(true)
-
-            // Resolve the single local node. then load its full detail
-            const listRes = await listNodes()
-            const first = listRes.success && listRes.data && listRes.data.length > 0 ? listRes.data[0] : null
-            if (!first) {
-                toast.error("No server configured")
-                return
-            }
-
-            const nodeRes = await getNode(first.id)
+            const nodeRes = await getNode(nodeId)
+            if (generation !== requestGenerationRef.current) return
             if (nodeRes.success && nodeRes.data) {
                 setNode(nodeRes.data)
             } else {
-                toast.error("Failed to load server data")
+                toast.error("Failed to load node data")
             }
         } catch {
-            toast.error("Failed to load server data")
+            if (generation === requestGenerationRef.current) toast.error("Failed to load node data")
         } finally {
-            setIsLoading(false)
+            if (generation === requestGenerationRef.current) setIsLoading(false)
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [nodeId])
 
     useEffect(() => {
+        setIsLoading(true)
         loadData()
+        return () => { requestGenerationRef.current += 1 }
     }, [loadData])
 
     const handleRefresh = useCallback(() => {
@@ -228,7 +226,7 @@ export default function NodeDetailPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.nodeStatsHistory(nodeId) })
     }, [loadData, queryClient, nodeId])
 
-    if (isLoading && !node) {
+    if (isLoading && (!node || node.id !== nodeId)) {
         return (
             <div className="space-y-6 animate-in fade-in duration-500">
                 <div className="flex items-center gap-4">
@@ -241,38 +239,49 @@ export default function NodeDetailPage() {
         )
     }
 
-    if (!node) {
+    if (!node || node.id !== nodeId) {
         return (
             <div className="flex flex-col items-center justify-center py-12">
-                <p className="text-muted-foreground mb-4">Server unavailable</p>
-                <Button variant="outline" onClick={handleRefresh}>
-                    <HiOutlineRefresh className="w-4 h-4 mr-2" />
-                    Retry
+                <p className="text-muted-foreground mb-4">Node not found</p>
+                <Button variant="outline" onClick={() => navigateFromNode("/nodes")}>
+                    <HiOutlineArrowLeft className="w-4 h-4 mr-2" />
+                    Back to Nodes
                 </Button>
             </div>
         )
     }
 
+    const local = isLocalNode(node)
+
     return (
         <div ref={workspaceRef} className={cn("min-w-0 animate-in fade-in duration-300", !isTerminalWorkspace && "pb-20")}>
             {/* Top Header / Breadcrumbs */}
             <div className={cn("flex flex-col md:flex-row md:items-center justify-between gap-4", isTerminalWorkspace ? "mb-4" : "mb-6 md:mb-8")}>
-                <div className="flex items-center gap-3">
-                    <div className={cn(
-                        "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
-                        node.is_online ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
-                    )}>
-                        <HiOutlineServer className="w-5 h-5" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <h1 className="text-lg font-bold text-foreground">{node.name}</h1>
-                        <Badge
-                            variant={node.is_online ? "success" : "danger"}
-                            className="px-1.5 py-0 text-[12px] uppercase font-bold tracking-wider"
+                <div className="flex min-w-0 items-center gap-3">
+                    <Button variant="ghost" size="icon" onClick={() => navigateFromNode("/nodes")} className="text-muted-foreground hover:text-foreground" aria-label="Back to nodes">
+                        <HiOutlineArrowLeft className="w-5 h-5" />
+                    </Button>
+                    <div className="h-8 w-px bg-border hidden md:block" />
+                    <nav className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" aria-label="Breadcrumb">
+                        <button
+                            type="button"
+                            onClick={() => navigateFromNode("/nodes")}
+                            className="hover:text-foreground cursor-pointer transition-colors bg-transparent border-none p-0 text-sm text-muted-foreground"
                         >
-                            {node.is_online ? "Online" : "Offline"}
-                        </Badge>
-                    </div>
+                            Nodes
+                        </button>
+                        <span aria-hidden="true">/</span>
+                        <span className="min-w-0 font-semibold text-foreground flex items-center gap-2" aria-current="page">
+                            <h1 className="truncate text-lg font-bold">{node.name}</h1>
+                            {local && <LocalNodeBadge />}
+                            <Badge
+                                variant={node.is_online ? "success" : "danger"}
+                                className="shrink-0 px-1.5 py-0 text-[12px] uppercase font-bold tracking-wider"
+                            >
+                                {node.is_online ? "Online" : "Offline"}
+                            </Badge>
+                        </span>
+                    </nav>
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-auto">
@@ -303,7 +312,7 @@ export default function NodeDetailPage() {
                     />
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" aria-label="Server actions" className={cn("h-8 px-2.5", !isTerminalWorkspace && "md:hidden")}>
+                            <Button variant="outline" size="sm" aria-label="Node actions" className={cn("h-8 px-2.5", !isTerminalWorkspace && "md:hidden")}>
                                 <HiOutlineDotsVertical className="w-4 h-4" />
                             </Button>
                         </DropdownMenuTrigger>
@@ -328,7 +337,7 @@ export default function NodeDetailPage() {
                 activationMode="manual"
                 className={cn("min-w-0", useNodeSidebar ? "grid grid-cols-[224px_minmax(0,1fr)] gap-8" : "flex flex-col gap-4")}
             >
-                <aside className="min-w-0 space-y-4" aria-label="Server sections">
+                <aside className="min-w-0 space-y-4" aria-label="Node sections">
                     {useNodeSidebar && (
                         <div className="flex items-center gap-3 p-4 rounded-xl bg-card border shadow-sm">
                             <div className={cn(
@@ -339,13 +348,15 @@ export default function NodeDetailPage() {
                             </div>
                             <div className="overflow-hidden">
                                 <h2 className="font-bold truncate">{node.name}</h2>
-                                <CopyableText text={node.ip} className="text-xs text-muted-foreground font-mono" />
+                                {local && nodeAddress(node) !== node.ip
+                                    ? <span className="text-xs text-muted-foreground">{nodeAddress(node)}</span>
+                                    : <CopyableText text={node.ip} className="text-xs text-muted-foreground font-mono" />}
                             </div>
                         </div>
                     )}
                     <TabsList
                         ref={tabsListRef}
-                        aria-label="Server sections"
+                        aria-label="Node sections"
                         className={cn(
                             "flex h-auto w-full justify-start bg-transparent p-0",
                             useNodeSidebar ? "flex-col gap-1" : "gap-1 overflow-x-auto border-b border-border rounded-none pb-1"

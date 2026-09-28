@@ -13,7 +13,7 @@ export interface Node {
     datacenter: string
     api_port: number
     agent_port: number
-    connect_mode: "direct" | "reverse"
+    connect_mode: "local" | "direct" | "reverse"
     is_stealth: boolean
     is_persistent_stealth?: boolean
     is_active: boolean
