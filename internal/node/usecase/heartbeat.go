@@ -949,6 +949,13 @@ func (hm *HeartbeatManager) fetchAndLogErrors(node *domain.Node, crashCount int)
 
 // StartHeartbeats initializes and starts the heartbeat manager for all agent nodes.
 func (u *nodeUsecase) StartHeartbeats(ctx context.Context) {
+	u.heartbeatStartMu.Lock()
+	defer u.heartbeatStartMu.Unlock()
+	if u.heartbeatMgr != nil {
+		// Both the scheduler and the boot sequence start it; a second
+		// manager would run every session twice and orphan the first.
+		return
+	}
 	u.heartbeatMgr = NewHeartbeatManager(u)
 	u.heartbeatMgr.Start(ctx)
 }

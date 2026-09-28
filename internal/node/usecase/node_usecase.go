@@ -372,6 +372,8 @@ type nodeUsecase struct {
 
 	// Heartbeat manager for the local node's status loop
 	heartbeatMgr *HeartbeatManager
+	// heartbeatStartMu makes StartHeartbeats idempotent.
+	heartbeatStartMu sync.Mutex
 
 	// Stats cache — short-lived memoization of GetNodeStats results.
 	// Shields repeat-refresh + multiple panel tabs from fan-out.
