@@ -57,6 +57,13 @@ type UserListItem struct {
 	LastActiveAt        *string `json:"last_active_at"`
 	CreatedAt           string  `json:"created_at"`
 	UpdatedAt           string  `json:"updated_at"`
+	// DataUsed is lifetime traffic across every subscription.
+	DataUsed     int64                   `json:"data_used"`
+	Online       bool                    `json:"online"`
+	Group        UserListGroup           `json:"group"`
+	Subscription *UserListSubscription   `json:"subscription"`
+	ActiveLinks  []*UserListSubscription `json:"active_links"`
+	Match        *UserListMatch          `json:"match"`
 }
 
 // BroadcastResult represents the result of a broadcast operation

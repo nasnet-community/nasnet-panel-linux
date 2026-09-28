@@ -8,6 +8,7 @@ import (
 	"time"
 
 	accountUC "github.com/nasnet-community/nasnet-panel-linux/internal/account/usecase"
+	adminDomain "github.com/nasnet-community/nasnet-panel-linux/internal/admin/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/admin/usecase"
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
 	nodeUC "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
@@ -251,10 +252,11 @@ func (h *Handler) HandleUsers(c telebot.Context) error {
 	}
 	offset := (page - 1) * limit
 
-	users, total, err := h.adminUC.ListUsers(ctx, search, "", "", "", offset, limit)
+	result, err := h.adminUC.ListUsers(ctx, adminDomain.UserListQuery{Search: search, Offset: offset, Limit: limit, Now: time.Now()})
 	if err != nil {
 		return c.Send("❌ Error fetching users")
 	}
+	users, total := result.Items, result.Total
 
 	if len(users) == 0 && page == 1 {
 		return c.Send("📭 No users found")

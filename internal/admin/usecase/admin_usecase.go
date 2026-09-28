@@ -60,7 +60,7 @@ type AdminUsecase interface {
 	GetOnlineUsersHistory(ctx context.Context, minutes int) ([]*adminDomain.OnlineUsersSnapshot, error)
 
 	// User management
-	ListUsers(ctx context.Context, search, filter, sort, order string, offset, limit int) ([]*adminDomain.UserListItem, int64, error)
+	ListUsers(ctx context.Context, q adminDomain.UserListQuery) (*adminDomain.UserListPage, error)
 	GetUserDetails(ctx context.Context, id uint) (*adminDomain.UserDetails, error)
 	// BanUser pauses the user's active subscriptions; UnbanUser resumes the
 	// ones the ban paused.

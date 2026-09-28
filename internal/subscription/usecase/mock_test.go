@@ -309,8 +309,8 @@ func (m *mockSubUserRepo) UpdateLanguage(_ context.Context, _ uint, _ string) er
 func (m *mockSubUserRepo) ListAll(_ context.Context, _, _, _, _ string, _, _ int) ([]*userDomain.User, int64, error) {
 	return nil, 0, nil
 }
-func (m *mockSubUserRepo) ListAllEnriched(_ context.Context, _, _, _, _ string, _, _ int) ([]*adminDomain.UserListItem, int64, error) {
-	return nil, 0, nil
+func (m *mockSubUserRepo) ListForAdmin(_ context.Context, _ adminDomain.UserListQuery) (*adminDomain.UserListPage, error) {
+	return &adminDomain.UserListPage{}, nil
 }
 func (m *mockSubUserRepo) SetBalance(_ context.Context, _ uint, _ money.Money) error { return nil }
 func (m *mockSubUserRepo) UpdateBanStatus(_ context.Context, _ uint, _ bool) error   { return nil }

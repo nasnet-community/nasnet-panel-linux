@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	adminDomain "github.com/nasnet-community/nasnet-panel-linux/internal/admin/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
 	"gopkg.in/telebot.v3"
 )
@@ -53,10 +54,11 @@ func (h *Handler) HandleExport(c telebot.Context) error {
 }
 
 func (h *Handler) exportUsers(ctx context.Context) (string, error) {
-	users, _, err := h.adminUC.ListUsers(ctx, "", "", "created_at", "desc", 0, 100000)
+	page, err := h.adminUC.ListUsers(ctx, adminDomain.UserListQuery{Sort: "created_at", Order: "desc", Now: time.Now()})
 	if err != nil {
 		return "", fmt.Errorf("failed to list users: %w", err)
 	}
+	users := page.Items
 
 	tmpFile, err := os.CreateTemp("", "users_export_*.csv")
 	if err != nil {

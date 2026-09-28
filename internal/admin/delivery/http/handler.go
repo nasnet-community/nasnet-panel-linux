@@ -362,25 +362,34 @@ func (h *Handler) RunRetentionCleanup(c *gin.Context) {
 // ==================== User Management ====================
 
 func (h *Handler) ListUsers(c *gin.Context) {
-	search := c.Query("search")
-	filter := c.Query("filter")
-	sort := c.Query("sort")
-	order := c.Query("order")
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	q := parseUserListQuery(c, time.Now())
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "25"))
+	switch perPage {
+	case 10, 25, 50, 100:
+	default:
+		perPage = 25
+	}
+	q.Offset, q.Limit = (page-1)*perPage, perPage
 
-	users, total, err := h.adminUsecase.ListUsers(c.Request.Context(), search, filter, sort, order, offset, limit)
+	result, err := h.adminUsecase.ListUsers(c.Request.Context(), q)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
+	fillSubscriptionURLs(result.Items, h.getBaseURL(c))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    users,
+		"data":    result.Items,
 		"meta": gin.H{
-			"total":  total,
-			"offset": offset,
-			"limit":  limit,
+			"total":       result.Total,
+			"page":        page,
+			"per_page":    perPage,
+			"total_pages": (result.Total + int64(perPage) - 1) / int64(perPage),
+			"groups":      result.Groups,
 		},
 	})
 }

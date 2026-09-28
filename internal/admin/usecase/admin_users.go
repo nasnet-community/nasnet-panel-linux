@@ -11,8 +11,8 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
-func (u *adminUsecase) ListUsers(ctx context.Context, search, filter, sort, order string, offset, limit int) ([]*adminDomain.UserListItem, int64, error) {
-	return u.userRepo.ListAllEnriched(ctx, search, filter, sort, order, offset, limit)
+func (u *adminUsecase) ListUsers(ctx context.Context, q adminDomain.UserListQuery) (*adminDomain.UserListPage, error) {
+	return u.userRepo.ListForAdmin(ctx, q)
 }
 
 func (u *adminUsecase) GetUserDetails(ctx context.Context, id uint) (*adminDomain.UserDetails, error) {
