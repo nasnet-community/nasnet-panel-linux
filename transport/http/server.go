@@ -110,13 +110,15 @@ type ConfigDeps struct {
 	MetricsConfig    config.MetricsConfig
 	TelegramBotToken string
 	WebFS            embed.FS // embedded SPA filesystem from embed.go
+	Version          string   // panel release tag; paste installs fetch the agent of this release
 }
 
 // RepoDeps holds repository dependencies
 type RepoDeps struct {
-	NodeRepository nodeRepo.NodeRepository
-	UserRepository userRepo.UserRepository
-	SubRepository  subRepo.SubscriptionRepository
+	NodeRepository      nodeRepo.NodeRepository
+	UsedTokenRepository nodeRepo.UsedTokenRepository
+	UserRepository      userRepo.UserRepository
+	SubRepository       subRepo.SubscriptionRepository
 }
 
 // ServerDeps holds all dependencies for the HTTP server
@@ -404,6 +406,7 @@ func NewServer(deps ServerDeps) *Server {
 		// Certificate management: hub CA, node certificates, strict mode
 		if deps.Admin.CertificateUsecase != nil {
 			certHandler := nodeHandler.NewCertificateHandler(deps.Admin.CertificateUsecase, deps.Admin.NodeUsecase, deps.Admin.AuditUsecase, deps.Infra.TokenManager)
+			certHandler.SetUsedTokens(deps.Repos.UsedTokenRepository)
 			certHandler.RegisterAdminRoutes(adminAPI)
 			certHandler.RegisterPublicRoutes(publicAPI)
 		}
@@ -413,6 +416,14 @@ func NewServer(deps ServerDeps) *Server {
 		xrayH := xrayHandler.NewXrayHandler(xrayBM, deps.Admin.SettingUsecase, deps.Infra.TokenManager, deps.Admin.AuditUsecase)
 		xrayH.RegisterPublicRoutes(publicAPI.Group("/deploy/xray"))
 		xrayH.RegisterAdminRoutes(adminAPI)
+
+		// Remote node deployment: pull install and self-contained script
+		if deps.Admin.CertificateUsecase != nil && deps.Repos.NodeRepository != nil {
+			deployHandler := nodeHandler.NewDeployHandler(deps.Repos.NodeRepository, deps.Admin.NodeUsecase, deps.Infra.TokenManager,
+				deps.Admin.CertificateUsecase, deps.Repos.UsedTokenRepository, deps.Config.AppConfig.BaseURL, deps.Admin.SettingUsecase, xrayBM, deps.Config.Version)
+			deployHandler.RegisterAdminRoutes(adminAPI)
+			deployHandler.RegisterPublicRoutes(publicAPI)
+		}
 
 		// Wire xray deps into node usecase for hub-based xray updates
 		if deps.Admin.NodeUsecase != nil {

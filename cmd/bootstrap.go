@@ -107,6 +107,7 @@ type repositoryBundle struct {
 	Audit               auditDomain.AuditLogRepository
 	Alert               alertRepo.AlertRepository
 	AgentCert           nodeRepo.AgentCertificateRepository
+	UsedToken           nodeRepo.UsedTokenRepository
 	SubscriptionIP      subRepo.SubscriptionIPRepository
 	Chat                chatDomain.ChatRepository
 	OnlineUsersSnapshot adminRepo.OnlineUsersSnapshotRepository
@@ -150,6 +151,7 @@ func initRepositories(db *gorm.DB) repositoryBundle {
 		Audit:               auditRepo.NewAuditRepository(db),
 		Alert:               alertRepo.NewAlertRepository(db),
 		AgentCert:           nodeRepo.NewAgentCertificateRepository(db),
+		UsedToken:           nodeRepo.NewUsedTokenRepository(db),
 		SubscriptionIP:      subRepo.NewSubscriptionIPRepository(db),
 		Chat:                chatRepo.NewChatRepository(db),
 		OnlineUsersSnapshot: adminRepo.NewOnlineUsersSnapshotRepository(db),

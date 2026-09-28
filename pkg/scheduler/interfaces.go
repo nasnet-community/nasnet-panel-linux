@@ -71,6 +71,11 @@ type NodeUsecase interface {
 	RunAgentCertMaintenance(ctx context.Context) error
 }
 
+// UsedTokenRepository drops one-time deployment tokens past their expiry.
+type UsedTokenRepository interface {
+	CleanupExpired(ctx context.Context) error
+}
+
 // SNIUsecase defines what the scheduler needs from the SNI (certificate) layer.
 type SNIUsecase interface {
 	GetExpiringCertificates(ctx context.Context, days int) ([]*sniDomain.SNI, error)

@@ -10,6 +10,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/audit"
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/certs"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
@@ -29,7 +30,11 @@ type CertificateHandler struct {
 	nodeUC       usecase.NodeUsecase
 	auditUC      auditDomain.AuditLogUsecase
 	tokenManager *auth.TokenManager
+	usedTokens   repository.UsedTokenRepository
 }
+
+// SetUsedTokens makes the agent bundle one-time per deployment token.
+func (h *CertificateHandler) SetUsedTokens(r repository.UsedTokenRepository) { h.usedTokens = r }
 
 func NewCertificateHandler(certUC usecase.CertificateUsecase, nodeUC usecase.NodeUsecase, auditUC auditDomain.AuditLogUsecase, tokenManager *auth.TokenManager) *CertificateHandler {
 	return &CertificateHandler{certUC: certUC, nodeUC: nodeUC, auditUC: auditUC, tokenManager: tokenManager}
@@ -456,6 +461,9 @@ func (h *CertificateHandler) GetCertBundle(c *gin.Context) {
 	claims, err := h.tokenManager.ValidateDeploymentToken(token)
 	if err != nil || uint(claims.NodeID) != uint(nodeID) {
 		c.JSON(http.StatusUnauthorized, jsonResponse{Success: false, Error: "Invalid or expired deployment token"})
+		return
+	}
+	if !MarkDeploymentTokenUsed(c, h.usedTokens, claims, "bundle") {
 		return
 	}
 

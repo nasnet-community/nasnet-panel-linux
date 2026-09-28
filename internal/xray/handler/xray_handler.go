@@ -154,6 +154,12 @@ func (h *XrayHandler) GetXrayChecksum(c *gin.Context) {
 		return
 	}
 
+	// Fill the cache like the binary route does, or a checksum asked before
+	// the first download is always missing.
+	if err := h.bm.EnsureCached(version, arch); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Checksum not available"})
+		return
+	}
 	checksum, err := h.bm.GetChecksum(version, arch)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Checksum not available"})

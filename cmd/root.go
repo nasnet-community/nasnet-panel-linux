@@ -197,6 +197,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.StarlinkStat{},
 		&nodeDomain.AgentCertificate{},
 		&nodeDomain.NodeCertSighting{},
+		&nodeDomain.UsedDeploymentToken{},
 		&nodeDomain.ReverseProxy{},
 		&chatDomain.ChatMessage{},
 		&chatDomain.ChatReaction{},
@@ -658,6 +659,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		SubscriptionIPRepo:            repos.SubscriptionIP,
 		ChatCleanupFn:                 uc.Chat.CleanupOldMessages,
 		JWTBlacklistCleanupFn:         blacklist.Cleanup,
+		UsedTokenRepo:                 repos.UsedToken,
 		OnlineUsersSnapshotRecorder:   uc.Admin,
 		OnlineUsersSnapshotCleaner:    repos.OnlineUsersSnapshot,
 		AlertEventCleaner:             repos.Alert,
@@ -790,11 +792,13 @@ func runServe(cmd *cobra.Command, args []string) {
 			MetricsConfig:    cfg.Metrics,
 			TelegramBotToken: cfg.Telegram.BotToken,
 			WebFS:            WebFS,
+			Version:          Version,
 		},
 		Repos: httpTransport.RepoDeps{
-			NodeRepository: repos.Node,
-			UserRepository: repos.User,
-			SubRepository:  repos.Subscription,
+			NodeRepository:      repos.Node,
+			UsedTokenRepository: repos.UsedToken,
+			UserRepository:      repos.User,
+			SubRepository:       repos.Subscription,
 		},
 	})
 	// A restored database may have just had its deployment settings reseeded.

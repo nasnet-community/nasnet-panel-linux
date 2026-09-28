@@ -147,6 +147,9 @@ type Config struct {
 	// JWT blacklist cleanup (optional) — removes expired revoked tokens
 	JWTBlacklistCleanupFn func(ctx context.Context) (int64, error)
 
+	// Used deployment tokens cleanup (optional)
+	UsedTokenRepo UsedTokenRepository
+
 	// Additional retention cleaners (all optional — nil disables the task).
 	AlertEventCleaner             AlertEventCleaner
 	SubscriptionDailyUsageCleaner SubscriptionDailyUsageCleaner
@@ -513,17 +516,24 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 		s.notifRepo.CleanupOldNotifications(ctx, s.cfg.NotificationRetentionDays)
 	}
 
-	// Periodic JWT blacklist cleanup
-	if s.jwtBlacklistCleanupFn != nil {
+	// Periodic JWT blacklist and used deployment token cleanup
+	if s.jwtBlacklistCleanupFn != nil || s.cfg.UsedTokenRepo != nil {
 		s.mu.Lock()
 		shouldClean := time.Since(s.lastTokenCleanup) > s.cfg.TokenCleanupInterval
 		s.mu.Unlock()
-		if shouldClean {
+		if shouldClean && s.cfg.UsedTokenRepo != nil {
+			if err := s.cfg.UsedTokenRepo.CleanupExpired(ctx); err != nil {
+				log.WithError(err).Warn("Failed to cleanup expired deployment tokens")
+			}
+		}
+		if shouldClean && s.jwtBlacklistCleanupFn != nil {
 			if deleted, err := s.jwtBlacklistCleanupFn(ctx); err != nil {
 				log.WithError(err).Warn("Failed to cleanup expired revoked JWT tokens")
 			} else if deleted > 0 {
 				log.WithField("deleted", deleted).Info("Cleaned up expired revoked JWT tokens")
 			}
+		}
+		if shouldClean {
 			s.mu.Lock()
 			s.lastTokenCleanup = time.Now()
 			s.mu.Unlock()
