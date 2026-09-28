@@ -18,6 +18,11 @@ const DefaultRPCDeadline = 10 * time.Second
 // gRPC paths; both resolve via shortName(). Fast reads 5s, control 10-30s,
 // binary uploads 5min. Streaming RPCs excluded (would cancel mid-use).
 var rpcDeadlines = map[string]time.Duration{
+	"FetchPoolSource":   45 * time.Second,
+	"TestPoolCandidate": 120 * time.Second,
+	// One TLS handshake per server name, four at a time, 8s each by default;
+	// 16 names is the agent-side cap.
+	"ProbeRealityDest": 45 * time.Second,
 	// Fast reads
 	"GetStatus":                   5 * time.Second,
 	"GetSystemStats":              5 * time.Second,
@@ -28,6 +33,7 @@ var rpcDeadlines = map[string]time.Duration{
 	"GetUserOnlineIPs":            5 * time.Second,
 	"GetAllUsersOnlineIPs":        15 * time.Second,
 	"GetBufferedTraffic":          10 * time.Second,
+	"GetStatsBundle":              20 * time.Second, // sys+status+buffered, +online IPs when requested
 	"AckBufferedTraffic":          5 * time.Second,
 	"GetAccessLogs":               10 * time.Second,
 	"GetBufferedAccessLogSummary": 10 * time.Second,
@@ -35,6 +41,9 @@ var rpcDeadlines = map[string]time.Duration{
 	"GetSSHStatus":                5 * time.Second,
 	"GetStarlinkStatus":           5 * time.Second,
 	"GetStarlinkObstructionMap":   10 * time.Second,
+	"StarlinkHandle":              20 * time.Second, // history is ~75 KB
+	"InstallCertificate":          15 * time.Second,
+	"InspectCertFile":             10 * time.Second,
 	"GetSelfChecksum":             5 * time.Second,
 	"GetCurrentConfig":            5 * time.Second,
 
@@ -68,6 +77,12 @@ var rpcDeadlines = map[string]time.Duration{
 	"SelfUpdate":       5 * time.Minute,
 	"UpdateXrayBinary": 5 * time.Minute,
 	"Uninstall":        60 * time.Second,
+
+	// Core dependency install RPCs are all fast — the install itself runs
+	// asynchronously on the node and is polled via GetInstallProgress.
+	"ProbeDependencies":      20 * time.Second,
+	"StartDependencyInstall": 20 * time.Second,
+	"GetInstallProgress":     15 * time.Second,
 }
 
 // shortName strips the gRPC service prefix, returning the bare method name.

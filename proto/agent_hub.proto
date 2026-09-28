@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package agenthub;
+
+option go_package = "github.com/nasnet-community/nasnet-panel-linux/pkg/hub/pb";
+
+import "node_agent.proto";
+
+service AgentHub {
+  rpc CommandChannel(stream AgentEnvelope) returns (stream HubEnvelope);
+  rpc TerminalChannel(stream TerminalFrame) returns (stream TerminalFrame);
+  rpc LogChannel(LogStreamRequest) returns (stream LogStreamEntry);
+}
+
+message HubEnvelope {
+  string request_id = 1;
+  string method = 2;
+  bytes payload = 3;
+  int64 deadline_ms = 4;
+
+  oneof control {
+    HeartbeatPing ping = 10;
+    OpenTerminalSignal open_terminal = 11;
+    OpenLogStreamSignal open_log_stream = 12;
+  }
+}
+
+message HeartbeatPing {
+  int64 timestamp = 1;
+  int64 sequence = 2;
+}
+
+message OpenTerminalSignal {
+  string session_id = 1;
+}
+
+message OpenLogStreamSignal {
+  string stream_id = 1;
+  int32 tail_lines = 2;
+  bool follow = 3;
+  nodeagent.LogType log_type = 4;
+}
+
+message AgentEnvelope {
+  string request_id = 1;
+  bytes payload = 2;
+  string error = 3;
+  string error_code = 4;
+
+  oneof event {
+    AgentRegistration registration = 10;
+    HeartbeatPong heartbeat = 11;
+  }
+}
+
+message AgentRegistration {
+  string node_uuid = 1;
+  string agent_version = 2;
+  string agent_commit = 3;
+  nodeagent.NodeStatus initial_status = 4;
+}
+
+message HeartbeatPong {
+  int64 timestamp = 1;
+  int64 sequence = 2;
+  int64 rtt_ms = 3;
+  nodeagent.NodeStatus status = 4;
+  string node_uuid = 5;
+}
+
+message TerminalFrame {
+  string session_id = 1;
+  string node_uuid = 2;
+
+  oneof payload {
+    bytes data = 3;
+    TerminalResizeEvent resize = 4;
+    bool close = 5;
+    int32 exit_code = 6;
+    string error = 7;
+  }
+}
+
+message TerminalResizeEvent {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message LogStreamRequest {
+  string stream_id = 1;
+  string node_uuid = 2;
+}
+
+message LogStreamEntry {
+  string stream_id = 1;
+  nodeagent.LogEntry entry = 2;
+}

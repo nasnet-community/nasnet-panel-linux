@@ -17,6 +17,10 @@ proto:
 	cd proto && protoc --go_out=../pkg/agent/pb --go_opt=paths=source_relative \
 		--go-grpc_out=../pkg/agent/pb --go-grpc_opt=paths=source_relative \
 		node_agent.proto
+	mkdir -p pkg/hub/pb
+	cd proto && protoc --go_out=../pkg/hub/pb --go_opt=paths=source_relative \
+		--go-grpc_out=../pkg/hub/pb --go-grpc_opt=paths=source_relative \
+		agent_hub.proto
 	@echo "Proto generation complete."
 
 geofiles:
