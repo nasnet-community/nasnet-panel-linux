@@ -12,6 +12,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
+	hubpb "github.com/nasnet-community/nasnet-panel-linux/pkg/hub/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
@@ -237,9 +238,9 @@ func (hm *HeartbeatManager) syncSessions(ctx context.Context) {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
-	// Start sessions for new nodes
+	// Start sessions for new nodes; the hub callbacks drive reverse nodes.
 	for _, node := range nodes {
-		if _, exists := hm.sessions[node.ID]; !exists {
+		if _, exists := hm.sessions[node.ID]; !exists && node.ConnectMode != domain.ConnectModeReverse {
 			hm.startSession(ctx, node)
 		}
 	}
@@ -965,6 +966,12 @@ func (u *nodeUsecase) StopHeartbeats() {
 	if u.heartbeatMgr != nil {
 		u.heartbeatMgr.Stop()
 	}
+	// Heartbeats are the main long-lived consumer of pooled clients;
+	// tearing the pool down here reclaims FDs before HTTP shutdown
+	// begins in the next phase.
+	if u.clientPool != nil {
+		u.clientPool.Shutdown()
+	}
 }
 
 // GetHeartbeatManager returns the heartbeat manager instance.
@@ -980,4 +987,98 @@ func (hm *HeartbeatManager) TriggerSync() {
 	case hm.syncNow <- struct{}{}:
 	default:
 	}
+}
+
+// GetLastPong returns the latest pong's latency figure and when it arrived;
+// ok is false before the first pong.
+func (hm *HeartbeatManager) GetLastPong(nodeID uint) (rtt int64, at time.Time, ok bool) {
+	hm.mu.Lock()
+	s, exists := hm.sessions[nodeID]
+	hm.mu.Unlock()
+	if !exists {
+		return 0, time.Time{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.lastPong.IsZero() {
+		return 0, time.Time{}, false
+	}
+	return s.lastRTT, s.lastPong, true
+}
+
+// HandleReverseConnect is called when a reverse-mode agent connects via the hub.
+// It marks the node online, creates a passive heartbeat session (no goroutine),
+// and triggers a config push.
+func (hm *HeartbeatManager) HandleReverseConnect(nodeID uint) {
+	log := logger.GetLogger().WithField("node_id", nodeID)
+	log.Info("[HeartbeatManager] Reverse agent connected")
+
+	ctx := context.Background()
+	if err := hm.usecase.nodeRepo.UpdateNodeStatus(ctx, nodeID, true, time.Now()); err != nil {
+		log.WithError(err).Error("[HeartbeatManager] Failed to mark reverse node online")
+	}
+
+	// Passive session: the hub server owns the connection lifecycle. A
+	// direct-mode stream left from before a mode switch is ended here.
+	hm.mu.Lock()
+	if old, exists := hm.sessions[nodeID]; exists {
+		old.cancel()
+	}
+	hm.sessions[nodeID] = &heartbeatSession{
+		nodeID:   nodeID,
+		cancel:   func() {},
+		lastPong: time.Now(),
+	}
+	hm.mu.Unlock()
+
+	node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		log.WithError(err).Error("[HeartbeatManager] Failed to fetch reverse node for config push")
+		return
+	}
+	hm.triggerConfigPush(node)
+}
+
+// HandleReverseDisconnect is called when a reverse-mode agent disconnects.
+// It marks the node offline and removes the passive heartbeat session.
+func (hm *HeartbeatManager) HandleReverseDisconnect(nodeID uint) {
+	log := logger.GetLogger().WithField("node_id", nodeID)
+	log.Info("[HeartbeatManager] Reverse agent disconnected")
+
+	if err := hm.usecase.nodeRepo.UpdateNodeStatus(context.Background(), nodeID, false, time.Now()); err != nil {
+		log.WithError(err).Error("[HeartbeatManager] Failed to mark reverse node offline")
+	}
+
+	hm.mu.Lock()
+	if s, exists := hm.sessions[nodeID]; exists {
+		s.cancel()
+		delete(hm.sessions, nodeID)
+	}
+	hm.mu.Unlock()
+}
+
+// HandleReversePong processes a heartbeat pong a reverse-mode agent sent
+// over the hub's command channel, through the same handler as a stream pong.
+func (hm *HeartbeatManager) HandleReversePong(nodeID uint, pong *hubpb.HeartbeatPong) {
+	hm.mu.Lock()
+	s, exists := hm.sessions[nodeID]
+	hm.mu.Unlock()
+	if !exists {
+		return
+	}
+
+	ctx := context.Background()
+	node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		logger.GetLogger().WithField("node_id", nodeID).WithError(err).
+			Error("[HeartbeatManager] Failed to fetch node for reverse pong")
+		return
+	}
+	hm.handlePong(ctx, node, s, &pb.HeartbeatPong{
+		Timestamp: pong.GetTimestamp(),
+		Sequence:  pong.GetSequence(),
+		RttMs:     pong.GetRttMs(),
+		Status:    pong.GetStatus(),
+		NodeUuid:  pong.GetNodeUuid(),
+	})
 }

@@ -7,6 +7,7 @@ import (
 
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	nodeRepo "github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
@@ -589,3 +590,8 @@ func (m *mockNodeUsecase) RotateExpiringCerts(context.Context) ([]nodeUC.RotateR
 func (m *mockNodeUsecase) SetCertStrictMode(context.Context, bool) error       { return nil }
 func (m *mockNodeUsecase) RunAgentCertMaintenance(context.Context) error       { return nil }
 func (m *mockNodeUsecase) CertificateCounts(context.Context) (int, int, error) { return 0, 0, nil }
+
+// Remote node transports
+func (m *mockNodeUsecase) SetReverseRegistry(*hub.ConnectedAgentRegistry)        {}
+func (m *mockNodeUsecase) SetHubServer(*hub.HubServer)                           {}
+func (m *mockNodeUsecase) SwitchConnectMode(context.Context, uint, string) error { return nil }

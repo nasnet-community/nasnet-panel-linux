@@ -368,6 +368,10 @@ func (u *nodeUsecase) RotateAgentCert(ctx context.Context, nodeID uint) (*domain
 			go u.retireSuperseded(node.ID, rec.SerialNumber)
 		}
 	}
+	if node.ConnectMode != domain.ConnectModeReverse && u.clientPool != nil {
+		// Next dial handshakes against the new cert, which triggers retirement.
+		u.clientPool.Evict(node.ID)
+	}
 	logger.GetLogger().WithFields(map[string]interface{}{"node_id": node.ID, "serial": rec.SerialNumber}).Info("[RotateAgentCert] Node certificate rotated")
 	return rec, nil
 }

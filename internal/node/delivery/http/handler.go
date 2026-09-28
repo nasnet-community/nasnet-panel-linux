@@ -93,6 +93,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.GET("/:id", h.GetNode)
 		nodes.POST("", h.CreateNode)
 		nodes.PUT("/:id", h.UpdateNode)
+		nodes.PATCH("/:id/connect-mode", h.SwitchConnectMode)
 		nodes.DELETE("/:id", h.DeleteNode)
 		nodes.POST("/:id/wipe", h.Wipe)
 		nodes.POST("/:id/nuke", h.Nuke)
@@ -2698,4 +2699,48 @@ func (h *Handler) DeleteReverseProxy(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "reverse proxy deleted"})
+}
+
+type switchConnectModeRequest struct {
+	ConnectMode string `json:"connect_mode" binding:"required"`
+}
+
+// SwitchConnectMode switches a node's connection mode between direct and reverse.
+// PATCH /api/v1/nodes/:id/connect-mode
+func (h *Handler) SwitchConnectMode(c *gin.Context) {
+	nodeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
+		return
+	}
+
+	var req switchConnectModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	if err := h.nodeUsecase.SwitchConnectMode(c.Request.Context(), uint(nodeID), req.ConnectMode); err != nil {
+		if errors.Is(err, usecase.ErrLocalNode) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "NODE_LOCAL"})
+			return
+		}
+		errMsg := err.Error()
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(errMsg, "already in") ||
+			strings.Contains(errMsg, "not supported") ||
+			strings.Contains(errMsg, "must be") ||
+			strings.Contains(errMsg, "offline") ||
+			strings.Contains(errMsg, "no IP address") ||
+			strings.Contains(errMsg, "stealth") {
+			statusCode = http.StatusBadRequest
+		}
+		c.JSON(statusCode, gin.H{"success": false, "error": errMsg})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"success": true,
+		"message": "Connection mode switch initiated. Agent is restarting.",
+	})
 }

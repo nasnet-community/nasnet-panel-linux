@@ -115,8 +115,9 @@ func (u *nodeUsecase) callAgentForNuke(ctx context.Context, node *domain.Node, r
 	}
 	defer closeAgentClient(client)
 
-	// WIPE mode is unary. run it and synthesize frames from the report
-	if req.Mode == pb.NukeMode_NUKE_MODE_WIPE {
+	// Reverse-mode can't stream (ReverseClient.Nuke → Unimplemented), so it
+	// falls back to Wipe; WIPE mode is unary anyway. Frames come from the report.
+	if node.ConnectMode == domain.ConnectModeReverse || req.Mode == pb.NukeMode_NUKE_MODE_WIPE {
 		report, err := client.Wipe(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("wipe rpc: %w", err)

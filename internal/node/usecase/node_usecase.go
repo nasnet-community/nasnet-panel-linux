@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	"math"
 	"sync"
@@ -37,8 +38,6 @@ var (
 	// ErrLocalNode refuses changes the built-in node can't take: delete,
 	// uninstall, self-update, a connect-mode switch or deactivation.
 	ErrLocalNode = errors.New("the built-in node can't be removed or changed this way")
-	// ErrNodeTransportUnavailable means the node has no agent connection yet.
-	ErrNodeTransportUnavailable = errors.New("this node's agent connection is not available")
 )
 
 // SyncResult holds the result of a sync operation
@@ -230,6 +229,9 @@ type NodeUsecase interface {
 	}, baseURL string)
 	SetHTTPClientFactory(f *httpclient.Factory)
 	SetEmbeddedServer(srv *agentserver.Server)
+	SetReverseRegistry(r *hub.ConnectedAgentRegistry)
+	SetHubServer(h *hub.HubServer)
+	SwitchConnectMode(ctx context.Context, nodeID uint, newMode string) error
 	SetCertWatch(w *certwatch.Watch)
 	EvictAllAgentClients()
 	CertificateOverview(ctx context.Context, refreshDomains bool) (*CertOverview, error)
@@ -398,6 +400,16 @@ type nodeUsecase struct {
 	embeddedSrv *agentserver.Server
 	localNodeID atomic.Uint32
 
+	// Remote nodes: pooled direct clients, the reverse tunnel registry and
+	// the hub server (terminal/log stream waiters).
+	clientPool      *agentClientPool
+	reverseRegistry *hub.ConnectedAgentRegistry
+	hubServer       *hub.HubServer
+
+	// Per-node credential cache to avoid regenerating ephemeral certs every call
+	credCacheMu sync.RWMutex
+	credCache   map[uint]*cachedCreds // nodeID -> cached creds
+
 	// Audit logging (optional — set via SetAuditUsecase after construction to
 	// avoid a cyclic dependency between the node and audit usecases).
 	auditUC auditDomain.AuditLogUsecase
@@ -474,8 +486,10 @@ func NewNodeUsecase(nodeRepo repository.NodeRepository, subRepo subRepo.Subscrip
 		settingUC:            settingUC,
 		tm:                   tm,
 		lastPushedConfigHash: make(map[uint]string),
+		credCache:            make(map[uint]*cachedCreds),
 		pushState:            make(map[uint]*configPushState),
 		nukesInFlight:        map[uint]struct{}{},
+		clientPool:           newAgentClientPool(),
 		statsCache:           newNodeStatsCache(nodeStatsCacheTTL),
 	}
 }
@@ -572,6 +586,16 @@ func (u *nodeUsecase) resetPushState(nodeID uint) {
 // getAgentClient routes node operations through an in-process EmbeddedClient.
 func (u *nodeUsecase) SetEmbeddedServer(srv *agentserver.Server) {
 	u.embeddedSrv = srv
+}
+
+// SetReverseRegistry wires the reverse-tunnel session registry.
+func (u *nodeUsecase) SetReverseRegistry(r *hub.ConnectedAgentRegistry) {
+	u.reverseRegistry = r
+}
+
+// SetHubServer wires the hub gRPC server (terminal/log stream waiters).
+func (u *nodeUsecase) SetHubServer(h *hub.HubServer) {
+	u.hubServer = h
 }
 
 // SetAuditUsecase injects the audit usecase. Called after construction because

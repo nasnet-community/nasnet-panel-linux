@@ -27,12 +27,20 @@ func (u *nodeUsecase) SetCertWatch(w *certwatch.Watch) {
 // cert (reverse sessions, direct heartbeat streams); their reconnect is
 // refused at the TLS handshake.
 func (u *nodeUsecase) EvictAllAgentClients() {
+	if u.clientPool != nil {
+		u.clientPool.EvictAll()
+	}
 	w := u.certWatch
 	if w == nil || !w.Strict() {
 		return
 	}
 	for _, s := range w.RevokedSightings() {
 		switch {
+		case s.Mode == "reverse" && u.reverseRegistry != nil:
+			if sess := u.reverseRegistry.GetByNodeID(s.NodeID); sess != nil {
+				sess.Kick()
+				logger.GetLogger().WithField("node_id", s.NodeID).Warn("[CertWatch] Closed reverse session using a revoked certificate")
+			}
 		case s.Mode == "direct" && u.heartbeatMgr != nil:
 			// The resync redials within 30 s and is refused.
 			u.heartbeatMgr.StopNode(s.NodeID)

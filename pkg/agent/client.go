@@ -34,8 +34,9 @@ type TLSConfig struct {
 	VerifyLeaf func(leaf *x509.Certificate) error
 }
 
-// NewClient creates a new agent client with mandatory mTLS
-func NewClient(target string, tlsCfg *TLSConfig, timeout time.Duration) (*Client, error) {
+// NewClient creates a new agent client with mandatory mTLS. extra dial
+// options go last (router mode passes a marked dialer).
+func NewClient(target string, tlsCfg *TLSConfig, timeout time.Duration, extra ...grpc.DialOption) (*Client, error) {
 	if tlsCfg == nil || tlsCfg.CACert == "" {
 		return nil, fmt.Errorf("TLS configuration is required: refusing to connect without mTLS credentials")
 	}
@@ -66,6 +67,7 @@ func NewClient(target string, tlsCfg *TLSConfig, timeout time.Duration) (*Client
 	// Apply per-method deadline fallback so a slow agent cannot hang any
 	// caller that forgot to set its own context timeout.
 	opts = append(opts, grpc.WithUnaryInterceptor(DeadlineUnaryInterceptor()))
+	opts = append(opts, extra...)
 
 	conn, err := grpc.DialContext(ctx, target, opts...)
 	if err != nil {

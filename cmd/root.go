@@ -31,6 +31,7 @@ import (
 	agentconfig "github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
+	hubpb "github.com/nasnet-community/nasnet-panel-linux/pkg/hub/pb"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
@@ -404,6 +405,25 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 	log.Info("In-process node agent started (single-binary mode)")
 
+	// Reverse-mode nodes arrive through the hub; its listener starts later,
+	// only when the hub is on.
+	reverseRegistry := hub.NewRegistry()
+	hubServer := hub.NewHubServer(reverseRegistry, func(ctx context.Context, uuid string) (uint, string, bool) {
+		node, err := repos.Node.GetNodeByUUID(ctx, uuid)
+		if err != nil || node == nil {
+			return 0, "", false
+		}
+		return node.ID, node.ConnectMode, true
+	})
+	if uc.CertWatch != nil {
+		w := uc.CertWatch
+		hubServer.SetCertGate(func(nodeID uint, leaf *x509.Certificate) error {
+			return w.Gate(nodeID, "reverse", leaf)
+		})
+	}
+	uc.Node.SetReverseRegistry(reverseRegistry)
+	uc.Node.SetHubServer(hubServer)
+
 	// Every setter-injected node dependency is in place by now. A missed setter
 	// leaves a nil field whose consumer degrades quietly — audit logging for
 	// node nuke/wipe is nil-guarded to a no-op — so fail here instead.
@@ -699,20 +719,14 @@ func runServe(cmd *cobra.Command, args []string) {
 	log.Info("Heartbeat Manager started")
 
 	// --- Reverse-mode node hub ---
-	reverseRegistry := hub.NewRegistry()
-	hubServer := hub.NewHubServer(reverseRegistry, func(ctx context.Context, uuid string) (uint, string, bool) {
-		node, err := repos.Node.GetNodeByUUID(ctx, uuid)
-		if err != nil || node == nil {
-			return 0, "", false
-		}
-		return node.ID, node.ConnectMode, true
+	heartbeatMgr := uc.Node.GetHeartbeatManager()
+	reverseRegistry.SetCallbacks(
+		func(nodeID uint) { heartbeatMgr.HandleReverseConnect(nodeID) },
+		func(nodeID uint) { heartbeatMgr.HandleReverseDisconnect(nodeID) },
+	)
+	hubServer.SetHeartbeatCallback(func(nodeID uint, pong *hubpb.HeartbeatPong) {
+		heartbeatMgr.HandleReversePong(nodeID, pong)
 	})
-	if uc.CertWatch != nil {
-		w := uc.CertWatch
-		hubServer.SetCertGate(func(nodeID uint, leaf *x509.Certificate) error {
-			return w.Gate(nodeID, "reverse", leaf)
-		})
-	}
 	if hubEnabled {
 		hubListenAddr := fmt.Sprintf(":%d", hubPort)
 		hubCreds := &hubTLS{certUC: uc.Certificate, settings: uc.Setting, watch: uc.CertWatch, baseURL: cfg.App.BaseURL, log: log}

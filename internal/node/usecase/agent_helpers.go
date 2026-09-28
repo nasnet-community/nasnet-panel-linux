@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +26,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
+	"google.golang.org/grpc"
 )
 
 // WGRenderPeer is a managed WireGuard peer rendered into a WG inbound's config.
@@ -112,25 +116,79 @@ func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) [
 	return out
 }
 
-// getAgentClient returns the in-process client for the built-in node. Other
-// nodes have no transport yet; handing them the embedded client would let a
-// second node row drive this box's own xray.
+// getAgentClient routes a node to its transport: the built-in node to the
+// in-process EmbeddedClient, reverse-mode nodes to a ReverseClient over the
+// hub command channel, direct-mode nodes to a pooled mTLS gRPC client.
+// nil node → nil.
 func (u *nodeUsecase) getAgentClient(node *domain.Node) (agent.NodeClient, error) {
 	if node == nil {
 		return nil, nil
 	}
-	if !node.IsLocal() {
-		return nil, ErrNodeTransportUnavailable
+
+	switch node.ConnectMode {
+	case domain.ConnectModeLocal:
+		if u.embeddedSrv == nil {
+			return nil, fmt.Errorf("embedded node server not initialized")
+		}
+		return agent.NewEmbeddedClient(u.embeddedSrv), nil
+	case domain.ConnectModeReverse:
+		if u.reverseRegistry == nil {
+			return nil, fmt.Errorf("reverse registry not initialized")
+		}
+		if u.reverseRegistry.GetByNodeID(node.ID) == nil {
+			return nil, fmt.Errorf("reverse node %d (%s) is not connected", node.ID, node.Name)
+		}
+		return agent.NewReverseClient(
+			node.UUID,
+			u.reverseRegistry.SendCommand,
+			u.reverseRegistry.SendControl,
+			u.hubServer,
+		), nil
 	}
-	if u.embeddedSrv == nil {
-		return nil, fmt.Errorf("embedded node server not initialized")
+
+	// Direct-mode: pooled gRPC conn (amortizes mTLS handshake; HTTP/2
+	// multiplexes concurrent RPCs safely).
+	target := net.JoinHostPort(node.IP, strconv.Itoa(node.AgentPort))
+	if u.clientPool == nil {
+		return nil, fmt.Errorf("node %d: agent client pool not initialized", node.ID)
 	}
-	return agent.NewEmbeddedClient(u.embeddedSrv), nil
+	return u.clientPool.get(node, func() (*agent.Client, error) {
+		return u.dialDirectAgent(node, target)
+	})
 }
 
-// getAgentClientUnpooled single bin mode bypasses the grpc pool
+// dialDirectAgent: fresh mTLS gRPC conn; caller must Close(). Used by
+// the pool and by long-lived streams (heartbeat) that can't share with
+// pooled RPCs.
+func (u *nodeUsecase) dialDirectAgent(node *domain.Node, target string) (*agent.Client, error) {
+	tlsCfg, err := u.GetAgentCredentials(context.Background(), node.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mTLS credentials for agent at %s: %w", target, err)
+	}
+	var opts []grpc.DialOption
+	if u.routerMode {
+		// The box's own egress must not ride the VPN pool's policy routing.
+		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			return httpclient.MarkedDialer(httpclient.EgressForeign.Mark(), 10*time.Second).DialContext(ctx, "tcp", addr)
+		}))
+	}
+	client, err := agent.NewClient(target, tlsCfg, 10*time.Second, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to agent at %s: %w", target, err)
+	}
+	return client, nil
+}
+
+// getAgentClientUnpooled bypasses the connection pool: direct-mode dials
+// a fresh conn the caller must Close(); local and reverse fall through to
+// getAgentClient. Use for long-lived server-streaming RPCs so the pool's
+// TTL eviction can't Close() the shared conn under an active stream.
 func (u *nodeUsecase) getAgentClientUnpooled(node *domain.Node) (agent.NodeClient, error) {
-	return u.getAgentClient(node)
+	if node == nil || node.ConnectMode == domain.ConnectModeLocal || node.ConnectMode == domain.ConnectModeReverse {
+		return u.getAgentClient(node)
+	}
+	target := net.JoinHostPort(node.IP, strconv.Itoa(node.AgentPort))
+	return u.dialDirectAgent(node, target)
 }
 
 // GetNodeClient looks up the node and returns its in process agent client
@@ -140,6 +198,73 @@ func (u *nodeUsecase) GetNodeClient(ctx context.Context, nodeID uint) (agent.Nod
 		return nil, fmt.Errorf("node %d not found: %w", nodeID, err)
 	}
 	return u.getAgentClient(node)
+}
+
+// cachedCreds holds a cached TLS config with expiry
+type cachedCreds struct {
+	config    *agent.TLSConfig
+	expiresAt time.Time
+}
+
+// GetAgentCredentials returns mTLS credentials for a node agent connection.
+// Results are cached per-node for 5 minutes to avoid regenerating ephemeral certs on every call.
+func (u *nodeUsecase) GetAgentCredentials(ctx context.Context, nodeID uint) (*agent.TLSConfig, error) {
+	u.credCacheMu.RLock()
+	if cached, ok := u.credCache[nodeID]; ok && time.Now().Before(cached.expiresAt) {
+		u.credCacheMu.RUnlock()
+		return cached.config, nil
+	}
+	u.credCacheMu.RUnlock()
+
+	if u.certUC == nil {
+		return nil, fmt.Errorf("certificate usecase is nil")
+	}
+	ca, err := u.certUC.GetCA(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CA: %w", err)
+	}
+	if ca == nil {
+		return nil, fmt.Errorf("CA is not initialized")
+	}
+	clientCert, err := u.certUC.GenerateEphemeralClientCert(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ephemeral client cert: %w", err)
+	}
+
+	// uTLS settings live in the settings table.
+	useUTLS := false
+	fingerprint := "chrome"
+	sniOverride := ""
+	if u.settingUC != nil {
+		if val, err := u.settingUC.GetByKey(ctx, "utls_enabled"); err == nil {
+			useUTLS = val == "true"
+		}
+		if val, err := u.settingUC.GetByKey(ctx, "utls_fingerprint"); err == nil && val != "" {
+			fingerprint = val
+		}
+		if val, err := u.settingUC.GetByKey(ctx, "utls_sni_override"); err == nil && val != "" {
+			sniOverride = val
+		}
+	}
+
+	config := &agent.TLSConfig{
+		CACert:      string(ca.Certificate),
+		ClientCert:  string(clientCert.Certificate),
+		ClientKey:   string(clientCert.PrivateKey),
+		UseUTLS:     useUTLS,
+		Fingerprint: fingerprint,
+		SNIOverride: sniOverride,
+	}
+	if w := u.certWatch; w != nil {
+		config.VerifyLeaf = func(leaf *x509.Certificate) error {
+			return w.Gate(nodeID, "direct", leaf)
+		}
+	}
+
+	u.credCacheMu.Lock()
+	u.credCache[nodeID] = &cachedCreds{config: config, expiresAt: time.Now().Add(5 * time.Minute)}
+	u.credCacheMu.Unlock()
+	return config, nil
 }
 
 // closeAgentClient safely closes an agent client
