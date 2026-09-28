@@ -194,6 +194,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.NodeUptimeEvent{},
 		&nodeDomain.StarlinkStat{},
 		&nodeDomain.AgentCertificate{},
+		&nodeDomain.NodeCertSighting{},
 		&nodeDomain.ReverseProxy{},
 		&chatDomain.ChatMessage{},
 		&chatDomain.ChatReaction{},

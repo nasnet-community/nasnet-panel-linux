@@ -118,6 +118,9 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 		if isMaskedValue(s.Value) {
 			continue
 		}
+		if domain.IsProtectedKey(s.Key) && !domain.ProtectedWriteAllowed(ctx) {
+			continue
+		}
 		filtered = append(filtered, s)
 	}
 	if len(filtered) == 0 {
@@ -277,6 +280,11 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		// Agent Xray Version
 		{Key: "xray_default_version", Value: "26.7.28", Type: "string", Category: "agent", Description: "Default xray-core version installed on new nodes (without v prefix)", Label: "Default Xray Version"},
 		{Key: "xray_auto_download", Value: "true", Type: "bool", Category: "agent", Description: "Auto-download xray binaries from GitHub when version changes", Label: "Auto Download Xray"},
+
+		// Node certificates
+		{Key: "agent_cert_auto_rotate", Value: "true", Type: "bool", Category: "agent", Description: "Rotate a node's agent certificate automatically when it gets close to expiry. Needs an updated agent.", Label: "Auto-rotate Node Certificates"},
+		{Key: "agent_cert_rotate_days", Value: "30", Type: "int", Category: "agent", Description: "Rotate a node's agent certificate once it has this many days or fewer left (7–90).", Label: "Rotate Node Certificates At (days left)"},
+		{Key: "agent_cert_strict_mode", Value: "false", Type: "bool", Category: "admin", Description: "Refuse revoked node certificates and certificates that belong to another node. Changed from the Certificates page only.", Label: "Certificate Strict Mode"},
 
 		// Subscription
 		{Key: "max_active_subscriptions", Value: "3", Type: "int", Category: "subscription", Description: "Maximum active subscriptions per user", Label: "Max Active Subscriptions"},

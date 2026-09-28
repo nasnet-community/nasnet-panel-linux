@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -229,6 +230,14 @@ type NodeUsecase interface {
 	}, baseURL string)
 	SetHTTPClientFactory(f *httpclient.Factory)
 	SetEmbeddedServer(srv *agentserver.Server)
+	SetCertWatch(w *certwatch.Watch)
+	EvictAllAgentClients()
+	CertificateOverview(ctx context.Context, refreshDomains bool) (*CertOverview, error)
+	RotateAgentCert(ctx context.Context, nodeID uint) (*domain.AgentCertificate, error)
+	RotateExpiringCerts(ctx context.Context) ([]RotateResult, error)
+	SetCertStrictMode(ctx context.Context, enabled bool) error
+	RunAgentCertMaintenance(ctx context.Context) error
+	CertificateCounts(ctx context.Context) (active, expiring int, err error)
 	SetAuditUsecase(a auditDomain.AuditLogUsecase)
 	SetWGPeerSource(s WGPeerSource)
 	SetRouterMode(enabled bool)
@@ -390,6 +399,17 @@ type nodeUsecase struct {
 	// Audit logging (optional — set via SetAuditUsecase after construction to
 	// avoid a cyclic dependency between the node and audit usecases).
 	auditUC auditDomain.AuditLogUsecase
+
+	// certWatch records presented node certs and applies strict mode.
+	certWatch *certwatch.Watch
+
+	// Certificate ops caches (see node_cert_ops.go).
+	certRPCSupport     sync.Map // nodeID → certRPCProbe
+	certRotateLocks    sync.Map // nodeID → *sync.Mutex
+	domainInspectCache sync.Map // sniID → domainInspect
+	certMaintMu        sync.Mutex
+	certMaintNext      time.Time
+	revokedRefreshAt   time.Time
 
 	// Managed WireGuard peer source (optional, set via SetWGPeerSource).
 	wgPeerSource WGPeerSource

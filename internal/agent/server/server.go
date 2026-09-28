@@ -71,6 +71,16 @@ type Server struct {
 	denylistMu    sync.RWMutex
 	deniedSerials map[string]bool
 
+	// serverCert is what the direct listener serves; InstallCertificate
+	// swaps it so new handshakes pick up a rotated certificate.
+	serverCert atomic.Pointer[tls.Certificate]
+	// onCertInstalled runs after a successful install (reverse mode uses it
+	// to reconnect with the new certificate).
+	onCertInstalled func()
+	// installMu serializes InstallCertificate so two installs can't
+	// interleave their writes and leave a mismatched pair on disk.
+	installMu sync.Mutex
+
 	// Traffic buffering
 	trafficStore     traffic.Store
 	trafficCollector *traffic.Collector
@@ -335,43 +345,32 @@ func (s *Server) Stop(ctx context.Context) {
 
 // loadTLSCredentials loads mTLS credentials for the server
 func (s *Server) loadTLSCredentials() (credentials.TransportCredentials, error) {
-	// Load server certificate and key
 	serverCert, err := tls.LoadX509KeyPair(s.cfg.TLS.ServerCert, s.cfg.TLS.ServerKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server certificate: %w", err)
 	}
+	s.serverCert.Store(&serverCert)
 
-	// Load CA certificate for client verification
 	caCert, err := os.ReadFile(s.cfg.TLS.CACert)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate: %w", err)
 	}
-
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(caCert) {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{serverCert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    certPool,
-		MinVersion:   tls.VersionTLS12,
-		NextProtos:   []string{"h2"},
-		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			for _, chain := range verifiedChains {
-				for _, cert := range chain {
-					serial := cert.SerialNumber.String()
-					s.denylistMu.RLock()
-					denied := s.deniedSerials[serial]
-					s.denylistMu.RUnlock()
-					if denied {
-						return fmt.Errorf("certificate with serial %s has been revoked", serial)
-					}
-				}
-			}
-			return nil
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return s.serverCert.Load(), nil
 		},
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  certPool,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"h2"},
+		// VerifyConnection runs on resumed sessions too, unlike
+		// VerifyPeerCertificate.
+		VerifyConnection: s.verifyHubClient,
 	}
 
 	return credentials.NewTLS(tlsConfig), nil

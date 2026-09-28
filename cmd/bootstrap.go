@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	"os"
 	"path/filepath"
 	"sync"
@@ -119,6 +120,7 @@ type usecaseBundle struct {
 	Setting      settingDomain.SettingUsecase
 	Account      accountUC.AccountUsecase
 	Certificate  nodeUC.CertificateUsecase
+	CertWatch    *certwatch.Watch
 	Node         nodeUC.NodeUsecase
 	Subscription subUC.SubscriptionUsecase
 	Admin        adminUC.AdminUsecase
@@ -200,7 +202,7 @@ func initUsecases(
 	})
 
 	// --- Usecases with cross-usecase deps ---
-	certUsecase := nodeUC.NewCertificateUsecase(repos.AgentCert, repos.Node, certManager)
+	certUsecase := nodeUC.NewCertificateUsecase(repos.AgentCert, repos.Node)
 
 	transactionManager := database.NewTransactionManager(db)
 
@@ -228,8 +230,22 @@ func initUsecases(
 
 	accountUsecase := accountUC.NewAccountUsecase(repos.Account, repos.Node, nodeUsecase, provService)
 
-	// Wire certificate revocation callback
+	// Certificate watch: sightings + strict mode, then revocation fan-out.
+	certWatch := certwatch.New(repos.AgentCert)
+	if err := certWatch.Load(context.Background()); err != nil {
+		logger.GetLogger().WithError(err).Warn("[CertWatch] Failed to load sightings")
+	}
+	if v, err := settingUsecase.GetByKey(context.Background(), "agent_cert_strict_mode"); err == nil {
+		certWatch.SetStrict(v == "true")
+	}
+	nodeUsecase.SetCertWatch(certWatch)
+
 	certUsecase.SetOnRevokeCallback(func(ctx context.Context) {
+		if err := certWatch.RefreshRevoked(ctx); err != nil {
+			logger.GetLogger().WithError(err).Warn("[CertRevoke] Failed to refresh revoked set")
+		}
+		// Resumed TLS sessions skip certificate checks; force full handshakes.
+		nodeUsecase.EvictAllAgentClients()
 		if err := nodeUsecase.PushCertDenylistToAllNodes(ctx); err != nil {
 			logger.GetLogger().WithError(err).Warn("[CertRevoke] Failed to push denylist to agents")
 		}
@@ -373,6 +389,7 @@ func initUsecases(
 		Setting:      settingUsecase,
 		Account:      accountUsecase,
 		Certificate:  certUsecase,
+		CertWatch:    certWatch,
 		Node:         nodeUsecase,
 		Subscription: subUsecase,
 		Admin:        adminUsecase,

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AgentCertificateRepository defines the interface for certificate storage
@@ -24,6 +25,12 @@ type AgentCertificateRepository interface {
 	ListRevokedSerialNumbers(ctx context.Context) ([]string, error)
 	Delete(ctx context.Context, id uint) error
 	DeleteAll(ctx context.Context) error // Deletes all certificates (for CA reinitialization)
+	ListByNode(ctx context.Context, nodeID uint) ([]*domain.AgentCertificate, error)
+	ListOrphans(ctx context.Context) ([]*domain.AgentCertificate, error)
+	PurgeRevokedExpired(ctx context.Context) (int64, error)
+	SetExpiryNotifyLevel(ctx context.Context, id uint, level int) error
+	ListSightings(ctx context.Context) ([]*domain.NodeCertSighting, error)
+	SaveSighting(ctx context.Context, s *domain.NodeCertSighting) error
 }
 
 type agentCertificateRepository struct {
@@ -123,9 +130,10 @@ func (r *agentCertificateRepository) Update(ctx context.Context, cert *domain.Ag
 	return r.db.WithContext(ctx).Save(cert).Error
 }
 
+// Revoke works on soft-deleted rows too, so a deleted cert can still be retired.
 func (r *agentCertificateRepository) Revoke(ctx context.Context, id uint) error {
 	now := time.Now()
-	return r.db.WithContext(ctx).
+	return r.db.WithContext(ctx).Unscoped().
 		Model(&domain.AgentCertificate{}).
 		Where("id = ?", id).
 		Updates(map[string]interface{}{
@@ -134,11 +142,13 @@ func (r *agentCertificateRepository) Revoke(ctx context.Context, id uint) error 
 		}).Error
 }
 
+// ListRevokedSerialNumbers includes soft-deleted certs until they expire;
+// expired ones fail x509 verification anyway.
 func (r *agentCertificateRepository) ListRevokedSerialNumbers(ctx context.Context) ([]string, error) {
 	var serials []string
-	if err := r.db.WithContext(ctx).
+	if err := r.db.WithContext(ctx).Unscoped().
 		Model(&domain.AgentCertificate{}).
-		Where("is_revoked = true").
+		Where("is_revoked = true AND not_after > ?", time.Now()).
 		Pluck("serial_number", &serials).Error; err != nil {
 		return nil, err
 	}
@@ -152,4 +162,52 @@ func (r *agentCertificateRepository) Delete(ctx context.Context, id uint) error 
 // DeleteAll removes all certificates (for CA reinitialization)
 func (r *agentCertificateRepository) DeleteAll(ctx context.Context) error {
 	return r.db.WithContext(ctx).Exec("DELETE FROM agent_certificates").Error
+}
+
+// ListByNode returns every agent certificate issued to a node, newest first,
+// including revoked and soft-deleted ones.
+func (r *agentCertificateRepository) ListByNode(ctx context.Context, nodeID uint) ([]*domain.AgentCertificate, error) {
+	var certs []*domain.AgentCertificate
+	err := r.db.WithContext(ctx).Unscoped().
+		Where("node_id = ? AND type = ?", nodeID, domain.CertTypeAgent).
+		Order("created_at DESC").
+		Find(&certs).Error
+	return certs, err
+}
+
+// ListOrphans returns unrevoked agent certificates whose node no longer exists.
+func (r *agentCertificateRepository) ListOrphans(ctx context.Context) ([]*domain.AgentCertificate, error) {
+	live := r.db.WithContext(ctx).Model(&domain.Node{}).Select("id")
+	var certs []*domain.AgentCertificate
+	err := r.db.WithContext(ctx).
+		Where("type = ? AND is_revoked = false AND (node_id IS NULL OR node_id NOT IN (?))", domain.CertTypeAgent, live).
+		Find(&certs).Error
+	return certs, err
+}
+
+// PurgeRevokedExpired hard-deletes certificates that are revoked and expired.
+func (r *agentCertificateRepository) PurgeRevokedExpired(ctx context.Context) (int64, error) {
+	res := r.db.WithContext(ctx).Unscoped().
+		Where("is_revoked = true AND not_after < ?", time.Now()).
+		Delete(&domain.AgentCertificate{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *agentCertificateRepository) SetExpiryNotifyLevel(ctx context.Context, id uint, level int) error {
+	return r.db.WithContext(ctx).Model(&domain.AgentCertificate{}).
+		Where("id = ?", id).
+		Update("expiry_notify_level", level).Error
+}
+
+func (r *agentCertificateRepository) ListSightings(ctx context.Context) ([]*domain.NodeCertSighting, error) {
+	var rows []*domain.NodeCertSighting
+	err := r.db.WithContext(ctx).Find(&rows).Error
+	return rows, err
+}
+
+func (r *agentCertificateRepository) SaveSighting(ctx context.Context, s *domain.NodeCertSighting) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "node_id"}},
+		UpdateAll: true,
+	}).Create(s).Error
 }

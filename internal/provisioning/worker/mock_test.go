@@ -7,6 +7,7 @@ import (
 
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	nodeRepo "github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	nodeUC "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
@@ -572,3 +573,19 @@ func (m *mockNodeUsecase) EnsureLocalNode(context.Context) (*nodeDomain.Node, er
 	return nil, nil
 }
 func (m *mockNodeUsecase) LocalNodeID() uint { return 0 }
+
+// Certificates
+func (m *mockNodeUsecase) SetCertWatch(*certwatch.Watch) {}
+func (m *mockNodeUsecase) EvictAllAgentClients()         {}
+func (m *mockNodeUsecase) CertificateOverview(context.Context, bool) (*nodeUC.CertOverview, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) RotateAgentCert(context.Context, uint) (*nodeDomain.AgentCertificate, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) RotateExpiringCerts(context.Context) ([]nodeUC.RotateResult, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) SetCertStrictMode(context.Context, bool) error       { return nil }
+func (m *mockNodeUsecase) RunAgentCertMaintenance(context.Context) error       { return nil }
+func (m *mockNodeUsecase) CertificateCounts(context.Context) (int, int, error) { return 0, 0, nil }

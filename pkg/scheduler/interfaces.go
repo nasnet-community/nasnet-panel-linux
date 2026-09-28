@@ -66,6 +66,9 @@ type NodeUsecase interface {
 	SyncNodeStats(ctx context.Context) error
 	StartHeartbeats(ctx context.Context)
 	StopHeartbeats()
+	// RunAgentCertMaintenance self-gates to every 12 h: rotates node certs
+	// close to expiry and alerts when it can't.
+	RunAgentCertMaintenance(ctx context.Context) error
 }
 
 // SNIUsecase defines what the scheduler needs from the SNI (certificate) layer.

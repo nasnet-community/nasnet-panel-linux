@@ -36,6 +36,10 @@ type AgentCertificate struct {
 	// Auto-renew (for public certs)
 	AutoRenew bool `gorm:"default:false" json:"auto_renew"`
 
+	// Smallest expiry day-threshold already alerted (30/7/1, or 180/30 for the
+	// CA); 0 = none. A rotated cert is a new row, so it starts at 0.
+	ExpiryNotifyLevel int `gorm:"default:0" json:"-"`
+
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`

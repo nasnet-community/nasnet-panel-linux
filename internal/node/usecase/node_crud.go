@@ -253,6 +253,15 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 		return err
 	}
 
+	// Revoke every certificate the node was issued (best effort)
+	if u.certUC != nil {
+		if n, err := u.certUC.RevokeNodeCerts(ctx, id); err != nil {
+			log.WithError(err).Warn("[DeleteNode] Failed to revoke agent certificates")
+		} else if n > 0 {
+			log.WithField("count", n).Info("[DeleteNode] Agent certificates revoked")
+		}
+	}
+
 	// 4. Evict in-memory caches for this node
 	u.cleanupNodeCaches(id)
 

@@ -401,10 +401,11 @@ func NewServer(deps ServerDeps) *Server {
 			authHandler.RegisterAdminRoutes(adminAPI)
 		}
 
-		// Certificate management (public & ACME certs for inbound TLS)
+		// Certificate management: hub CA, node certificates, strict mode
 		if deps.Admin.CertificateUsecase != nil {
-			certHandler := nodeHandler.NewCertificateHandler(deps.Admin.CertificateUsecase)
+			certHandler := nodeHandler.NewCertificateHandler(deps.Admin.CertificateUsecase, deps.Admin.NodeUsecase, deps.Admin.AuditUsecase, deps.Infra.TokenManager)
 			certHandler.RegisterAdminRoutes(adminAPI)
+			certHandler.RegisterPublicRoutes(publicAPI)
 		}
 
 		// Xray Binary Distribution

@@ -501,6 +501,7 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 
 	// Cert renewals.
 	s.observeTask("cert_renewals", func() error { s.checkCertRenewals(ctx); return nil })
+	s.observeTask("agent_cert_maintenance", func() error { return s.nodeUsecase.RunAgentCertMaintenance(ctx) })
 
 	// Daily admin digest (inner gating — ~9 AM UTC).
 	s.checkAndSendDailyDigest(ctx)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 // NodeStatsResult is one entry in a bulk stats response.
@@ -994,4 +997,14 @@ func (u *nodeUsecase) readAccessLogCap(ctx context.Context, key string) int32 {
 		n = 500
 	}
 	return int32(n)
+}
+
+// isUnimplementedErr matches both transports' "agent too old for this RPC"
+// signals: gRPC Unimplemented (direct mode) and the reverse handler's
+// unknown-method error string.
+func isUnimplementedErr(err error) bool {
+	if grpcstatus.Code(err) == codes.Unimplemented {
+		return true
+	}
+	return strings.Contains(err.Error(), "unknown method")
 }
