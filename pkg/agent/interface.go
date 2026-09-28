@@ -46,9 +46,6 @@ type NodeClient interface {
 	// Host info
 	GetHostInfo(ctx context.Context) (*HostInfo, error)
 
-	// ListInterfaces enumerates the box's NICs (Required by Router mode)
-	ListInterfaces(ctx context.Context) ([]NetInterface, error)
-
 	// Health
 	HealthCheck(ctx context.Context) (*HealthResult, error)
 
@@ -86,6 +83,11 @@ type NodeClient interface {
 	GetBufferedTraffic(ctx context.Context) (*BufferedTrafficStats, error)
 	AckBufferedTraffic(ctx context.Context, throughTimestamp int64) error
 
+	// GetStatsBundle fetches system stats, node status, buffered traffic and
+	// (optionally) online IPs in one round-trip. Agents older than the RPC
+	// return an error; callers fall back to the individual calls.
+	GetStatsBundle(ctx context.Context, includeOnlineIPs bool) (*StatsBundle, error)
+
 	// Tools
 	GenerateVLESSKeys(ctx context.Context) ([]VLESSKeyPair, error)
 
@@ -111,6 +113,15 @@ type NodeClient interface {
 	// Nuke / Wipe
 	Wipe(ctx context.Context, req *pb.NukeRequest) (*pb.NukeReport, error)
 	Nuke(ctx context.Context, req *pb.NukeRequest) (pb.NodeAgent_NukeClient, error)
+
+	// Core (non-Xray protocol) management
+	ApplyCoreState(ctx context.Context, payload *pb.CoreStatePayload) error
+	GetCoreStatus(ctx context.Context, coreType string) (*pb.CoreStatusResponse, error)
+
+	// Core dependency installation (packages/binaries/kmods per core).
+	ProbeDependencies(ctx context.Context, coreTypes []string) (*pb.ProbeDependenciesResponse, error)
+	StartDependencyInstall(ctx context.Context, req *pb.StartInstallRequest) (*pb.StartInstallResponse, error)
+	GetInstallProgress(ctx context.Context, jobID string, sinceCursor int32) (*pb.InstallProgressResponse, error)
 }
 
 // AccessLogAckConfig carries hub-side runtime settings the agent's
@@ -122,3 +133,14 @@ type AccessLogAckConfig struct {
 	MaxRejectedDomainsPerHour int32
 	MaxSourceIPsPerHour       int32
 }
+
+// Compile-time check: *Client must satisfy NodeClient.
+var _ NodeClient = (*Client)(nil)
+
+// InterfaceLister enumerates the box's NICs. Router mode only, so only the
+// in-process EmbeddedClient implements it; remote agents never expose it.
+type InterfaceLister interface {
+	ListInterfaces(ctx context.Context) ([]NetInterface, error)
+}
+
+var _ InterfaceLister = (*EmbeddedClient)(nil)

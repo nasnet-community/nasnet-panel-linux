@@ -206,7 +206,7 @@ type Deps struct {
 	Events     *events.Recorder
 	Backend    system.Backend
 	Nft        *nft.Manager
-	Agent      agent.NodeClient
+	Agent      agent.InterfaceLister
 	Paths      system.Paths
 	RouterMode bool
 	EventBus   *events.EventBus

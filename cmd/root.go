@@ -864,7 +864,7 @@ func (n lazyBotNotifier) NotifyAdmin(message string) error {
 type routerModeDeps struct {
 	DB     *gorm.DB
 	NftMgr *nft.Manager
-	Agent  agent.NodeClient
+	Agent  agent.InterfaceLister
 	Bus    *events.EventBus
 	// NetEvents is the flow page's history of what already happened.
 	NetEvents *events.Recorder

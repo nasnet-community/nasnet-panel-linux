@@ -1,5 +1,7 @@
 package agent
 
+import pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
+
 // SystemStats holds system resource statistics from the agent.
 type SystemStats struct {
 	CollectedAtUnixMs   int64 // observation time of the completed sample
@@ -138,6 +140,7 @@ type TrafficRecord struct {
 	InboundDownlink  map[string]int64
 	TotalUplink      int64
 	TotalDownlink    int64
+	CoreUsage        []CoreUsageEntry
 }
 
 // BufferedTrafficStats holds time-bucketed traffic records from the agent.
@@ -246,4 +249,22 @@ type NetInterface struct {
 type OnlineIPSnapshot struct {
 	Users             map[string]map[string]int64
 	CollectedAtUnixMs int64
+}
+
+// CoreUsageEntry is one (protocol, email) core-usage row from a TrafficRecord.
+type CoreUsageEntry struct {
+	Protocol string
+	Email    string
+	Uplink   int64
+	Downlink int64
+}
+
+// StatsBundle carries one round-trip's worth of the hub stats sweep. Nil
+// fields mean the agent could not collect that part (or it wasn't requested).
+type StatsBundle struct {
+	System                     *SystemStats
+	Status                     *pb.NodeStatus
+	Buffered                   *BufferedTrafficStats
+	OnlineIPs                  map[string]map[string]int64 // nil when not requested
+	OnlineIPsCollectedAtUnixMs int64
 }

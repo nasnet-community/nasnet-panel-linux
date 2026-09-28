@@ -193,25 +193,7 @@ func (c *EmbeddedClient) GetSystemStats(ctx context.Context) (*SystemStats, erro
 	if err != nil {
 		return nil, err
 	}
-	return &SystemStats{
-		CollectedAtUnixMs:   resp.CollectedAtUnixMs,
-		CPUUsagePercent:     resp.CpuUsagePercent,
-		MemoryTotalBytes:    resp.MemoryTotalBytes,
-		MemoryUsedBytes:     resp.MemoryUsedBytes,
-		MemoryUsagePercent:  resp.MemoryUsagePercent,
-		DiskTotalBytes:      resp.DiskTotalBytes,
-		DiskUsedBytes:       resp.DiskUsedBytes,
-		DiskUsagePercent:    resp.DiskUsagePercent,
-		NetworkRecvRate:     resp.NetworkRecvRate,
-		NetworkSentRate:     resp.NetworkSentRate,
-		LoadAvg1:            resp.LoadAvg_1,
-		LoadAvg5:            resp.LoadAvg_5,
-		LoadAvg15:           resp.LoadAvg_15,
-		SystemUptimeSeconds: resp.SystemUptimeSeconds,
-		TcpCount:            resp.TcpConns,
-		UdpCount:            resp.UdpConns,
-		FdCount:             resp.FdCount,
-	}, nil
+	return systemStatsFromPB(resp), nil
 }
 
 func (c *EmbeddedClient) GetXrayStats(ctx context.Context, reset bool) (*XrayStats, error) {
@@ -539,15 +521,7 @@ func (c *EmbeddedClient) GetOnlineIPSnapshot(ctx context.Context) (*OnlineIPSnap
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]map[string]int64, len(resp.Users))
-	for email, entry := range resp.Users {
-		if entry == nil || entry.Ips == nil {
-			out[email] = map[string]int64{}
-			continue
-		}
-		out[email] = entry.Ips
-	}
-	return &OnlineIPSnapshot{Users: out, CollectedAtUnixMs: resp.CollectedAtUnixMs}, nil
+	return &OnlineIPSnapshot{Users: onlineIPsFromPB(resp), CollectedAtUnixMs: resp.GetCollectedAtUnixMs()}, nil
 }
 
 // ===== Buffered Traffic =====
@@ -557,25 +531,7 @@ func (c *EmbeddedClient) GetBufferedTraffic(ctx context.Context) (*BufferedTraff
 	if err != nil {
 		return nil, err
 	}
-	records := make([]*TrafficRecord, 0, len(resp.Records))
-	for _, r := range resp.Records {
-		records = append(records, &TrafficRecord{
-			Timestamp:        r.Timestamp,
-			UserUplink:       r.UserUplink,
-			UserDownlink:     r.UserDownlink,
-			OutboundUplink:   r.OutboundUplink,
-			OutboundDownlink: r.OutboundDownlink,
-			InboundUplink:    r.InboundUplink,
-			InboundDownlink:  r.InboundDownlink,
-			TotalUplink:      r.TotalUplink,
-			TotalDownlink:    r.TotalDownlink,
-		})
-	}
-	return &BufferedTrafficStats{
-		Records:         records,
-		BufferStartTime: resp.BufferStartTime,
-		BufferEndTime:   resp.BufferEndTime,
-	}, nil
+	return bufferedTrafficFromPB(resp), nil
 }
 
 func (c *EmbeddedClient) AckBufferedTraffic(ctx context.Context, throughTimestamp int64) error {
