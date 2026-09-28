@@ -47,6 +47,7 @@ import (
 	notifPkg "github.com/nasnet-community/nasnet-panel-linux/pkg/notification"
 
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
+	userProfileUC "github.com/nasnet-community/nasnet-panel-linux/internal/userprofile/usecase"
 	wireguardDomain "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/domain"
 	wireguardNodebridge "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/nodebridge"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
@@ -793,6 +794,15 @@ func runServe(cmd *cobra.Command, args []string) {
 			MaintenanceUsecase: uc.Maintenance,
 			NetworkUsecase:     networkUC,
 			RouterMode:         cfg.Router.Enabled,
+			UserProfileUsecase: userProfileUC.New(userProfileUC.Deps{
+				Users:         repos.User,
+				Subscriptions: repos.Subscription,
+				SubIPs:        repos.SubscriptionIP,
+				Accounts:      repos.Account,
+				Notifications: repos.Notification,
+				Audit:         repos.Audit,
+				Hourly:        repos.Node,
+			}),
 		},
 		Infra: httpTransport.InfraDeps{
 			DB:                db,

@@ -88,7 +88,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		admin.PUT("/users/:id/notes", h.UpdateUserNotes)
 		admin.GET("/users/:id/usage-history", h.GetUserUsageHistory)
 		admin.GET("/users/:id/usage-pattern", h.GetUserUsagePattern)
-		admin.GET("/users/:id/activity", h.GetUserActivity)
 		admin.GET("/users/:id/accounts", h.GetUserAccounts)
 		admin.POST("/users", h.CreateUser)
 
@@ -575,101 +574,6 @@ func (h *Handler) GetUserUsageHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": points})
 }
 
-func (h *Handler) GetUserActivity(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
-		return
-	}
-
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	if limit > 100 {
-		limit = 100
-	}
-
-	ctx := c.Request.Context()
-
-	// Query audit logs for user-related events
-	userFilter := auditDomain.AuditListFilters{
-		EntityType: "user",
-		EntityID:   uint(id),
-		Offset:     0,
-		Limit:      200,
-	}
-	userLogs, _, _ := h.auditUC.List(ctx, userFilter)
-
-	// Query audit logs for subscription events (get user's sub IDs)
-	subFilter := auditDomain.AuditListFilters{
-		EntityType: "subscription",
-		Offset:     0,
-		Limit:      200,
-	}
-	subLogs, _, _ := h.auditUC.List(ctx, subFilter)
-
-	// Query payment events
-	payFilter := auditDomain.AuditListFilters{
-		EntityType: "payment",
-		Offset:     0,
-		Limit:      200,
-	}
-	payLogs, _, _ := h.auditUC.List(ctx, payFilter)
-
-	// Merge all logs
-	var allLogs []*auditDomain.AuditLog
-	allLogs = append(allLogs, userLogs...)
-	allLogs = append(allLogs, subLogs...)
-	allLogs = append(allLogs, payLogs...)
-
-	// Sort by created_at DESC
-	for i := 0; i < len(allLogs); i++ {
-		for j := i + 1; j < len(allLogs); j++ {
-			if allLogs[j].CreatedAt.After(allLogs[i].CreatedAt) {
-				allLogs[i], allLogs[j] = allLogs[j], allLogs[i]
-			}
-		}
-	}
-
-	// Apply offset/limit
-	if offset >= len(allLogs) {
-		allLogs = nil
-	} else {
-		end := offset + limit
-		if end > len(allLogs) {
-			end = len(allLogs)
-		}
-		allLogs = allLogs[offset:end]
-	}
-
-	// Transform to response
-	type activityEvent struct {
-		ID         uint   `json:"id"`
-		Action     string `json:"action"`
-		ActorName  string `json:"actor_name"`
-		EntityType string `json:"entity_type"`
-		EntityID   uint   `json:"entity_id"`
-		OldValues  string `json:"old_values,omitempty"`
-		NewValues  string `json:"new_values,omitempty"`
-		CreatedAt  string `json:"created_at"`
-	}
-
-	events := make([]activityEvent, 0, len(allLogs))
-	for _, log := range allLogs {
-		events = append(events, activityEvent{
-			ID:         log.ID,
-			Action:     log.Action,
-			ActorName:  log.ActorName,
-			EntityType: log.EntityType,
-			EntityID:   log.EntityID,
-			OldValues:  log.OldValues,
-			NewValues:  log.NewValues,
-			CreatedAt:  log.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": events})
-}
-
 func (h *Handler) GetUserAccounts(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -853,6 +757,7 @@ func (h *Handler) PauseSubscription(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
+	h.logAudit(c, auditDomain.AuditSubPause, "subscription", uint(id))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "subscription paused"})
 }
 
@@ -867,6 +772,7 @@ func (h *Handler) ResumeSubscription(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
+	h.logAudit(c, auditDomain.AuditSubResume, "subscription", uint(id))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "subscription resumed"})
 }
 
@@ -888,6 +794,7 @@ func (h *Handler) RegenerateSubscriptionKey(c *gin.Context) {
 		return
 	}
 
+	h.logAudit(c, auditDomain.AuditSubRegenKey, "subscription", uint(id))
 	sub.SubscriptionURL = h.getBaseURL(c) + "/sub/" + sub.GetLinkKey()
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "subscription key regenerated", "data": sub})
 }
@@ -1041,6 +948,12 @@ func (h *Handler) SetSubscriptionDataLimit(c *gin.Context) {
 		return
 	}
 
+	limit := "plan default"
+	if req.LimitGB != nil {
+		limit = fmt.Sprintf("%g GB", *req.LimitGB)
+	}
+	h.logAuditWithValues(c, auditDomain.AuditSubSetDataLim, "subscription", uint(id), "", limit)
+
 	msg := "data limit reset to plan default"
 	if req.LimitGB != nil {
 		msg = "custom data limit set"
@@ -1102,6 +1015,8 @@ func (h *Handler) SetSubscriptionMaxDevices(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
+
+	h.logAuditWithValues(c, auditDomain.AuditSubSetMaxDevices, "subscription", uint(id), "", strconv.Itoa(req.MaxDevices))
 
 	msg := "device limit reset to plan default"
 	if req.MaxDevices > 0 {
@@ -1181,6 +1096,7 @@ func (h *Handler) AddSubscriptionData(c *gin.Context) {
 		return
 	}
 
+	h.logAuditWithValues(c, auditDomain.AuditSubAddData, "subscription", uint(id), "", fmt.Sprintf("+%g GB", req.AdditionalGB))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "data added", "added_gb": req.AdditionalGB})
 }
 
@@ -1196,6 +1112,7 @@ func (h *Handler) ResetSubscriptionData(c *gin.Context) {
 		return
 	}
 
+	h.logAudit(c, auditDomain.AuditSubResetData, "subscription", uint(id))
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "data usage reset"})
 }
 

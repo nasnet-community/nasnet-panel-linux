@@ -21,6 +21,10 @@ type NotificationRepository interface {
 	// GetRecentNotifications gets recent notifications for a user
 	GetRecentNotifications(ctx context.Context, userID uint, limit int) ([]*domain.NotificationLog, error)
 
+	// ListSentToUser returns every notice sent to the user, newest first,
+	// including rows re-armed (soft-deleted) by a renewal: they were still sent.
+	ListSentToUser(ctx context.Context, userID uint, limit int) ([]*domain.NotificationLog, error)
+
 	// CleanupOldNotifications removes notifications older than N days
 	CleanupOldNotifications(ctx context.Context, olderThanDays int) error
 
@@ -63,6 +67,16 @@ func (r *notificationRepository) HasSentNotificationToday(ctx context.Context, s
 func (r *notificationRepository) GetRecentNotifications(ctx context.Context, userID uint, limit int) ([]*domain.NotificationLog, error) {
 	var logs []*domain.NotificationLog
 	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("sent_at DESC").
+		Limit(limit).
+		Find(&logs).Error
+	return logs, err
+}
+
+func (r *notificationRepository) ListSentToUser(ctx context.Context, userID uint, limit int) ([]*domain.NotificationLog, error) {
+	var logs []*domain.NotificationLog
+	err := r.db.WithContext(ctx).Unscoped().
 		Where("user_id = ?", userID).
 		Order("sent_at DESC").
 		Limit(limit).

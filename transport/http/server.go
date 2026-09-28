@@ -45,6 +45,8 @@ import (
 	userHttp "github.com/nasnet-community/nasnet-panel-linux/internal/user/delivery/http"
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
 	userUCPkg "github.com/nasnet-community/nasnet-panel-linux/internal/user/usecase"
+	userProfileHttp "github.com/nasnet-community/nasnet-panel-linux/internal/userprofile/delivery/http"
+	userProfileUC "github.com/nasnet-community/nasnet-panel-linux/internal/userprofile/usecase"
 	wireguardUC "github.com/nasnet-community/nasnet-panel-linux/internal/wireguard/usecase"
 	xrayHandler "github.com/nasnet-community/nasnet-panel-linux/internal/xray/handler"
 	xrayUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
@@ -89,6 +91,9 @@ type AdminDeps struct {
 	MaintenanceUsecase mntUC.Usecase
 	NetworkUsecase     networkUC.NetworkUsecase
 	RouterMode         bool
+
+	// UserProfileUsecase serves the admin user page overview and timeline.
+	UserProfileUsecase userProfileUC.Usecase
 }
 
 // InfraDeps holds infrastructure-level dependencies
@@ -324,6 +329,11 @@ func NewServer(deps ServerDeps) *Server {
 			adminHandler := adminHttp.NewHandler(deps.Admin.AdminUsecase, deps.Config.AppConfig.BaseURL, deps.Admin.AuditUsecase, deps.Config.TelegramBotToken, deps.Admin.SettingUsecase)
 			adminHandler.SetHTTPClientFactory(deps.Infra.HTTPClientFactory)
 			adminHandler.RegisterRoutes(adminAPI)
+		}
+
+		// User page overview, timeline and per-subscription hourly pattern
+		if deps.Admin.UserProfileUsecase != nil {
+			userProfileHttp.NewHandler(deps.Admin.UserProfileUsecase).RegisterAdminRoutes(adminAPI)
 		}
 
 		// Audit log viewer

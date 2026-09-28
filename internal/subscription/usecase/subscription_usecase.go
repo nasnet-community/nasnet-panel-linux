@@ -82,6 +82,9 @@ type SubscriptionUsageDetails struct {
 type UsageHistoryPoint struct {
 	Date     string `json:"date"`
 	DataUsed int64  `json:"data_used"` // daily delta bytes
+	// Upload/download split of DataUsed.
+	DataUpload   int64 `json:"data_upload"`
+	DataDownload int64 `json:"data_download"`
 }
 
 // HourlyUsagePoint represents aggregated connection count for an hour of day.

@@ -38,6 +38,15 @@ func (r *auditRepository) List(ctx context.Context, filters domain.AuditListFilt
 	if filters.EntityID > 0 {
 		query = query.Where("entity_id = ?", filters.EntityID)
 	}
+	if len(filters.EntityIDs) > 0 {
+		query = query.Where("entity_id IN ?", filters.EntityIDs)
+	}
+	if len(filters.Actions) > 0 {
+		query = query.Where("action IN ?", filters.Actions)
+	}
+	if len(filters.ExcludeActions) > 0 {
+		query = query.Where("action NOT IN ?", filters.ExcludeActions)
+	}
 	if filters.DateFrom != nil {
 		query = query.Where("created_at >= ?", *filters.DateFrom)
 	}

@@ -29,6 +29,10 @@ const (
 	AuditSubDelete     AuditAction = "subscription.delete"
 	AuditSubBulk       AuditAction = "subscription.bulk"
 	AuditSubSetDataLim AuditAction = "subscription.set_data_limit"
+
+	// Device limit changes on one subscription.
+	AuditSubSetMaxDevices AuditAction = "subscription.set_max_devices"
+
 	// AuditSubViewAccessHistory: admin requested per-subscription request log.
 	// Logged because access-history reveals destinations the user contacted —
 	// admins should be accountable for these queries.
@@ -96,10 +100,15 @@ type AuditListFilters struct {
 	ActorID    uint
 	EntityType string
 	EntityID   uint
+	EntityIDs  []uint // matches any of these; combined with EntityType
 	DateFrom   *time.Time
 	DateTo     *time.Time
 	Offset     int
 	Limit      int
+
+	// Actions keeps only these actions; ExcludeActions drops them.
+	Actions        []string
+	ExcludeActions []string
 }
 
 // AuditLogRepository defines the repository interface

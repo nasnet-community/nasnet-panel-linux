@@ -503,10 +503,13 @@ func (u *subscriptionUsecase) GetSubscriptionUsageHistory(ctx context.Context, s
 		if v < 0 {
 			v = 0
 		}
-		points = append(points, UsageHistoryPoint{
-			Date:     r.Date.UTC().Format("2006-01-02"),
-			DataUsed: v,
-		})
+		p := UsageHistoryPoint{
+			Date:         r.Date.UTC().Format("2006-01-02"),
+			DataUsed:     v,
+			DataUpload:   max(r.DataUpload, 0),
+			DataDownload: max(r.DataDownload, 0),
+		}
+		points = append(points, p)
 	}
 	return points, nil
 }
