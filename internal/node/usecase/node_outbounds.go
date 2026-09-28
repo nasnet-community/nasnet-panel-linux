@@ -79,7 +79,7 @@ func (u *nodeUsecase) validateProxyChaining(ctx context.Context, outbound *domai
 // ensureUniqueOutboundTag rejects a tag already used by another outbound on the
 // node; duplicate tags stop xray from starting.
 func (u *nodeUsecase) ensureUniqueOutboundTag(ctx context.Context, outbound *domain.Outbound) error {
-	if u.routerMode && domain.IsRouterXrayTag(outbound.Tag) {
+	if u.routerModeForNodeID(outbound.NodeID) && domain.IsRouterXrayTag(outbound.Tag) {
 		return fmt.Errorf("outbound tag %q is reserved for a managed router outbound", outbound.Tag)
 	}
 	existing, err := u.nodeRepo.ListOutboundsByNode(ctx, outbound.NodeID)
@@ -157,10 +157,14 @@ func (u *nodeUsecase) ListOutbounds(ctx context.Context, nodeID uint) ([]*domain
 	if err != nil {
 		return nil, err
 	}
-	if !u.routerMode {
+	if !u.routerModeForNodeID(nodeID) {
 		return stored, nil
 	}
-	return append(managedOutbounds(nodeID, u.currentRouterWANs(ctx)), stored...), nil
+	var vias []xray.RouterWAN
+	if u.routerWANs != nil {
+		vias = u.routerWANs(ctx)
+	}
+	return append(managedOutbounds(nodeID, vias), stored...), nil
 }
 
 // From the builder's own definition, so the list can't drift from the config.

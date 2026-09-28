@@ -56,9 +56,21 @@ func (u *nodeUsecase) SetRouterWANSource(fn func(context.Context) []xray.RouterW
 	u.routerWANs = fn
 }
 
-// currentRouterWANs is nil-safe: unwired means no per-WAN outbounds, never a panic.
-func (u *nodeUsecase) currentRouterWANs(ctx context.Context) []xray.RouterWAN {
-	if u.routerWANs == nil || !u.routerMode {
+// routerModeFor: router mode shapes the built-in node only. Remote nodes
+// get plain configs whatever the box runs.
+func (u *nodeUsecase) routerModeFor(node *domain.Node) bool {
+	return u.routerMode && node.IsLocal()
+}
+
+// routerModeForNodeID is routerModeFor when only the id is at hand.
+func (u *nodeUsecase) routerModeForNodeID(nodeID uint) bool {
+	return u.routerMode && nodeID != 0 && nodeID == u.LocalNodeID()
+}
+
+// currentRouterWANs is nil-safe: unwired means no per-WAN outbounds, never a
+// panic. Empty for any node but the built-in one.
+func (u *nodeUsecase) currentRouterWANs(ctx context.Context, node *domain.Node) []xray.RouterWAN {
+	if u.routerWANs == nil || !u.routerModeFor(node) {
 		return nil
 	}
 	return u.routerWANs(ctx)
@@ -82,8 +94,9 @@ func (u *nodeUsecase) SetInboundsChangedHook(fn func(context.Context) error) {
 
 // notifyInboundsChanged is nil-safe: unwired means router mode is off. An
 // accept that drifts from its inbound is worth a warning, never a failure.
-func (u *nodeUsecase) notifyInboundsChanged(ctx context.Context) {
-	if u.onInboundsChanged == nil {
+// Only the built-in node's inbounds reach the box's firewall.
+func (u *nodeUsecase) notifyInboundsChanged(ctx context.Context, nodeID uint) {
+	if u.onInboundsChanged == nil || !u.routerModeForNodeID(nodeID) {
 		return
 	}
 	if err := u.onInboundsChanged(ctx); err != nil {
@@ -800,8 +813,8 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
-		WithRouterMode(u.routerMode).
-		WithRouterWANs(u.currentRouterWANs(ctx)).
+		WithRouterMode(u.routerModeFor(node)).
+		WithRouterWANs(u.currentRouterWANs(ctx, node)).
 		WithInbounds(inbounds).
 		WithOutbounds(outbounds).
 		WithRoutingRules(routingRules).
@@ -891,7 +904,12 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 	// Setup or teardown TC bandwidth shaping based on node settings
 	bwSettings := node.GetBandwidthSettingsOrDefault()
 	if bwSettings.Enabled {
-		iface, warning := node.ResolveShapingInterface(u.ingressUplinkIfName())
+		var iface, warning string
+		if u.routerModeFor(node) {
+			iface, warning = node.ResolveShapingInterface(u.ingressUplinkIfName())
+		} else if iface = bwSettings.InterfaceOverride; iface == "" {
+			iface = bwSettings.Interface // a remote box's own uplink
+		}
 		if warning != "" {
 			log.WithField("node", node.ID).Warn(warning)
 		}

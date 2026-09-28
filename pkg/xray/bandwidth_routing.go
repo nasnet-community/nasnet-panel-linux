@@ -55,13 +55,17 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 			return existing
 		}
 		clones[key] = key
-		// NASNET shares the mark word between shaping, WAN selection and
-		// ingress pins. Replace only the tier bits on each physical dialer.
-		socketMark := mark & netmark.MaskTier
-		if stream, ok := src["streamSettings"].(map[string]interface{}); ok {
-			if sock, ok := stream["sockopt"].(map[string]interface{}); ok {
-				if existing, ok := sock["mark"].(uint32); ok {
-					socketMark |= existing &^ netmark.MaskTier
+		socketMark := mark
+		if b.routerMode {
+			// The router box shares the mark word between shaping, WAN
+			// selection and ingress pins. Replace only the tier bits on
+			// each physical dialer; remote nodes own their whole mark.
+			socketMark = mark & netmark.MaskTier
+			if stream, ok := src["streamSettings"].(map[string]interface{}); ok {
+				if sock, ok := stream["sockopt"].(map[string]interface{}); ok {
+					if existing, ok := sock["mark"].(uint32); ok {
+						socketMark |= existing &^ netmark.MaskTier
+					}
 				}
 			}
 		}

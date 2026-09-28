@@ -216,7 +216,7 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 			}
 		}
 		if len(inbounds) > 0 {
-			u.notifyInboundsChanged(ctx)
+			u.notifyInboundsChanged(ctx, id)
 		}
 
 		// Delete Reverse Proxies (before routing rules since they reference them)
@@ -497,7 +497,7 @@ func (u *nodeUsecase) MigrateInbound(ctx context.Context, sourceInboundID, targe
 		} else {
 			result.SourceDeactivated = true
 			// The accept and the upstream mapping outlive the inbound otherwise.
-			u.notifyInboundsChanged(ctx)
+			u.notifyInboundsChanged(ctx, sourceInbound.NodeID)
 		}
 	}
 

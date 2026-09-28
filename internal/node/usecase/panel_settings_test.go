@@ -142,9 +142,14 @@ func TestPanelSettingsReservedAndReverseTagCollisions(t *testing.T) {
 
 func TestPanelSettingsManagedRouterOutboundTags(t *testing.T) {
 	u := &nodeUsecase{nodeRepo: &settingsRepo{}, routerMode: true}
+	u.localNodeID.Store(1)
 	for _, tag := range []string{"direct-foreign", "direct-domestic", "direct-foreign-secondary4"} {
-		if err := u.ensureUniqueOutboundTag(context.Background(), &d.Outbound{Tag: tag}); err == nil || !strings.Contains(err.Error(), "managed") {
+		if err := u.ensureUniqueOutboundTag(context.Background(), &d.Outbound{NodeID: 1, Tag: tag}); err == nil || !strings.Contains(err.Error(), "managed") {
 			t.Fatalf("accepted managed outbound tag %q: %v", tag, err)
+		}
+		// Router mode never shapes a remote node, so its tags are free there.
+		if err := u.ensureUniqueOutboundTag(context.Background(), &d.Outbound{NodeID: 2, Tag: tag}); err != nil {
+			t.Fatalf("remote node refused tag %q: %v", tag, err)
 		}
 	}
 }
