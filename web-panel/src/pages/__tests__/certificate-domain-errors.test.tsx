@@ -2,28 +2,28 @@ import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { listCertificates } from "@/lib/api/certificates"
+import { MemoryRouter } from "react-router"
+import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
+import { getCertificateOverview } from "@/lib/api/certificates"
 import { listSNIs } from "@/lib/api/domains"
-import type { AgentCertificate, SNI } from "@/lib/types"
-import { useCertificatesStore } from "@/store/certificates-store"
+import type { CertOverview, SNI } from "@/lib/types"
 import DomainsPage from "../domains"
 import CertificatesPage from "../certificates"
 
 const { mobile } = vi.hoisted(() => ({ mobile: { value: false } }))
 
 vi.mock("@/lib/api/domains", async (original) => ({
-    ...await original<typeof import("@/lib/api/domains")>(), listSNIs: vi.fn(),
+    ...await original<typeof import("@/lib/api/domains")>(),
+    listSNIs: vi.fn(),
 }))
 vi.mock("@/lib/api/certificates", async (original) => ({
-    ...await original<typeof import("@/lib/api/certificates")>(), listCertificates: vi.fn(),
+    ...await original<typeof import("@/lib/api/certificates")>(),
+    getCertificateOverview: vi.fn(),
 }))
 vi.mock("@/hooks/use-is-mobile", () => ({ useIsMobile: () => mobile.value }))
 vi.mock("@/components/domains/add-domain-dialog", () => ({ AddDomainDialog: () => null }))
 vi.mock("@/components/domains/domain-details-dialog", () => ({ DomainDetailsDialog: () => null }))
 vi.mock("@/components/domains/edit-domain-dialog", () => ({ EditDomainDialog: () => null }))
-vi.mock("@/components/certificates/issue-cert-dialog", () => ({ IssueCertDialog: () => null }))
-vi.mock("@/components/certificates/cert-details-dialog", () => ({ CertDetailsDialog: () => null }))
-vi.mock("@/components/certificates/bulk-actions-bar", () => ({ BulkActionsBar: () => null }))
 
 // Keep the query lifecycle and the page's state handling real; row actions are
 // unrelated to load recovery and can be represented by the retrieved names.
@@ -32,44 +32,33 @@ vi.mock("@/components/domains/domains-table", () => ({
         isLoading ? <p>Loading domains...</p> : <div>{domains.map(domain => <p key={domain.id}>{domain.domain}</p>)}</div>
     ),
 }))
-vi.mock("@/components/certificates/certificates-table", () => ({
-    CertificatesTable: ({ certificates, isLoading }: { certificates: AgentCertificate[]; isLoading: boolean }) => (
-        isLoading ? <p>Loading certificates...</p> : certificates.length === 0 ? <p>No certificates found</p> :
-            <div>{certificates.map(cert => <p key={cert.id}>{cert.common_name}</p>)}</div>
-    ),
-}))
 
 const domain = { id: 1, name: "Edge", domain: "edge.example.com", is_auto_issued: false } as SNI
-const certificate = {
-    id: 1,
-    type: "ca",
-    common_name: "Proxy CA",
-    serial_number: "CA-001",
-    is_valid: true,
-    is_revoked: false,
-    days_until_expiry: 90,
-    not_after: "2027-01-01T00:00:00Z",
-} as AgentCertificate
+const overview: CertOverview = {
+    ca: {
+        id: 1, type: "ca", common_name: "Proxy CA", serial: "CA-001",
+        not_before: "2026-01-01T00:00:00Z", not_after: "2036-01-01T00:00:00Z",
+        days_left: 3000, is_revoked: false, fingerprint_sha256: "AA:BB:CC",
+    },
+    strict_mode: { enabled: false, ready: true, blockers: [] },
+    auto_rotate: { enabled: true, days: 30 },
+    nodes: [], domains: [], legacy: [], attention: [],
+    counts: { active: 1, expiring_30d: 0, revoked: 0, orphans: 0 },
+    certificates: [],
+}
+const emptyOverview: CertOverview = { ...overview, ca: null, counts: { active: 0, expiring_30d: 0, revoked: 0, orphans: 0 } }
 
 function renderPage(page: React.ReactNode) {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(<QueryClientProvider client={qc}>{page}</QueryClientProvider>)
+    render(<QueryClientProvider client={qc}><MemoryRouter><ConfirmDialogProvider>{page}</ConfirmDialogProvider></MemoryRouter></QueryClientProvider>)
     return qc
 }
 
 beforeEach(() => {
     vi.clearAllMocks()
     mobile.value = false
-    useCertificatesStore.setState({
-        activeTab: "internal",
-        activeFilter: "all",
-        viewMode: "list",
-        searchQuery: "",
-        selectedIds: new Set(),
-        caBannerExpanded: false,
-    })
     vi.mocked(listSNIs).mockResolvedValue({ success: true, data: [domain] })
-    vi.mocked(listCertificates).mockResolvedValue({ success: true, data: { certificates: [certificate] } })
+    vi.mocked(getCertificateOverview).mockResolvedValue({ success: true, data: overview })
 })
 
 describe("domain query recovery", () => {
@@ -109,21 +98,18 @@ describe("domain query recovery", () => {
 })
 
 describe("certificate query recovery", () => {
-    it.each(["desktop", "mobile", "timeline"])("shows an initial error without inventing a missing CA in %s view", async (view) => {
+    it.each(["desktop", "mobile"])("shows an initial error without inventing a missing CA in %s view", async (view) => {
         mobile.value = view === "mobile"
-        useCertificatesStore.setState({ viewMode: view === "timeline" ? "timeline" : "list" })
-        vi.mocked(listCertificates).mockResolvedValueOnce({ success: false, error: "Offline" })
+        vi.mocked(getCertificateOverview).mockResolvedValueOnce({ success: false, error: "Offline" })
         renderPage(<CertificatesPage />)
 
         expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load certificates")
-        expect(screen.queryByText("Not Initialized")).not.toBeInTheDocument()
-        expect(screen.queryByText("No certificates found")).not.toBeInTheDocument()
-        expect(screen.queryByText("No certificate expirations in the next 12 months")).not.toBeInTheDocument()
-        expect(screen.queryByRole("button", { name: /^All/ })).not.toBeInTheDocument()
+        expect(screen.queryByText("Not initialized")).not.toBeInTheDocument()
+        expect(screen.queryByText(/No nodes yet/)).not.toBeInTheDocument()
     })
 
     it("retries an initial certificate failure and loads the actual CA status", async () => {
-        vi.mocked(listCertificates).mockRejectedValueOnce(new Error("Offline"))
+        vi.mocked(getCertificateOverview).mockRejectedValueOnce(new Error("Offline"))
         renderPage(<CertificatesPage />)
         await screen.findByRole("alert")
 
@@ -137,7 +123,7 @@ describe("certificate query recovery", () => {
     it("keeps the last certificates and CA status on a failed refresh", async () => {
         const qc = renderPage(<CertificatesPage />)
         await screen.findByText("Proxy CA")
-        vi.mocked(listCertificates).mockRejectedValueOnce(new Error("Offline"))
+        vi.mocked(getCertificateOverview).mockRejectedValueOnce(new Error("Offline"))
 
         await act(async () => { await qc.invalidateQueries({ queryKey: ["certificates"] }) })
 
@@ -148,22 +134,20 @@ describe("certificate query recovery", () => {
         await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
     })
 
-    it("shows loading in timeline view without declaring the CA uninitialized", async () => {
-        useCertificatesStore.setState({ viewMode: "timeline" })
-        vi.mocked(listCertificates).mockImplementationOnce(() => new Promise(() => {}))
+    it("shows loading without declaring the CA uninitialized", async () => {
+        vi.mocked(getCertificateOverview).mockImplementationOnce(() => new Promise(() => {}))
         renderPage(<CertificatesPage />)
 
         expect(screen.getByRole("status")).toHaveTextContent("Loading certificates")
-        expect(screen.queryByText("Not Initialized")).not.toBeInTheDocument()
-        expect(screen.queryByText("No certificate expirations in the next 12 months")).not.toBeInTheDocument()
+        expect(screen.queryByText("Not initialized")).not.toBeInTheDocument()
     })
 
     it("still reports an uninitialized CA after a successful empty response", async () => {
-        vi.mocked(listCertificates).mockResolvedValueOnce({ success: true, data: { certificates: [] } })
+        vi.mocked(getCertificateOverview).mockResolvedValueOnce({ success: true, data: emptyOverview })
         renderPage(<CertificatesPage />)
 
-        expect(await screen.findByText("Not Initialized")).toBeInTheDocument()
-        expect(screen.getByText("No certificates found")).toBeInTheDocument()
+        expect(await screen.findByText("Not initialized")).toBeInTheDocument()
+        expect(screen.getByText(/No nodes yet/)).toBeInTheDocument()
         expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     })
 })

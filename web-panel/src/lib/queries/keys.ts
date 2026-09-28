@@ -98,6 +98,8 @@ export const queryKeys = {
     masterCert: () => [...queryKeys.certificates, 'master'] as const,
     agentCert: (nodeId: number) => [...queryKeys.certificates, 'agent', nodeId] as const,
     certBundle: (nodeId: number) => [...queryKeys.certificates, 'bundle', nodeId] as const,
+    certOverview: () => [...queryKeys.certificates, 'overview'] as const,
+    certDetails: (id: number) => [...queryKeys.certificates, 'details', id] as const,
 
     // SNI (Domain TLS Certificates)
     sni: ['sni'] as const,

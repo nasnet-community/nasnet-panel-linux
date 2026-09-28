@@ -100,25 +100,18 @@ export {
 
 // Certificate Queries & Mutations
 export {
-    useCA,
-    useHasCA,
     useCertificates,
-    useMasterCert,
-    useAgentCert,
+    useCertOverview,
+    useRefreshDomainExpiry,
     useCertificateDetails,
-    useCertBundle,
-    useExpiringSoonCerts,
     useInitializeCA,
-    useGenerateMasterCert,
-    useGenerateAgentCert,
-    useRegenerateAgentCert,
-    useRevokeCertificate,
-    useRenewCertificate,
-    useDeleteCertificate,
-    useIssuePublicCertificate,
-    useStartDNSChallenge,
-    useCompleteDNSChallenge,
-    useToggleAutoRenew,
+    useRotateNodeCert,
+    useRotateExpiring,
+    useRevokeOrphans,
+    usePurgeCerts,
+    useSetStrictMode,
+    useRevokeCert,
+    useDeleteCert,
 } from "./use-certificates"
 
 // Host Queries & Mutations
