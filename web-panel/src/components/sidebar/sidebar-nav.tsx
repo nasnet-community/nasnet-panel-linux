@@ -1,228 +1,287 @@
-import { useId, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { Link, useLocation } from "react-router"
-import type { IconType } from "react-icons"
-import { HiOutlineChevronDown } from "react-icons/hi"
+import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+    goKeyFor, isChildActive, isGroupActive, isItemActive, type NavItem, type NavSection,
+} from "@/components/layouts/nav-config"
+import type { NavBadges } from "@/components/layouts/use-nav-badges"
+import { NavBadge, type NavBadgeValue } from "./nav-badge"
 
-export interface NavItem {
-    label: string
-    href: string
-    icon: IconType | React.ComponentType<{ className?: string }>
-    mobileQuickAccess?: boolean
-    mobileLabel?: string
-    collapsedLabel?: string
-    badgeKey?: "chats"
-    children?: NavItem[]
-}
+export type { NavItem, NavSection }
 
-export interface NavSection {
-    label?: string
-    items: NavItem[]
+// Groups the user opened or closed by hand, keyed by parent href.
+const OVERRIDES_KEY = "sidebar-expanded-groups"
+
+function readOverrides(): Record<string, boolean> {
+    try {
+        const raw: unknown = JSON.parse(localStorage.getItem(OVERRIDES_KEY) ?? "{}")
+        return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, boolean>) : {}
+    } catch {
+        return {}
+    }
 }
 
 export interface SidebarNavProps {
     sections: NavSection[]
     collapsed: boolean
-    onNavClick?: () => void
-    getBadge: (key: NonNullable<NavItem["badgeKey"]>) => number
+    badges: NavBadges
 }
 
-function computeInitialExpanded(sections: NavSection[]): Set<string> {
-    const parents = new Set<string>()
-    for (const section of sections) {
-        for (const item of section.items) {
-            if (item.children && item.children.length > 0) {
-                parents.add(item.href)
-            }
+export function SidebarNav({ sections, collapsed, badges }: SidebarNavProps) {
+    const { pathname } = useLocation()
+    const navRef = useRef<HTMLElement>(null)
+    const [overrides, setOverrides] = useState(readOverrides)
+
+    // A group holding the current page stays open. Otherwise the user's
+    // choice wins, and by default only the current group is open.
+    const isOpen = (item: NavItem) =>
+        isChildActive(item, pathname) || (overrides[item.href] ?? isItemActive(item, pathname))
+
+    const toggle = (item: NavItem) => {
+        const next = { ...overrides, [item.href]: !isOpen(item) }
+        setOverrides(next)
+        try {
+            localStorage.setItem(OVERRIDES_KEY, JSON.stringify(next))
+        } catch {
+            // storage blocked: the toggle still holds for this session
         }
     }
-    return parents
-}
 
-export function SidebarNav({ sections, collapsed, onNavClick, getBadge }: SidebarNavProps) {
-    const { pathname } = useLocation()
-    const [expandedParents, setExpandedParents] = useState<Set<string>>(() =>
-        computeInitialExpanded(sections),
-    )
+    useEffect(() => {
+        navRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView?.({ block: "nearest" })
+    }, [pathname, collapsed])
 
-    const toggleParent = (href: string) => {
-        setExpandedParents((prev) => {
-            const next = new Set(prev)
-            if (next.has(href)) next.delete(href)
-            else next.add(href)
-            return next
-        })
-    }
-
-    const isChildActive = (item: NavItem) =>
-        item.children?.some((child) => isOn(pathname, child.href)) ?? false
-
-    const isParentExpanded = (item: NavItem) =>
-        expandedParents.has(item.href) || isOn(pathname, item.href) || isChildActive(item)
-
-    return (
-        <nav className={cn("flex-1 min-h-0 overflow-y-auto py-3", collapsed ? "px-1.5" : "px-3")}>
-            {sections.map((section, idx) => {
-                const items = collapsed
-                    ? section.items.flatMap((item) =>
-                          item.children ? [item, ...item.children] : [item],
-                      )
-                    : section.items
-                return (
-                    <div key={section.label ?? "top"} className={idx > 0 ? "mt-3" : ""}>
-                        {section.label &&
-                            (collapsed ? (
-                                <div className="mx-2 my-2 border-t border-border/40" />
-                            ) : (
-                                <div className="px-4 mt-3 mb-1.5">
-                                    <span className="text-[12px] font-medium tracking-[0.08em] uppercase text-muted-foreground/70">
-                                        {section.label}
-                                    </span>
-                                </div>
-                            ))}
-                        <div className={collapsed ? "space-y-1" : "space-y-px"}>
-                            {items.map((item) => (
-                                <NavRow
-                                    key={item.label}
-                                    item={item}
-                                    collapsed={collapsed}
-                                    onClick={onNavClick}
-                                    pathname={pathname}
-                                    expanded={isParentExpanded(item)}
-                                    onToggle={toggleParent}
-                                    badge={item.badgeKey ? getBadge(item.badgeKey) : 0}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )
-            })}
-        </nav>
-    )
-}
-
-interface NavRowProps {
-    item: NavItem
-    collapsed: boolean
-    onClick?: () => void
-    pathname: string
-    expanded: boolean
-    onToggle: (href: string) => void
-    badge: number
-}
-
-/** Most specific wins: a child's route belongs to the child, not to the parent
- *  that contains it, or two rows claim to be the current page at once. */
-function isOn(pathname: string, href: string): boolean {
-    return pathname === href || pathname.startsWith(`${href}/`)
-}
-
-function NavRow({ item, collapsed, onClick, pathname, expanded, onToggle, badge }: NavRowProps) {
-    const childrenId = useId()
-    const childOwns = item.children?.some((c) => isOn(pathname, c.href)) ?? false
-    const isActive = isOn(pathname, item.href) && !childOwns
-    const hasChildren = !!item.children && item.children.length > 0 && !collapsed
-    const showBadge = badge > 0
+    const badgeFor = (item: NavItem) => (item.badgeKey ? badges[item.badgeKey] : undefined)
 
     if (collapsed) {
         return (
-            <Link
-                to={item.href}
-                onClick={onClick}
-                title={item.collapsedLabel ?? item.label}
-                className={cn(
-                    "relative flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-colors",
-                    isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                )}
-            >
-                <item.icon className="w-5 h-5" />
-                {showBadge && (
-                    <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-white font-mono text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 tabular-nums">
-                        {badge}
-                    </span>
-                )}
-            </Link>
+            <nav ref={navRef} aria-label="Sections" className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-1.5 flex flex-col items-center">
+                {sections.map((section, idx) => (
+                    <div key={section.label ?? "top"} className="flex flex-col items-center gap-0.5">
+                        {idx > 0 && <div className="w-6 my-2 border-t border-border/40" />}
+                        {section.items.map((item) =>
+                            item.children?.length ? (
+                                <RailFlyout key={item.href} item={item} pathname={pathname} />
+                            ) : (
+                                <RailLink key={item.href} item={item} pathname={pathname} badge={badgeFor(item)} />
+                            ),
+                        )}
+                    </div>
+                ))}
+            </nav>
         )
     }
 
     return (
-        <>
-            <div className="relative flex items-center">
-                <Link
-                    to={item.href}
-                    onClick={onClick}
-                    className={cn(
-                        "flex flex-1 items-center gap-3 pl-4 pr-3 rounded-md transition-colors h-9 relative",
-                        isActive
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+        <nav ref={navRef} aria-label="Sections" className="flex-1 min-h-0 overflow-y-auto px-3 py-1.5">
+            {sections.map((section, idx) => (
+                <div key={section.label ?? "top"} className={cn("space-y-px", idx > 0 && "mt-3")}>
+                    {section.label && (
+                        <div className="px-3 pb-1 text-[12px] font-medium leading-4 tracking-[0.08em] uppercase text-muted-foreground/80">
+                            {section.label}
+                        </div>
                     )}
-                >
-                    {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
-                    )}
-                    <item.icon className="w-[18px] h-[18px] shrink-0" />
-                    <span className="text-[14.5px] font-medium lowercase whitespace-nowrap">
-                        {item.label}
-                    </span>
-                    {showBadge && (
-                        <span className="ml-auto bg-amber-500 text-white font-mono text-[12px] font-bold rounded-full min-w-[20px] h-[16px] flex items-center justify-center px-1 tabular-nums">
-                            {badge}
-                        </span>
-                    )}
-                </Link>
-                {hasChildren && (
-                    <button
-                        onClick={(e) => {
-                            e.preventDefault()
-                            onToggle(item.href)
-                        }}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                        type="button"
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${item.label}`}
-                        aria-expanded={expanded}
-                        aria-controls={childrenId}
-                    >
-                        <HiOutlineChevronDown
-                            className={cn(
-                                "w-3.5 h-3.5 transition-transform duration-200",
-                                expanded ? "rotate-0" : "-rotate-90",
-                            )}
+                    {section.items.map((item) => (
+                        <NavGroup
+                            key={item.href}
+                            item={item}
+                            pathname={pathname}
+                            badge={badgeFor(item)}
+                            open={isOpen(item)}
+                            onToggle={() => toggle(item)}
                         />
+                    ))}
+                </div>
+            ))}
+        </nav>
+    )
+}
+
+function NavGroup({ item, pathname, badge, open, onToggle }: {
+    item: NavItem
+    pathname: string
+    badge?: NavBadgeValue
+    open: boolean
+    onToggle: () => void
+}) {
+    const childrenId = useId()
+    const hasChildren = !!item.children?.length
+    const canToggle = hasChildren && !isChildActive(item, pathname)
+    return (
+        <>
+            <div className="relative">
+                {/* A child owns its route: the parent row stays quiet on /router/flow. */}
+                <NavLinkRow item={item} active={isItemActive(item, pathname) && !isChildActive(item, pathname)} badge={badge} reserveToggle={hasChildren} />
+                {canToggle && (
+                    <button
+                        type="button"
+                        onClick={onToggle}
+                        aria-label={`${open ? "Collapse" : "Expand"} ${item.label}`}
+                        aria-expanded={open}
+                        aria-controls={childrenId}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 size-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    >
+                        <ChevronDown className={cn("size-3.5 transition-transform duration-200", !open && "-rotate-90")} />
                     </button>
                 )}
             </div>
             {hasChildren && (
-                <div id={childrenId} hidden={!expanded}>
-                    {item.children!.map((child) => {
-                        const childActive = isOn(pathname, child.href)
-                        return (
-                            <Link
-                                key={child.href}
-                                to={child.href}
-                                onClick={onClick}
-                                className={cn(
-                                    "relative flex items-center gap-3 h-8 rounded-md transition-colors",
-                                    "pl-11 pr-3",
-                                    childActive
-                                        ? "bg-primary/10 text-primary font-medium"
-                                        : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
-                                )}
-                            >
-                                {childActive && (
-                                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-primary" />
-                                )}
-                                <child.icon className="w-4 h-4 shrink-0" />
-                                <span className="text-[14px] font-medium lowercase whitespace-nowrap">
-                                    {child.label}
-                                </span>
-                            </Link>
-                        )
-                    })}
+                <div id={childrenId} hidden={!open} className="space-y-px">
+                    {item.children!.map((child) => (
+                        <NavLinkRow key={child.href} item={child} child active={isItemActive(child, pathname)} />
+                    ))}
                 </div>
             )}
         </>
+    )
+}
+
+export function NavLinkRow({ item, active, badge, child = false, reserveToggle = false }: {
+    item: NavItem
+    active: boolean
+    badge?: NavBadgeValue
+    child?: boolean
+    reserveToggle?: boolean
+}) {
+    const Icon = item.icon
+    return (
+        <Link
+            to={item.href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+                "relative flex items-center rounded-md transition-colors",
+                child ? "h-7 gap-2.5 pl-[42px] pr-3" : cn("h-[30px] gap-3 pl-3", reserveToggle ? "pr-8" : "pr-2.5"),
+                active
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40",
+            )}
+        >
+            {active && (
+                <span className={cn("absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-primary", child ? "h-4" : "h-[18px]")} />
+            )}
+            <Icon className={cn("shrink-0", child ? "size-4" : "size-[18px]")} strokeWidth={1.75} />
+            <span className={cn("font-medium lowercase whitespace-nowrap", child ? "text-[14px]" : "text-[14.5px]")}>
+                {item.label}
+            </span>
+            <NavBadge value={badge} className="ml-auto min-w-5 h-[18px] px-1.5 text-[11.5px]" />
+        </Link>
+    )
+}
+
+function railIconClass(active: boolean) {
+    return cn(
+        "relative size-10 shrink-0 flex items-center justify-center rounded-lg transition-colors",
+        active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+    )
+}
+
+function GoKeys({ href }: { href: string }) {
+    const key = goKeyFor(href)
+    if (!key) return null
+    return (
+        <span className="ml-2 inline-flex gap-0.5 font-mono text-[10.5px] normal-case text-muted-foreground">
+            <kbd className="rounded border border-border px-1">G</kbd>
+            <kbd className="rounded border border-border px-1 uppercase">{key}</kbd>
+        </span>
+    )
+}
+
+export function RailLink({ item, pathname, badge }: { item: NavItem; pathname: string; badge?: NavBadgeValue }) {
+    const active = isItemActive(item, pathname)
+    const Icon = item.icon
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Link to={item.href} aria-label={item.label} aria-current={active ? "page" : undefined} className={railIconClass(active)}>
+                    <Icon className="size-5" strokeWidth={1.75} />
+                    <NavBadge value={badge} className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 text-[10px] ring-2 ring-card" />
+                </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="flex items-center lowercase">
+                {item.label}
+                <GoKeys href={item.href} />
+            </TooltipContent>
+        </Tooltip>
+    )
+}
+
+function RailFlyout({ item, pathname }: { item: NavItem; pathname: string }) {
+    const [open, setOpen] = useState(false)
+    const closeTimer = useRef<number | undefined>(undefined)
+    const contentRef = useRef<HTMLDivElement>(null)
+    const Icon = item.icon
+
+    const show = () => {
+        window.clearTimeout(closeTimer.current)
+        setOpen(true)
+    }
+    const hide = () => {
+        window.clearTimeout(closeTimer.current)
+        closeTimer.current = window.setTimeout(() => setOpen(false), 150)
+    }
+    useEffect(() => () => window.clearTimeout(closeTimer.current), [])
+    useEffect(() => setOpen(false), [pathname])
+
+    const rowClass = (active: boolean) => cn(
+        "flex h-[30px] items-center gap-2.5 rounded-md px-2.5 text-[14px] font-medium lowercase transition-colors",
+        active ? "bg-primary/10 text-primary" : "text-foreground/90 hover:bg-muted",
+    )
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverAnchor asChild>
+                <Link
+                    to={item.href}
+                    aria-label={item.label}
+                    aria-current={isItemActive(item, pathname) ? "page" : undefined}
+                    aria-expanded={open}
+                    className={railIconClass(isGroupActive(item, pathname))}
+                    onPointerEnter={show}
+                    onPointerLeave={hide}
+                    onFocus={show}
+                    onBlur={hide}
+                    onKeyDown={(e) => {
+                        if (e.key !== "ArrowRight") return
+                        e.preventDefault()
+                        setOpen(true)
+                        requestAnimationFrame(() => contentRef.current?.querySelector<HTMLElement>("a")?.focus())
+                    }}
+                >
+                    <Icon className="size-5" strokeWidth={1.75} />
+                </Link>
+            </PopoverAnchor>
+            <PopoverContent
+                ref={contentRef}
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="w-52 p-1.5"
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                onPointerEnter={show}
+                onPointerLeave={hide}
+                onFocus={show}
+                onBlur={hide}
+            >
+                <Link to={item.href} className={cn(rowClass(isItemActive(item, pathname) && !isChildActive(item, pathname)), "justify-between font-semibold")}>
+                    {item.label}
+                    <GoKeys href={item.href} />
+                </Link>
+                <div className="my-1 h-px bg-border" />
+                {item.children!.map((child) => {
+                    const ChildIcon = child.icon
+                    const childActive = isItemActive(child, pathname)
+                    return (
+                        <Link key={child.href} to={child.href} aria-current={childActive ? "page" : undefined} className={rowClass(childActive)}>
+                            <ChildIcon className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                            {child.label}
+                        </Link>
+                    )
+                })}
+            </PopoverContent>
+        </Popover>
     )
 }

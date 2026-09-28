@@ -365,6 +365,8 @@ const STATUS_DOT: Record<ContextStatus, string> = {
 export interface SidebarContextPanelProps {
     collapsed: boolean
     visible?: boolean
+    /** Where details open; the mobile sheet has no room to the right. */
+    placement?: "right" | "bottom"
 }
 
 export function SidebarContextPanel({ collapsed, visible = true }: SidebarContextPanelProps) {
