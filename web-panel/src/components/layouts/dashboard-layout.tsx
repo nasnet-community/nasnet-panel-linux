@@ -14,7 +14,11 @@ import { SidebarHeader } from "@/components/sidebar/sidebar-header"
 import { SidebarContextPanel } from "@/components/sidebar/sidebar-context-panel"
 import { SidebarNav } from "@/components/sidebar/sidebar-nav"
 import { SidebarFooter } from "@/components/sidebar/sidebar-footer"
+import { SidebarSearchButton } from "@/components/sidebar/sidebar-search-button"
+import { CommandPalette } from "@/components/command-palette/command-palette"
 import { useCommandPalette } from "@/store/command-palette-store"
+import { ShortcutsDialog } from "@/components/command-palette/shortcuts-dialog"
+import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
 import { NAV_SECTIONS } from "./nav-config"
 import { MobileNav } from "./mobile-nav"
 import { useNavBadges } from "./use-nav-badges"
@@ -39,6 +43,7 @@ export function DashboardLayout() {
     const sidebarCollapsed = terminalWorkspace ? !terminalSidebarExpanded : isCollapsed
     const isMobile = useIsMobile()
     const badges = useNavBadges()
+    const setPaletteOpen = useCommandPalette((s) => s.setOpen)
     const { data: settingsByCategory } = useSettings()
     const maintenanceSettings = settingsByCategory?.maintenance ?? []
     const globalMaintenanceActive =
@@ -57,6 +62,7 @@ export function DashboardLayout() {
         setIsCollapsed(newState)
         localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newState))
     }
+    useGlobalShortcuts(toggleSidebar)
 
     const handleLogout = async () => {
         await logout()
@@ -82,7 +88,7 @@ export function DashboardLayout() {
                         <button
                             onClick={toggleSidebar}
                             className="absolute -right-3 top-5 z-10 w-6 h-6 rounded-full bg-card border border-border/60 shadow-md flex items-center justify-center hover:bg-muted hover:scale-110 active:scale-95 transition-all duration-150"
-                            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                            title={sidebarCollapsed ? "Expand sidebar ([)" : "Collapse sidebar ([)"}
                             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                         >
                             {sidebarCollapsed ? (
@@ -93,6 +99,7 @@ export function DashboardLayout() {
                         </button>
                         <div className="flex-1 flex flex-col min-h-0">
                             <SidebarHeader collapsed={sidebarCollapsed} />
+                            <SidebarSearchButton collapsed={sidebarCollapsed} onOpen={() => setPaletteOpen(true)} />
                             <SidebarContextPanel collapsed={sidebarCollapsed} visible={!isMobile} />
                             <SidebarNav sections={NAV_SECTIONS} collapsed={sidebarCollapsed} badges={badges} />
                             <SidebarFooter collapsed={sidebarCollapsed} username={user?.username} onLogout={handleLogout} onOpenShortcuts={() => useCommandPalette.getState().setShortcutsOpen(true)} />
@@ -127,6 +134,8 @@ export function DashboardLayout() {
                     </div>
                 </main>
 
+                <ShortcutsDialog />
+                <CommandPalette onToggleSidebar={isMobile ? undefined : toggleSidebar} onLogout={handleLogout} />
                 <MobileNav badges={badges} username={user?.username} onLogout={handleLogout} />
             </div>
         )}

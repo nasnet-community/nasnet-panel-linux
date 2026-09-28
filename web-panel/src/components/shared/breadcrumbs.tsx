@@ -14,7 +14,7 @@ const PATH_LABELS: Record<string, string> = {
     "/hosts": "Hosts",
     "/router": "Router",
     "/certificates": "Certificates",
-    "/backup": "Backup",
+    "/backup": "Database Backup",
     "/audit": "Audit Log",
     "/settings": "Settings",
 }
@@ -22,6 +22,8 @@ const PATH_LABELS: Record<string, string> = {
 // Parent relationships for child pages
 const PARENT_MAP: Record<string, string> = {
     "/accounts": "/subscriptions",
+    "/backup": "/settings",
+    "/import": "/settings",
 }
 
 // Section labels for intermediate breadcrumb context

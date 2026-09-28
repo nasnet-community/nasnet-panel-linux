@@ -73,6 +73,18 @@ export const SETTINGS_ITEM: NavItem = {
 // Reached from Settings and ⌘K rather than the sidebar.
 const EXTRA_PAGES: NavItem[] = [
     { label: "Database Backup", href: "/backup", icon: Archive },
+    { label: "This router: Overview", href: "/server?tab=overview", icon: Server },
+    { label: "This router: Network", href: "/server?tab=network", icon: Server },
+    { label: "This router: Starlink", href: "/server?tab=starlink", icon: Server },
+    { label: "This router: Settings", href: "/server?tab=settings", icon: Server },
+    { label: "This router: Access Logs", href: "/server?tab=access-logs", icon: Server },
+    { label: "This router: Logs", href: "/server?tab=logs", icon: Server },
+    { label: "This router: Terminal", href: "/server?tab=terminal", icon: Server },
+    { label: "Router: Ports", href: "/router?tab=ports", icon: Router },
+    { label: "Router: LAN", href: "/router?tab=lan", icon: Router },
+    { label: "Router: Wi-Fi", href: "/router?tab=wifi", icon: Router },
+    { label: "Router: VPN", href: "/router?tab=vpn", icon: Router },
+    { label: "Router: Port Forwards", href: "/router?tab=forwards", icon: Router },
 ]
 
 export const ALL_NAV_ITEMS: NavItem[] = [

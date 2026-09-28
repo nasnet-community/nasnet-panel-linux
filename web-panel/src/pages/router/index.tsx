@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Link } from "react-router"
+import { Link, useSearchParams } from "react-router"
 import { Info, Network, TriangleAlert, Waypoints } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -103,8 +103,20 @@ function PageSkeleton() {
     )
 }
 
+const ROUTER_TABS = ["ports", "lan", "wifi", "vpn", "forwards"] as const
+type RouterTab = typeof ROUTER_TABS[number]
+
 export default function NetworkPage() {
     const qc = useQueryClient()
+    // The tab lives in the URL so ⌘K entries and shared links land on it.
+    const [searchParams, setSearchParams] = useSearchParams()
+    const rawTab = searchParams.get("tab")
+    const tab: RouterTab = (ROUTER_TABS as readonly string[]).includes(rawTab ?? "") ? rawTab as RouterTab : "ports"
+    const setTab = (value: string) => setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("tab", value)
+        return next
+    }, { replace: true })
     const state = useNetworkState()
     const interfaces = useNetworkInterfaces()
     const plan = usePlanNetworkChange()
@@ -246,7 +258,7 @@ export default function NetworkPage() {
             {/* First thing an operator checks; lives above the tabs. */}
             {!setupPending && uplinkCount > 0 && <HealthStrip interfaces={rows} onConfigure={armed ? undefined : configureWAN} />}
 
-            <Tabs defaultValue="ports" className="space-y-6">
+            <Tabs value={tab} onValueChange={setTab} className="space-y-6">
                 <TabsList variant="line">
                     <TabsTrigger value="ports">
                         Ports

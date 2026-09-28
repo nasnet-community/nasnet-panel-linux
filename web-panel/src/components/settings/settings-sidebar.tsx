@@ -1,11 +1,17 @@
 import { useState } from "react"
+import { Link } from "react-router"
 import type { IconType } from "react-icons"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
-import { HiOutlineChevronDown } from "react-icons/hi"
+import { HiOutlineArchive, HiOutlineChevronDown } from "react-icons/hi"
 import { getCategoryLabel } from "./settings-constants"
+
+// Pages rather than categories, so they are links and never "dirty".
+const DATA_LINKS = [
+    { label: "Database backup", href: "/backup", icon: HiOutlineArchive },
+]
 
 export interface SidebarItem {
     key: string
@@ -87,6 +93,17 @@ export function SettingsSidebar({ items, active, onSelect, mode = "desktop" }: S
                                     </button>
                                 )
                             })}
+                            <p className="px-4 pt-4 pb-1 text-[12px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Data</p>
+                            {DATA_LINKS.map((link) => (
+                                <Link
+                                    key={link.href}
+                                    to={link.href}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors min-h-[48px] text-foreground hover:bg-muted"
+                                >
+                                    <link.icon className="w-5 h-5 shrink-0" />
+                                    <span className="flex-1">{link.label}</span>
+                                </Link>
+                            ))}
                         </nav>
                     </SheetContent>
                 </Sheet>
@@ -124,6 +141,19 @@ export function SettingsSidebar({ items, active, onSelect, mode = "desktop" }: S
                     </button>
                 )
             })}
+            <div className="pt-3 mt-3 border-t border-border/50 space-y-0.5">
+                <p className="px-3 pb-1 text-[12px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Data</p>
+                {DATA_LINKS.map((link) => (
+                    <Link
+                        key={link.href}
+                        to={link.href}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    >
+                        <link.icon className="w-4 h-4 shrink-0" />
+                        <span className="flex-1">{link.label}</span>
+                    </Link>
+                ))}
+            </div>
         </nav>
     )
 }
