@@ -566,3 +566,9 @@ func (m *mockNodeUsecase) SetAuditUsecase(auditDomain.AuditLogUsecase) {}
 func (m *mockNodeUsecase) Nuke(context.Context, uint, nodeUC.NukeOptions, nodeUC.NukeEmitter) (*pb.NukeReport, error) {
 	return nil, nil
 }
+
+// Built-in node
+func (m *mockNodeUsecase) EnsureLocalNode(context.Context) (*nodeDomain.Node, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) LocalNodeID() uint { return 0 }
