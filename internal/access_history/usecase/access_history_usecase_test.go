@@ -56,12 +56,12 @@ func (f *fakeSettings) GetByKey(_ context.Context, _ string) (string, error) {
 }
 
 type fakeLogReader struct {
-	series  []nodeRepo.AccessLogTimeBucket
-	totals  nodeRepo.AccessLogTotals
-	rows    []*nodeDomain.AccessLogSummary
+	series    []nodeRepo.AccessLogTimeBucket
+	totals    nodeRepo.AccessLogTotals
+	rows      []*nodeDomain.AccessLogSummary
 	gotFilter nodeRepo.AccessLogSummaryFilter
 	gotGran   string
-	err     error
+	err       error
 	// Search wiring.
 	searchHits      []nodeRepo.AccessLogSearchHit
 	searchTrunc     bool
@@ -105,7 +105,7 @@ func mustJSON(t *testing.T, v map[string]int64) string {
 
 func acc(email string, nodeID uint) *accountDomain.Account {
 	return &accountDomain.Account{
-		Email: email,
+		Email:   email,
 		Inbound: &nodeDomain.Inbound{NodeID: nodeID},
 	}
 }
@@ -198,8 +198,8 @@ func TestMergeJSONCounts(t *testing.T) {
 	rows := []*nodeDomain.AccessLogSummary{
 		{TopDomains: mustJSON(t, map[string]int64{"a.com": 10, "b.com": 5})},
 		{TopDomains: mustJSON(t, map[string]int64{"a.com": 7, "c.com": 3})},
-		{TopDomains: ""},                          // empty row — skip
-		{TopDomains: "{not valid json"},           // malformed — skip, must not panic
+		{TopDomains: ""},                // empty row — skip
+		{TopDomains: "{not valid json"}, // malformed — skip, must not panic
 	}
 	got := mergeJSONCounts(rows, func(s *nodeDomain.AccessLogSummary) string { return s.TopDomains }, 10)
 	want := []DomainCount{
@@ -479,10 +479,10 @@ func TestRetentionDays_Defaults(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 
 	cases := []struct {
-		name  string
-		raw   string
-		err   error
-		want  int
+		name string
+		raw  string
+		err  error
+		want int
 	}{
 		{"unset", "", nil, defaultRetentionDays},
 		{"setting error → default", "", errors.New("boom"), defaultRetentionDays},

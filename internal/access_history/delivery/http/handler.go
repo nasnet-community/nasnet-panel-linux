@@ -88,11 +88,11 @@ func (h *Handler) recordAudit(c *gin.Context, req usecase.Request) {
 	rawActorID, _ := c.Get("user_id")
 	rawActorName, _ := c.Get("username")
 	payload := map[string]any{
-		"from":              req.From,
-		"to":                req.To,
-		"granularity":       req.Granularity,
+		"from":               req.From,
+		"to":                 req.To,
+		"granularity":        req.Granularity,
 		"include_source_ips": req.IncludeSourceIPs,
-		"node_ids":          req.NodeIDs,
+		"node_ids":           req.NodeIDs,
 	}
 	rawJSON, _ := json.Marshal(payload)
 	h.auditUC.Log(c.Request.Context(), &auditDomain.AuditLog{
@@ -149,13 +149,13 @@ func (h *Handler) recordSearchAudit(c *gin.Context, req usecase.SearchRequest) {
 	rawActorID, _ := c.Get("user_id")
 	rawActorName, _ := c.Get("username")
 	payload := map[string]any{
-		"from":              req.From,
-		"to":                req.To,
-		"query":             req.Query,
-		"kinds":             req.Kinds,
+		"from":               req.From,
+		"to":                 req.To,
+		"query":              req.Query,
+		"kinds":              req.Kinds,
 		"include_source_ips": req.IncludeSourceIPs,
-		"node_ids":          req.NodeIDs,
-		"limit":             req.Limit,
+		"node_ids":           req.NodeIDs,
+		"limit":              req.Limit,
 	}
 	rawJSON, _ := json.Marshal(payload)
 	h.auditUC.Log(c.Request.Context(), &auditDomain.AuditLog{
