@@ -1,9 +1,15 @@
 package usecase
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -461,6 +467,136 @@ func (u *nodeUsecase) GetNodeRecentLogs(ctx context.Context, nodeID uint, lines 
 			return result, nil
 		}
 	}
+}
+
+// agentBinaryDir holds the remote node agents this panel deploys; release
+// installs and the Docker image ship both arches plus VERSION.
+const agentBinaryDir = "bin/agent"
+
+// bundledAgentBuild reads the version the shipped agents were built as.
+func bundledAgentBuild() string {
+	v, err := os.ReadFile(filepath.Join(agentBinaryDir, "VERSION"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(v))
+}
+
+// AutoUpdateAgent updates a remote node's agent to the build this panel
+// ships (bin/agent/nasnet-agent-<os>-<arch>). The built-in node updates
+// with the panel and is refused.
+func (u *nodeUsecase) AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error {
+	log := logger.GetLogger().WithField("node_id", nodeID)
+
+	sendProgress := func(step, message, status string, err error) {
+		if progress == nil {
+			return
+		}
+		p := UpdateProgress{Step: step, Message: message, Status: status}
+		if err != nil {
+			p.Error = err.Error()
+			p.Status = "error"
+		}
+		select { // never block the update on a slow reader
+		case progress <- p:
+		default:
+		}
+	}
+
+	sendProgress("init", "Initializing update process...", "running", nil)
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		sendProgress("init", "Failed to get node info", "error", err)
+		return err
+	}
+	if node.IsLocal() {
+		sendProgress("init", "Built in, updates with the panel", "error", ErrLocalNode)
+		return ErrLocalNode
+	}
+	sendProgress("init", "Node info retrieved", "success", nil)
+	sendProgress("connect", "Connecting to agent...", "running", nil)
+
+	client, err := u.getAgentClient(node)
+	if err != nil {
+		sendProgress("connect", "Failed to connect to agent", "error", err)
+		return fmt.Errorf("failed to connect to agent: %w", err)
+	}
+	hostInfo, err := client.GetHostInfo(ctx)
+	if err != nil {
+		closeAgentClient(client)
+		sendProgress("check_arch", "Failed to get host info", "error", err)
+		return fmt.Errorf("failed to get host info: %w", err)
+	}
+	remoteChecksum, sumErr := client.GetSelfChecksum(ctx)
+	closeAgentClient(client)
+	// Reverse-agent RPCs may finish after their caller has cancelled.
+	if err := ctx.Err(); err != nil {
+		sendProgress("check_arch", "Agent update cancelled", "error", err)
+		return err
+	}
+	sendProgress("connect", "Connected to agent", "success", nil)
+
+	osName := strings.ToLower(hostInfo.OS)
+	arch := normalizeArch(strings.ToLower(hostInfo.Arch))
+	sendProgress("check_arch", fmt.Sprintf("Target architecture: %s-%s", osName, arch), "success", nil)
+	sendProgress("prep_binary", "Locating binary...", "running", nil)
+
+	binaryPath := filepath.Join(agentBinaryDir, fmt.Sprintf("nasnet-agent-%s-%s", osName, arch))
+	content, err := os.ReadFile(binaryPath)
+	if err != nil {
+		sendProgress("prep_binary", "Binary file not found on server", "error", err)
+		return fmt.Errorf("failed to read %s: %w (update the panel, or run 'make build-agent')", binaryPath, err)
+	}
+	hash := sha256.Sum256(content)
+	checksum := hex.EncodeToString(hash[:])
+	log.WithFields(map[string]interface{}{"path": binaryPath, "checksum": checksum}).Info("[AutoUpdateAgent] Located update binary")
+
+	var signature []byte
+	if sig, err := os.ReadFile(binaryPath + ".sig"); err == nil {
+		signature = sig
+	}
+	sendProgress("prep_binary", "Binary verified", "success", nil)
+
+	sendProgress("verify", "Checking current version...", "running", nil)
+	if sumErr == nil && remoteChecksum != nil && remoteChecksum.Checksum == checksum {
+		log.Info("[AutoUpdateAgent] Agent already runs this build, skipping update")
+		sendProgress("verify", "Agent is already up to date", "success", nil)
+		sendProgress("complete", "Update completed", "success", nil)
+		return nil
+	}
+	sendProgress("verify", "New version available", "success", nil)
+
+	version := bundledAgentBuild()
+	if version == "" {
+		version = fmt.Sprintf("auto-%d", time.Now().Unix())
+	}
+
+	// The agent unpacks gzip itself; the checksum is of the plain binary.
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	if _, err := zw.Write(content); err == nil && zw.Close() == nil && gz.Len() < len(content) {
+		content = gz.Bytes()
+	}
+
+	sendProgress("upload", "Uploading binary...", "running", nil)
+	sendProgress("install", "Waiting for installation...", "pending", nil)
+	if err := ctx.Err(); err != nil {
+		sendProgress("upload", "Agent update cancelled", "error", err)
+		return err
+	}
+	if err := u.UpdateAgentBinary(ctx, nodeID, content, checksum, version, signature); err != nil {
+		sendProgress("upload", "Upload failed", "error", err)
+		return err
+	}
+	sendProgress("upload", "Upload complete", "success", nil)
+	sendProgress("install", "Installing and restarting agent...", "running", nil)
+
+	// UpdateAgentBinary returns before the restart actually fires.
+	time.Sleep(2 * time.Second)
+
+	sendProgress("install", "Installation command sent", "success", nil)
+	sendProgress("complete", "Update sequence finished", "success", nil)
+	return nil
 }
 
 // OpenTerminal opens an interactive PTY terminal session to a node via the agent

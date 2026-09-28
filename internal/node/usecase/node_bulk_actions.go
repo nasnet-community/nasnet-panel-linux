@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -38,22 +39,26 @@ func (u *nodeUsecase) runBulkNodeAction(
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, bulkActionConcurrency)
+	seen := make(map[uint]struct{}, len(ids))
 
 	for _, id := range ids {
+		// A repeated ID must never upload/restart the same agent twice.
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+
 		select {
 		case <-ctx.Done():
 			// Record remaining ids as cancelled so callers see a complete map.
 			mu.Lock()
-			if _, ok := results[id]; !ok {
-				results[id] = &NodeBulkActionResult{Error: ctx.Err().Error()}
-			}
+			results[id] = &NodeBulkActionResult{Error: ctx.Err().Error()}
 			mu.Unlock()
 			continue
-		default:
+		case sem <- struct{}{}:
 		}
 
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(nodeID uint) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -62,7 +67,13 @@ func (u *nodeUsecase) runBulkNodeAction(
 			defer cancel()
 
 			entry := &NodeBulkActionResult{Success: true}
-			if err := op(callCtx, nodeID); err != nil {
+			// Cancellation may race with acquiring an available worker slot.
+			// Never start another operation after observing cancellation.
+			err := callCtx.Err()
+			if err == nil {
+				err = op(callCtx, nodeID)
+			}
+			if err != nil {
 				entry.Success = false
 				entry.Error = err.Error()
 			}
@@ -98,6 +109,18 @@ func (u *nodeUsecase) BulkCheckHealth(ctx context.Context, ids []uint) map[uint]
 	return u.runBulkNodeAction(ctx, ids, 15*time.Second, func(ctx context.Context, nodeID uint) error {
 		_, err := u.CheckNodeHealth(ctx, nodeID)
 		return err
+	})
+}
+
+// BulkUpdateAgent reuses the single-node update flow, including architecture
+// selection, checksum checks, and signature handling. Six minutes per node
+// covers the five-minute SelfUpdate RPC plus preparation and restart delay.
+func (u *nodeUsecase) BulkUpdateAgent(ctx context.Context, ids []uint) map[uint]*NodeBulkActionResult {
+	return u.runBulkNodeAction(ctx, ids, 6*time.Minute, func(ctx context.Context, nodeID uint) error {
+		if nodeID == u.LocalNodeID() {
+			return errors.New("Built in, updates with the panel")
+		}
+		return u.AutoUpdateAgent(ctx, nodeID, nil)
 	})
 }
 

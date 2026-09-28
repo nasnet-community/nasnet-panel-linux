@@ -595,3 +595,14 @@ func (m *mockNodeUsecase) CertificateCounts(context.Context) (int, int, error) {
 func (m *mockNodeUsecase) SetReverseRegistry(*hub.ConnectedAgentRegistry)        {}
 func (m *mockNodeUsecase) SetHubServer(*hub.HubServer)                           {}
 func (m *mockNodeUsecase) SwitchConnectMode(context.Context, uint, string) error { return nil }
+
+// Agent updates
+func (m *mockNodeUsecase) UpdateAgentBinary(context.Context, uint, []byte, string, string, []byte) error {
+	return nil
+}
+func (m *mockNodeUsecase) AutoUpdateAgent(context.Context, uint, chan<- nodeUC.UpdateProgress) error {
+	return nil
+}
+func (m *mockNodeUsecase) BulkUpdateAgent(context.Context, []uint) map[uint]*nodeUC.NodeBulkActionResult {
+	return nil
+}

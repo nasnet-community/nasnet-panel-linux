@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -999,6 +1000,75 @@ func normalizeArch(raw string) string {
 	}
 }
 
+// UpdateAgentBinary pushes a new agent binary to a remote node.
+func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	log := logger.GetLogger()
+
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	if node.IsLocal() {
+		return ErrLocalNode // SelfUpdate would replace the panel binary
+	}
+
+	client, err := u.getAgentClient(node)
+	if err != nil {
+		return fmt.Errorf("failed to connect to agent: %w", err)
+	}
+	defer closeAgentClient(client)
+
+	log.WithFields(map[string]interface{}{
+		"node_id":      nodeID,
+		"version":      version,
+		"binary_bytes": len(binaryContent),
+	}).Info("[UpdateAgentBinary] Pushing binary update")
+
+	// Recheck after lookup/dial so cancelled preparation cannot dispatch a
+	// fresh update through a reverse client that does not observe ctx.Done.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result, err := client.SelfUpdate(ctx, binaryContent, checksum, version, true, signature, false)
+	if err != nil {
+		return fmt.Errorf("failed to update agent: %w", err)
+	}
+	if !result.Success {
+		return fmt.Errorf("agent update failed: %s", result.Message)
+	}
+
+	log.WithFields(map[string]interface{}{
+		"node_id":     nodeID,
+		"old_version": result.OldVersion,
+		"new_version": result.NewVersion,
+	}).Info("[UpdateAgentBinary] Update successful")
+	return nil
+}
+
+// agentHubPullBase is the https address remote agents download from, panel
+// base path included; "" when agent_hub_url isn't an https URL (the
+// router's own base URL is a LAN address remote nodes can't reach).
+func (u *nodeUsecase) agentHubPullBase(ctx context.Context) string {
+	if u.settingUC == nil {
+		return ""
+	}
+	raw, _ := u.settingUC.GetByKey(ctx, "agent_hub_url")
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return ""
+	}
+	base := strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/")
+	if strings.Trim(parsed.Path, "/") == "" {
+		if v, err := u.settingUC.GetByKey(ctx, "panel_base_path"); err == nil {
+			base += strings.TrimRight(strings.TrimSpace(v), "/")
+		}
+	}
+	return base
+}
+
 // UpdateXrayVersion updates the xray-core binary on a node to a specific version
 func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, version string) error {
 	log := logger.GetLogger()
@@ -1030,16 +1100,21 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 	downloadToken := ""
 	checksum := ""
 
-	if u.xrayBM != nil && u.tokenManager != nil && u.baseURL != "" {
-		// Honor panel_base_path so deployments mounted under a path prefix
-		// (e.g. /your-panel-path) still resolve to the correct public endpoint.
-		panelBasePath := ""
+	// The built-in node fetches through the panel's own base URL; a remote
+	// node only from an https agent hub address, else from GitHub itself.
+	hubBase := ""
+	if node.IsLocal() && u.baseURL != "" {
+		hubBase = u.baseURL
 		if u.settingUC != nil {
 			if v, err := u.settingUC.GetByKey(ctx, "panel_base_path"); err == nil {
-				panelBasePath = v
+				hubBase += v
 			}
 		}
-		downloadURL = fmt.Sprintf("%s%s/api/v1/deploy/xray/binary?version=%s&arch=%s", u.baseURL, panelBasePath, version, arch)
+	} else if !node.IsLocal() {
+		hubBase = u.agentHubPullBase(ctx)
+	}
+	if u.xrayBM != nil && u.tokenManager != nil && hubBase != "" {
+		downloadURL = fmt.Sprintf("%s/api/v1/deploy/xray/binary?version=%s&arch=%s", hubBase, version, arch)
 
 		token, err := u.tokenManager.GenerateDeploymentToken(nodeID, 15*time.Minute)
 		if err != nil {

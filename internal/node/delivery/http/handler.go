@@ -87,6 +87,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.POST("/bulk/push-config", h.BulkPushConfig)
 		nodes.POST("/bulk/health-check", h.BulkCheckHealth)
 		nodes.POST("/bulk/xray-version", h.BulkUpdateXrayVersion)
+		nodes.POST("/bulk/agent-update", h.BulkUpdateAgent)
 
 		// Node CRUD
 		nodes.GET("", h.ListNodes)
@@ -94,6 +95,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.POST("", h.CreateNode)
 		nodes.PUT("/:id", h.UpdateNode)
 		nodes.PATCH("/:id/connect-mode", h.SwitchConnectMode)
+		nodes.GET("/:id/agent/update/stream", h.UpdateAgentStream)
+		nodes.POST("/:id/agent/update", h.UpdateAgent)
 		nodes.DELETE("/:id", h.DeleteNode)
 		nodes.POST("/:id/wipe", h.Wipe)
 		nodes.POST("/:id/nuke", h.Nuke)
@@ -2743,4 +2746,100 @@ func (h *Handler) SwitchConnectMode(c *gin.Context) {
 		"success": true,
 		"message": "Connection mode switch initiated. Agent is restarting.",
 	})
+}
+
+// ==================== Agent Management ====================
+
+// BulkUpdateAgent updates every listed node using the server's agent binaries.
+// POST /nodes/bulk/agent-update  { "ids": [1,2,3] }
+func (h *Handler) BulkUpdateAgent(c *gin.Context) {
+	ids, ok := parseBulkActionIDs(c)
+	if !ok {
+		return
+	}
+	h.streamBulkAgentUpdate(c, ids)
+}
+
+// UpdateAgent updates one remote node's agent to the bundled build.
+// POST /nodes/:id/agent/update
+func (h *Handler) UpdateAgent(c *gin.Context) {
+	nodeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
+		return
+	}
+	if err := h.nodeUsecase.AutoUpdateAgent(c.Request.Context(), uint(nodeID), nil); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, usecase.ErrLocalNode) {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Agent update initiated successfully"})
+}
+
+// UpdateAgentStream runs the update and streams its progress as SSE.
+// GET /nodes/:id/agent/update/stream
+func (h *Handler) UpdateAgentStream(c *gin.Context) {
+	nodeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
+		return
+	}
+
+	const heartbeatInterval = 15 * time.Second
+	writer := http.ResponseWriter(c.Writer)
+	if unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter }); ok {
+		writer = unwrapper.Unwrap()
+	}
+	controller := http.NewResponseController(writer)
+	// A binary upload outlasts the server's write timeout; each frame
+	// pushes the deadline out again.
+	refreshDeadline := func() {
+		_ = controller.SetWriteDeadline(time.Now().Add(2 * heartbeatInterval))
+	}
+	refreshDeadline()
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	ctx := c.Request.Context()
+	progressCh := make(chan usecase.UpdateProgress, 16)
+	go func() {
+		defer close(progressCh)
+		if err := h.nodeUsecase.AutoUpdateAgent(ctx, uint(nodeID), progressCh); err != nil {
+			select {
+			case progressCh <- usecase.UpdateProgress{Step: "complete", Status: "error", Error: err.Error(), Message: "Update process failed"}:
+			case <-ctx.Done():
+			}
+		}
+	}()
+
+	heartbeat := time.NewTicker(heartbeatInterval)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return
+			}
+			jsonData, err := json.Marshal(p)
+			if err != nil {
+				continue
+			}
+			refreshDeadline()
+			fmt.Fprintf(c.Writer, "data: %s\n\n", jsonData)
+			c.Writer.Flush()
+		case <-heartbeat.C:
+			refreshDeadline()
+			fmt.Fprint(c.Writer, ": heartbeat\n\n")
+			c.Writer.Flush()
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -1649,6 +1649,20 @@ func (s *Server) updateXrayFromGitHub(ctx context.Context, req *pb.UpdateXrayReq
 
 	logrus.WithField("output", string(output)).Info("[UpdateXrayBinary] Install script completed")
 
+	// The XTLS script installs xray as User=nobody; a systemd-managed xray
+	// (remote nodes) must run as root to read its config and certificates.
+	if s.cfg.Process.ServiceMode {
+		patchCmd := exec.Command("bash", "-c", `
+			if [ -f "/etc/systemd/system/xray.service" ]; then
+				sed -i 's/^User=nobody/User=root/' /etc/systemd/system/xray.service
+				systemctl daemon-reload
+			fi
+		`)
+		if patchOutput, patchErr := patchCmd.CombinedOutput(); patchErr != nil {
+			logrus.WithError(patchErr).WithField("output", string(patchOutput)).Warn("[UpdateXrayBinary] Failed to patch systemd service")
+		}
+	}
+
 	// Clear cached xray version so verification reads fresh.
 	s.mu.Lock()
 	s.xrayVersion = ""
