@@ -1189,7 +1189,11 @@ func (s *Server) HealthCheck(ctx context.Context, _ *pb.Empty) (*pb.HealthRespon
 	// gRPC API down → degraded, not unhealthy (xray process may still be fine)
 	apiStatus := pb.HealthStatus_HEALTH_STATUS_HEALTHY
 	apiMessage := "Reachable"
-	if err := s.xrayClient.Ping(ctx); err != nil {
+	// Bounded so a down xray API can't use up the caller's whole health
+	// budget and get a reachable node marked offline.
+	pingCtx, cancelPing := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelPing()
+	if err := s.xrayClient.Ping(pingCtx); err != nil {
 		apiStatus = pb.HealthStatus_HEALTH_STATUS_DEGRADED
 		apiMessage = fmt.Sprintf("API unreachable (Xray may still be functional): %v", err)
 	}

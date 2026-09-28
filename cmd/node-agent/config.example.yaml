@@ -1,0 +1,39 @@
+# Node Agent Configuration
+# Copy this file to /etc/nasnet-agent/config.yaml and edit as needed
+
+# gRPC server listen address
+listen_addr: ":9090"
+
+# Xray-core settings
+xray:
+  binary_path: "/usr/local/bin/xray"
+  config_path: "/usr/local/etc/xray/config.json"
+  api_addr: "127.0.0.1:10085"  # Local Xray gRPC API
+  api_timeout: 10               # seconds
+  data_dir: "/usr/local/share/xray"
+  restart_delay: 1000           # ms between crash and restart
+  max_restarts: 5               # max restarts within window
+  restart_window: 60            # seconds
+
+# TLS settings for mTLS (optional, but recommended for production)
+tls:
+  enabled: false
+  ca_cert: "/etc/nasnet-agent/ca.crt"
+  server_cert: "/etc/nasnet-agent/server.crt"
+  server_key: "/etc/nasnet-agent/server.key"
+
+# Logging settings
+logging:
+  level: "info"    # debug, info, warn, error
+  format: "text"   # text or json
+  output: "stdout" # stdout, stderr, or file path
+  max_size: 100    # MB
+  max_backups: 3
+  max_age: 7       # days
+
+# Process management
+process:
+  graceful_timeout: 10s
+  watchdog_enabled: true
+  capture_output: true
+  buffer_size: 1000

@@ -1,4 +1,4 @@
-.PHONY: build-tool proto tool web build geofiles
+.PHONY: build-tool build-agent deps-guard proto tool web build geofiles
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -45,3 +45,15 @@ web:
 
 build: web geofiles
 	go build -o main .
+
+build-agent:
+	./scripts/build-agent.sh
+
+# The panel must never link xray-knife's pkg/http or database (second sqlite
+# driver panics at start); the agent must never link panel-only packages.
+deps-guard:
+	@if go list -deps . | grep -E 'xray-knife/v11/(pkg/http|database)$$'; then \
+		echo "deps guard: xray-knife pkg/http or database linked into the panel"; exit 1; fi
+	@if go list -deps ./cmd/node-agent | grep -E 'nasnet-panel-linux/(internal/network|internal/node|pkg/database)(/|$$)|xray-knife/v11/(pkg/http|database)$$'; then \
+		echo "deps guard: panel-only package linked into nasnet-agent"; exit 1; fi
+	@echo "deps guard: ok"

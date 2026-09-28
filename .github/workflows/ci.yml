@@ -55,6 +55,9 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: deps guard
+        run: make deps-guard
+
       - name: go test (race)
         # Root package embeds the frontend dist; skip it here (the web
         # job covers the SPA build). All real coverage lives in sub-
