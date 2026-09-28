@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import type { Subscription } from "@/lib/types"
+import type { Subscription, User } from "@/lib/types"
 
 type StatusFilter = "all" | "active" | "paused" | "expired" | "cancelled"
 export type SubscriptionSortField = "created_at" | "data_used" | "lifetime_data_used" | "end_date" | "last_active_at" | "id"
@@ -39,7 +39,7 @@ interface SubscriptionsState {
     detailsSheet: { open: boolean; subscription: Subscription | null }
 
     // Create Manual Dialog
-    createManualDialog: { open: boolean; userId?: number }
+    createManualDialog: { open: boolean; userId?: number; user?: User }
 
     // Actions
     setStatus: (status: StatusFilter) => void
@@ -69,7 +69,7 @@ interface SubscriptionsState {
     openExpiryDialog: (subscription: Subscription) => void
     closeExpiryDialog: () => void
     setExpiryDate: (date: string) => void
-    openCreateManualDialog: (userId?: number) => void
+    openCreateManualDialog: (userId?: number, user?: User) => void
     closeCreateManualDialog: () => void
 }
 
@@ -93,7 +93,7 @@ export const useSubscriptionsStore = create<SubscriptionsState>()(
     dataLimitDialog: { open: false, subscription: null, limit: "" },
     expiryDialog: { open: false, subscription: null, date: "" },
     detailsSheet: { open: false, subscription: null },
-    createManualDialog: { open: false, userId: undefined as number | undefined },
+    createManualDialog: { open: false, userId: undefined as number | undefined, user: undefined as User | undefined },
 
     setStatus: (status) => set({ status, page: 1, selectedSubscriptions: new Set() }),
     setPage: (page) => set({ page, selectedSubscriptions: new Set() }),
@@ -166,7 +166,7 @@ export const useSubscriptionsStore = create<SubscriptionsState>()(
         expiryDialog: { ...state.expiryDialog, date },
     })),
 
-    openCreateManualDialog: (userId) => set({ createManualDialog: { open: true, userId } }),
+    openCreateManualDialog: (userId, user) => set({ createManualDialog: { open: true, userId, user } }),
     closeCreateManualDialog: () => set({ createManualDialog: { open: false, userId: undefined } }),
 }),
     {

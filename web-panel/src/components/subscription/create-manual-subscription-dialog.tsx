@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
     Dialog,
@@ -39,7 +39,7 @@ import {
 } from "lucide-react"
 import { FaTelegram } from "react-icons/fa"
 import { listNodes } from "@/lib/api/nodes"
-import { createUser as createUserAPI } from "@/lib/api/users"
+import { createUser as createUserAPI, getUserDetails } from "@/lib/api/users"
 import { useCreateManualSubscription } from "@/lib/queries/use-subscriptions"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
 import { UserSearchSelect } from "@/components/ui/user-search-select"
@@ -963,7 +963,7 @@ function StepReview({
 
 export function CreateManualSubscriptionDialog() {
     const { createManualDialog, closeCreateManualDialog } = useSubscriptionsStore()
-    const { open } = createManualDialog
+    const { open, userId: presetUserId, user: presetUser } = createManualDialog
 
     const createMutation = useCreateManualSubscription()
 
@@ -974,6 +974,24 @@ export function CreateManualSubscriptionDialog() {
 
     const [userMode, setUserMode] = useState<UserMode>("none")
     const [selectedUser, setSelectedUser] = useState<User | null>(null)
+
+    // Opened for a specific user (users list, user page): start with that
+    // user selected instead of asking again.
+    useEffect(() => {
+        if (!open || !presetUserId) return
+        setUserMode("existing")
+        if (presetUser) {
+            setSelectedUser(presetUser)
+            return
+        }
+        let cancelled = false
+        getUserDetails(presetUserId).then((res) => {
+            if (!cancelled && res.success && res.data) setSelectedUser(res.data)
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [open, presetUserId, presetUser])
     const [newUserForm, setNewUserForm] = useState<NewUserForm>({
         username: "",
         firstName: "",

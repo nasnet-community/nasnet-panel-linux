@@ -93,6 +93,9 @@ export async function setSubscriptionUUID(id: number, uuid: string): Promise<Api
 export interface UsageHistoryPoint {
     date: string      // YYYY-MM-DD
     data_used: number // bytes used that day (delta)
+    // Upload/download split; absent on days recorded before the split existed.
+    data_upload?: number
+    data_download?: number
 }
 
 export async function getSubscriptionUsageHistory(id: number, days = 30): Promise<ApiResponse<UsageHistoryPoint[]>> {

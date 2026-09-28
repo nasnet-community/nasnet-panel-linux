@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query"
 import {
     listUsers,
     getUserDetails,
@@ -8,46 +8,33 @@ import {
     getUserSubscriptions,
     updateUserTelegramID,
     createUser,
-    getUserUsageHistory,
-    getUserActivity,
+    getUserOverview,
+    getUserTimeline,
+    getSubscriptionUsagePattern,
     updateUserNotes,
     getUserAccounts,
 } from "@/lib/api/users"
-import type { User, UserListItem } from "@/lib/types"
+import type { User, TimelineKind } from "@/lib/types"
+import type { ListUsersParams } from "@/lib/api/users"
 import { queryKeys } from "./keys"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import { toast } from "@/lib/toast"
 
 // ==================== Types ====================
 
-export interface UseUsersParams {
-    page: number
-    perPage: number
-    search: string
-    filter: string
-    sort: string
-    order: string
-}
 
 // ==================== Queries ====================
 
 // List users with filters and pagination
-export function useUsers(params: UseUsersParams, options?: { refetchInterval?: number }) {
+export function useUsers(params: ListUsersParams) {
     return useQuery({
         queryKey: queryKeys.userList(params),
         queryFn: async () => {
-            const res = await listUsers({
-                page: params.page,
-                per_page: params.perPage,
-                search: params.search,
-                filter: params.filter,
-                sort: params.sort,
-                order: params.order,
-            })
+            const res = await listUsers(params)
             if (!res.success) throw new Error(res.error || "Failed to fetch users")
             return res.data!
         },
-        refetchInterval: options?.refetchInterval,
+        placeholderData: keepPreviousData,
     })
 }
 
@@ -94,9 +81,17 @@ export function useBanUser() {
             if (!res.success) throw new Error(res.error || "Failed to update user")
             return res.data
         },
-        onSuccess: (_, { isBanned }) => {
-            toast.success(isBanned ? "User unbanned" : "User banned")
+        onSuccess: (changes, { isBanned }) => {
+            const n = changes?.changed.length ?? 0
+            const subs = `${n} subscription${n === 1 ? "" : "s"}`
+            toast.success(isBanned
+                ? (n ? `User unbanned, ${subs} resumed` : "User unbanned")
+                : (n ? `User banned, ${subs} paused` : "User banned"))
+            if (changes?.failed?.length) {
+                toast.error(`Couldn't ${isBanned ? "resume" : "pause"} #${changes.failed.join(", #")}`)
+            }
             queryClient.invalidateQueries({ queryKey: queryKeys.users })
+            queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions })
         },
         onError: (error: Error) => {
             toast.error(error.message)
@@ -196,47 +191,51 @@ export function useCreateUser() {
 
 // ==================== User Detail Page Hooks ====================
 
-// Usage history for chart
-export function useUserUsageHistory(userId: number, days: number = 30) {
+// Per-subscription panels: online IPs, forecast, node accounts, chat counts
+export function useUserOverview(userId: number) {
+    const refetchInterval = useRefreshInterval()
     return useQuery({
-        queryKey: [...queryKeys.userDetails(userId), 'usage-history', days],
+        queryKey: queryKeys.userOverview(userId),
         queryFn: async () => {
-            const res = await getUserUsageHistory(userId, days)
-            if (!res.success) throw new Error(res.error || "Failed to fetch usage history")
-            return res.data || []
+            const res = await getUserOverview(userId)
+            if (!res.success) throw new Error(res.error || "Failed to fetch user overview")
+            return res.data!
         },
         enabled: userId > 0,
+        refetchInterval,
+        refetchIntervalInBackground: false,
     })
 }
 
-// Activity feed
-export function useUserActivity(userId: number, offset: number = 0) {
-    return useQuery({
-        queryKey: [...queryKeys.userDetails(userId), 'activity', offset],
-        queryFn: async () => {
-            const res = await getUserActivity(userId, offset)
-            if (!res.success) throw new Error(res.error || "Failed to fetch activity")
-            return res.data || []
-        },
-        enabled: userId > 0,
-    })
-}
+const TIMELINE_PAGE = 100
 
-// Activity feed (infinite scroll)
-export function useUserActivityInfinite(userId: number) {
+// Customer timeline, paged by cursor
+export function useUserTimeline(userId: number, kind: TimelineKind | undefined, includeViews: boolean) {
     return useInfiniteQuery({
-        queryKey: [...queryKeys.userDetails(userId), 'activity', 'infinite'],
-        queryFn: async ({ pageParam = 0 }) => {
-            const res = await getUserActivity(userId, pageParam)
-            if (!res.success) throw new Error(res.error || "Failed to fetch activity")
-            return { data: res.data || [], offset: pageParam }
+        queryKey: queryKeys.userTimeline(userId, kind ?? "all", includeViews),
+        queryFn: async ({ pageParam }) => {
+            const res = await getUserTimeline(userId, { kind, includeViews, before: pageParam, limit: TIMELINE_PAGE })
+            if (!res.success) throw new Error(res.error || "Failed to fetch timeline")
+            return res.data!
         },
-        initialPageParam: 0,
-        getNextPageParam: (lastPage) => {
-            if (lastPage.data.length < 20) return undefined
-            return lastPage.offset + 20
-        },
+        initialPageParam: undefined as string | undefined,
+        getNextPageParam: (last) => last.next_cursor ?? undefined,
+        placeholderData: keepPreviousData,
         enabled: userId > 0,
+    })
+}
+
+// Hourly connection counts for one subscription (UTC hours)
+export function useSubscriptionUsagePattern(subId: number, days: number, enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.subscriptionUsagePattern(subId, days),
+        queryFn: async () => {
+            const res = await getSubscriptionUsagePattern(subId, days)
+            if (!res.success) throw new Error(res.error || "Failed to fetch usage pattern")
+            return res.data || []
+        },
+        enabled: enabled && subId > 0,
+        staleTime: 5 * 60_000,
     })
 }
 
@@ -262,7 +261,6 @@ export function useUpdateUserNotes() {
             if (!res.success) throw new Error(res.error || "Failed to update notes")
         },
         onSuccess: (_, { userId }) => {
-            toast.success("Notes saved")
             queryClient.invalidateQueries({ queryKey: queryKeys.userDetails(userId) })
         },
         onError: (error: Error) => {

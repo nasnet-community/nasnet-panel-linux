@@ -15,6 +15,8 @@ export const queryKeys = {
     userList: (filters: object) => [...queryKeys.users, 'list', filters] as const,
     userDetails: (id: number) => [...queryKeys.users, 'details', id] as const,
     userSubscriptions: (id: number) => [...queryKeys.users, 'subscriptions', id] as const,
+    userOverview: (id: number) => [...queryKeys.users, 'overview', id] as const,
+    userTimeline: (id: number, kind: string, includeViews: boolean) => [...queryKeys.users, 'timeline', id, kind, includeViews] as const,
 
     // Nodes
     nodes: ['nodes'] as const,
@@ -56,6 +58,7 @@ export const queryKeys = {
     // Subscriptions
     subscriptions: ['subscriptions'] as const,
     subscriptionList: (filters: object) => [...queryKeys.subscriptions, 'list', filters] as const,
+    subscriptionUsagePattern: (id: number, days: number) => [...queryKeys.subscriptions, 'usage-pattern', id, days] as const,
     subscriptionDetails: (id: number) => [...queryKeys.subscriptions, 'details', id] as const,
     subscriptionCounts: () => [...queryKeys.subscriptions, 'counts'] as const,
     subscriptionExpiringCount: (days: number) => [...queryKeys.subscriptions, 'expiring-count', days] as const,

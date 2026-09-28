@@ -368,10 +368,11 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		page = 1
 	}
 	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "25"))
-	switch perPage {
-	case 10, 25, 50, 100:
-	default:
+	if perPage < 1 {
 		perPage = 25
+	}
+	if perPage > 100 {
+		perPage = 100
 	}
 	q.Offset, q.Limit = (page-1)*perPage, perPage
 

@@ -9,6 +9,8 @@ export interface Subscription {
     uuid: string
     label: string
     status: SubscriptionStatus
+    /** Who paused it; set only while paused. */
+    pause_reason?: "admin" | "ban" | ""
     is_manual?: boolean
     max_devices?: number
     data_limit: number

@@ -16,6 +16,10 @@ export type EventType =
     | 'system.alert'
     | 'xray.recovery_command'
     | 'xray.recovery_exhausted'
+    | 'user.registered'
+    | 'subscription.renewed'
+    | 'subscription.cancelled'
+    | 'account.data_exhausted'
     // Router mode. The backend has always published these; nothing subscribed.
     | 'interface.added'
     | 'interface.removed'
