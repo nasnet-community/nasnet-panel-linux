@@ -56,12 +56,12 @@ func (f *fakeSettings) GetByKey(_ context.Context, _ string) (string, error) {
 }
 
 type fakeLogReader struct {
-	series    []nodeRepo.AccessLogTimeBucket
-	totals    nodeRepo.AccessLogTotals
-	rows      []*nodeDomain.AccessLogSummary
+	series  []nodeRepo.AccessLogTimeBucket
+	totals  nodeRepo.AccessLogTotals
+	rows    []*nodeDomain.AccessLogSummary
 	gotFilter nodeRepo.AccessLogSummaryFilter
 	gotGran   string
-	err       error
+	err     error
 	// Search wiring.
 	searchHits      []nodeRepo.AccessLogSearchHit
 	searchTrunc     bool
@@ -105,7 +105,7 @@ func mustJSON(t *testing.T, v map[string]int64) string {
 
 func acc(email string, nodeID uint) *accountDomain.Account {
 	return &accountDomain.Account{
-		Email:   email,
+		Email: email,
 		Inbound: &nodeDomain.Inbound{NodeID: nodeID},
 	}
 }
@@ -198,8 +198,8 @@ func TestMergeJSONCounts(t *testing.T) {
 	rows := []*nodeDomain.AccessLogSummary{
 		{TopDomains: mustJSON(t, map[string]int64{"a.com": 10, "b.com": 5})},
 		{TopDomains: mustJSON(t, map[string]int64{"a.com": 7, "c.com": 3})},
-		{TopDomains: ""},                // empty row — skip
-		{TopDomains: "{not valid json"}, // malformed — skip, must not panic
+		{TopDomains: ""},                          // empty row — skip
+		{TopDomains: "{not valid json"},           // malformed — skip, must not panic
 	}
 	got := mergeJSONCounts(rows, func(s *nodeDomain.AccessLogSummary) string { return s.TopDomains }, 10)
 	want := []DomainCount{
@@ -479,10 +479,10 @@ func TestRetentionDays_Defaults(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 
 	cases := []struct {
-		name string
-		raw  string
-		err  error
-		want int
+		name  string
+		raw   string
+		err   error
+		want  int
 	}{
 		{"unset", "", nil, defaultRetentionDays},
 		{"setting error → default", "", errors.New("boom"), defaultRetentionDays},
@@ -572,11 +572,14 @@ func TestSearchGlobal_HappyPath_BatchResolves(t *testing.T) {
 
 	// Aggregates by subscription: subA has 17 hits across 2 hours; subB has 3
 	// hits across 1 hour; ghost (subID=0) has 1 hit.
-	if len(resp.BySubscription) != 3 {
-		t.Fatalf("by_subscription: want 3 rows, got %d", len(resp.BySubscription))
+	if len(resp.Subscriptions) != 3 {
+		t.Fatalf("subscriptions: want 3 rows, got %d", len(resp.Subscriptions))
 	}
-	if resp.BySubscription[0].SubscriptionID != subA || resp.BySubscription[0].Count != 17 || resp.BySubscription[0].Hours != 2 {
-		t.Errorf("top sub agg: %+v", resp.BySubscription[0])
+	if top := resp.Subscriptions[0]; top.SubscriptionID != subA || top.Hits != 17 || top.Hours != 2 {
+		t.Errorf("top sub summary: %+v", top)
+	}
+	if resp.Totals.Hits != 21 || resp.Totals.Subscriptions != 2 || resp.Totals.Values != 1 {
+		t.Errorf("totals: %+v", resp.Totals)
 	}
 
 	// Aggregates by value: google.com has 21 total, across 3 distinct subs

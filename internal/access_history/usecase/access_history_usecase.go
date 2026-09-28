@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,32 +63,84 @@ type Usecase interface {
 // scope spans every subscription with retained summaries; the result attaches
 // each hit to its owning subscription via a batched email lookup.
 type GlobalSearchRequest struct {
-	From             time.Time
-	To               time.Time
-	NodeIDs          []uint
-	SubscriptionIDs  []uint
-	Emails           []string
-	Query            string
+	From            time.Time
+	To              time.Time
+	NodeIDs         []uint
+	SubscriptionIDs []uint
+	Emails          []string
+	Query           string
+	// Match is "contains" (default) or "domain" (the name and its subdomains).
+	Match            string
 	Kinds            []string
 	Limit            int
 	IncludeSourceIPs bool
 }
 
-// GlobalSearchResponse mirrors SearchResponse but adds subscription
-// resolution to each hit + an aggregate-by-subscription rollup so the UI
-// doesn't have to re-derive that on the client.
+// GlobalSearchResponse carries rollups computed over every match (up to the
+// scan cap) plus the newest Limit hits as raw records.
 type GlobalSearchResponse struct {
-	From           time.Time              `json:"from"`
-	To             time.Time              `json:"to"`
-	Query          string                 `json:"query"`
-	Kinds          []string               `json:"kinds"`
-	Hits           []GlobalSearchHit      `json:"hits"`
-	BySubscription []GlobalSubAggregate   `json:"by_subscription"`
-	ByValue        []GlobalValueAggregate `json:"by_value"`
-	Truncated      bool                   `json:"truncated"`
-	RetentionDays  int                    `json:"retention_days"`
-	NodesQueried   []uint                 `json:"nodes_queried"`
-	LastSyncedAt   map[uint]time.Time     `json:"last_synced_at"`
+	From          time.Time                   `json:"from"`
+	To            time.Time                   `json:"to"`
+	Query         string                      `json:"query"`
+	Match         string                      `json:"match"`
+	Kinds         []string                    `json:"kinds"`
+	Totals        GlobalSearchTotals          `json:"totals"`
+	Subscriptions []GlobalSubscriptionSummary `json:"subscriptions"`
+	ByValue       []GlobalValueAggregate      `json:"by_value"`
+	Series        []GlobalSeriesBucket        `json:"series"`
+	Hits          []GlobalSearchHit           `json:"hits"`
+	// Truncated: Hits holds only the newest Limit records.
+	Truncated bool `json:"truncated"`
+	// Approximate: the scan cap was reached, so the rollups cover the newest
+	// matches only.
+	Approximate   bool               `json:"approximate"`
+	RetentionDays int                `json:"retention_days"`
+	NodesQueried  []uint             `json:"nodes_queried"`
+	LastSyncedAt  map[uint]time.Time `json:"last_synced_at"`
+}
+
+// GlobalSearchTotals summarises every match in the window.
+type GlobalSearchTotals struct {
+	Hits          int64      `json:"hits"`
+	Values        int        `json:"values"`
+	Subscriptions int        `json:"subscriptions"`
+	Records       int        `json:"records"`
+	Hours         int        `json:"hours"`
+	FirstSeen     *time.Time `json:"first_seen,omitempty"`
+	LastSeen      *time.Time `json:"last_seen,omitempty"`
+}
+
+// GlobalSubscriptionSummary is one subscription's share of the matches.
+// SubscriptionID 0 collects hits whose email no longer maps to an account.
+type GlobalSubscriptionSummary struct {
+	SubscriptionID    uint             `json:"subscription_id"`
+	UserID            uint             `json:"user_id"`
+	SubscriptionLabel string           `json:"subscription_label,omitempty"`
+	Hits              int64            `json:"hits"`
+	Hours             int              `json:"hours"`
+	Values            int              `json:"values"`
+	Emails            int              `json:"emails"`
+	NodeIDs           []uint           `json:"node_ids"`
+	FirstSeen         time.Time        `json:"first_seen"`
+	LastSeen          time.Time        `json:"last_seen"`
+	TopValues         []GlobalSubValue `json:"top_values"`
+}
+
+// GlobalSubValue is one matched value inside a subscription summary.
+type GlobalSubValue struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+	Count int64  `json:"count"`
+	Hours int    `json:"hours"`
+}
+
+// GlobalSeriesBucket is one hour of matches, split by kind and by node.
+type GlobalSeriesBucket struct {
+	Bucket   time.Time      `json:"bucket"`
+	Accepted int64          `json:"accepted"`
+	Rejected int64          `json:"rejected"`
+	SourceIP int64          `json:"source_ip"`
+	Nodes    map[uint]int64 `json:"nodes"`
 }
 
 // GlobalSearchHit: SearchHit + resolved sub/user identity. SubscriptionID=0
@@ -102,18 +155,6 @@ type GlobalSearchHit struct {
 	Kind              string    `json:"kind"`
 	Value             string    `json:"value"`
 	Count             int64     `json:"count"`
-}
-
-// GlobalSubAggregate rolls up hits per (kind, value, subscription) so the UI
-// can show "domain X — sub 42 hit 17 times across 3 hours".
-type GlobalSubAggregate struct {
-	Kind              string `json:"kind"`
-	Value             string `json:"value"`
-	SubscriptionID    uint   `json:"subscription_id"`
-	UserID            uint   `json:"user_id"`
-	SubscriptionLabel string `json:"subscription_label,omitempty"`
-	Count             int64  `json:"count"`
-	Hours             int    `json:"hours"`
 }
 
 // GlobalValueAggregate rolls up hits per (kind, value) across all
@@ -195,24 +236,38 @@ type Request struct {
 
 // Response is the assembled history payload.
 type Response struct {
-	From           time.Time                      `json:"from"`
-	To             time.Time                      `json:"to"`
-	Granularity    string                         `json:"granularity"`
-	Series         []nodeRepo.AccessLogTimeBucket `json:"series"`
-	TopDomains     []DomainCount                  `json:"top_domains"`
-	TopRejected    []DomainCount                  `json:"top_rejected"`
-	TopSourceIPs   []IPCount                      `json:"top_source_ips,omitempty"`
-	Totals         nodeRepo.AccessLogTotals       `json:"totals"`
-	NodesQueried   []uint                         `json:"nodes_queried"`
-	EmailsResolved int                            `json:"emails_resolved"`
-	RetentionDays  int                            `json:"retention_days"`
-	LastSyncedAt   map[uint]time.Time             `json:"last_synced_at"`
+	From          time.Time                      `json:"from"`
+	To            time.Time                      `json:"to"`
+	Granularity   string                         `json:"granularity"`
+	Series        []nodeRepo.AccessLogTimeBucket `json:"series"`
+	TopDomains    []DomainCount                  `json:"top_domains"`
+	TopRejected   []DomainCount                  `json:"top_rejected"`
+	TopSourceIPs  []IPCount                      `json:"top_source_ips,omitempty"`
+	SourceIPCount int                            `json:"source_ip_count,omitempty"`
+	// Destinations and RejectedDestinations split the same data as
+	// TopDomains/TopRejected into hostnames and raw IPs.
+	Destinations         DestinationSplit         `json:"destinations"`
+	RejectedDestinations DestinationSplit         `json:"rejected_destinations"`
+	Totals               nodeRepo.AccessLogTotals `json:"totals"`
+	NodesQueried         []uint                   `json:"nodes_queried"`
+	EmailsResolved       int                      `json:"emails_resolved"`
+	RetentionDays        int                      `json:"retention_days"`
+	LastSyncedAt         map[uint]time.Time       `json:"last_synced_at"`
 }
 
 // DomainCount is one row in the top-domains list.
 type DomainCount struct {
 	Domain string `json:"domain"`
 	Count  int64  `json:"count"`
+}
+
+// DestinationSplit holds the top hostnames and top IPs of one JSON column,
+// with the number of distinct values of each.
+type DestinationSplit struct {
+	Domains     []DomainCount `json:"domains"`
+	IPs         []DomainCount `json:"ips"`
+	DomainCount int           `json:"domain_count"`
+	IPCount     int           `json:"ip_count"`
 }
 
 // IPCount is one row in the top-IPs list.
@@ -248,6 +303,10 @@ const (
 	// before truncating, but capped to keep response payloads reasonable.
 	defaultGlobalSearchLimit = 500
 	maxGlobalSearchLimit     = 2000
+	// globalScanCap bounds how many matches the rollups are computed over.
+	globalScanCap  = 50000
+	maxByValueRows = 1000
+	subTopValues   = 6
 )
 
 type accessHistoryUsecase struct {
@@ -337,26 +396,34 @@ func (u *accessHistoryUsecase) GetSubscriptionAccessHistory(ctx context.Context,
 		return nil, fmt.Errorf("query access history: %w", err)
 	}
 
-	topDomains := mergeJSONCounts(summaryRows, func(s *nodeDomain.AccessLogSummary) string { return s.TopDomains }, topN)
-	topRejected := mergeJSONCounts(summaryRows, func(s *nodeDomain.AccessLogSummary) string { return s.RejectedDomains }, topN)
+	domainCounts := combineJSONCounts(summaryRows, func(s *nodeDomain.AccessLogSummary) string { return s.TopDomains })
+	rejectedCounts := combineJSONCounts(summaryRows, func(s *nodeDomain.AccessLogSummary) string { return s.RejectedDomains })
+	topDomains := topCounts(domainCounts, topN, nil)
+	topRejected := topCounts(rejectedCounts, topN, nil)
 
 	resp := &Response{
-		From:           req.From,
-		To:             req.To,
-		Granularity:    granularity,
-		Series:         series,
-		TopDomains:     topDomains,
-		TopRejected:    topRejected,
-		Totals:         totals,
-		NodesQueried:   nodeIDs,
-		EmailsResolved: len(emails),
-		RetentionDays:  retentionDays,
-		LastSyncedAt:   u.fetchLastSynced(ctx, nodeIDs),
+		From:                 req.From,
+		To:                   req.To,
+		Granularity:          granularity,
+		Series:               series,
+		TopDomains:           topDomains,
+		TopRejected:          topRejected,
+		Destinations:         splitDestinations(domainCounts, topN),
+		RejectedDestinations: splitDestinations(rejectedCounts, topN),
+		Totals:               totals,
+		NodesQueried:         nodeIDs,
+		EmailsResolved:       len(emails),
+		RetentionDays:        retentionDays,
+		LastSyncedAt:         u.fetchLastSynced(ctx, nodeIDs),
 	}
 
 	if req.IncludeSourceIPs {
-		ips := mergeIPCounts(summaryRows, topN)
-		resp.TopSourceIPs = ips
+		ipCounts := combineJSONCounts(summaryRows, func(s *nodeDomain.AccessLogSummary) string { return s.SourceIPs })
+		resp.TopSourceIPs = make([]IPCount, 0, topN)
+		for _, c := range topCounts(ipCounts, topN, nil) {
+			resp.TopSourceIPs = append(resp.TopSourceIPs, IPCount{IP: c.Domain, Count: c.Count})
+		}
+		resp.SourceIPCount = len(ipCounts)
 	}
 
 	return resp, nil
@@ -462,9 +529,9 @@ func intersectNodeScope(owned, requested []uint) []uint {
 	return out
 }
 
-// mergeJSONCounts unrolls per-row top-N JSON maps and re-aggregates.
+// combineJSONCounts unrolls per-row top-N JSON maps and re-aggregates.
 // Malformed rows skipped (one bad row must not break the response).
-func mergeJSONCounts(rows []*nodeDomain.AccessLogSummary, pick func(*nodeDomain.AccessLogSummary) string, topN int) []DomainCount {
+func combineJSONCounts(rows []*nodeDomain.AccessLogSummary, pick func(*nodeDomain.AccessLogSummary) string) map[string]int64 {
 	combined := map[string]int64{}
 	for _, r := range rows {
 		raw := pick(r)
@@ -479,8 +546,17 @@ func mergeJSONCounts(rows []*nodeDomain.AccessLogSummary, pick func(*nodeDomain.
 			combined[k] += v
 		}
 	}
-	out := make([]DomainCount, 0, len(combined))
-	for k, v := range combined {
+	return combined
+}
+
+// topCounts sorts the counts (count desc, key asc) and keeps the first topN
+// entries that pass keep (nil keeps all).
+func topCounts(counts map[string]int64, topN int, keep func(string) bool) []DomainCount {
+	out := make([]DomainCount, 0, len(counts))
+	for k, v := range counts {
+		if keep != nil && !keep(k) {
+			continue
+		}
 		out = append(out, DomainCount{Domain: k, Count: v})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -491,6 +567,31 @@ func mergeJSONCounts(rows []*nodeDomain.AccessLogSummary, pick func(*nodeDomain.
 	})
 	if len(out) > topN {
 		out = out[:topN]
+	}
+	return out
+}
+
+func mergeJSONCounts(rows []*nodeDomain.AccessLogSummary, pick func(*nodeDomain.AccessLogSummary) string, topN int) []DomainCount {
+	return topCounts(combineJSONCounts(rows, pick), topN, nil)
+}
+
+// isIPKey reports whether a destination key is a raw IP (xray logs the IP
+// when it has no sniffed hostname).
+func isIPKey(k string) bool {
+	return net.ParseIP(strings.Trim(k, "[]")) != nil
+}
+
+func splitDestinations(counts map[string]int64, topN int) DestinationSplit {
+	out := DestinationSplit{
+		Domains: topCounts(counts, topN, func(k string) bool { return !isIPKey(k) }),
+		IPs:     topCounts(counts, topN, isIPKey),
+	}
+	for k := range counts {
+		if isIPKey(k) {
+			out.IPCount++
+		} else {
+			out.DomainCount++
+		}
 	}
 	return out
 }
@@ -644,46 +745,20 @@ func aggregateSearchHits(hits []nodeRepo.AccessLogSearchHit) []SearchAggregate {
 	return out
 }
 
-// mergeIPCounts mirrors mergeJSONCounts but for the SourceIPs JSON column.
-func mergeIPCounts(rows []*nodeDomain.AccessLogSummary, topN int) []IPCount {
-	combined := map[string]int64{}
-	for _, r := range rows {
-		if r.SourceIPs == "" {
-			continue
-		}
-		m := map[string]int64{}
-		if err := json.Unmarshal([]byte(r.SourceIPs), &m); err != nil {
-			continue
-		}
-		for k, v := range m {
-			combined[k] += v
-		}
-	}
-	out := make([]IPCount, 0, len(combined))
-	for k, v := range combined {
-		out = append(out, IPCount{IP: k, Count: v})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Count != out[j].Count {
-			return out[i].Count > out[j].Count
-		}
-		return out[i].IP < out[j].IP
-	})
-	if len(out) > topN {
-		out = out[:topN]
-	}
-	return out
-}
-
-// SearchGlobalAccessLog: substring scan across every subscription's
-// emails. One batched account lookup reverse-resolves hit emails to
-// (sub_id, user_id) — no N+1 follow-up.
+// SearchGlobalAccessLog: substring (or domain) scan across every
+// subscription's emails. One batched account lookup reverse-resolves hit
+// emails to (sub_id, user_id) — no N+1 follow-up. Rollups cover every match
+// up to globalScanCap; only the raw records are cut to Limit.
 func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req GlobalSearchRequest) (*GlobalSearchResponse, error) {
 	retentionDays := u.readRetentionDays(ctx)
 	if err := validateRange(req.From, req.To, retentionDays, u.now()); err != nil {
 		return nil, err
 	}
-	q, kinds, err := normaliseSearchInput(req.Query, req.Kinds, req.IncludeSourceIPs)
+	match, query, err := normaliseMatch(req.Match, req.Query)
+	if err != nil {
+		return nil, err
+	}
+	q, kinds, err := normaliseSearchInput(query, req.Kinds, req.IncludeSourceIPs)
 	if err != nil {
 		return nil, err
 	}
@@ -701,13 +776,14 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 	// also fine. If the intersection is empty, short-circuit.
 	emptyResp := func() *GlobalSearchResponse {
 		return &GlobalSearchResponse{
-			From: req.From, To: req.To, Query: q, Kinds: kinds,
-			Hits:           []GlobalSearchHit{},
-			BySubscription: []GlobalSubAggregate{},
-			ByValue:        []GlobalValueAggregate{},
-			NodesQueried:   req.NodeIDs,
-			RetentionDays:  retentionDays,
-			LastSyncedAt:   map[uint]time.Time{},
+			From: req.From, To: req.To, Query: q, Match: match, Kinds: kinds,
+			Hits:          []GlobalSearchHit{},
+			Subscriptions: []GlobalSubscriptionSummary{},
+			ByValue:       []GlobalValueAggregate{},
+			Series:        []GlobalSeriesBucket{},
+			NodesQueried:  req.NodeIDs,
+			RetentionDays: retentionDays,
+			LastSyncedAt:  map[uint]time.Time{},
 		}
 	}
 	var scopedEmails []string
@@ -757,7 +833,7 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 		}
 	}
 
-	hits, truncated, err := u.logReader.SearchAccessLog(ctx, nodeRepo.AccessLogSearchFilter{
+	hits, capped, err := u.logReader.SearchAccessLog(ctx, nodeRepo.AccessLogSearchFilter{
 		// Emails empty → repository scans every email; non-empty narrows scope.
 		// SubscriptionIDs narrows via the denormalised column when set.
 		NodeIDs:         req.NodeIDs,
@@ -766,8 +842,9 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 		From:            req.From,
 		To:              req.To,
 		Query:           q,
+		Match:           match,
 		Kinds:           kinds,
-		Limit:           limit,
+		Limit:           globalScanCap,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search access log: %w", err)
@@ -811,7 +888,7 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 				info.subID = *a.SubscriptionID
 			}
 			if a.Subscription != nil {
-				// Label → @username → name → plan; empty only when nothing is
+				// Label → @username → name; empty only when nothing is
 				// known, leaving the UI to show "Sub #<id>".
 				info.label = a.Subscription.DisplayLabel()
 				if a.Subscription.UserID != nil {
@@ -822,20 +899,10 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 		}
 	}
 
-	out := &GlobalSearchResponse{
-		From:          req.From,
-		To:            req.To,
-		Query:         q,
-		Kinds:         kinds,
-		Hits:          make([]GlobalSearchHit, 0, len(hits)),
-		Truncated:     truncated,
-		RetentionDays: retentionDays,
-		NodesQueried:  req.NodeIDs,
-		LastSyncedAt:  u.fetchLastSyncedFromHits(ctx, req.NodeIDs, hits),
-	}
+	all := make([]GlobalSearchHit, 0, len(hits))
 	for _, h := range hits {
 		info := resolved[h.Email]
-		out.Hits = append(out.Hits, GlobalSearchHit{
+		all = append(all, GlobalSearchHit{
 			Bucket:            h.Bucket,
 			NodeID:            h.NodeID,
 			Email:             h.Email,
@@ -847,65 +914,175 @@ func (u *accessHistoryUsecase) SearchGlobalAccessLog(ctx context.Context, req Gl
 			Count:             h.Count,
 		})
 	}
-	out.BySubscription = aggregateGlobalBySubscription(out.Hits)
-	out.ByValue = aggregateGlobalByValue(out.Hits)
+	sort.SliceStable(all, func(i, j int) bool {
+		if !all[i].Bucket.Equal(all[j].Bucket) {
+			return all[i].Bucket.After(all[j].Bucket)
+		}
+		return all[i].Count > all[j].Count
+	})
+
+	out := &GlobalSearchResponse{
+		From:          req.From,
+		To:            req.To,
+		Query:         q,
+		Match:         match,
+		Kinds:         kinds,
+		Totals:        globalTotals(all),
+		Subscriptions: summariseGlobalBySubscription(all),
+		ByValue:       aggregateGlobalByValue(all),
+		Series:        globalSeries(all),
+		Hits:          all,
+		Approximate:   capped,
+		RetentionDays: retentionDays,
+		NodesQueried:  req.NodeIDs,
+		LastSyncedAt:  u.fetchLastSyncedFromHits(ctx, req.NodeIDs, hits),
+	}
+	if len(all) > limit {
+		out.Hits = all[:limit]
+		out.Truncated = true
+	}
 	return out, nil
 }
 
-// aggregateGlobalBySubscription folds hits into one row per
-// (kind, value, subscription). Sorted: count desc, hours desc, value asc.
-func aggregateGlobalBySubscription(hits []GlobalSearchHit) []GlobalSubAggregate {
-	type key struct {
-		kind  string
-		value string
-		sub   uint
+// normaliseMatch resolves the match mode. Domain mode drops a leading "*."
+// or "." so "*.google.com" and ".google.com" mean the same as "google.com".
+func normaliseMatch(match, query string) (string, string, error) {
+	switch strings.TrimSpace(match) {
+	case "", "contains":
+		return "contains", query, nil
+	case "domain":
+		q := strings.TrimSpace(query)
+		q = strings.TrimPrefix(q, "*.")
+		q = strings.Trim(q, ".")
+		return "domain", q, nil
+	default:
+		return "", "", fmt.Errorf("%w: match must be contains or domain", ErrInvalidQuery)
 	}
-	totals := map[key]int64{}
-	hourSets := map[key]map[time.Time]struct{}{}
-	users := map[key]uint{}
-	labels := map[key]string{}
+}
+
+func globalTotals(hits []GlobalSearchHit) GlobalSearchTotals {
+	t := GlobalSearchTotals{Records: len(hits)}
+	type valueKey struct{ kind, value string }
+	values := map[valueKey]struct{}{}
+	subs := map[uint]struct{}{}
+	hours := map[time.Time]struct{}{}
 	for _, h := range hits {
-		k := key{h.Kind, h.Value, h.SubscriptionID}
-		totals[k] += h.Count
-		set, ok := hourSets[k]
-		if !ok {
-			set = map[time.Time]struct{}{}
-			hourSets[k] = set
+		t.Hits += h.Count
+		values[valueKey{h.Kind, h.Value}] = struct{}{}
+		if h.SubscriptionID != 0 {
+			subs[h.SubscriptionID] = struct{}{}
 		}
-		set[h.Bucket] = struct{}{}
-		if _, ok := users[k]; !ok {
-			users[k] = h.UserID
+		hours[h.Bucket] = struct{}{}
+		if t.FirstSeen == nil || h.Bucket.Before(*t.FirstSeen) {
+			b := h.Bucket
+			t.FirstSeen = &b
 		}
-		if _, ok := labels[k]; !ok {
-			labels[k] = h.SubscriptionLabel
+		if t.LastSeen == nil || h.Bucket.After(*t.LastSeen) {
+			b := h.Bucket
+			t.LastSeen = &b
 		}
 	}
-	out := make([]GlobalSubAggregate, 0, len(totals))
-	for k, total := range totals {
-		out = append(out, GlobalSubAggregate{
-			Kind:              k.kind,
-			Value:             k.value,
-			SubscriptionID:    k.sub,
-			UserID:            users[k],
-			SubscriptionLabel: labels[k],
-			Count:             total,
-			Hours:             len(hourSets[k]),
+	t.Values = len(values)
+	t.Subscriptions = len(subs)
+	t.Hours = len(hours)
+	return t
+}
+
+// summariseGlobalBySubscription folds hits into one row per subscription.
+// Sorted: hits desc, hours desc, id asc.
+func summariseGlobalBySubscription(hits []GlobalSearchHit) []GlobalSubscriptionSummary {
+	type valueKey struct{ kind, value string }
+	type valueAcc struct {
+		count int64
+		hours map[time.Time]struct{}
+	}
+	type subAcc struct {
+		sum    GlobalSubscriptionSummary
+		hours  map[time.Time]struct{}
+		emails map[string]struct{}
+		nodes  map[uint]struct{}
+		values map[valueKey]*valueAcc
+	}
+	accs := map[uint]*subAcc{}
+	for _, h := range hits {
+		a, ok := accs[h.SubscriptionID]
+		if !ok {
+			a = &subAcc{
+				sum: GlobalSubscriptionSummary{
+					SubscriptionID:    h.SubscriptionID,
+					UserID:            h.UserID,
+					SubscriptionLabel: h.SubscriptionLabel,
+					FirstSeen:         h.Bucket,
+					LastSeen:          h.Bucket,
+				},
+				hours:  map[time.Time]struct{}{},
+				emails: map[string]struct{}{},
+				nodes:  map[uint]struct{}{},
+				values: map[valueKey]*valueAcc{},
+			}
+			accs[h.SubscriptionID] = a
+		}
+		a.sum.Hits += h.Count
+		a.hours[h.Bucket] = struct{}{}
+		a.emails[h.Email] = struct{}{}
+		a.nodes[h.NodeID] = struct{}{}
+		if h.Bucket.Before(a.sum.FirstSeen) {
+			a.sum.FirstSeen = h.Bucket
+		}
+		if h.Bucket.After(a.sum.LastSeen) {
+			a.sum.LastSeen = h.Bucket
+		}
+		vk := valueKey{h.Kind, h.Value}
+		v, ok := a.values[vk]
+		if !ok {
+			v = &valueAcc{hours: map[time.Time]struct{}{}}
+			a.values[vk] = v
+		}
+		v.count += h.Count
+		v.hours[h.Bucket] = struct{}{}
+	}
+
+	out := make([]GlobalSubscriptionSummary, 0, len(accs))
+	for _, a := range accs {
+		s := a.sum
+		s.Hours = len(a.hours)
+		s.Emails = len(a.emails)
+		s.Values = len(a.values)
+		s.NodeIDs = make([]uint, 0, len(a.nodes))
+		for n := range a.nodes {
+			s.NodeIDs = append(s.NodeIDs, n)
+		}
+		sort.Slice(s.NodeIDs, func(i, j int) bool { return s.NodeIDs[i] < s.NodeIDs[j] })
+		s.TopValues = make([]GlobalSubValue, 0, len(a.values))
+		for k, v := range a.values {
+			s.TopValues = append(s.TopValues, GlobalSubValue{Kind: k.kind, Value: k.value, Count: v.count, Hours: len(v.hours)})
+		}
+		sort.Slice(s.TopValues, func(i, j int) bool {
+			if s.TopValues[i].Count != s.TopValues[j].Count {
+				return s.TopValues[i].Count > s.TopValues[j].Count
+			}
+			return s.TopValues[i].Value < s.TopValues[j].Value
 		})
+		if len(s.TopValues) > subTopValues {
+			s.TopValues = s.TopValues[:subTopValues]
+		}
+		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Count != out[j].Count {
-			return out[i].Count > out[j].Count
+		if out[i].Hits != out[j].Hits {
+			return out[i].Hits > out[j].Hits
 		}
 		if out[i].Hours != out[j].Hours {
 			return out[i].Hours > out[j].Hours
 		}
-		return out[i].Value < out[j].Value
+		return out[i].SubscriptionID < out[j].SubscriptionID
 	})
 	return out
 }
 
 // aggregateGlobalByValue is the (kind, value) rollup across every
-// subscription — the "popularity" signal.
+// subscription — the "popularity" signal. Capped at maxByValueRows; the
+// full count is in GlobalSearchTotals.Values.
 func aggregateGlobalByValue(hits []GlobalSearchHit) []GlobalValueAggregate {
 	type key struct {
 		kind  string
@@ -949,6 +1126,37 @@ func aggregateGlobalByValue(hits []GlobalSearchHit) []GlobalValueAggregate {
 		}
 		return out[i].Value < out[j].Value
 	})
+	if len(out) > maxByValueRows {
+		out = out[:maxByValueRows]
+	}
+	return out
+}
+
+// globalSeries buckets the hits per hour, oldest first. Hours without a
+// match are omitted; the client fills the gaps.
+func globalSeries(hits []GlobalSearchHit) []GlobalSeriesBucket {
+	byHour := map[time.Time]*GlobalSeriesBucket{}
+	for _, h := range hits {
+		b, ok := byHour[h.Bucket]
+		if !ok {
+			b = &GlobalSeriesBucket{Bucket: h.Bucket, Nodes: map[uint]int64{}}
+			byHour[h.Bucket] = b
+		}
+		switch h.Kind {
+		case "domain":
+			b.Accepted += h.Count
+		case "rejected_domain":
+			b.Rejected += h.Count
+		case "source_ip":
+			b.SourceIP += h.Count
+		}
+		b.Nodes[h.NodeID] += h.Count
+	}
+	out := make([]GlobalSeriesBucket, 0, len(byHour))
+	for _, b := range byHour {
+		out = append(out, *b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Bucket.Before(out[j].Bucket) })
 	return out
 }
 

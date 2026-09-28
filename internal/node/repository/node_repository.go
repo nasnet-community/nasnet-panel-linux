@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -190,11 +191,14 @@ type AccessLogTimeBucket struct {
 
 // AccessLogTotals are the SUM aggregates over the entire filter window.
 type AccessLogTotals struct {
-	AcceptedCount int64 `json:"accepted_count"`
-	RejectedCount int64 `json:"rejected_count"`
-	TcpCount      int64 `json:"tcp_count"`
-	UdpCount      int64 `json:"udp_count"`
-	HourBuckets   int64 `json:"hour_buckets"` // number of (email, node, hour) rows in window
+	AcceptedCount int64      `json:"accepted_count"`
+	RejectedCount int64      `json:"rejected_count"`
+	TcpCount      int64      `json:"tcp_count"`
+	UdpCount      int64      `json:"udp_count"`
+	HourBuckets   int64      `json:"hour_buckets"` // number of (email, node, hour) rows in window
+	ActiveHours   int64      `json:"active_hours"` // distinct hours with any activity
+	FirstSeen     *time.Time `json:"first_seen,omitempty"`
+	LastSeen      *time.Time `json:"last_seen,omitempty"`
 }
 
 // AccessLogSearchHit is one match returned by SearchAccessLog: the (hour, node,
@@ -220,7 +224,10 @@ type AccessLogSearchFilter struct {
 	To              time.Time
 	Query           string
 	Kinds           []string // subset of {"domain","rejected_domain","source_ip"}; empty = all
-	Limit           int      // hard cap on returned hits; 0 → no cap
+	// Match is "contains" (default) or "domain": the key equals Query or is
+	// a subdomain of it. IP keys only match exactly in domain mode.
+	Match string
+	Limit int // hard cap on returned hits, newest first; 0 → no cap
 }
 
 // AccessLogSummaryFilter. Email is the legacy single-user path; Emails
@@ -992,7 +999,7 @@ func (r *nodeRepository) GetAccessLogSummaries(ctx context.Context, filter Acces
 func (r *nodeRepository) GetAccessLogTopDomains(ctx context.Context, filter AccessLogSummaryFilter) ([]*domain.AccessLogSummary, error) {
 	query := r.db.WithContext(ctx).Model(&domain.AccessLogSummary{})
 	query = applyAccessLogFilter(query, filter)
-	query = query.Select("top_domains")
+	query = query.Select("top_domains, rejected_domains, source_ips")
 
 	var summaries []*domain.AccessLogSummary
 	if err := query.Find(&summaries).Error; err != nil {
@@ -1139,13 +1146,15 @@ func (r *nodeRepository) GetAccessLogTotals(ctx context.Context, filter AccessLo
 		TcpCount    int64 `gorm:"column:tcp_count"`
 		UdpCount    int64 `gorm:"column:udp_count"`
 		HourBuckets int64 `gorm:"column:hour_buckets"`
+		ActiveHours int64 `gorm:"column:active_hours"`
 	}{}
 	if err := q.Select(`
 		COALESCE(SUM(accepted_count), 0) as accepted,
 		COALESCE(SUM(rejected_count), 0) as rejected,
 		COALESCE(SUM(tcp_count), 0) as tcp_count,
 		COALESCE(SUM(udp_count), 0) as udp_count,
-		COUNT(*) as hour_buckets
+		COUNT(*) as hour_buckets,
+		COUNT(DISTINCT hour_time) as active_hours
 	`).Scan(&row).Error; err != nil {
 		return t, err
 	}
@@ -1154,6 +1163,29 @@ func (r *nodeRepository) GetAccessLogTotals(ctx context.Context, filter AccessLo
 	t.TcpCount = row.TcpCount
 	t.UdpCount = row.UdpCount
 	t.HourBuckets = row.HourBuckets
+	t.ActiveHours = row.ActiveHours
+	if row.HourBuckets == 0 {
+		return t, nil
+	}
+
+	// MIN/MAX would come back untyped on SQLite; ordered plucks keep the
+	// column type on both dialects.
+	edge := func(order string) (*time.Time, error) {
+		var ts []time.Time
+		q := applyAccessLogFilter(r.db.WithContext(ctx).Model(&domain.AccessLogSummary{}), filter)
+		if err := q.Order(order).Limit(1).Pluck("hour_time", &ts).Error; err != nil || len(ts) == 0 {
+			return nil, err
+		}
+		v := ts[0].UTC()
+		return &v, nil
+	}
+	var err error
+	if t.FirstSeen, err = edge("hour_time ASC"); err != nil {
+		return t, err
+	}
+	if t.LastSeen, err = edge("hour_time DESC"); err != nil {
+		return t, err
+	}
 	return t, nil
 }
 
@@ -1194,19 +1226,19 @@ func (r *nodeRepository) SearchAccessLog(ctx context.Context, filter AccessLogSe
 	// SQL pre-filter: rows where AT LEAST ONE requested JSON blob contains the
 	// substring. Go-side parse below confirms a real key match (LIKE '%foo%'
 	// can spuriously match counts or other keys).
-	like := "%" + strings.ToLower(q) + "%"
+	like := "%" + escapeLike(strings.ToLower(q)) + "%"
 	var clauses []string
 	var args []interface{}
 	if wantDomain {
-		clauses = append(clauses, database.ILike("top_domains", "?"))
+		clauses = append(clauses, database.ILike("top_domains", "?")+` ESCAPE '\'`)
 		args = append(args, like)
 	}
 	if wantRejected {
-		clauses = append(clauses, database.ILike("rejected_domains", "?"))
+		clauses = append(clauses, database.ILike("rejected_domains", "?")+` ESCAPE '\'`)
 		args = append(args, like)
 	}
 	if wantSourceIP {
-		clauses = append(clauses, database.ILike("source_ips", "?"))
+		clauses = append(clauses, database.ILike("source_ips", "?")+` ESCAPE '\'`)
 		args = append(args, like)
 	}
 	if len(clauses) == 0 {
@@ -1222,17 +1254,27 @@ func (r *nodeRepository) SearchAccessLog(ctx context.Context, filter AccessLogSe
 		RejectedDomains string    `gorm:"column:rejected_domains"`
 		SourceIPs       string    `gorm:"column:source_ips"`
 	}
+	// Every pre-filtered row holds at least one match, so limit+1 rows are
+	// enough to fill the cap and tell whether more exist.
+	limit := filter.Limit
+	if limit > 0 {
+		tx = tx.Limit(limit + 1)
+	}
 	var rows []row
 	if err := tx.Select("node_id, email, hour_time, top_domains, rejected_domains, source_ips").
-		Order("hour_time ASC, node_id ASC, email ASC").
+		Order("hour_time DESC, node_id ASC, email ASC").
 		Find(&rows).Error; err != nil {
 		return nil, false, err
 	}
+	truncated := false
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+		truncated = true
+	}
 
 	needle := strings.ToLower(q)
+	domainMode := filter.Match == "domain"
 	hits := make([]AccessLogSearchHit, 0, len(rows))
-	limit := filter.Limit
-	truncated := false
 
 	appendMatches := func(blob, kind string, hourTime time.Time, nodeID uint, email string) bool {
 		if blob == "" {
@@ -1245,7 +1287,7 @@ func (r *nodeRepository) SearchAccessLog(ctx context.Context, filter AccessLogSe
 			return true
 		}
 		for k, v := range m {
-			if !strings.Contains(strings.ToLower(k), needle) {
+			if !matchSearchKey(k, needle, domainMode) {
 				continue
 			}
 			hits = append(hits, AccessLogSearchHit{
@@ -1276,6 +1318,25 @@ func (r *nodeRepository) SearchAccessLog(ctx context.Context, filter AccessLogSe
 		}
 	}
 	return hits, truncated, nil
+}
+
+// matchSearchKey reports whether a stored key matches the lowercased needle.
+// Domain mode accepts the name itself or any subdomain of it; IPs must be equal.
+func matchSearchKey(key, needle string, domainMode bool) bool {
+	k := strings.ToLower(key)
+	if !domainMode {
+		return strings.Contains(k, needle)
+	}
+	bareKey, bareNeedle := strings.Trim(k, "[]"), strings.Trim(needle, "[]")
+	if net.ParseIP(bareKey) != nil || net.ParseIP(bareNeedle) != nil {
+		return bareKey == bareNeedle
+	}
+	return k == needle || strings.HasSuffix(k, "."+needle)
+}
+
+// escapeLike escapes LIKE wildcards so a query is matched literally.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s)
 }
 
 // resolveSearchKinds normalises requested kinds into the three boolean toggles
