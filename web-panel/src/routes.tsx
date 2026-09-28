@@ -15,6 +15,7 @@ const Users = lazy(() => import("@/pages/users"))
 const UserDetail = lazy(() => import("@/pages/users/[id]"))
 const Subscriptions = lazy(() => import("@/pages/subscriptions"))
 const Accounts = lazy(() => import("@/pages/accounts"))
+const Nodes = lazy(() => import("@/pages/nodes"))
 const NodeDetail = lazy(() => import("@/pages/nodes/[id]"))
 const XrayBinaries = lazy(() => import("@/pages/xray-binaries"))
 const Settings = lazy(() => import("@/pages/settings"))
@@ -62,7 +63,7 @@ export const router = createBrowserRouter([
         { path: "/users/:id", element: r(<UserDetail />) },
         // The built-in node's address; keeps ?tab= and bookmarks.
         { path: "/server", element: r(<LocalNodeRedirect />) },
-        { path: "/nodes", element: r(<LocalNodeRedirect />) },
+        { path: "/nodes", element: r(<Nodes />) },
         { path: "/nodes/:id", element: r(<NodeDetail />) },
         { path: "/router", element: r(<Router />) },
         { path: "/router/flow", element: r(<RouterFlow />) },

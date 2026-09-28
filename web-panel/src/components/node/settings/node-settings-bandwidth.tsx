@@ -22,9 +22,9 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
     const isEnabled = form.watch("bandwidth_enabled")
 
     return (
-        <Card className="bg-card/50 backdrop-blur-sm border-white/5">
+        <Card className="border-border/60 bg-card shadow-none">
             <CardHeader>
-                <CardTitle>Bandwidth Shaping</CardTitle>
+                <CardTitle className="text-base">Bandwidth Shaping</CardTitle>
                 <CardDescription>
                     Control per-user bandwidth limits using Linux TC (Traffic Control)
                 </CardDescription>
@@ -40,14 +40,14 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                             control={form.control}
                             name="bandwidth_enabled"
                             render={({ field }) => (
-                                <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                                <FormItem className="flex items-center justify-between gap-4 rounded-lg border border-border/60 p-4">
                                     <div className="space-y-0.5">
                                         <FormLabel className="flex items-center gap-2">
                                             Enable Bandwidth Shaping
                                             <InfoPopover>
                                                 When enabled, the agent sets up Linux TC (HTB) rules to
-                                                enforce per-user speed limits. Users assigned to bandwidth-limited
-                                                plans will have their traffic shaped according to the plan&apos;s limit.
+                                                enforce per-user speed limits. Subscriptions with a speed limit
+                                                have their traffic shaped to it.
                                                 Requires the agent to run as root.
                                             </InfoPopover>
                                         </FormLabel>
@@ -75,7 +75,7 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                                             <FormLabel>Network Interface</FormLabel>
                                             <FormControl>
                                                 <Input
-                                                    placeholder="eth0"
+                                                    placeholder="eth0" name={field.name} ref={field.ref} onBlur={field.onBlur}
                                                     value={field.value}
                                                     onChange={field.onChange}
                                                 />
@@ -96,8 +96,9 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                                             <FormControl>
                                                 <Input
                                                     type="number"
+                                        name={field.name} ref={field.ref} onBlur={field.onBlur}
                                                     value={field.value}
-                                                    onChange={(e) => field.onChange(parseInt(e.target.value) || 1000)}
+                                                    onChange={(e) => field.onChange(Number(e.target.value))}
                                                 />
                                             </FormControl>
                                             <FormDescription>

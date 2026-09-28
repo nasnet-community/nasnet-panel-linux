@@ -55,12 +55,15 @@ export function getNodeSettingsDefaults(node: Node): NodeSettingsFormData {
     }
 }
 
-// Only send edited fields. Unrelated server settings may have changed since this form loaded.
+// Only send edited fields. Unrelated node settings may have changed since this form loaded.
 export function nodeSettingsPatch(values: NodeSettingsFormData, fields: Field[]): Partial<Node> {
     const patch: Partial<Node> = {}
-    const direct = ["name", "ip", "country_code", "datacenter", "is_active", "enable_access_log"] as const
+    const direct = ["name", "ip", "country_code", "datacenter", "is_active", "agent_port", "api_port", "enable_access_log"] as const
     for (const field of direct) {
         if (fields.includes(field)) Object.assign(patch, { [field]: field === "country_code" ? values[field]?.toUpperCase() : values[field] })
+    }
+    if (fields.some(f => f.startsWith("bandwidth_"))) patch.bandwidth_settings = {
+        enabled: values.bandwidth_enabled, interface: values.bandwidth_interface || "eth0", total_bw: values.bandwidth_total_bw,
     }
     if (fields.some(f => f.startsWith("starlink_"))) patch.starlink_settings = {
         enabled: values.starlink_enabled, dish_address: values.starlink_dish_address || "192.168.100.1:9200",

@@ -54,13 +54,16 @@ import { toggleInboundDisabled } from "@/lib/api/inbounds"
 import type { NodeStatsBulkMap, NodeBulkActionResponse, XrayConfigDiff } from "@/lib/api/nodes"
 import { ApiError } from "@/lib/api"
 import { queryKeys } from "./keys"
+import { useRefreshInterval } from "@/hooks/use-refresh-interval"
 import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, OutboundTestEntry, OutboundTestSettings, NodeDataPoint } from "@/lib/types"
 import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
 
-// List all nodes
-export function useNodes(enabled = true) {
+// List all nodes. Only the nodes list page polls (`poll`); everywhere else
+// the list is read once and kept fresh by node events.
+export function useNodes(enabled = true, { poll = false }: { poll?: boolean } = {}) {
+    const refreshInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.nodeList(),
         enabled,
@@ -69,6 +72,8 @@ export function useNodes(enabled = true) {
             if (!res.success) throw new Error(res.error || "Failed to fetch nodes")
             return res.data || []
         },
+        refetchInterval: poll ? refreshInterval : false,
+        refetchIntervalInBackground: false,
     })
 }
 

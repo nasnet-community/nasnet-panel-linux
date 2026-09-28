@@ -19,6 +19,9 @@ export interface Node {
     is_active: boolean
     is_online: boolean
     last_check: string
+    // Last outage, stamped on the row (absent until the uptime work lands).
+    last_disconnected_at?: string
+    last_offline_reason?: string
     log_level?: string
     log_access?: string
     log_error?: string
@@ -52,6 +55,8 @@ export interface Node {
 
 // Node stats from backend API
 export interface NodeStats {
+    /** The sweep failed; these are the last readings. */
+    stats_unavailable?: boolean
     total_uplink: number
     total_downlink: number
     online_users: number

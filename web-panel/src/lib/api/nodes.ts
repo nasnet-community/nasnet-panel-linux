@@ -1,5 +1,6 @@
 import { api, type ApiResponse } from "@/lib/api"
 import { buildQueryString } from "./utils"
+import { getApiBaseUrl } from "@/lib/config"
 import type {
     Node,
     NodeStats,
@@ -136,6 +137,14 @@ export interface NodeBulkActionResponse {
     total: number
     succeeded: number
     results: Record<string, NodeBulkActionResult>
+}
+
+export async function bulkUpdateAgent(ids: number[]): Promise<ApiResponse<NodeBulkActionResponse>> {
+    const uniqueIds = [...new Set(ids)]
+    // The server runs eight updates at a time, with six minutes per node.
+    // Allow every batch to finish instead of using the default 30s timeout.
+    const timeoutMs = Math.ceil(uniqueIds.length / 8) * 6 * 60_000 + 30_000
+    return api.post<NodeBulkActionResponse>("/api/v1/nodes/bulk/agent-update", { ids: uniqueIds }, timeoutMs)
 }
 
 export async function bulkRestartNodes(ids: number[]): Promise<ApiResponse<NodeBulkActionResponse>> {
@@ -315,4 +324,46 @@ export async function getStarlinkHistory(nodeId: number, limit: number = 60, sin
     return api.get<StarlinkDataPoint[]>(
         `/api/v1/nodes/${nodeId}/starlink/history${buildQueryString({ limit, since })}`
     )
+}
+
+// ==================== Remote Nodes: Agent ====================
+
+export async function switchNodeConnectMode(id: number, connectMode: "direct" | "reverse"): Promise<ApiResponse<{ message: string }>> {
+    return api.patch<{ message: string }>(`/api/v1/nodes/${id}/connect-mode`, { connect_mode: connectMode })
+}
+
+export async function updateAgent(nodeId: number): Promise<ApiResponse<{ message: string }>> {
+    return api.post<{ message: string }>(`/api/v1/nodes/${nodeId}/agent/update`)
+}
+
+/** How to install a node's agent: a one-time pull command (https agent
+ * address set) or the self-contained paste script. */
+export interface DeployInstructions {
+    mode: "pull" | "paste"
+    command: string
+    node_id: number
+    node_name: string
+    node_ip: string
+    port: number
+    connect_mode: "direct" | "reverse"
+    paste_url: string
+    script_url?: string
+    expires_at?: number
+    reason?: string
+}
+
+export async function getInstallCommand(nodeId: number): Promise<ApiResponse<DeployInstructions>> {
+    return api.get<DeployInstructions>(`/api/v1/deploy/command/${nodeId}`)
+}
+
+/** The self-contained installer. Each call issues a fresh node certificate. */
+export async function getPasteScript(nodeId: number): Promise<string> {
+    const res = await fetch(`${getApiBaseUrl()}/api/v1/deploy/paste/${nodeId}`, { credentials: "include" })
+    const text = await res.text()
+    if (!res.ok) {
+        let message = `Failed to build the installer (${res.status})`
+        try { message = (JSON.parse(text) as { error?: string }).error || message } catch { /* not JSON */ }
+        throw new Error(message)
+    }
+    return text
 }

@@ -7,11 +7,15 @@ import { startXrayProcess, stopXrayProcess, restartXrayProcess, restartNodeSSH, 
 import { toast } from "@/lib/toast"
 import type { Node } from "@/lib/types"
 import type { NodeSettingsForm } from "@/hooks/use-node-settings-form"
+import { DeployAgentDialog } from "@/components/deploy-agent-dialog"
+import { isLocalNode } from "@/lib/node-kind"
 
-export function NodeSettingsActions({ node, settingsForm, onRefresh }: {
-    node: Node; settingsForm: NodeSettingsForm; onRefresh: () => void
+export function NodeSettingsActions({ node, settingsForm, onRefresh, onUpdateAgent }: {
+    node: Node; settingsForm: NodeSettingsForm; onRefresh: () => void; onUpdateAgent?: () => void
 }) {
     const [busy, setBusy] = useState(false)
+    const [deployOpen, setDeployOpen] = useState(false)
+    const remote = !isLocalNode(node)
     const confirm = useConfirm()
     const disabled = busy || settingsForm.isDirty || settingsForm.isSaving
     const run = async (label: string, action: () => Promise<{ success: boolean; error?: string }>, confirmation?: string, ssh = false) => {
@@ -27,9 +31,16 @@ export function NodeSettingsActions({ node, settingsForm, onRefresh }: {
             toast.error(error instanceof Error ? error.message : `${label} failed`)
         } finally { setBusy(false) }
     }
-    return <DropdownMenu>
+    return <>
+    <DropdownMenu>
         <DropdownMenuTrigger asChild><Button type="button" variant="outline" size="icon" className="size-8" aria-label="Settings actions" disabled={busy}>{busy ? <Loader2 className="size-4 animate-spin" /> : <MoreHorizontal className="size-4" />}</Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
+            {remote && <>
+                <DropdownMenuLabel>Agent</DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => setDeployOpen(true)}>Install or reinstall agent…</DropdownMenuItem>
+                {onUpdateAgent && <DropdownMenuItem disabled={disabled} onSelect={onUpdateAgent}>Update agent</DropdownMenuItem>}
+                <DropdownMenuSeparator />
+            </>}
             <DropdownMenuLabel>Xray service</DropdownMenuLabel>
             <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Start Xray", () => startXrayProcess(node.id))}>Start Xray</DropdownMenuItem>
             <DropdownMenuItem disabled={disabled || !node.is_online} onSelect={() => void run("Restart Xray", () => restartXrayProcess(node.id), "Active connections may briefly reconnect.")}>Restart Xray</DropdownMenuItem>
@@ -42,4 +53,6 @@ export function NodeSettingsActions({ node, settingsForm, onRefresh }: {
             {settingsForm.isDirty && <p className="px-2 py-2 text-xs text-muted-foreground">Save or discard edits before running service actions.</p>}
         </DropdownMenuContent>
     </DropdownMenu>
+    {remote && <DeployAgentDialog nodeId={node.id} open={deployOpen} onOpenChange={setDeployOpen} />}
+    </>
 }

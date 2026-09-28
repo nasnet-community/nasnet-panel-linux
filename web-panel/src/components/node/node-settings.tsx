@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { Check, Loader2, SlidersHorizontal, Plug, ScrollText, Workflow, TriangleAlert, ArrowRight } from "lucide-react"
 import { DangerZone } from "@/components/node/danger-zone"
+import { NodeSettingsAgent } from "./settings/node-settings-agent"
+import { NodeSettingsBandwidth } from "./settings/node-settings-bandwidth"
 import { isLocalNode } from "@/lib/node-kind"
 import type { Node } from "@/lib/types"
 
@@ -35,9 +37,10 @@ interface NodeSettingsProps {
     node: Node
     onRefresh: () => void
     onDirtyChange?: (dirty: boolean) => void
+    onUpdateAgent?: () => void
 }
 
-export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsProps) {
+export function NodeSettings({ node, onRefresh, onDirtyChange, onUpdateAgent }: NodeSettingsProps) {
     const navigate = useNavigate()
     const confirmDelete = useConfirm()
     const settingsForm = useNodeSettingsForm(node, { onRefresh })
@@ -101,7 +104,7 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
                         {settingsForm.isSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                         {settingsForm.isSaving ? "Saving…" : "Save changes"}
                     </Button>
-                    <NodeSettingsActions node={node} settingsForm={settingsForm} onRefresh={onRefresh} />
+                    <NodeSettingsActions node={node} settingsForm={settingsForm} onRefresh={onRefresh} onUpdateAgent={isLocalNode(node) ? undefined : onUpdateAgent} />
                     </div>
                 </div>
 
@@ -123,7 +126,7 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
                         </button>
                     })}
                 </nav>
-                <p className="text-sm text-muted-foreground">{settingsSections.find(s => s.id === section)?.description}</p>
+                <p className="text-sm text-muted-foreground">{section === "connection" && !isLocalNode(node) ? "Agent connectivity and SSH access." : settingsSections.find(s => s.id === section)?.description}</p>
 
                 <fieldset disabled={settingsForm.isSaving} className="min-w-0 space-y-5 disabled:opacity-70">
                     {section === "general" && <>
@@ -131,10 +134,13 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
                         <NodeSettingsStatusBar node={node} settingsForm={settingsForm} />
                     </>}
                     {section === "connection" && <>
+                        {!isLocalNode(node) && <NodeSettingsAgent node={node} settingsForm={settingsForm} onRefresh={onRefresh} />}
                         <SSHSettingsCard settingsForm={settingsForm} isStealth={isStealth} isOnline={node.is_online} />
                     </>}
                     {section === "logging" && <NodeSettingsXray isOnline={node.is_online} settingsForm={settingsForm} />}
                     {section === "automation" && <>
+                        {/* The router's own QoS shapes the built-in node. */}
+                        {!isLocalNode(node) && <NodeSettingsBandwidth settingsForm={settingsForm} isStealth={isStealth} />}
                         <NodeSettingsStarlink settingsForm={settingsForm} isStealth={isStealth} />
                         <NodeSettingsCrashRecovery settingsForm={settingsForm} isStealth={isStealth} lastRecovery={node.last_crash_recovery} />
                     </>}

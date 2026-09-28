@@ -42,6 +42,8 @@ import { CopyableText } from "@/components/ui/copyable-text"
 import { AccountDetailsSheet } from "@/components/accounts/account-details-sheet"
 import { StarlinkDashboard } from "@/components/node/starlink/starlink-dashboard"
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
+import { UpdateAgentDialog } from "@/components/update-agent-dialog"
+import { Package } from "lucide-react"
 import { isLocalNode, nodeAddress } from "@/lib/node-kind"
 
 const nodeTabs = [
@@ -157,6 +159,7 @@ export default function NodeDetailPage() {
     }, [isTerminalWorkspace, node?.id, nodeId])
 
     const [geofilesOpen, setGeofilesOpen] = useState(false)
+    const [updateAgentOpen, setUpdateAgentOpen] = useState(false)
     const [isRestarting, setIsRestarting] = useState(false)
 
     const handleRestartXray = async () => {
@@ -310,6 +313,12 @@ export default function NodeDetailPage() {
                             </Button>
                         }
                     />
+                    {!local && (
+                        <Button variant="outline" size="sm" onClick={() => setUpdateAgentOpen(true)} className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")}>
+                            <Package className="w-3.5 h-3.5 mr-2" />
+                            Update Agent
+                        </Button>
+                    )}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="outline" size="sm" aria-label="Node actions" className={cn("h-8 px-2.5", !isTerminalWorkspace && "md:hidden")}>
@@ -325,6 +334,12 @@ export default function NodeDetailPage() {
                                 <Globe className="w-4 h-4 mr-2" />
                                 Update Geofiles
                             </DropdownMenuItem>
+                            {!local && (
+                                <DropdownMenuItem onClick={() => setUpdateAgentOpen(true)}>
+                                    <Package className="w-4 h-4 mr-2" />
+                                    Update Agent
+                                </DropdownMenuItem>
+                            )}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
@@ -424,6 +439,7 @@ export default function NodeDetailPage() {
                                 node={node}
                                 onRefresh={loadData}
                                 onDirtyChange={setSettingsDirty}
+                                onUpdateAgent={local ? undefined : () => setUpdateAgentOpen(true)}
                             />
                         )}
                     </TabsContent>
@@ -480,6 +496,17 @@ export default function NodeDetailPage() {
                 </DialogContent>
             </Dialog>
 
+
+            {!local && (
+                <UpdateAgentDialog
+                    nodeId={nodeId}
+                    nodeName={node.name}
+                    currentVersion={stats?.agent_version}
+                    open={updateAgentOpen}
+                    onOpenChange={setUpdateAgentOpen}
+                    onSuccess={loadData}
+                />
+            )}
 
             <GeofilesDialog
                 nodeId={nodeId}
