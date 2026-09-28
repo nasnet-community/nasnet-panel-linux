@@ -46,7 +46,7 @@ export function WhoPicker({ subscriptions, emails, onSubscriptions, onEmails, in
     }, [open])
 
     const subsQuery = useSubscriptions({ page: 1, perPage: 8, search: search || undefined })
-    const usersQuery = useUsers({ page: 1, perPage: 5, search, filter: "all", sort: "", order: "" })
+    const usersQuery = useUsers({ page: 1, per_page: 5, search })
 
     const picked = useMemo(() => new Set(subscriptions.map(s => s.id)), [subscriptions])
     const subOptions = (subsQuery.data ?? [])

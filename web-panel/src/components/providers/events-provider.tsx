@@ -151,6 +151,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             queryClientRef.current.invalidateQueries({ queryKey: queryKeys.nodeStatsBulkAll(), exact: false })
             queryClientRef.current.invalidateQueries({ queryKey: queryKeys.dashboard })
             queryClientRef.current.invalidateQueries({ queryKey: queryKeys.subscriptions })
+            queryClientRef.current.invalidateQueries({ queryKey: [...queryKeys.users, 'list'] })
         }
 
         // Handle all event types with inline handlers to avoid dependency issues
@@ -159,6 +160,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
             'xray.recovery_command', 'xray.recovery_exhausted',
+            'user.registered', 'subscription.renewed', 'subscription.cancelled', 'account.data_exhausted',
             // Named events only arrive if we ask for them by name.
             'interface.added', 'interface.removed', 'interface.link_changed',
             'wan.up', 'wan.down', 'wan.failover', 'wan.failover_lost',
@@ -228,6 +230,12 @@ function invalidateLiveDashboard(queryClient: QueryClient) {
     for (const queryKey of liveDashboardKeys) queryClient.invalidateQueries({ queryKey })
 }
 
+// Events that change who belongs in which users-list group.
+const USERS_LIST_EVENTS = new Set<EventType>([
+    'user.registered', 'subscription.created', 'subscription.expired',
+    'subscription.renewed', 'subscription.cancelled', 'account.data_exhausted',
+])
+
 function handleEvent(
     eventType: EventType,
     event: ServerEvent,
@@ -235,6 +243,9 @@ function handleEvent(
     navigate: NavigateFunction,
     invalidator: CoalescedInvalidator,
 ) {
+    if (USERS_LIST_EVENTS.has(eventType)) {
+        invalidator.schedule(queryClient, [...queryKeys.users, 'list'], 1000)
+    }
     switch (eventType) {
         case 'node.online': {
             const payload = event.payload as NodeStatusPayload
