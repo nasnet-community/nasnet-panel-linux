@@ -14,6 +14,9 @@ describe("getContextConfig", () => {
         expect(getContextConfig("/hosts")?.id).toBe("nodes")
         expect(getContextConfig("/access-logs")?.id).toBe("nodes")
         expect(getContextConfig("/domains/new")?.id).toBe("certs")
+        expect(getContextConfig("/xray-binaries")?.id).toBe("nodes")
+        expect(getContextConfig("/router")?.id).toBe("router")
+        expect(getContextConfig("/router/flow")?.id).toBe("router")
     })
 
     // A route without its own panel used to render none, and the nav jumped by
@@ -24,9 +27,6 @@ describe("getContextConfig", () => {
             "/settings/general",
             "/audit",
             "/backup",
-            "/router",
-            "/router/flow",
-            "/xray-binaries",
             "/chats",
         ]) {
             expect(getContextConfig(path)?.id).toBe("system")

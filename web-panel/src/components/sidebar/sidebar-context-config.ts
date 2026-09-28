@@ -3,10 +3,10 @@ export type ContextStatus = "ok" | "warn" | "down"
 export type ContextConfigId =
     | "system"
     | "customers"
-    // | "chats"
     | "nodes"
     | "certs"
     | "alerts"
+    | "router"
 
 export interface ContextConfig {
     id: ContextConfigId
@@ -32,15 +32,10 @@ export const CONTEXT_CONFIGS: ContextConfig[] = [
         label: "CUSTOMERS",
         prefixes: ["/users", "/subscriptions", "/accounts"],
     },
-    // {
-    //     id: "chats",
-    //     label: "CHATS",
-    //     prefixes: ["/chats"],
-    // },
     {
         id: "nodes",
         label: "NODES.STATUS",
-        prefixes: ["/server", "/nodes", "/hosts", "/access-logs", "/access-history"],
+        prefixes: ["/server", "/nodes", "/hosts", "/tunnels", "/xray-binaries", "/access-logs", "/access-history"],
     },
     {
         id: "certs",
@@ -51,6 +46,11 @@ export const CONTEXT_CONFIGS: ContextConfig[] = [
         id: "alerts",
         label: "ALERTS",
         prefixes: ["/alerts"],
+    },
+    {
+        id: "router",
+        label: "ROUTER",
+        prefixes: ["/router", "/network"],
     },
 ]
 

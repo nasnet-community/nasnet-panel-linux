@@ -1,53 +1,31 @@
 import { useEffect, useState } from "react"
-import { useLocation } from "react-router"
+import { Link, useLocation } from "react-router"
 import { ChevronDown } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn, formatSpeed } from "@/lib/utils"
 import {
     useDashboardStats,
     useOnlineUsersHistory,
 } from "@/lib/queries/use-dashboard"
-// import { useUnreadChatCount } from "@/lib/queries/use-chat"
+import { useRouterHealth } from "@/lib/queries/use-router-health"
+import { useChartPalette } from "@/lib/design/palette"
+import type { RouterHealth } from "@/lib/types/health"
 import { useNodeAggregateStats } from "@/lib/queries/use-dashboard-widgets"
 import { useSubscriptionCounts, useSubsExpiringWithin } from "@/lib/queries/use-subscriptions"
-import { useChartPalette } from "@/lib/design/palette"
 import {
     getContextConfig,
+    CONTEXT_CONFIGS,
     type ContextConfig,
+    type ContextConfigId,
     type ContextStatus,
 } from "./sidebar-context-config"
-
-// One expand state for the panel, not one per route: per-route changed the
-// card's height as you navigated and moved the nav under it. Collapsed by
-// default, so a first look is the chart and details are opt-in.
-const EXPANDED_STORAGE_KEY = "sidebar-ctx-expanded"
-function useExpandedState(): [boolean, () => void] {
-    const key = EXPANDED_STORAGE_KEY
-    const [expanded, setExpanded] = useState<boolean>(() => {
-        if (typeof window === "undefined") return false
-        return window.localStorage.getItem(key) === "true"
-    })
-    useEffect(() => {
-        if (typeof window === "undefined") return
-        setExpanded(window.localStorage.getItem(key) === "true")
-    }, [key])
-    const toggle = () => {
-        setExpanded((prev) => {
-            const next = !prev
-            if (typeof window !== "undefined") {
-                window.localStorage.setItem(key, String(next))
-            }
-            return next
-        })
-    }
-    return [expanded, toggle]
-}
 
 type Tone = "neutral" | "ok" | "warn" | "danger"
 
 interface HeroData {
     value: string
     unit?: string
-    delta?: { text: string; tone: "up" | "down" | "flat" }
+    delta?: { text: string; tone: "up" | "down" | "flat" | "warn" }
 }
 
 interface SparklineData {
@@ -90,7 +68,16 @@ interface PanelData {
 
 const EMPTY_PLACEHOLDER = "—"
 
-function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel: boolean, showDetails: boolean): PanelData {
+function healthHero(healthy: number, total: number): HeroData {
+    return { value: `${healthy}/${total}`, unit: "healthy", delta: { text: `${total - healthy} offline`, tone: "warn" } }
+}
+
+function routerStatus(up: number, total: number): ContextStatus {
+    if (total === 0 || up === total) return "ok"
+    return up === 0 ? "down" : "warn"
+}
+
+function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel: boolean, showDetails: boolean, router: RouterHealth | undefined, routerLoading: boolean): PanelData {
     const context = visible ? config.id : undefined
     const showOnline = context === "system" || context === "customers" || context === "nodes"
     const showPortfolio = showDetails && (context === "system" || context === "customers")
@@ -105,8 +92,6 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
         cancelled: c.mutedForeground,
     } as const
     const dashboard = useDashboardStats(!!context && (context !== "nodes" || showPanel))
-    // Chat support removed (frontend only)
-    // const unread = useUnreadChatCount()
     const aggregate = useNodeAggregateStats(showOnline, context === "nodes" && showDetails)
     const onlineHistory = useOnlineUsersHistory(15, showOnline && showPanel)
     const subCounts = useSubscriptionCounts(showPortfolio)
@@ -183,6 +168,7 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
         case "customers": {
             const healthy = agg.onlineCount
             const total = agg.totalCount
+            const unhealthy = total > 0 && healthy < total
             const tiles: Tile[] =
                 config.id === "customers"
                     ? [
@@ -216,12 +202,12 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
                       ]
             return {
                 loading: dashboard.isLoading || onlineHistory.isLoading,
-                status: total > 0 && healthy < total ? "warn" : "ok",
-                hero: { value: String(online), unit: "online", delta: onlineDelta },
-                sparkline: onlinePoints.length > 0 ? { points: onlinePoints, accent: "primary" } : null,
+                status: unhealthy ? "warn" : "ok",
+                hero: unhealthy ? healthHero(healthy, total) : { value: String(online), unit: "online", delta: onlineDelta },
+                sparkline: !unhealthy && onlinePoints.length > 0 ? { points: onlinePoints, accent: "primary" } : null,
                 tiles,
                 distribution: portfolio,
-                headline: String(online),
+                headline: unhealthy ? `${healthy}/${total}` : String(online),
                 rows: [
                     { label: "online", value: String(online) },
                     { label: "healthy", value: total === 0 ? "—" : `${healthy}/${total}` },
@@ -232,13 +218,14 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
         case "nodes": {
             const healthy = agg.onlineCount
             const total = agg.totalCount
+            const unhealthy = total > 0 && healthy < total
             const up = formatSpeed(agg.totalUpSpeed)
             const down = formatSpeed(agg.totalDownSpeed)
             return {
                 loading: dashboard.isLoading || aggregate.isLoading,
-                status: total > 0 && healthy < total ? "warn" : "ok",
-                hero: { value: String(online), unit: "online", delta: onlineDelta },
-                sparkline: onlinePoints.length > 0 ? { points: onlinePoints, accent: "primary" } : null,
+                status: unhealthy ? "warn" : "ok",
+                hero: unhealthy ? healthHero(healthy, total) : { value: String(online), unit: "online", delta: onlineDelta },
+                sparkline: !unhealthy && onlinePoints.length > 0 ? { points: onlinePoints, accent: "primary" } : null,
                 tiles: [
                     {
                         label: "healthy",
@@ -249,7 +236,7 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
                     { label: "↓ down", value: down, tone: "neutral" },
                 ],
                 distribution: null,
-                headline: total === 0 ? "—" : String(healthy),
+                headline: total === 0 ? "—" : unhealthy ? `${healthy}/${total}` : String(healthy),
                 rows: [
                     { label: "online", value: String(online) },
                     { label: "healthy", value: total === 0 ? "—" : `${healthy}/${total}` },
@@ -259,26 +246,6 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
             }
         }
 
-        // case "chats": {
-        //     const unreadCount = unread.data ?? 0
-        //     return {
-        //         loading: unread.isLoading,
-        //         status: "ok",
-        //         hero: { value: String(unreadCount), unit: "unread" },
-        //         sparkline: null,
-        //         tiles: [
-        //             {
-        //                 label: "unread",
-        //                 value: String(unreadCount),
-        //                 tone: unreadCount > 0 ? "warn" : "neutral",
-        //             },
-        //             { label: "online", value: String(online), tone: "neutral" },
-        //         ],
-        //         distribution: null,
-        //         headline: String(unreadCount),
-        //         rows: [{ label: "unread", value: String(unreadCount) }],
-        //     }
-        // }
 
         case "certs": {
             const totalCerts = dash?.total_certificates ?? 0
@@ -347,6 +314,33 @@ function useResolvedPanelData(config: ContextConfig, visible: boolean, showPanel
                 ],
             }
         }
+
+        case "router": {
+            const uplinks = router?.uplinks ?? []
+            const upCount = uplinks.filter((u) => u.verdict === "up" || u.verdict === "forced-up" || u.verdict === "degraded").length
+            const total = uplinks.length
+            const status = routerStatus(upCount, total)
+            const vpn = router?.vpn
+            const tunnelsUp = vpn?.tunnels.filter((t) => t.verdict === "up" || t.verdict === "degraded").length ?? 0
+            return {
+                loading: routerLoading,
+                status,
+                hero: total === 0 ? { value: EMPTY_PLACEHOLDER, unit: "uplinks" } : { value: `${upCount}/${total}`, unit: "uplinks up" },
+                sparkline: null,
+                tiles: [
+                    { label: "failover", value: router?.failover_active ? "active" : "idle", tone: router?.failover_active ? "warn" : "neutral" },
+                    vpn?.present
+                        ? { label: `vpn ${vpn.strategy}`, value: `${tunnelsUp}/${vpn.tunnels.length}`, tone: tunnelsUp < vpn.tunnels.length ? "warn" : "ok" }
+                        : { label: "vpn", value: "off", tone: "neutral" },
+                ],
+                distribution: null,
+                headline: total === 0 ? EMPTY_PLACEHOLDER : `${upCount}/${total}`,
+                rows: [
+                    { label: "uplinks up", value: `${upCount}/${total}` },
+                    { label: "vpn", value: vpn?.present ? `${tunnelsUp}/${vpn.tunnels.length}` : "off" },
+                ],
+            }
+        }
     }
 }
 
@@ -358,8 +352,28 @@ const STATUS_LABEL: Record<ContextStatus, string> = {
 
 const STATUS_DOT: Record<ContextStatus, string> = {
     ok: "bg-primary",
-    warn: "bg-amber-500",
-    down: "bg-red-500",
+    warn: "bg-status-warning",
+    down: "bg-status-danger",
+}
+
+const STATUS_TEXT: Record<ContextStatus, string> = {
+    ok: "text-primary",
+    warn: "text-status-warning",
+    down: "text-status-danger",
+}
+
+const CONTEXT_LINK: Record<ContextConfigId, { href: string; label: string }> = {
+    system: { href: "/dashboard", label: "open dashboard" },
+    customers: { href: "/subscriptions", label: "open subscriptions" },
+    nodes: { href: "/nodes", label: "open nodes" },
+    certs: { href: "/certificates", label: "open certificates" },
+    alerts: { href: "/alerts", label: "open alerts" },
+    router: { href: "/router", label: "open router" },
+}
+
+function tintStyle(status: ContextStatus): React.CSSProperties {
+    const tint = STATUS_TINT[status]
+    return { borderColor: tint.border, backgroundImage: `linear-gradient(180deg, ${tint.top} 0%, ${tint.bottom} 100%)` }
 }
 
 export interface SidebarContextPanelProps {
@@ -369,59 +383,87 @@ export interface SidebarContextPanelProps {
     placement?: "right" | "bottom"
 }
 
-export function SidebarContextPanel({ collapsed, visible = true }: SidebarContextPanelProps) {
-    const location = useLocation()
-    const pathname = location.pathname
-    // Always a config, so the panel is always present and the nav never moves.
-    const config = getContextConfig(pathname)
-    const [expanded, toggleExpanded] = useExpandedState()
+export function SidebarContextPanel({ collapsed, visible = true, placement = "right" }: SidebarContextPanelProps) {
+    const { pathname } = useLocation()
+    const claimed = getContextConfig(pathname)
+    // The router strip needs router mode; without it the route shows system.
+    const routerHealth = useRouterHealth(visible && claimed.id === "router")
+    const config = claimed.id === "router" && routerHealth.isError
+        ? CONTEXT_CONFIGS.find((c) => c.id === "system")!
+        : claimed
     const [hovered, setHovered] = useState(false)
-    useEffect(() => setHovered(false), [visible, collapsed, pathname])
-    const data = useResolvedPanelData(config, visible, !collapsed || hovered, collapsed ? hovered : expanded)
-    if (!visible) return null
+    const [detailsOpen, setDetailsOpen] = useState(false)
+    useEffect(() => {
+        setHovered(false)
+        setDetailsOpen(false)
+    }, [visible, collapsed, pathname])
+    const showPanel = !collapsed || hovered
+    const showDetails = collapsed ? hovered : detailsOpen
+    const data = useResolvedPanelData(config, visible, showPanel, showDetails, routerHealth.data, routerHealth.isLoading)
+
+    if (!visible || !data) return null
 
     if (collapsed) {
         return (
-            <div className="group relative py-2.5 px-2 border-b border-border/50" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+            <div
+                className="group relative py-2 px-2 border-b border-border/50"
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
+            >
                 <div
-                    className="flex flex-col items-center gap-0.5 rounded-[4px] py-1.5 px-1 cursor-default"
+                    className="mx-auto flex h-10 w-11 flex-col items-center justify-center gap-[3px] rounded-[4px] border cursor-default"
+                    style={tintStyle(data.status)}
                     title={`${config.label} · ${data.headline}`}
                 >
-                    <span className="font-mono text-sm font-semibold tabular-nums text-primary leading-none">
+                    <span className={cn("font-mono text-[13px] font-semibold tabular-nums leading-none", data.status === "warn" ? "text-status-warning" : "text-foreground")}>
                         {data.loading ? "·" : data.headline}
                     </span>
-                    <span className={cn("w-1 h-1 rounded-full", STATUS_DOT[data.status])} />
+                    <span className={cn("size-1 rounded-full", STATUS_DOT[data.status])} />
                 </div>
-                {/* Hover popover: full panel to the right. Always force-expanded
-                    because the user is actively hovering for detail. Solid bg
-                    so the sidebar-card tint doesn't bleed through. */}
-                <div className="absolute left-full top-0 ml-2 w-[220px] pointer-events-none opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 z-30 rounded-[4px] bg-popover border border-border shadow-lg">
-                    <PanelBody config={config} data={data} expanded forceExpanded />
+                {/* Hover popover: the full panel to the right. Solid bg so the
+                    sidebar-card tint doesn't bleed through. */}
+                <div className="absolute left-full top-0 ml-2 w-[240px] pointer-events-none opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 z-30 rounded-[4px] bg-popover shadow-lg">
+                    <PanelBody config={config} data={data} />
                 </div>
             </div>
         )
     }
 
     return (
-        <div className="mx-3 mt-3 mb-1">
-            <PanelBody
-                config={config}
-                data={data}
-                expanded={expanded}
-                onToggle={toggleExpanded}
-            />
+        <div className="mx-3 mb-1">
+            <Popover open={detailsOpen} onOpenChange={setDetailsOpen}>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        aria-label={`${config.label} details`}
+                        className="block w-full rounded-[4px] text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                    >
+                        <StripBody config={config} data={data} />
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent
+                    side={placement}
+                    align="start"
+                    sideOffset={placement === "right" ? 14 : 6}
+                    className="w-[260px] p-0 border-0 bg-popover shadow-lg"
+                >
+                    <PanelBody
+                        config={config}
+                        data={data}
+                        footer={
+                            <Link
+                                to={CONTEXT_LINK[config.id].href}
+                                onClick={() => setDetailsOpen(false)}
+                                className="block text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                {CONTEXT_LINK[config.id].label} →
+                            </Link>
+                        }
+                    />
+                </PopoverContent>
+            </Popover>
         </div>
     )
-}
-
-interface PanelBodyProps {
-    config: ContextConfig
-    data: PanelData
-    expanded: boolean
-    /** When set, the toggle control is omitted — used by the hover popover
-     *  where collapsing would defeat the purpose of the hover. */
-    forceExpanded?: boolean
-    onToggle?: () => void
 }
 
 // Status tint migrates the card bg from a flat rgba to a top-weighted linear
@@ -446,137 +488,109 @@ const STATUS_TINT: Record<ContextStatus, { top: string; bottom: string; border: 
     },
 }
 
-function PanelBody({ config, data, expanded, forceExpanded, onToggle }: PanelBodyProps) {
-    const tint = STATUS_TINT[data.status]
-    // Collapsed view keeps label + hero + sparkline (the "live pulse" a user
-    // wants at a glance); tiles + distribution hide behind the toggle.
-    const showDetails = forceExpanded || expanded
-    const hasDetails =
-        (data.tiles.length > 0 || data.distribution !== null) && !forceExpanded
+function PanelBody({ config, data, footer }: { config: ContextConfig; data: PanelData; footer?: React.ReactNode }) {
     return (
-        <div
-            className="rounded-[4px] border px-3.5 py-3"
-            style={{
-                borderColor: tint.border,
-                backgroundImage: `linear-gradient(180deg, ${tint.top} 0%, ${tint.bottom} 100%)`,
-            }}
-        >
-            <LabelRow
-                config={config}
-                status={data.status}
-                expanded={showDetails}
-                toggleable={hasDetails}
-                onToggle={onToggle}
-            />
-            {data.hero && <HeroRow hero={data.hero} loading={data.loading} />}
-            {data.sparkline ? (
-                <SparklineRow data={data.sparkline} />
-            ) : (
-                <div className="h-8 mt-2 mb-2" />
-            )}
-            {/* Collapsible region: grid-rows animation from 0fr → 1fr gives
-                auto-height transitions without measuring the content. */}
-            <div
-                className={cn(
-                    "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-                    showDetails
-                        ? "grid-rows-[1fr] opacity-100"
-                        : "grid-rows-[0fr] opacity-0",
-                )}
-                aria-hidden={!showDetails}
-            >
-                <div className="overflow-hidden min-h-0">
-                    {data.tiles.length > 0 && <TilesRow tiles={data.tiles} loading={data.loading} />}
-                    {data.distribution && <DistributionBar dist={data.distribution} />}
-                </div>
+        <div className="rounded-[4px] border px-3.5 py-3" style={tintStyle(data.status)}>
+            <div className="flex items-center justify-between mb-2.5">
+                <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">{config.label}</span>
+                <span className="flex items-center gap-1.5">
+                    <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", STATUS_DOT[data.status])} />
+                    <span className={cn("font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase", STATUS_TEXT[data.status])}>
+                        {STATUS_LABEL[data.status]}
+                    </span>
+                </span>
+            </div>
+            {data.hero && <HeroRow hero={data.hero} loading={data.loading} warn={data.status === "warn"} />}
+            {data.sparkline && <SparklineRow data={data.sparkline} />}
+            {data.tiles.length > 0 && <TilesRow tiles={data.tiles} loading={data.loading} />}
+            {data.distribution && <DistributionBar dist={data.distribution} />}
+            {footer && <div className="mt-3 pt-2.5 border-t border-white/[0.06]">{footer}</div>}
+        </div>
+    )
+}
+
+function StripBody({ config, data }: { config: ContextConfig; data: PanelData }) {
+    return (
+        <div className="rounded-[4px] border px-3 pt-2 pb-2.5" style={tintStyle(data.status)}>
+            <div className="flex items-center justify-between">
+                <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">{config.label}</span>
+                <span className="flex items-center gap-1.5">
+                    <span className={cn("size-1.5 rounded-full", STATUS_DOT[data.status])} />
+                    <span className={cn("font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase", STATUS_TEXT[data.status])}>
+                        {STATUS_LABEL[data.status]}
+                    </span>
+                    <ChevronDown className="size-3 text-primary/50" aria-hidden />
+                </span>
+            </div>
+            <div className="mt-1.5 flex h-[22px] items-center gap-2">
+                {data.loading ? (
+                    <span className="h-4 w-20 rounded bg-muted/40 animate-pulse" />
+                ) : data.hero ? (
+                    <>
+                        <span className={cn("font-mono text-[22px] leading-none font-semibold tabular-nums tracking-tight", data.status === "warn" ? "text-status-warning" : "text-foreground")}>
+                            {data.hero.value}
+                        </span>
+                        {data.hero.unit && <span className="font-mono text-[11.5px] text-primary/80">{data.hero.unit}</span>}
+                        {data.hero.delta && <DeltaPill delta={data.hero.delta} />}
+                    </>
+                ) : null}
+                {data.sparkline && data.sparkline.points.length >= 3 && <MiniSparkline data={data.sparkline} />}
             </div>
         </div>
     )
 }
 
-function LabelRow({
-    config,
-    status,
-    expanded,
-    toggleable,
-    onToggle,
-}: {
-    config: ContextConfig
-    status: ContextStatus
-    expanded: boolean
-    toggleable: boolean
-    onToggle?: () => void
-}) {
-    // The whole row becomes a toggle when details are available, so the user
-    // has a generous hit target. When nothing collapses (e.g. chat context
-    // with no distribution) render as a static div — no chevron, no cursor.
-    const content = (
-        <>
-            <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">
-                {config.label}
-            </span>
-            <span className="flex items-center gap-1.5">
-                <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", STATUS_DOT[status])} />
-                <span className="font-mono text-[11.5px] font-semibold tracking-[0.08em] uppercase text-primary">
-                    {STATUS_LABEL[status]}
-                </span>
-                {toggleable && (
-                    <ChevronDown
-                        className={cn(
-                            "w-3 h-3 ml-0.5 text-primary/50 transition-transform duration-200",
-                            expanded ? "rotate-180" : "rotate-0",
-                        )}
-                        aria-hidden
-                    />
-                )}
-            </span>
-        </>
-    )
-    if (!toggleable) {
-        return <div className="flex items-center justify-between mb-2.5">{content}</div>
-    }
+const DELTA_TONE: Record<NonNullable<HeroData["delta"]>["tone"], string> = {
+    up: "bg-primary/10 text-primary ring-1 ring-primary/20",
+    down: "bg-red-500/8 text-red-400/90 ring-1 ring-red-500/20",
+    flat: "bg-white/[0.04] text-muted-foreground ring-1 ring-white/5",
+    warn: "bg-status-warning/10 text-status-warning ring-1 ring-status-warning/25",
+}
+
+function DeltaPill({ delta, className }: { delta: NonNullable<HeroData["delta"]>; className?: string }) {
     return (
-        <button
-            type="button"
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${config.label} details`}
-            className="flex items-center justify-between w-full mb-2.5 -mx-1 px-1 py-0.5 rounded-[3px] cursor-pointer hover:bg-white/[0.025] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 transition-colors"
-        >
-            {content}
-        </button>
+        <span className={cn("font-mono text-[11px] leading-none px-1.5 py-1 rounded-[3px] tabular-nums tracking-tight", DELTA_TONE[delta.tone], className)}>
+            {delta.text}
+        </span>
     )
 }
 
-function HeroRow({ hero, loading }: { hero: HeroData; loading: boolean }) {
+function MiniSparkline({ data }: { data: SparklineData }) {
+    const c = useChartPalette()
+    const stroke = data.accent === "primary" ? c.success : data.accent === "amber" ? c.warning : c.danger
+    const width = 56
+    const height = 22
+    const values = data.points.map((p) => p.value)
+    const min = Math.min(...values)
+    const range = Math.max(...values) - min || 1
+    const step = width / (data.points.length - 1)
+    const path = data.points
+        .map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(height - ((p.value - min) / range) * (height - 4) - 2).toFixed(1)}`)
+        .join(" ")
+    return (
+        <svg viewBox={`0 0 ${width} ${height}`} className="ml-auto h-[22px] w-14 shrink-0" aria-hidden>
+            <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    )
+}
+
+function HeroRow({ hero, loading, warn = false }: { hero: HeroData; loading: boolean; warn?: boolean }) {
     if (loading) {
         return <div className="h-9 mb-2 rounded bg-muted/40 animate-pulse w-24" />
     }
     // Number + unit share a baseline; the delta pill anchors to the top of the
-    // number (self-start + matched leading) so it doesn't visually float next
-    // to the smaller "online" text.
+    // number so it doesn't visually float next to the smaller unit text.
     return (
         <div className="flex items-start gap-2 mb-1">
             <div className="flex items-baseline gap-2 min-w-0">
-                <span className="font-mono text-[32px] leading-none font-semibold tabular-nums text-foreground tracking-tight">
+                <span className={cn("font-mono text-[32px] leading-none font-semibold tabular-nums tracking-tight", warn ? "text-status-warning" : "text-foreground")}>
                     {hero.value}
                 </span>
                 {hero.unit && (
                     <span className="font-mono text-[11.5px] text-primary/80">{hero.unit}</span>
                 )}
             </div>
-            {hero.delta && (
-                <span
-                    className={cn(
-                        "ml-auto self-start font-mono text-[11px] leading-none px-1.5 py-1 rounded-[3px] tabular-nums tracking-tight",
-                        hero.delta.tone === "up" && "bg-primary/10 text-primary ring-1 ring-primary/20",
-                        hero.delta.tone === "down" && "bg-red-500/8 text-red-400/90 ring-1 ring-red-500/20",
-                        hero.delta.tone === "flat" && "bg-white/[0.04] text-muted-foreground ring-1 ring-white/5",
-                    )}
-                >
-                    {hero.delta.text}
-                </span>
-            )}
+            {hero.delta && <DeltaPill delta={hero.delta} className="ml-auto self-start" />}
         </div>
     )
 }
