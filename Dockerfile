@@ -52,6 +52,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -X github.com/nasnet-community/nasnet-panel-linux/cmd.BuildTime=${BUILD_TIME}" \
       -o main .
 
+# Remote node agents for both arches (the panel deploys either). Built the
+# same way as the release assets, so paste installs verify against them.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    VERSION="${VERSION}" ./scripts/build-agent.sh
+
 # Final stage
 FROM alpine:3.21
 
@@ -88,6 +94,7 @@ RUN addgroup -g 1000 appgroup && adduser -D -u 1000 -G appgroup appuser
 
 # Copy binary from builder
 COPY --from=builder /app/main .
+COPY --from=builder /app/bin/agent ./bin/agent
 
 # Ship geoip/geosite next to the xray config so routing rules resolve
 COPY --from=builder /app/pkg/geofiles/embedded/geoip.dat /usr/local/etc/xray/geoip.dat

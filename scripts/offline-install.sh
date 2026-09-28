@@ -208,7 +208,7 @@ deploy_artifacts() {
     run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
     # Create directory structure
-    mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}}
+    mkdir -p "$INSTALL_DIR"/{bin/xray,bin/agent,data/{backups,acme}}
 
     # Hub binary
     cp "$SCRIPT_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel"
@@ -233,6 +233,15 @@ deploy_artifacts() {
     ok "Xray binaries (v${xray_version}, amd64 + arm64)"
 
     # Web panel is embedded in the Go binary — no separate deployment needed
+
+    # Remote node agents (both arches) + their version
+    if compgen -G "$SCRIPT_DIR/bin/agent/nasnet-agent-*" >/dev/null; then
+        mkdir -p "$INSTALL_DIR/bin/agent"
+        cp "$SCRIPT_DIR"/bin/agent/nasnet-agent-* "$INSTALL_DIR/bin/agent/"
+        chmod +x "$INSTALL_DIR"/bin/agent/nasnet-agent-*
+        [[ -f "$SCRIPT_DIR/bin/agent/VERSION" ]] && cp "$SCRIPT_DIR/bin/agent/VERSION" "$INSTALL_DIR/bin/agent/VERSION"
+        ok "Node agent binaries"
+    fi
 
     # nasnet-tool (Go TUI binary)
     if [[ -f "$SCRIPT_DIR/bin/nasnet-tool" ]]; then
@@ -268,11 +277,12 @@ backup_current() {
     fi
 
     rm -rf "$ROLLBACK_DIR"
-    mkdir -p "$ROLLBACK_DIR"/bin/xray
+    mkdir -p "$ROLLBACK_DIR"/bin/xray "$ROLLBACK_DIR"/bin/agent
 
     # Back up binaries
     [[ -f "$INSTALL_DIR/bin/nasnet-panel" ]] && cp "$INSTALL_DIR/bin/nasnet-panel" "$ROLLBACK_DIR/bin/"
     cp -r "$INSTALL_DIR"/bin/xray/. "$ROLLBACK_DIR/bin/xray/" 2>/dev/null || true
+    cp -r "$INSTALL_DIR"/bin/agent/. "$ROLLBACK_DIR/bin/agent/" 2>/dev/null || true
 
     # Back up PostgreSQL binaries (not data — data is preserved in place)
     if [[ -d "$PGSQL_INSTALL_DIR/bin" ]]; then
@@ -448,6 +458,9 @@ do_rollback() {
     header "Restoring Binaries"
     [[ -f "$ROLLBACK_DIR/bin/nasnet-panel" ]] && cp "$ROLLBACK_DIR/bin/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" && ok "nasnet-panel-linux binary"
     rm -rf "$INSTALL_DIR/bin/xray" && cp -r "$ROLLBACK_DIR/bin/xray" "$INSTALL_DIR/bin/xray" 2>/dev/null && ok "Xray binaries" || true
+    if [[ -d "$ROLLBACK_DIR/bin/agent" ]]; then
+        rm -rf "$INSTALL_DIR/bin/agent" && cp -r "$ROLLBACK_DIR/bin/agent" "$INSTALL_DIR/bin/agent" 2>/dev/null && ok "Node agent binaries" || true
+    fi
 
     # Web panel is embedded in the Go binary — no separate restore needed
 

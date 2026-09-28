@@ -499,6 +499,10 @@ func ActionAutoUpdate(cfg *Config) {
 		ui.StepOk("nasnet-tool binary deployed")
 	}
 
+	if deployAgentBinaries(tmpDir, cfg.InstallDir, latestVersion) {
+		ui.StepOk("Node agent binaries deployed")
+	}
+
 	// Write version marker.
 	teeCmd := exec.Command("sudo", "tee", versionFile)
 	teeCmd.Stdin = strings.NewReader(latestVersion + "\n")
@@ -636,7 +640,41 @@ func releaseUpdateAssets(rel *githubRelease, arch string) ([]githubReleaseAsset,
 		}
 		assets = append(assets, githubReleaseAsset{Name: name, BrowserDownloadURL: url})
 	}
+	// Remote node agents for both arches (the panel deploys either);
+	// releases before them simply have none.
+	for _, name := range agentAssetNames {
+		if url := findAssetURL(rel, name); url != "" {
+			assets = append(assets, githubReleaseAsset{Name: name, BrowserDownloadURL: url})
+		}
+	}
 	return assets, nil
+}
+
+// agentAssetNames are the remote node agent builds a release ships.
+var agentAssetNames = []string{"nasnet-agent-linux-amd64", "nasnet-agent-linux-arm64"}
+
+// deployAgentBinaries installs downloaded agents into bin/agent with the
+// VERSION the panel reports them against; a no-op when none were downloaded.
+func deployAgentBinaries(srcDir, installDir, version string) bool {
+	agentDir := filepath.Join(installDir, "bin", "agent")
+	found := false
+	for _, name := range agentAssetNames {
+		src := filepath.Join(srcDir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if !found {
+			exec.Command("sudo", "mkdir", "-p", agentDir).Run() //nolint:errcheck
+			found = true
+		}
+		exec.Command("sudo", "install", "-m", "755", src, filepath.Join(agentDir, name)).Run() //nolint:errcheck
+	}
+	if found {
+		tee := exec.Command("sudo", "tee", filepath.Join(agentDir, "VERSION"))
+		tee.Stdin = strings.NewReader(version + "\n")
+		tee.Run() //nolint:errcheck
+	}
+	return found
 }
 
 // findAssetURL returns the browser_download_url for the first asset whose name

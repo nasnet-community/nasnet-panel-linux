@@ -353,6 +353,10 @@ func runServe(cmd *cobra.Command, args []string) {
 	if v := os.Getenv("XRAY_ACCESS_LOG_PATH"); v != "" {
 		agentCfg.Xray.AccessLogPath = v
 	}
+	// The built-in node reports the panel's version; releases only stamp cmd.
+	if agentserver.Version == "dev" {
+		agentserver.Version = Version
+	}
 	embeddedSrv, err := agentserver.NewServer(agentCfg)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create in-process node agent server")

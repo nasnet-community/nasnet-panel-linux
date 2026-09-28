@@ -1847,6 +1847,21 @@ wizard_fetch_release() {
         fi
     done
 
+    # Remote node agents, both arches: the panel deploys either. Older
+    # releases have none; the panel then can't deploy remote nodes yet.
+    for asset in nasnet-agent-linux-amd64 nasnet-agent-linux-arm64; do
+        url=$(echo "$all_urls" | grep "/${asset}$" | head -1)
+        if [[ -z "$url" ]]; then
+            step_warn "Release ${RELEASE_VERSION} has no ${asset}"
+            continue
+        fi
+        if ! run_logged "Downloading ${asset}" curl "${dl_args[@]}" -o "${RELEASE_TMP_DIR}/${asset}" "$url"; then
+            step_fail "Failed to download ${asset}"
+            rm -rf "$RELEASE_TMP_DIR"
+            return 1
+        fi
+    done
+
     local line expected_hash expected_file actual_hash
     while IFS= read -r line; do
         expected_hash=$(echo "$line" | awk '{print $1}')
@@ -1864,6 +1879,23 @@ wizard_fetch_release() {
     return 0
 }
 
+# deploy_agent_binaries <dir> <version> — install downloaded remote node
+# agents into bin/agent with the VERSION the panel reports them against.
+deploy_agent_binaries() {
+    local src="$1" version="$2" found=false f
+    for f in "$src"/nasnet-agent-linux-*; do
+        [[ -f "$f" ]] || continue
+        found=true
+        sudo mkdir -p "$INSTALL_DIR/bin/agent" || return 1
+        sudo install -m 755 "$f" "$INSTALL_DIR/bin/agent/$(basename "$f")" || return 1
+    done
+    if $found; then
+        echo "$version" | sudo tee "$INSTALL_DIR/bin/agent/VERSION" >/dev/null || return 1
+        step_ok "Node agent binaries deployed"
+    fi
+    return 0
+}
+
 # Deploy the binaries fetched by wizard_fetch_release to INSTALL_DIR.
 wizard_deploy_release() {
     local arch
@@ -1876,6 +1908,7 @@ wizard_deploy_release() {
     sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}} || return 1
 
     sudo install -m 755 "${RELEASE_TMP_DIR}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel" || return 1
+    deploy_agent_binaries "$RELEASE_TMP_DIR" "$RELEASE_VERSION" || return 1
 
     # Has to be here before the service starts, or every config push fails.
     install_xray_core || return 1
@@ -1931,6 +1964,9 @@ wizard_deploy_artifacts() {
     # Copy backend binary
     sudo cp "$PROJECT_DIR/nasnet-panel" "$INSTALL_DIR/bin/nasnet-panel" || return 1
     sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel" || return 1
+    if [[ -f "$PROJECT_DIR/bin/agent/VERSION" ]]; then
+        deploy_agent_binaries "$PROJECT_DIR/bin/agent" "$(cat "$PROJECT_DIR/bin/agent/VERSION")" || return 1
+    fi
 
     # Has to be here before the service starts, or every config push fails.
     install_xray_core || return 1
@@ -2088,6 +2124,15 @@ wizard_build_start_systemd() {
     else
         step_fail "Backend build failed"
         return 1
+    fi
+
+    # Remote node agents are optional: only needed to add remote nodes.
+    if confirm_action "Also build the remote node agent (needed to add remote nodes)?"; then
+        if run_logged "Building nasnet-agent (amd64 + arm64)" bash -c "cd '$PROJECT_DIR' && make build-agent"; then
+            step_ok "Agents built: ${PROJECT_DIR}/bin/agent"
+        else
+            step_warn "Agent build failed — remote nodes can't be deployed until it succeeds"
+        fi
     fi
 
     # ── Deploy artifacts to install directory ─────────────────────────────
@@ -3433,6 +3478,21 @@ action_auto_update() {
         fi
     done
 
+    for asset_name in nasnet-agent-linux-amd64 nasnet-agent-linux-arm64; do
+        local agent_url
+        agent_url=$(echo "$all_urls" | grep "/${asset_name}$" | head -1)
+        if [[ -z "$agent_url" ]]; then
+            step_warn "Release ${latest_version} has no ${asset_name}"
+            continue
+        fi
+        if run_logged "Downloading ${asset_name}" curl "${dl_args[@]}" -o "${tmp_dir}/${asset_name}" "$agent_url"; then
+            step_ok "${asset_name}"
+        else
+            step_fail "Failed to download ${asset_name}"
+            dl_ok=false
+        fi
+    done
+
     if ! $dl_ok; then
         step_fail "Some downloads failed — aborting"
         press_any_key
@@ -3509,6 +3569,7 @@ action_auto_update() {
     sudo cp "${tmp_dir}/nasnet-panel-linux-${arch}" "$INSTALL_DIR/bin/nasnet-panel"
     sudo chmod +x "$INSTALL_DIR/bin/nasnet-panel"
     step_ok "nasnet-panel-linux binary deployed"
+    deploy_agent_binaries "$tmp_dir" "$latest_version" || step_warn "Node agent binaries were not updated"
 
     # Ensure the current Xray core is installed before restarting the panel.
     install_xray_core || step_warn "xray-core was not installed — the panel will start but xray will not"

@@ -69,6 +69,14 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o nasnet-tool-linux-amd64 ./cmd/nasnet-tool
           GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o nasnet-tool-linux-arm64 ./cmd/nasnet-tool
 
+      - name: Build nasnet-agent binaries
+        env:
+          CGO_ENABLED: "0"
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          ./scripts/build-agent.sh
+          cp bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64 .
+
       - name: Download PostgreSQL standalone
         id: pgsql_dl
         run: |
@@ -104,12 +112,15 @@ jobs:
             pg_arch="x64"; [[ "$arch" == "arm64" ]] && pg_arch="arm64"
 
             dir="nasnet-panel-offline-linux-${arch}"
-            mkdir -p "$dir"/{bin/xray,runtime}
+            mkdir -p "$dir"/{bin/xray,bin/agent,runtime}
 
             # Go binary (frontend is embedded via go:embed)
             cp "nasnet-panel-linux-${arch}" "$dir/bin/nasnet-panel"
             cp "nasnet-tool-linux-${arch}" "$dir/bin/nasnet-tool"
             chmod +x "$dir/bin/nasnet-panel" "$dir/bin/nasnet-tool"
+            # Remote node agents for both arches: the panel deploys either.
+            cp bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64 bin/agent/VERSION "$dir/bin/agent/"
+            chmod +x "$dir"/bin/agent/nasnet-agent-*
             cp xray-linux-amd64 "$dir/bin/xray/"
             cp xray-linux-arm64 "$dir/bin/xray/"
             chmod +x "$dir"/bin/xray/*
@@ -132,7 +143,7 @@ jobs:
 
             # Checksums (inside bundle)
             cd "$dir"
-            sha256sum install.sh nasnet-tool.sh bin/nasnet-panel bin/nasnet-tool bin/xray/* runtime/* .bundle-manifest > checksums.txt
+            sha256sum install.sh nasnet-tool.sh bin/nasnet-panel bin/nasnet-tool bin/agent/* bin/xray/* runtime/* .bundle-manifest > checksums.txt
             cd ..
 
             # Create tarball
@@ -146,6 +157,8 @@ jobs:
             nasnet-panel-linux-arm64 \
             nasnet-tool-linux-amd64 \
             nasnet-tool-linux-arm64 \
+            nasnet-agent-linux-amd64 \
+            nasnet-agent-linux-arm64 \
             > checksums.txt
 
       - name: Create GitHub Release
@@ -160,6 +173,8 @@ jobs:
             nasnet-panel-linux-arm64
             nasnet-tool-linux-amd64
             nasnet-tool-linux-arm64
+            nasnet-agent-linux-amd64
+            nasnet-agent-linux-arm64
             checksums.txt
             nasnet-tool.sh
             nasnet-panel-offline-linux-amd64.tar.gz
