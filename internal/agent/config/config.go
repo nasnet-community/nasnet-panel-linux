@@ -1,7 +1,9 @@
 package config
 
 import (
+	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"time"
@@ -44,6 +46,9 @@ type Config struct {
 	// Access log capture (per-subscription DNS logs)
 	AccessLog AccessLogConfig `yaml:"access_log"`
 
+	// Tunnel cores (SSH, MTProto)
+	Cores CoresConfig `yaml:"cores"`
+
 	// Internal
 	FilePath string `yaml:"-"`
 }
@@ -53,6 +58,24 @@ type BandwidthConfig struct {
 	Enabled   bool   `yaml:"enabled"`   // Enable TC bandwidth shaping
 	Interface string `yaml:"interface"` // Egress network interface (e.g. "eth0")
 	TotalBW   int    `yaml:"total_bw"`  // Total link bandwidth in Mbps
+}
+
+// CoresConfig holds settings for the tunnel cores (SSH, MTProto).
+type CoresConfig struct {
+	// DataDir holds each core's rendered configs and, on remote agents, the
+	// last pushed state that is replayed after a restart.
+	DataDir string `yaml:"data_dir"`
+
+	// The fields below are set by the panel for its built-in node only.
+
+	// EgressMark is stamped on every tunnel egress socket (router mode: the
+	// foreign group mark). 0 leaves sockets unmarked.
+	EgressMark uint32 `yaml:"-"`
+	// Resolve resolves tunnel destinations; nil uses the system resolver.
+	Resolve func(ctx context.Context, host string) (netip.Addr, error) `yaml:"-"`
+	// Embedded skips the on-disk state replay: the panel's database is local
+	// and its push paths reconcile the cores on start.
+	Embedded bool `yaml:"-"`
 }
 
 // TrafficConfig holds settings for agent-side traffic buffering
@@ -188,6 +211,9 @@ func DefaultConfig() *Config {
 		AccessLog: AccessLogConfig{
 			MaxPerEmail: 200,
 			MaxEmails:   10000,
+		},
+		Cores: CoresConfig{
+			DataDir: "/var/lib/nasnet-agent/cores",
 		},
 	}
 }

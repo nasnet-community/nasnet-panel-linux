@@ -41,9 +41,11 @@ import (
 	networkSystem "github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	networkUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/dohboot"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	notifPkg "github.com/nasnet-community/nasnet-panel-linux/pkg/notification"
 
@@ -361,6 +363,18 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 	if v := os.Getenv("XRAY_ACCESS_LOG_PATH"); v != "" {
 		agentCfg.Xray.AccessLogPath = v
+	}
+	if v := os.Getenv("CORES_DATA_DIR"); v != "" {
+		agentCfg.Cores.DataDir = v
+	}
+	agentCfg.Cores.Embedded = true
+	if cfg.Router.Enabled {
+		// Tunnel egress follows the foreign pool like xray's direct-foreign, and
+		// names resolve over DoH on the same mark: the uplink's own resolver may
+		// poison exactly the names users tunnel to.
+		mark := netmark.GroupMark(netmark.GroupForeign)
+		agentCfg.Cores.EgressMark = mark
+		agentCfg.Cores.Resolve = dohboot.New(mark).Resolve
 	}
 	// The built-in node reports the panel's version; releases only stamp cmd.
 	if agentserver.Version == "dev" {

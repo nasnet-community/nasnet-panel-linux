@@ -23,6 +23,8 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/accesslog"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
+	agentcore "github.com/nasnet-community/nasnet-panel-linux/internal/agent/core"
+	sshcore "github.com/nasnet-community/nasnet-panel-linux/internal/agent/core/ssh"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/middleware"
 	agentnetif "github.com/nasnet-community/nasnet-panel-linux/internal/agent/netif"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/process"
@@ -83,6 +85,15 @@ type Server struct {
 	trafficStore     traffic.Store
 	trafficCollector *traffic.Collector
 
+	// coreRegistry holds the tunnel cores (ssh, mtproto).
+	coreRegistry *agentcore.Registry
+	// coreState persists the last hub-pushed desired state per core inbound so
+	// StartBackgroundServices can re-Apply the cores after a reboot/restart.
+	// Nil on the built-in node.
+	coreState *coreStateStore
+	// Core traffic collection loop stop signal.
+	coreTrafficStop chan struct{}
+
 	// Bandwidth shaping (TC)
 	tcManager *agenttc.Manager
 
@@ -140,6 +151,17 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		xrayClient:    xrayClient,
 		deniedSerials: make(map[string]bool),
 		nftManager:    nft.NewManager(nft.NewCmdApplier("")),
+		coreRegistry:  agentcore.NewRegistry(),
+	}
+	if !cfg.Cores.Embedded {
+		s.coreState = newCoreStateStore(cfg.Cores.DataDir)
+	}
+
+	// Register the tunnel cores. Registration is cheap: no listener or daemon
+	// until the hub pushes an ApplyCoreState with a desired inbound.
+	egress := agentcore.NewDialer(cfg.Cores.EgressMark, cfg.Cores.Resolve)
+	if err := s.coreRegistry.Register(sshcore.New(sshcore.WithDialer(egress.DialContext))); err != nil {
+		return nil, fmt.Errorf("register ssh core: %w", err)
 	}
 
 	// Initialize bandwidth shaping (TC)
@@ -214,6 +236,13 @@ func (s *Server) StartBackgroundServices(ctx context.Context) {
 		s.trafficCollector.Start()
 	}
 
+	// Replay persisted tunnel core state (handles the same restart, self-update
+	// and reboot cases as the xray auto-start above).
+	if s.coreRegistry != nil {
+		s.replayCoreState(context.Background())
+		s.startCoreTrafficCollector(s.cfg.Traffic.CollectionInterval)
+	}
+
 	// Start access log collector after xray
 	if s.accessLogCollector != nil {
 		s.accessLogCollector.Start()
@@ -278,6 +307,12 @@ func (s *Server) Stop(ctx context.Context) {
 	// Stop traffic collector and flush store
 	if s.trafficCollector != nil {
 		s.trafficCollector.Stop()
+	}
+	s.stopCoreTrafficCollector()
+	if s.coreRegistry != nil {
+		if err := s.coreRegistry.Shutdown(ctx); err != nil {
+			logrus.WithError(err).Warn("Failed to stop tunnel cores")
+		}
 	}
 	if s.xrayClient != nil {
 		_ = s.xrayClient.Close()
