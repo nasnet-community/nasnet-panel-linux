@@ -12,6 +12,14 @@ import (
 // subscription client artifact) but none was wired.
 var ErrHostUnavailable = errors.New("core: node host resolver not configured")
 
+// ErrNoPublicAddress is returned when a node has no public address to put in
+// a link (the built-in node on loopback with no APP_BASE_URL).
+var ErrNoPublicAddress = errors.New("core: node has no public address")
+
+// ErrReconcilePending wraps a failed node push after the database change it
+// followed was saved: the next reconcile of that node retries it.
+var ErrReconcilePending = errors.New("core: saved, node not updated yet")
+
 // NodeHostResolver returns a node's public host/address for client links.
 type NodeHostResolver func(ctx context.Context, nodeID uint) (string, error)
 
@@ -259,6 +267,9 @@ func (u *CoreUsecase) GenerateUserConfigAuto(ctx context.Context, userID uint) (
 	if err != nil {
 		return nil, err
 	}
+	if host == "" {
+		return nil, ErrNoPublicAddress
+	}
 	art, err := u.GenerateUserConfig(ctx, userID, host)
 	if err != nil {
 		return nil, err
@@ -296,5 +307,8 @@ func (u *CoreUsecase) reconcileNodeSet(ctx context.Context, nodeSet map[uint]str
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrReconcilePending, errors.Join(errs...))
 }

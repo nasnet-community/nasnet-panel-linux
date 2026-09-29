@@ -333,8 +333,10 @@ func (h *Handler) GetUserConfig(c *gin.Context) {
 			host = h.nodeHost(c, in.NodeID)
 		}
 	}
+	missing := false
 	if host == "" {
 		// The address the admin reached the panel on, without the panel's port.
+		missing = true
 		host = c.Request.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
@@ -345,6 +347,7 @@ func (h *Handler) GetUserConfig(c *gin.Context) {
 		httputil.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	art.AddressMissing = missing
 	httputil.OK(c, art)
 }
 

@@ -32,9 +32,13 @@ func (u *adminUsecase) ExtendSubscription(ctx context.Context, id uint, days int
 			return err
 		}
 		// An expired sub's access was revoked on expiry; restore it here or the
-		// extension only moves the date and the user stays cut off.
+		// extension only moves the date and the user stays cut off. Status
+		// first: the access pushes read it and keep a non-active sub off.
+		if err := u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusActive); err != nil {
+			return err
+		}
 		u.setTunnelAccess(ctx, id, true)
-		return u.subRepo.UpdateStatus(ctx, id, subDomain.SubscriptionStatusActive)
+		return nil
 	}
 
 	return u.subRepo.ExtendDays(ctx, id, days)
@@ -75,9 +79,12 @@ func (u *adminUsecase) ResumeSubscription(ctx context.Context, id uint) error {
 		return errors.New("cannot resume expired subscription")
 	}
 
+	// Status first: the access pushes read it and keep a paused sub off.
+	if err := u.subRepo.UpdateStatusWithPauseReason(ctx, id, subDomain.SubscriptionStatusActive, ""); err != nil {
+		return err
+	}
 	u.setTunnelAccess(ctx, id, true)
-
-	return u.subRepo.UpdateStatusWithPauseReason(ctx, id, subDomain.SubscriptionStatusActive, "")
+	return nil
 }
 
 func (u *adminUsecase) RegenerateSubscriptionKey(ctx context.Context, id uint, customKey string) (*subDomain.Subscription, error) {
@@ -128,6 +135,13 @@ func (u *adminUsecase) DeleteSubscription(ctx context.Context, id uint) error {
 
 	_ = sub
 	// Delete associated account records removes the user from every xray node
+
+	// Tunnel users hold the subscription's email and would outlive it.
+	if u.subUC != nil {
+		if err := u.subUC.DeleteCoreTunnels(ctx, id); err != nil {
+			return fmt.Errorf("failed to delete tunnels: %w", err)
+		}
+	}
 
 	if u.accountUC != nil {
 		if err := u.accountUC.ForceDeleteAccountsBySubscription(ctx, id); err != nil {

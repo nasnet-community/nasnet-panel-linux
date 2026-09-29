@@ -2,16 +2,20 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"net/url"
 
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/core/nodebridge"
 	coreRepository "github.com/nasnet-community/nasnet-panel-linux/internal/core/repository"
 	coreUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	nodeUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
+	subDomain "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // sshdPort stays with the box's own sshd on every node.
@@ -22,8 +26,13 @@ type tunnelNodes interface {
 	ListInboundsByNode(ctx context.Context, nodeID uint) ([]*nodeDomain.Inbound, error)
 }
 
+type tunnelSubs interface {
+	FindByID(ctx context.Context, id uint) (*subDomain.Subscription, error)
+}
+
 type tunnelDeps struct {
 	Repo     coreRepository.CoreRepository
+	Subs     tunnelSubs
 	Nodes    tunnelNodes
 	NodeUC   nodeUsecase.NodeUsecase
 	Embedded *agentserver.Server
@@ -73,6 +82,9 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 		coreUsecase.WithExternalPortChecker(func(ctx context.Context, nodeID uint, port int) (bool, error) {
 			return tunnelPortTaken(ctx, d, nodeID, port)
 		}),
+		coreUsecase.WithUserPolicyResolver(func(ctx context.Context, subIDs []uint) (map[uint]nodebridge.UserPolicy, error) {
+			return tunnelPolicies(ctx, d.Subs, subIDs), nil
+		}),
 		coreUsecase.WithInboundsChanged(func(ctx context.Context, nodeID uint) {
 			if d.InboundsChanged == nil || nodeID != d.NodeUC.LocalNodeID() {
 				return
@@ -82,6 +94,34 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 			}
 		}),
 	)
+}
+
+// tunnelPolicies pushes each tunnel user's subscription state with it: a
+// subscription that no longer grants access keeps its tunnels off whatever
+// their own flag says, and telemt enforces the expiry and speed cap natively.
+// A subscription that cannot be read right now is left out (its users keep
+// their own flag); one that is gone revokes them.
+func tunnelPolicies(ctx context.Context, subs tunnelSubs, subIDs []uint) map[uint]nodebridge.UserPolicy {
+	out := make(map[uint]nodebridge.UserPolicy, len(subIDs))
+	for _, id := range subIDs {
+		sub, err := subs.FindByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				out[id] = nodebridge.UserPolicy{Active: false}
+			}
+			continue
+		}
+		pol := nodebridge.UserPolicy{Active: sub.GrantsAccess()}
+		if end := sub.GetEffectiveEndDate(); end != nil {
+			pol.ExpiresAt = *end
+		}
+		if mbps := sub.GetEffectiveBandwidthLimit(); mbps > 0 {
+			bps := int64(mbps) * 1_000_000 / 8
+			pol.RateLimitUpBps, pol.RateLimitDownBps = bps, bps
+		}
+		out[id] = pol
+	}
+	return out
 }
 
 // tunnelHost is the address tunnel links point at: a remote node's IP; the

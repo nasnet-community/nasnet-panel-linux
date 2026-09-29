@@ -146,6 +146,14 @@ func (u *subscriptionUsecase) RegenerateUUID(ctx context.Context, id uint) (*dom
 		}
 	}
 
+	// Tunnel users are keyed by the email too; a regenerate also rotates their
+	// secrets, since revoking leaked credentials is why it is run.
+	if u.coreAssigner != nil {
+		if coreErr := u.coreAssigner.RebindSubscription(ctx, id, configResult.ConfigEmail); coreErr != nil {
+			log.WithError(coreErr).WithField("subscription_id", id).Warn("[RegenerateUUID] Failed to rebind tunnels")
+		}
+	}
+
 	log.WithFields(map[string]interface{}{
 		"subscription_id": id,
 		"user_id":         sub.GetUserID(),

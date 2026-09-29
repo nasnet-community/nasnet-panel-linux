@@ -25,6 +25,9 @@ type ClientArtifact struct {
 	// DataUsed is this tunnel's consumed bytes (core_user.DataUsed) — surfaced
 	// per-card on the public sub panel. Display-only.
 	DataUsed int64 `json:"data_used"`
+	// AddressMissing: the node has no public address, so the link carries the
+	// address the panel was reached on; set APP_BASE_URL (or the node's IP).
+	AddressMissing bool `json:"address_missing,omitempty"`
 }
 
 // prepareInboundSettings fills protocol-specific server-side settings that must

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	coreUC "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
 	nodeRepo "github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	nodeUC "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	notifDomain "github.com/nasnet-community/nasnet-panel-linux/internal/notification/domain"
@@ -156,6 +157,14 @@ type SubscriptionUsecase interface {
 	// SetWGAccess wires the wireguard peer enable/disable port so SetTunnelAccess
 	// covers WG as well as Xray accounts.
 	SetWGAccess(w WGAccess)
+
+	// SSH/MTProto tunnels assigned to the subscription.
+	SetCoreAssigner(ca CoreAssigner)
+	AssignToCoreInbound(ctx context.Context, subscriptionID, coreInboundID uint) error
+	RemoveFromCoreInbound(ctx context.Context, subscriptionID, coreInboundID uint) error
+	ListCoreAccounts(ctx context.Context, subscriptionID uint) ([]coreUC.SubscriptionCoreAccount, error)
+	GetCoreArtifacts(ctx context.Context, subscriptionID uint) ([]*coreUC.ClientArtifact, error)
+	DeleteCoreTunnels(ctx context.Context, subscriptionID uint) error
 }
 
 // ManualSubscriptionRequest contains parameters for creating a manual subscription
@@ -190,6 +199,7 @@ type subscriptionUsecase struct {
 	notifCleaner    NotificationCleaner // optional; re-arms one-shot notifications on renew/reset
 	wgPeerReader    WGPeerReader        // optional; enables wireguard:// links in /sub
 	wgAccess        WGAccess            // optional; revokes/restores WG peers on lifecycle changes
+	coreAssigner    CoreAssigner        // optional; SSH/MTProto tunnels (set post-construction)
 	userLocks       sync.Map            // keyed by uint userID → *userLockEntry
 }
 

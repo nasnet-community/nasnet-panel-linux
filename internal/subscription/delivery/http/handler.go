@@ -135,6 +135,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		subs.POST("/:id/reset-data", h.ResetData)
 		// Inbound assignment
 		subs.POST("/:id/assign-inbound", h.AssignToInbound)
+		// SSH/MTProto tunnel assignment
+		subs.POST("/:id/assign-core-inbound", h.AssignToCoreInbound)
+		subs.POST("/:id/unassign-core-inbound", h.UnassignCoreInbound)
+		subs.GET("/:id/core-accounts", h.ListCoreAccounts)
 		subs.PUT("/:id/panel-password", h.SetPanelPassword)
 
 		// User-specific subscriptions
@@ -747,6 +751,61 @@ func (h *Handler) AssignToInbound(c *gin.Context) {
 	}
 
 	httputil.OK(c, nil)
+}
+
+type coreInboundAssignRequest struct {
+	CoreInboundID uint `json:"core_inbound_id" binding:"required"`
+}
+
+// AssignToCoreInbound provisions a tunnel user for this subscription on an
+// SSH/MTProto inbound and reconciles the node.
+func (h *Handler) AssignToCoreInbound(c *gin.Context) {
+	id, ok := httputil.ParamUint(c, "id")
+	if !ok {
+		return
+	}
+	var req coreInboundAssignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httputil.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.subUsecase.AssignToCoreInbound(c.Request.Context(), id, req.CoreInboundID); err != nil {
+		httpMiddleware.LogAndRespondError(c, http.StatusBadRequest, err, err.Error())
+		return
+	}
+	httputil.OK(c, nil)
+}
+
+// UnassignCoreInbound removes this subscription's tunnel user on an inbound.
+func (h *Handler) UnassignCoreInbound(c *gin.Context) {
+	id, ok := httputil.ParamUint(c, "id")
+	if !ok {
+		return
+	}
+	var req coreInboundAssignRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httputil.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.subUsecase.RemoveFromCoreInbound(c.Request.Context(), id, req.CoreInboundID); err != nil {
+		httpMiddleware.LogAndRespondError(c, http.StatusInternalServerError, err, "")
+		return
+	}
+	httputil.OK(c, nil)
+}
+
+// ListCoreAccounts returns the subscription's assigned tunnels.
+func (h *Handler) ListCoreAccounts(c *gin.Context) {
+	id, ok := httputil.ParamUint(c, "id")
+	if !ok {
+		return
+	}
+	accounts, err := h.subUsecase.ListCoreAccounts(c.Request.Context(), id)
+	if err != nil {
+		httputil.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httputil.OK(c, gin.H{"accounts": accounts})
 }
 
 // GetUsageDetails returns detailed usage information for a subscription

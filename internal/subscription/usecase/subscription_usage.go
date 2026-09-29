@@ -398,6 +398,12 @@ func (u *subscriptionUsecase) ResetDataUsed(ctx context.Context, id uint) error 
 			log.WithError(accErr).WithField("subscription_id", id).Warn("[ResetDataUsed] Failed to reset account data used")
 		}
 	}
+	// And the per-tunnel counters shown on the sub page.
+	if u.coreAssigner != nil {
+		if coreErr := u.coreAssigner.ResetData(ctx, id); coreErr != nil {
+			log.WithError(coreErr).WithField("subscription_id", id).Warn("[ResetDataUsed] Failed to reset tunnel data used")
+		}
+	}
 
 	// Reset warning level
 	if warnErr := u.resetDataWarnings(ctx, id); warnErr != nil {

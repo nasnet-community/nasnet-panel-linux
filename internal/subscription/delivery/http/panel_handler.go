@@ -77,6 +77,18 @@ type panelData struct {
 	Servers              []panelServer `json:"servers"`
 	ChatEnabled          bool          `json:"chat_enabled"`
 	TelegramBotUsername  string        `json:"telegram_bot_username,omitempty"`
+	// CoreTunnels is every SSH/MTProto tunnel assigned to this subscription,
+	// rendered as client links, alongside the xray server list.
+	CoreTunnels []panelCoreTunnel `json:"core_tunnels,omitempty"`
+}
+
+type panelCoreTunnel struct {
+	Protocol        string `json:"protocol"`
+	NodeName        string `json:"node_name"`
+	Kind            string `json:"kind"`    // always "link"
+	Content         string `json:"content"` // link URIs, one per line
+	DataUsed        int64  `json:"data_used"`
+	DataUsedDisplay string `json:"data_used_display"`
 }
 
 // GetSubPanel handles GET /api/v1/public/sub/:uuid
@@ -297,6 +309,22 @@ func (h *Handler) buildFullPanelData(ctx context.Context, sub *domain.Subscripti
 
 	data.ChatEnabled = settings.chatEnabled
 	data.TelegramBotUsername = settings.botUsername
+
+	// Tunnel links only while the subscription carries traffic; the node
+	// refuses them otherwise anyway.
+	if sub.GrantsAccess() {
+		if arts, err := h.subUsecase.GetCoreArtifacts(ctx, sub.ID); err == nil {
+			for _, a := range arts {
+				if a == nil {
+					continue
+				}
+				data.CoreTunnels = append(data.CoreTunnels, panelCoreTunnel{
+					Protocol: a.Protocol, NodeName: a.NodeName, Kind: a.Kind, Content: a.Content,
+					DataUsed: a.DataUsed, DataUsedDisplay: domain.FormatBytes(a.DataUsed),
+				})
+			}
+		}
+	}
 
 	return data
 }

@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	coreUC "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -159,7 +160,23 @@ func (s *stubSubscriptionUsecase) CreateManual(_ context.Context, _ *usecase.Man
 func (s *stubSubscriptionUsecase) SetTunnelAccess(_ context.Context, _ uint, _ bool) error {
 	return nil
 }
-func (s *stubSubscriptionUsecase) SetWGAccess(_ usecase.WGAccess) {}
+func (s *stubSubscriptionUsecase) SetWGAccess(_ usecase.WGAccess)         {}
+func (s *stubSubscriptionUsecase) SetCoreAssigner(_ usecase.CoreAssigner) {}
+func (s *stubSubscriptionUsecase) AssignToCoreInbound(_ context.Context, _, _ uint) error {
+	return errStub
+}
+func (s *stubSubscriptionUsecase) RemoveFromCoreInbound(_ context.Context, _, _ uint) error {
+	return errStub
+}
+func (s *stubSubscriptionUsecase) ListCoreAccounts(_ context.Context, _ uint) ([]coreUC.SubscriptionCoreAccount, error) {
+	return nil, errStub
+}
+func (s *stubSubscriptionUsecase) GetCoreArtifacts(_ context.Context, _ uint) ([]*coreUC.ClientArtifact, error) {
+	return nil, errStub
+}
+func (s *stubSubscriptionUsecase) DeleteCoreTunnels(_ context.Context, _ uint) error {
+	return errStub
+}
 func (s *stubSubscriptionUsecase) SetRenewalConfig(_ context.Context, _ uint, _ *int, _ *float64) error {
 	return errStub
 }

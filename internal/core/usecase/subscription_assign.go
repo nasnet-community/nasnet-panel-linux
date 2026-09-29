@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -25,11 +26,15 @@ func (u *CoreUsecase) AssignSubscriptionToCoreInbound(ctx context.Context, subID
 	if subID == 0 || email == "" {
 		return fmt.Errorf("core: assign requires a subscription id and email")
 	}
-	if _, err := u.ProvisionUserForSubscription(ctx, subID, email, kLimit, []uint{coreInboundID}); err != nil {
-		return err
+	_, provErr := u.ProvisionUserForSubscription(ctx, subID, email, kLimit, []uint{coreInboundID})
+	if provErr != nil && !errors.Is(provErr, ErrReconcilePending) {
+		return provErr
 	}
 	// Ensure subscription_id is stamped even if the user pre-existed by email.
-	return u.BindUsersToSubscription(ctx, email, subID)
+	if err := u.BindUsersToSubscription(ctx, email, subID); err != nil {
+		return err
+	}
+	return provErr
 }
 
 // RemoveSubscriptionFromCoreInbound deletes the subscription's core_user on one
@@ -83,4 +88,32 @@ func (u *CoreUsecase) ListSubscriptionCoreAccounts(ctx context.Context, subID ui
 		out = append(out, acc)
 	}
 	return out, nil
+}
+
+// RebindSubscription moves every tunnel user of a subscription to a new email
+// (the subscription's ConfigEmail changed) and rotates each secret, so the
+// old credentials stop working. The affected nodes are reconciled.
+func (u *CoreUsecase) RebindSubscription(ctx context.Context, subID uint, email string) error {
+	if email == "" {
+		return fmt.Errorf("core: rebind requires an email")
+	}
+	users, err := u.repo.FindUsersBySubscription(ctx, subID)
+	if err != nil {
+		return err
+	}
+	if len(users) == 0 {
+		return nil
+	}
+	for _, cu := range users {
+		cu.Email = email
+		cu.Secret = randToken(16)
+		if err := u.repo.UpdateUser(ctx, cu); err != nil {
+			return err
+		}
+	}
+	nodeSet, err := u.nodeSetForUsers(ctx, users)
+	if err != nil {
+		return err
+	}
+	return u.reconcileNodeSet(ctx, nodeSet)
 }

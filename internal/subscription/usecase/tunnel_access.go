@@ -18,7 +18,7 @@ type WGAccess interface {
 func (u *subscriptionUsecase) SetWGAccess(w WGAccess) { u.wgAccess = w }
 
 // setTunnelAccess flips every access artifact a subscription owns: its Xray
-// accounts AND its WireGuard peers.
+// accounts, its WireGuard peers and its SSH/MTProto tunnels.
 //
 // The two live in different tables and used to be toggled by different code
 // paths — Xray accounts directly through accountManager, WG peers only from
@@ -60,6 +60,13 @@ func (u *subscriptionUsecase) setTunnelAccess(ctx context.Context, subID uint, e
 			fail(u.wgAccess.ActivateSubscription(ctx, subID), "wireguard peers")
 		} else {
 			fail(u.wgAccess.DeactivateSubscription(ctx, subID), "wireguard peers")
+		}
+	}
+	if u.coreAssigner != nil {
+		if enabled {
+			fail(u.coreAssigner.EnableUsersBySubscription(ctx, subID), "tunnels")
+		} else {
+			fail(u.coreAssigner.DisableUsersBySubscription(ctx, subID), "tunnels")
 		}
 	}
 	return firstErr

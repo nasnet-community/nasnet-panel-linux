@@ -448,7 +448,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		tunnelFirewall = networkUC.OnInboundsChanged
 	}
 	coreUC := newTunnelUsecase(tunnelDeps{
-		Repo: coreRepo, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
+		Repo: coreRepo, Subs: repos.Subscription, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
 		BaseURL: cfg.App.BaseURL, PanelPort: cfg.App.Port, HubPort: hubPort,
 		InboundsChanged: tunnelFirewall, Log: log,
 	})
@@ -459,6 +459,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Per-tunnel usage: the stats fold attributes tunnel bytes to each
 	// subscription's tunnels.
 	uc.Node.SetCoreUsageProvider(coreRepo)
+	// Tunnels follow their subscription: assignment, pause, expiry, quota,
+	// renewal, reset, regenerate and delete.
+	uc.Subscription.SetCoreAssigner(coreUC)
 
 	// Reverse-mode nodes arrive through the hub; its listener starts later,
 	// only when the hub is on.
