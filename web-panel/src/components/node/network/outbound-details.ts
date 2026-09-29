@@ -111,14 +111,17 @@ export function testEntryOf(o: Outbound): OutboundTestEntry | null {
 
 // Generated router rows have no database identity and must never enter CRUD,
 // selection, or probe queues. Keep them visible in the read-only router list.
+/** Custom rows, router-generated ones (`managed`) and subscription pool
+ *  members, which their pool owns. */
 export function partitionOutbounds(outbounds: Outbound[]) {
     return {
         managedOutbounds: outbounds.filter(o => o.managed),
-        outbounds: outbounds.filter(o => !o.managed && o.id > 0),
+        poolMembers: outbounds.filter(o => !o.managed && !!o.managed_pool_id),
+        outbounds: outbounds.filter(o => !o.managed && !o.managed_pool_id && o.id > 0),
     }
 }
 
 export function canTestOutbound(outbound: Outbound): boolean {
-    return !outbound.managed && outbound.id > 0 &&
+    return !outbound.managed && !outbound.managed_pool_id && outbound.id > 0 &&
         !["blackhole", "dns", "loopback", "http"].includes(outbound.protocol)
 }

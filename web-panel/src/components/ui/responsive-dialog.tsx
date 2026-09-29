@@ -86,7 +86,7 @@ export function ResponsiveDialog({
                         {description || title}
                     </SheetDescription>
                     {/* Scrollable body */}
-                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+                    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 space-y-6">
                         {headerExtra && <div className="flex">{headerExtra}</div>}
                         {children}
                         {footerNote && (
@@ -101,7 +101,7 @@ export function ResponsiveDialog({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className={cn("max-w-2xl max-h-[95vh] flex flex-col", className)}>
-                <DialogHeader>
+                <DialogHeader className="shrink-0">
                     <div className="flex items-start gap-3">
                         <div className="flex-1 min-w-0">
                             <DialogTitle>{title}</DialogTitle>
@@ -112,12 +112,12 @@ export function ResponsiveDialog({
                         {headerExtra && <div className="shrink-0 pr-8">{headerExtra}</div>}
                     </div>
                 </DialogHeader>
-                <div className="flex-1 overflow-y-auto space-y-6 py-4">
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto space-y-6 py-4">
                     {children}
                 </div>
-                <DialogFooter className="border-t pt-4 sm:justify-between gap-3">
-                    <div className="text-xs text-muted-foreground text-left leading-snug">{footerNote}</div>
-                    <div className="flex gap-2 justify-end">
+                <DialogFooter className="shrink-0 border-t pt-4 sm:justify-between gap-3">
+                    <div className="min-w-0 text-xs text-muted-foreground text-left leading-snug break-words">{footerNote}</div>
+                    <div className="flex shrink-0 gap-2 justify-end">
                         <Button variant="outline" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>

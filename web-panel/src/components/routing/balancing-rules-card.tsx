@@ -96,6 +96,11 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = []
                         <div className="space-y-3">
                             {rules.map(rule => {
                                 const extras = expandSelectorPrefixes(rule.outbound_selectors, outbounds)
+                                // Xray matches selectors by prefix: count the outbounds that
+                                // actually match (a pool selector matches only its members).
+                                const matched = outbounds.filter(ob =>
+                                    rule.outbound_selectors.some(selector => selector !== "" && ob.tag.startsWith(selector)),
+                                ).length
                                 const used = rulesUsingBalancer(rule.tag, routingRules)
                                 return (
                                     <div
@@ -109,7 +114,7 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = []
                                                     {strategyLabel(rule.strategy)}
                                                 </Badge>
                                                 <Badge variant="secondary" className="text-xs">
-                                                    {rule.outbound_selectors.length + extras.length} outbound{rule.outbound_selectors.length + extras.length !== 1 ? "s" : ""}
+                                                    {matched} outbound{matched !== 1 ? "s" : ""}
                                                 </Badge>
                                                 {extras.length > 0 && (
                                                     <span className="text-[12px] text-amber-300">

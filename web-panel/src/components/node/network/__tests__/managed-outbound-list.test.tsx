@@ -20,7 +20,7 @@ afterEach(cleanup)
 describe("router outbounds in the redesigned list", () => {
     it("keeps every generated zero-ID row out of selection and test queues", () => {
         const all = [...routerRows, stored]
-        expect(partitionOutbounds(all)).toEqual({ managedOutbounds: routerRows, outbounds: [stored] })
+        expect(partitionOutbounds(all)).toEqual({ managedOutbounds: routerRows, poolMembers: [], outbounds: [stored] })
         expect(all.filter(canTestOutbound)).toEqual([stored])
         expect(canTestOutbound({ ...stored, id: 0 })).toBe(false)
         expect(canTestOutbound({ ...stored, protocol: "http" })).toBe(false)

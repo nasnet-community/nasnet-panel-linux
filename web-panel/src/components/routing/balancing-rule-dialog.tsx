@@ -130,7 +130,9 @@ export function BalancingRuleDialog({
         () => expandSelectorPrefixes(form.outbound_selectors, outbounds),
         [form.outbound_selectors, outbounds],
     )
-    const effectiveCount = form.outbound_selectors.length + prefixExtras.length
+    const effectiveCount = outbounds.filter(ob =>
+        form.outbound_selectors.some(selector => selector !== "" && ob.tag.startsWith(selector)),
+    ).length
 
     const usedBy = useMemo(
         () => (mode === "edit" && rule ? rulesUsingBalancer(rule.tag, routingRules) : []),
@@ -218,7 +220,7 @@ export function BalancingRuleDialog({
                         {effectiveCount} outbound{effectiveCount !== 1 ? "s" : ""}
                         {prefixExtras.length > 0 && " after prefix expansion"} ·{" "}
                         {STRATEGIES.find(s => s.value === form.strategy)?.label.toLowerCase()}
-                        {form.fallback_tag && <> · fallback <span className="font-mono">{form.fallback_tag}</span></>}
+                        {form.fallback_tag && <> · fallback <span className="font-mono break-all">{form.fallback_tag}</span></>}
                     </>
                 )
             }
@@ -303,7 +305,7 @@ export function BalancingRuleDialog({
             {/* ═══ Outbounds ═══ */}
             <div className="space-y-3">
                 <SectionLabel
-                    right={`${form.outbound_selectors.length} of ${outbounds.length} selected`}
+                    right={`${effectiveCount} of ${outbounds.length} matched`}
                 >
                     Outbounds
                 </SectionLabel>
@@ -315,7 +317,7 @@ export function BalancingRuleDialog({
                                 value={filter}
                                 onChange={e => setFilter(e.target.value)}
                                 placeholder="Filter by tag or protocol"
-                                className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                                className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                             />
                             <Button variant="ghost" size="sm" className="h-7 text-xs"
                                 onClick={() => setForm(prev => ({ ...prev, outbound_selectors: outbounds.map(o => o.tag) }))}>
@@ -327,7 +329,7 @@ export function BalancingRuleDialog({
                             </Button>
                         </div>
                     )}
-                    <div className="max-h-64 overflow-y-auto">
+                    <div className="max-h-64 overflow-y-auto overflow-x-hidden">
                         {visibleOutbounds.length === 0 ? (
                             <p className="text-xs text-muted-foreground text-center py-4">
                                 {outbounds.length === 0 ? "No outbounds on this node" : "Nothing matches that filter"}
@@ -341,15 +343,15 @@ export function BalancingRuleDialog({
                                         key={ob.id}
                                         type="button"
                                         onClick={() => toggleSelector(ob.tag)}
-                                        className="w-full flex items-center gap-3 px-3 py-2 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.03] text-left"
+                                        className="w-full min-w-0 flex items-center gap-3 px-3 py-2 border-b border-white/[0.06] last:border-b-0 hover:bg-white/[0.03] text-left"
                                     >
                                         <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center text-[11px] font-bold ${checked ? "bg-primary border-primary text-primary-foreground" : "border-white/25"}`}>
                                             {checked ? "✓" : ""}
                                         </span>
-                                        <span className="font-mono text-[14px]">{ob.tag}</span>
-                                        <Badge variant="outline" className="text-[11px]">{ob.protocol}</Badge>
+                                        <span className="min-w-0 flex-1 truncate font-mono text-[14px]" title={ob.tag}>{ob.tag}</span>
+                                        <Badge variant="outline" className="shrink-0 text-[11px]">{ob.protocol}</Badge>
                                         {viaPrefix && (
-                                            <span className="ml-auto text-[11px] text-amber-300">matched by prefix</span>
+                                            <span className="w-14 shrink-0 text-[11px] text-muted-foreground leading-tight">matched by prefix</span>
                                         )}
                                     </button>
                                 )
@@ -357,14 +359,6 @@ export function BalancingRuleDialog({
                         )}
                     </div>
                 </div>
-                {prefixExtras.length > 0 && (
-                    <Notice tone="warn">
-                        xray matches selectors by <b>prefix</b>.{" "}
-                        <span className="font-mono">{prefixExtras.join(", ")}</span>{" "}
-                        {prefixExtras.length === 1 ? "is" : "are"} pulled in too, so this balancer really has{" "}
-                        <b>{effectiveCount}</b> outbounds.
-                    </Notice>
-                )}
             </div>
 
             {/* ═══ Fallback ═══ */}
@@ -375,15 +369,15 @@ export function BalancingRuleDialog({
                         value={form.fallback_tag === "" ? "__none" : form.fallback_tag}
                         onValueChange={v => setForm(prev => ({ ...prev, fallback_tag: v === "__none" ? "" : v }))}
                     >
-                        <SelectTrigger id="bal-fallback">
+                        <SelectTrigger id="bal-fallback" className="w-full min-w-0 [&_[data-slot=select-value]]:min-w-0">
                             <SelectValue placeholder="None" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent position="popper" className="w-[var(--radix-select-trigger-width)]">
                             <SelectItem value="__none">None</SelectItem>
                             {outbounds.map(ob => (
-                                <SelectItem key={ob.id} value={ob.tag}>
-                                    <span className="font-mono">{ob.tag}</span>
-                                    <span className="text-muted-foreground"> ({ob.protocol})</span>
+                                <SelectItem key={ob.id} value={ob.tag} className="[&>span:last-child]:min-w-0">
+                                    <span className="truncate font-mono" title={ob.tag}>{ob.tag}</span>
+                                    <span className="shrink-0 text-muted-foreground"> ({ob.protocol})</span>
                                 </SelectItem>
                             ))}
                         </SelectContent>
@@ -443,7 +437,7 @@ function Notice({ tone, children }: { tone: "info" | "warn" | "danger"; children
     return (
         <div className={`flex gap-2 items-start rounded-lg border px-3 py-2 text-[13px] leading-relaxed ${styles}`}>
             <Icon className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>{children}</div>
+            <div className="min-w-0 break-words">{children}</div>
         </div>
     )
 }

@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from "react"
 import { useSearchParams } from "react-router"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { NodePools } from "@/components/pools/node-pools"
+import { poolAPI } from "@/lib/api/outbound-pools"
+import { isLocalNode } from "@/lib/node-kind"
 import { queryKeys } from "@/lib/queries/keys"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -67,7 +70,7 @@ import {
 import { listNodeInbounds } from "@/lib/api/nodes"
 import { NodeXrayConfigEditor } from "./node-xray-config-editor"
 import { NodeSettingsXray } from "./settings/node-settings-xray"
-import { HiOutlineCode, HiOutlineAdjustments } from "react-icons/hi"
+import { HiOutlineCode, HiOutlineAdjustments, HiOutlineCollection } from "react-icons/hi"
 import { useAccountsByNode } from "@/lib/queries/use-accounts"
 import { type Account as NodeAccount } from "@/lib/api/accounts"
 import { AnimatePresence, motion } from "framer-motion"
@@ -193,7 +196,7 @@ export function NodeNetworkConfig({
     }, [selectedInbounds.size, selectedOutbounds.size])
 
     // Sub-tab persisted in URL via ?subtab=
-    const VALID_SUBTABS = ["inbounds", "outbounds", "routing", "reverse", "dns", "settings", "config"] as const
+    const VALID_SUBTABS = ["inbounds", "outbounds", "pools", "routing", "reverse", "dns", "settings", "config"] as const
     const [searchParams, setSearchParams] = useSearchParams()
     const rawSubtab = searchParams.get("subtab") || "inbounds"
     const activeTab = (VALID_SUBTABS as readonly string[]).includes(rawSubtab) ? rawSubtab : "inbounds"
@@ -220,7 +223,7 @@ export function NodeNetworkConfig({
     // Data via React Query — caches across tab switches and dedupes on refetch
     const { data: inbounds = [], isLoading: ibLoading } = useNodeInbounds(nodeId)
     const { data: allOutbounds = [], isLoading: obLoading } = useNodeOutbounds(nodeId)
-    const { outbounds, managedOutbounds } = useMemo(() => partitionOutbounds(allOutbounds), [allOutbounds])
+    const { outbounds, managedOutbounds, poolMembers } = useMemo(() => partitionOutbounds(allOutbounds), [allOutbounds])
     const { data: routingRules = [], isLoading: rrLoading } = useNodeRouting(nodeId)
     const { data: balancingRules = [] } = useBalancingRules(nodeId)
     const { data: reverseProxies = [] } = useReverseProxies(nodeId)
@@ -253,6 +256,9 @@ export function NodeNetworkConfig({
     // Migrate dialog state — data fetched lazily on open
     const [migrateDialog, setMigrateDialog] = useState<{ open: boolean; inbound: Inbound | null }>({ open: false, inbound: null })
     const { data: allNodesData } = useNodes()
+    const isLocal = isLocalNode(allNodesData?.find(n => n.id === nodeId))
+    // Pool names for the "Pool members" card; shares the pools tab's cache.
+    const { data: nodePools = [] } = useQuery({ queryKey: ["outbound-pools", nodeId], queryFn: () => poolAPI.list(nodeId), enabled: poolMembers.length > 0 })
     const [allInboundsMap, setAllInboundsMap] = useState<Map<number, Inbound[]>>(new Map())
 
     React.useEffect(() => {
@@ -437,13 +443,14 @@ export function NodeNetworkConfig({
             if (!o.is_disabled && o.tag !== defaultOutbound && usageCount(outboundUsage.get(o.tag)) === 0) unused++
         })
         return {
-            total: allOutbounds.length,
+            // Pool members are counted on the subscription pools tab.
+            total: allOutbounds.length - poolMembers.length,
             disabled: outbounds.filter(o => o.is_disabled).length,
             unused,
             trafficBytes,
             lastTestedAt,
         }
-    }, [outbounds, allOutbounds.length, outboundUsage, defaultOutbound])
+    }, [outbounds, allOutbounds.length, poolMembers.length, outboundUsage, defaultOutbound])
 
     const toggleOutboundExpand = (outboundId: number) => {
         setExpandedOutbounds(prev => {
@@ -991,7 +998,14 @@ export function NodeNetworkConfig({
                         >
                             <HiOutlineSwitchHorizontal className="w-4 h-4 mr-1.5 md:mr-2" />
                             Outbounds
-                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{allOutbounds.length}</Badge>
+                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{allOutbounds.length - poolMembers.length}</Badge>
+                        </TabsTrigger>
+                        <TabsTrigger
+                            value="pools"
+                            className="rounded-none border-b-2 border-transparent px-1.5 py-2.5 md:px-2 md:py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none transition-colors hover:text-foreground/80"
+                        >
+                            <HiOutlineCollection className="w-4 h-4 mr-1.5 md:mr-2" />
+                            Subscription pools
                         </TabsTrigger>
                         <TabsTrigger
                             value="routing"
@@ -1184,6 +1198,10 @@ export function NodeNetworkConfig({
                 </TabsContent>
 
                 {/* Outbounds Content */}
+                <TabsContent value="pools" className="animate-in fade-in-50 duration-300">
+                    <NodePools nodeId={nodeId} outbounds={allOutbounds} balancers={balancingRules} local={isLocal} />
+                </TabsContent>
+
                 <TabsContent value="outbounds" className="animate-in fade-in-50 duration-300">
                     <TooltipProvider delayDuration={200}>
                         <div className="space-y-4">
@@ -1338,6 +1356,33 @@ export function NodeNetworkConfig({
                                         Add Outbound
                                     </Button>
                                 </div>
+                            )}
+
+                            {poolMembers.length > 0 && (
+                                <Card className="p-4">
+                                    <details>
+                                        <summary className="cursor-pointer text-sm font-medium">
+                                            Pool members
+                                            <span className="ml-2 font-normal text-muted-foreground">
+                                                {poolMembers.filter(o => !o.is_disabled).length} active · from {new Set(poolMembers.map(o => o.managed_pool_id)).size} subscription pool{new Set(poolMembers.map(o => o.managed_pool_id)).size === 1 ? "" : "s"}
+                                            </span>
+                                        </summary>
+                                        <p className="mt-2 text-xs text-muted-foreground">Read-only: each subscription pool adds and removes its members after a scan.</p>
+                                        <div className="mt-3 divide-y divide-border/60">
+                                            {poolMembers.map(o => (
+                                                <div key={o.id} className={cn("flex min-w-0 items-center gap-3 py-2 text-sm", o.is_disabled && "opacity-50")}>
+                                                    <Badge variant="outline" className="shrink-0 text-[11px] uppercase">{o.protocol}</Badge>
+                                                    <span className="min-w-0 flex-1 truncate font-mono text-[13px]" title={o.tag}>{o.remark || o.address || o.tag}</span>
+                                                    <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">from {nodePools.find(p => p.id === o.managed_pool_id)?.name ?? `subscription pool #${o.managed_pool_id}`}</span>
+                                                    {o.is_disabled && <span className="shrink-0 text-xs text-muted-foreground">inactive</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <Button variant="ghost" size="sm" className="mt-2" onClick={() => setActiveTab("pools")}>
+                                            Open subscription pools
+                                        </Button>
+                                    </details>
+                                </Card>
                             )}
                         </div>
                     </TooltipProvider>

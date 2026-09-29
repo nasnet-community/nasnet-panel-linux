@@ -125,6 +125,8 @@ export interface Outbound {
     node_id: number
     /** Generated on every config build. No row behind it, so it can't be edited. */
     managed?: boolean
+    /** Set on subscription pool members; the pool owns the row. */
+    managed_pool_id?: number | null
     tag: string
     protocol: string
     address: string
