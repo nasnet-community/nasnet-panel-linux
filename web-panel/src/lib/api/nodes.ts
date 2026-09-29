@@ -178,6 +178,9 @@ export interface XrayRelease {
     tag: string
     name: string
     published_at: string
+    prerelease?: boolean
+    notes?: string
+    url?: string
 }
 
 export async function getXrayReleases(): Promise<ApiResponse<XrayRelease[]>> {

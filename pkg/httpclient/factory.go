@@ -94,6 +94,23 @@ func (f *Factory) ClientFor(feat Feature, group EgressGroup, timeout time.Durati
 	return &http.Client{Transport: http.DefaultTransport, Timeout: timeout}
 }
 
+// RouteFor describes the effective route without exposing proxy credentials.
+func (f *Factory) RouteFor(feat Feature, target string) string {
+	st := f.s.Load()
+	if st.enabled[feat] && st.transport != nil {
+		return "proxy"
+	}
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err == nil {
+		if t, ok := http.DefaultTransport.(*http.Transport); ok && t.Proxy != nil {
+			if proxyURL, err := t.Proxy(req); err == nil && proxyURL != nil {
+				return "environment_proxy"
+			}
+		}
+	}
+	return "direct"
+}
+
 // IsProxyConfigured returns true if a valid proxy URL is currently set.
 func (f *Factory) IsProxyConfigured() bool {
 	return f.s.Load().transport != nil

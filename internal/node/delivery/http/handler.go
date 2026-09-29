@@ -73,6 +73,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	{
 		// Xray Releases (before :id routes to avoid conflict)
 		nodes.GET("/xray/releases", h.GetXrayReleases)
+		nodes.GET("/xray/routes", h.GetXrayRoutes)
 
 		// Tools
 		nodes.GET("/tools/vless-keys", h.GenerateVLESSKeys)
@@ -1992,6 +1993,27 @@ func (h *Handler) UpdateXrayVersion(c *gin.Context) {
 		return
 	}
 
+	if c.Query("stream") == "true" {
+		c.Header("Content-Type", "application/x-ndjson")
+		c.Header("Cache-Control", "no-store")
+		c.Header("X-Accel-Buffering", "no")
+		// Updates can include both a hub download and a five-minute agent RPC.
+		_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(10 * time.Minute))
+		send := func(stage, detail string) {
+			_ = json.NewEncoder(c.Writer).Encode(gin.H{"stage": stage, "detail": detail})
+			c.Writer.Flush()
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 9*time.Minute)
+		defer cancel()
+		ctx = usecase.WithXrayUpdateProgress(ctx, send)
+		if err := h.nodeUsecase.UpdateXrayVersion(ctx, uint(nodeID), req.Version); err != nil {
+			send("failed", err.Error())
+		} else {
+			send("succeeded", "Xray is running the requested version.")
+		}
+		return
+	}
+
 	if err := h.nodeUsecase.UpdateXrayVersion(c.Request.Context(), uint(nodeID), req.Version); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -2050,6 +2072,9 @@ type xrayRelease struct {
 	Tag         string `json:"tag"`
 	Name        string `json:"name"`
 	PublishedAt string `json:"published_at"`
+	Prerelease  bool   `json:"prerelease"`
+	Notes       string `json:"notes"`
+	URL         string `json:"url"`
 }
 
 // In-memory cache for GitHub releases
@@ -2061,10 +2086,11 @@ var (
 
 func (h *Handler) GetXrayReleases(c *gin.Context) {
 	xrayReleaseCacheMu.Lock()
-	if time.Since(xrayReleaseCacheTime) < time.Hour && xrayReleaseCacheData != nil {
+	if c.Query("refresh") != "true" && time.Since(xrayReleaseCacheTime) < time.Hour && xrayReleaseCacheData != nil {
 		cached := xrayReleaseCacheData
+		checkedAt := xrayReleaseCacheTime
 		xrayReleaseCacheMu.Unlock()
-		c.JSON(http.StatusOK, gin.H{"success": true, "data": cached})
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": cached, "checked_at": checkedAt, "cached": true})
 		return
 	}
 	xrayReleaseCacheMu.Unlock()
@@ -2076,9 +2102,11 @@ func (h *Handler) GetXrayReleases(c *gin.Context) {
 	} else {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	resp, err := client.Get("https://api.github.com/repos/XTLS/Xray-core/releases?per_page=50")
+	req, _ := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, "https://api.github.com/repos/XTLS/Xray-core/releases?per_page=50", nil)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "failed to fetch releases from GitHub"})
+		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "Could not reach GitHub using the configured release-check route. Check the connection settings and retry."})
 		return
 	}
 	defer resp.Body.Close()
@@ -2099,6 +2127,8 @@ func (h *Handler) GetXrayReleases(c *gin.Context) {
 		Name        string `json:"name"`
 		PublishedAt string `json:"published_at"`
 		Prerelease  bool   `json:"prerelease"`
+		Body        string `json:"body"`
+		HTMLURL     string `json:"html_url"`
 	}
 
 	if err := json.Unmarshal(body, &ghReleases); err != nil {
@@ -2106,18 +2136,21 @@ func (h *Handler) GetXrayReleases(c *gin.Context) {
 		return
 	}
 
-	// Filter out pre-releases, strip v prefix, limit to 30
-	var releases []xrayRelease
+	// Strip v prefix, limit to 30. Xray-core marks most of its releases as
+	// a GitHub "prerelease" (e.g. v26.7.11, v26.5.9), so filtering those out hides
+	// all recent versions — their prereleases are the actual releases. Drafts are
+	// not returned to unauthenticated API calls, so no extra filter is needed.
+	releases := make([]xrayRelease, 0, 30)
 	for _, r := range ghReleases {
-		if r.Prerelease {
-			continue
-		}
 		version := strings.TrimPrefix(r.TagName, "v")
 		releases = append(releases, xrayRelease{
 			Version:     version,
 			Tag:         r.TagName,
 			Name:        r.Name,
 			PublishedAt: r.PublishedAt,
+			Prerelease:  r.Prerelease,
+			Notes:       r.Body,
+			URL:         r.HTMLURL,
 		})
 		if len(releases) >= 30 {
 			break
@@ -2130,7 +2163,7 @@ func (h *Handler) GetXrayReleases(c *gin.Context) {
 	xrayReleaseCacheTime = time.Now()
 	xrayReleaseCacheMu.Unlock()
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": releases})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": releases, "checked_at": time.Now(), "cached": false})
 }
 
 // ==================== Host Operations ====================
@@ -2891,4 +2924,19 @@ func (h *Handler) UpdateAgentStream(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// GetXrayRoutes exposes effective hub routing separately from release
+// availability. The egress fields name the uplink group in router mode.
+func (h *Handler) GetXrayRoutes(c *gin.Context) {
+	f := h.httpFactory
+	if f == nil {
+		f = httpclient.NewFactory()
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+		"release_checks":         f.RouteFor(httpclient.FeatureGitHubAPI, "https://api.github.com"),
+		"binary_download":        f.RouteFor(httpclient.FeatureXrayBinary, "https://github.com"),
+		"release_checks_egress":  f.EgressLabel(httpclient.EgressForeign),
+		"binary_download_egress": f.EgressLabel(httpclient.EgressForeign),
+	}})
 }

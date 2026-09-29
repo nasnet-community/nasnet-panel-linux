@@ -1077,6 +1077,11 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 	if err != nil {
 		return err
 	}
+	if node.IsLocal() {
+		reportXrayUpdate(ctx, "preparing", "Checking the release.")
+	} else {
+		reportXrayUpdate(ctx, "preparing", "Connecting to the node and checking its architecture.")
+	}
 
 	client, err := u.getAgentClient(node)
 	if err != nil {
@@ -1128,6 +1133,19 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 		// EnsureCached is a no-op when already stored; failure here falls
 		// back to the agent-side GitHub install.
 		if downloadURL != "" {
+			route := "direct"
+			if u.httpFactory != nil {
+				route = u.httpFactory.RouteFor(httpclient.FeatureXrayBinary, "https://github.com")
+			}
+			cached, ok := u.xrayBM.(interface{ IsCached(version, arch string) bool })
+			switch {
+			case ok && cached.IsCached(version, arch):
+				reportXrayUpdate(ctx, "downloading", "Using the cached binary.")
+			case node.IsLocal():
+				reportXrayUpdate(ctx, "downloading", fmt.Sprintf("Downloading into the panel cache (GitHub route: %s).", route))
+			default:
+				reportXrayUpdate(ctx, "downloading", fmt.Sprintf("Preparing the panel's copy (GitHub route: %s; cached files are reused).", route))
+			}
 			if err := u.xrayBM.EnsureCached(version, arch); err != nil {
 				log.WithError(err).WithFields(map[string]interface{}{
 					"version": version,
@@ -1163,8 +1181,21 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 		"from_hub": downloadURL != "",
 	}).Info("[UpdateXrayVersion] Updating xray-core version")
 
+	detail := "The agent is downloading from the panel, verifying, installing, and restarting Xray."
+	switch {
+	case node.IsLocal():
+		detail = "Installing locally and restarting Xray."
+	case downloadURL == "":
+		detail = "The agent is downloading from GitHub over the node's network, installing, and restarting Xray."
+	}
+	reportXrayUpdate(ctx, "installing", detail)
 	if err := client.UpdateXrayBinary(ctx, version, true, downloadURL, downloadToken, checksum); err != nil {
 		return fmt.Errorf("failed to update xray version: %w", err)
+	}
+
+	reportXrayUpdate(ctx, "verifying", fmt.Sprintf("Waiting for Xray to report %s.", version))
+	if err := verifyXrayUpdate(ctx, client, version); err != nil {
+		return err
 	}
 
 	log.WithFields(map[string]interface{}{

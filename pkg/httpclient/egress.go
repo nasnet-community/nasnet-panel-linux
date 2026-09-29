@@ -65,6 +65,22 @@ func (f *Factory) markFor(g EgressGroup) uint32 {
 	return g.Mark()
 }
 
+// EgressLabel names the uplink group a feature leaves through in router
+// mode, "" outside it.
+func (f *Factory) EgressLabel(g EgressGroup) string {
+	if f.markFor(g) == 0 {
+		return ""
+	}
+	switch g {
+	case EgressForeign:
+		return "foreign uplinks"
+	case EgressDomestic:
+		return "domestic uplinks"
+	default:
+		return "advertised uplink"
+	}
+}
+
 // markingDialer stamps SO_MARK. nil when off, so Docker keeps DefaultTransport.
 func (f *Factory) markingDialer(g EgressGroup) func(context.Context, string, string) (net.Conn, error) {
 	d := f.markingNetDialer(g)
