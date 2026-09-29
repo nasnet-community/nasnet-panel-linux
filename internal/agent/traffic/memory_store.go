@@ -50,6 +50,7 @@ func (s *MemoryStore) Accumulate(snapshot *XrayStatsSnapshot, now time.Time) {
 			InboundDownlink:  make(map[string]int64),
 			OutboundUplink:   make(map[string]int64),
 			OutboundDownlink: make(map[string]int64),
+			CoreUsage:        make(map[string]map[string]CoreUsageCounts),
 		}
 		s.buckets[ts] = bucket
 	}
@@ -60,6 +61,24 @@ func (s *MemoryStore) Accumulate(snapshot *XrayStatsSnapshot, now time.Time) {
 	}
 	for k, v := range snapshot.UserDownlink {
 		bucket.UserDownlink[k] += v
+	}
+	// Merge core-only usage (protocol -> email -> counts). Only the core collector
+	// sets snapshot.CoreUsage, so a nil map means no core traffic this snapshot.
+	if bucket.CoreUsage == nil {
+		bucket.CoreUsage = make(map[string]map[string]CoreUsageCounts)
+	}
+	for proto, byEmail := range snapshot.CoreUsage {
+		dst := bucket.CoreUsage[proto]
+		if dst == nil {
+			dst = make(map[string]CoreUsageCounts)
+			bucket.CoreUsage[proto] = dst
+		}
+		for email, c := range byEmail {
+			cur := dst[email]
+			cur.Uplink += c.Uplink
+			cur.Downlink += c.Downlink
+			dst[email] = cur
+		}
 	}
 	for k, v := range snapshot.InboundUplink {
 		bucket.InboundUplink[k] += v
@@ -241,6 +260,7 @@ func deepCopyBucket(b *TrafficBucket) *TrafficBucket {
 		OutboundDownlink: copyMap(b.OutboundDownlink),
 		TotalUplink:      b.TotalUplink,
 		TotalDownlink:    b.TotalDownlink,
+		CoreUsage:        copyCoreUsage(b.CoreUsage),
 	}
 	return cp
 }
@@ -249,6 +269,21 @@ func copyMap(m map[string]int64) map[string]int64 {
 	cp := make(map[string]int64, len(m))
 	for k, v := range m {
 		cp[k] = v
+	}
+	return cp
+}
+
+func copyCoreUsage(m map[string]map[string]CoreUsageCounts) map[string]map[string]CoreUsageCounts {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]map[string]CoreUsageCounts, len(m))
+	for proto, byEmail := range m {
+		inner := make(map[string]CoreUsageCounts, len(byEmail))
+		for email, c := range byEmail {
+			inner[email] = c
+		}
+		cp[proto] = inner
 	}
 	return cp
 }

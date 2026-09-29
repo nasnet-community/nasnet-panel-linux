@@ -12,6 +12,17 @@ type XrayStatsSnapshot struct {
 	OutboundDownlink map[string]int64
 	TotalUplink      int64
 	TotalDownlink    int64
+	// CoreUsage carries core-only (non-Xray) usage keyed protocol -> email ->
+	// counts. Only the core collector sets it; the Xray collector leaves it nil.
+	// It lets the hub attribute per-tunnel core usage to the exact core protocol,
+	// even when several protocols share one email on a node.
+	CoreUsage map[string]map[string]CoreUsageCounts
+}
+
+// CoreUsageCounts is the up/down byte counts for one (protocol, email) pair.
+type CoreUsageCounts struct {
+	Uplink   int64 `json:"uplink"`
+	Downlink int64 `json:"downlink"`
 }
 
 // TrafficBucket holds aggregated traffic for a single time bucket (typically 1 hour).
@@ -25,6 +36,9 @@ type TrafficBucket struct {
 	OutboundDownlink map[string]int64 `json:"outbound_downlink"`
 	TotalUplink      int64            `json:"total_uplink"`
 	TotalDownlink    int64            `json:"total_downlink"`
+	// CoreUsage is core-only usage keyed protocol -> email -> counts; see
+	// XrayStatsSnapshot.
+	CoreUsage map[string]map[string]CoreUsageCounts `json:"core_usage"`
 }
 
 // Store defines the interface for buffered traffic storage.

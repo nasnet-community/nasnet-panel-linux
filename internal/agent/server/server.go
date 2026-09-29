@@ -965,6 +965,7 @@ func (s *Server) GetBufferedTraffic(ctx context.Context, _ *pb.Empty) (*pb.Buffe
 			OutboundDownlink: b.OutboundDownlink,
 			TotalUplink:      b.TotalUplink,
 			TotalDownlink:    b.TotalDownlink,
+			CoreUsage:        coreUsageRecords(b.CoreUsage),
 		})
 		if startTime == 0 || b.Timestamp < startTime {
 			startTime = b.Timestamp
@@ -979,6 +980,23 @@ func (s *Server) GetBufferedTraffic(ctx context.Context, _ *pb.Empty) (*pb.Buffe
 		BufferStartTime: startTime,
 		BufferEndTime:   endTime,
 	}, nil
+}
+
+// coreUsageRecords flattens a bucket's per-(protocol,email) core usage into the
+// repeated proto form for the hub. Nil for a bucket that carried no core traffic.
+func coreUsageRecords(cu map[string]map[string]traffic.CoreUsageCounts) []*pb.CoreUsageRecord {
+	var out []*pb.CoreUsageRecord
+	for proto, byEmail := range cu {
+		for email, c := range byEmail {
+			out = append(out, &pb.CoreUsageRecord{
+				Protocol: proto,
+				Email:    email,
+				Uplink:   c.Uplink,
+				Downlink: c.Downlink,
+			})
+		}
+	}
+	return out
 }
 
 // AckBufferedTraffic acknowledges receipt of traffic records up to a given timestamp.
