@@ -111,6 +111,13 @@ func (r *nodeRepository) CreateHubLifecycleEvent(ctx context.Context, event *dom
 	return r.db.WithContext(ctx).Create(event).Error
 }
 
+// TouchHubLifecycleEvent records that an open run is still alive.
+func (r *nodeRepository) TouchHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error {
+	return r.db.WithContext(ctx).Model(&domain.HubLifecycleEvent{}).
+		Where("id = ? AND stopped_at IS NULL", id).
+		Update("last_alive_at", at.UTC()).Error
+}
+
 // CloseHubLifecycleEvent stamps one run's end (graceful shutdown).
 func (r *nodeRepository) CloseHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error {
 	return r.db.WithContext(ctx).Model(&domain.HubLifecycleEvent{}).
@@ -118,14 +125,15 @@ func (r *nodeRepository) CloseHubLifecycleEvent(ctx context.Context, id uint, at
 		Update("stopped_at", at).Error
 }
 
-// CloseStaleHubLifecycleEvents closes runs left open by a crash or SIGKILL,
-// stamping them at the last moment we know the hub was alive. Called at boot
+// CloseStaleHubLifecycleEvents closes runs left open by a crash, power loss or
+// SIGKILL, stamping them at the last moment we know the hub was alive (its
+// last liveness stamp; `at` for rows that never got one). Called at boot
 // before opening the new run, so an unclean exit still bounds its gap instead
 // of swallowing everything up to now.
 func (r *nodeRepository) CloseStaleHubLifecycleEvents(ctx context.Context, at time.Time) (int64, error) {
 	res := r.db.WithContext(ctx).Model(&domain.HubLifecycleEvent{}).
 		Where("stopped_at IS NULL").
-		Update("stopped_at", at)
+		Update("stopped_at", gorm.Expr("COALESCE(last_alive_at, ?)", at.UTC()))
 	return res.RowsAffected, res.Error
 }
 

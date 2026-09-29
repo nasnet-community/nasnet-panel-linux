@@ -782,3 +782,6 @@ func (m *mockNodeRepo) GetNodeStatsPeakThroughput(_ context.Context, _ uint, _ t
 func (m *mockNodeRepo) SaveNodeHostInfo(_ context.Context, _ uint, _ *nodeDomain.HostInfo) error {
 	return nil
 }
+func (m *mockNodeRepo) TouchHubLifecycleEvent(_ context.Context, _ uint, _ time.Time) error {
+	return nil
+}

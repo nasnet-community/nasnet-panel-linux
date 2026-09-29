@@ -286,17 +286,26 @@ type HubLifecycle struct {
 	mu      sync.Mutex
 	repo    hubLifecycleRepo
 	eventID uint
+	stop    chan struct{}
 }
 
 type hubLifecycleRepo interface {
 	CreateHubLifecycleEvent(ctx context.Context, event *domain.HubLifecycleEvent) error
+	TouchHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error
 	CloseHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error
 	CloseStaleHubLifecycleEvents(ctx context.Context, at time.Time) (int64, error)
 }
 
-// OpenHubLifecycle closes any run left open by an unclean exit (stamped now —
-// the last moment we can prove the hub was alive is unknowable, and leaving it
-// open would swallow every later gap), then opens this run.
+// hubAliveInterval is how often a run stamps that it is still alive. A run
+// that ends uncleanly (power loss, kill -9) is closed at its last stamp, so at
+// most this much of the outage is mistaken for panel uptime — which matters
+// most for the built-in node, whose xray goes down with the panel.
+const hubAliveInterval = 30 * time.Second
+
+// OpenHubLifecycle closes any run left open by an unclean exit at its last
+// liveness stamp (now, for rows from before stamps existed — leaving it open
+// would swallow every later gap), then opens this run and keeps it stamped
+// until ctx ends or Close.
 func OpenHubLifecycle(ctx context.Context, repo hubLifecycleRepo, version string) *HubLifecycle {
 	log := logger.GetLogger()
 	if closed, err := repo.CloseStaleHubLifecycleEvents(ctx, time.Now().UTC()); err != nil {
@@ -309,7 +318,35 @@ func OpenHubLifecycle(ctx context.Context, repo hubLifecycleRepo, version string
 		log.WithError(err).Warn("[connectivity] opening hub lifecycle row failed")
 		return &HubLifecycle{repo: repo}
 	}
-	return &HubLifecycle{repo: repo, eventID: ev.ID}
+	h := &HubLifecycle{repo: repo, eventID: ev.ID, stop: make(chan struct{})}
+	go h.keepAlive(ctx, h.stop)
+	return h
+}
+
+// keepAlive stamps the open run every hubAliveInterval.
+func (h *HubLifecycle) keepAlive(ctx context.Context, stop <-chan struct{}) {
+	t := time.NewTicker(hubAliveInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-t.C:
+			h.mu.Lock()
+			id := h.eventID
+			h.mu.Unlock()
+			if id == 0 {
+				return
+			}
+			wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			if err := h.repo.TouchHubLifecycleEvent(wctx, id, time.Now().UTC()); err != nil {
+				logger.GetLogger().WithError(err).Debug("[connectivity] stamping hub lifecycle row failed")
+			}
+			cancel()
+		}
+	}
 }
 
 // Close stamps this run's end. Idempotent — shutdown paths double-fire.
@@ -320,6 +357,10 @@ func (h *HubLifecycle) Close(ctx context.Context) {
 	h.mu.Lock()
 	id := h.eventID
 	h.eventID = 0
+	if h.stop != nil {
+		close(h.stop)
+		h.stop = nil
+	}
 	h.mu.Unlock()
 	if id == 0 {
 		return
@@ -358,7 +399,9 @@ func (u *nodeUsecase) GetHubGaps(ctx context.Context, since time.Time) ([]domain
 	}
 	for _, run := range runs {
 		start := run.StartedAt
-		if start.After(cursor) {
+		// A run killed without a clean stop is closed at the next boot, often
+		// in the same second that boot starts: that seam is not a gap.
+		if start.Sub(cursor) >= minHubGap {
 			gaps = append(gaps, domain.TimeWindow{From: cursor, To: start})
 		}
 		end := now
@@ -369,8 +412,11 @@ func (u *nodeUsecase) GetHubGaps(ctx context.Context, since time.Time) ([]domain
 			cursor = end
 		}
 	}
-	if cursor.Before(now) {
+	if now.Sub(cursor) >= minHubGap {
 		gaps = append(gaps, domain.TimeWindow{From: cursor, To: now})
 	}
 	return gaps, nil
 }
+
+// minHubGap: shorter seams between runs are bookkeeping, not downtime.
+const minHubGap = time.Second

@@ -184,6 +184,7 @@ type NodeRepository interface {
 
 	// Hub lifecycle — the windows where nothing was observing the nodes
 	CreateHubLifecycleEvent(ctx context.Context, event *domain.HubLifecycleEvent) error
+	TouchHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error
 	CloseHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error
 	CloseStaleHubLifecycleEvents(ctx context.Context, at time.Time) (int64, error)
 	GetHubLifecycleEvents(ctx context.Context, since time.Time) ([]*domain.HubLifecycleEvent, error)

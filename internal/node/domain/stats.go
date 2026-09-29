@@ -78,6 +78,9 @@ type HubLifecycleEvent struct {
 	StartedAt time.Time  `gorm:"index;not null" json:"started_at"`
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 	Version   string     `gorm:"size:64;default:''" json:"version,omitempty"`
+	// LastAliveAt is stamped while the run is up; a run that ended uncleanly
+	// is closed at this time instead of at the next boot.
+	LastAliveAt *time.Time `json:"-"`
 }
 
 func (HubLifecycleEvent) TableName() string { return "hub_lifecycle_events" }
