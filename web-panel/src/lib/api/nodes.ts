@@ -4,6 +4,12 @@ import { getApiBaseUrl } from "@/lib/config"
 import type {
     Node,
     NodeStats,
+    NodeStatsSeries,
+    StatsRange,
+    NodeOverview,
+    NodeOutage,
+    NodeUptimeSummary,
+    HubGap,
     NodeHostInfo,
     NodeDataPoint,
     NodeDailyTraffic,
@@ -69,8 +75,17 @@ export async function checkNodeHealth(id: number): Promise<ApiResponse<{ healthy
     return api.get<{ healthy: boolean; latency: number; message: string }>(`/api/v1/nodes/${id}/health`)
 }
 
-export async function getNodeStats(id: number): Promise<ApiResponse<NodeStats>> {
-    return api.get<NodeStats>(`/api/v1/nodes/${id}/stats`)
+/** The stats sweep's latest reading; `fresh` asks the agent directly. */
+export async function getNodeStats(id: number, fresh = false): Promise<ApiResponse<NodeStats>> {
+    return api.get<NodeStats>(`/api/v1/nodes/${id}/stats${fresh ? "?fresh=1" : ""}`)
+}
+
+export function getNodeStatsSeries(id: number, range: StatsRange) {
+    return api.get<NodeStatsSeries>(`/api/v1/nodes/${id}/stats/series?range=${range}`)
+}
+
+export function getNodeOverview(id: number) {
+    return api.get<NodeOverview>(`/api/v1/nodes/${id}/overview`)
 }
 
 export interface NodeStatsBulkEntry {
@@ -277,6 +292,21 @@ export async function getNodesStatsHistoryBulk(ids: number[], limit: number = 15
 
 export async function getNodeDailyTraffic(id: number, days: number = 30): Promise<ApiResponse<NodeDailyTraffic[]>> {
     return api.get<NodeDailyTraffic[]>(`/api/v1/nodes/${id}/traffic/daily?days=${days}`)
+}
+
+/** Outages, newest first; the built-in node's include panel-down windows. */
+export function getNodeDisconnections(id: number, hours = 720, limit = 50) {
+    return api.get<NodeOutage[]>(`/api/v1/nodes/${id}/disconnections?hours=${hours}&limit=${limit}`)
+}
+
+/** Daily uptime rollup + totals (today computed live); survives event retention. */
+export function getNodeUptimeSummary(id: number, days = 30) {
+    return api.get<NodeUptimeSummary>(`/api/v1/nodes/${id}/uptime/summary?days=${days}`)
+}
+
+/** Windows where the panel itself was down. */
+export function getHubGaps(hours = 168) {
+    return api.get<HubGap[]>(`/api/v1/nodes/uptime/gaps?hours=${hours}`)
 }
 
 export async function getNodeUptimeEvents(id: number, hours: number = 168): Promise<ApiResponse<NodeUptimeEvent[]>> {

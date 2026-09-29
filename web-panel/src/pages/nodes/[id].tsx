@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { getNode, restartXrayProcess } from "@/lib/api/nodes"
 import { Loader2, Satellite } from "lucide-react"
-import { useNodeStats, useNodeStatsHistory, queryKeys } from "@/lib/queries"
+import { useNodeStats, queryKeys } from "@/lib/queries"
+import { useEventsStatus } from "@/components/providers/events-provider"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Node } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -186,18 +187,10 @@ export default function NodeDetailPage() {
         navigateFromNode(`${pathname}?${params.toString()}`)
     }
 
-    // Fetch stats using TanStack Query
-    const { data: stats, isFetching: isStatsFetching, refetch: refetchStats } = useNodeStats(
-        nodeId,
-        node?.is_online ?? false
-    )
-
-    // Fetch history
-    const { data: historyData } = useNodeStatsHistory(
-        nodeId,
-        60, // Limit
-        node?.is_online ?? false
-    )
+    // The stats sweep's latest reading; SSE patches it, the poll backs it up.
+    // Enabled while offline too, so the last reading stays on screen.
+    const sseConnected = useEventsStatus() === "connected"
+    const { data: stats, isFetching: isStatsFetching } = useNodeStats(nodeId, !!node, sseConnected)
 
     const loadData = useCallback(async () => {
         // A late answer for the node we just left must not replace this one.
@@ -374,7 +367,7 @@ export default function NodeDetailPage() {
                         aria-label="Node sections"
                         className={cn(
                             "flex h-auto w-full justify-start bg-transparent p-0",
-                            useNodeSidebar ? "flex-col gap-1" : "gap-1 overflow-x-auto border-b border-border rounded-none pb-1"
+                            useNodeSidebar ? "flex-col gap-1" : "no-scrollbar gap-1 overflow-x-auto border-b border-border rounded-none pb-1"
                         )}
                     >
                         {nodeTabs.filter(tab => {
@@ -409,9 +402,7 @@ export default function NodeDetailPage() {
                             <NodeOverview
                                 node={node}
                                 stats={stats}
-                                history={historyData}
                                 isLoadingStats={isStatsFetching}
-                                onRefreshStats={refetchStats}
                                 onNavigateTab={handleTabChange}
                             />
                         )}

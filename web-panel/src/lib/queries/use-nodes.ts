@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query"
 import { isRealityDestError } from "@/lib/api/reality-dest"
 import {
     listNodes,
@@ -8,6 +8,11 @@ import {
     deleteNode,
     checkNodeHealth,
     getNodeStats,
+    getNodeStatsSeries,
+    getNodeOverview,
+    getNodeDisconnections,
+    getNodeUptimeSummary,
+    getHubGaps,
     getNodesStatsBulk,
     getNodesStatsHistoryBulk,
     getNodeHostInfo,
@@ -56,7 +61,7 @@ import type { NodeStatsBulkMap, NodeBulkActionResponse, XrayConfigDiff } from "@
 import { ApiError } from "@/lib/api"
 import { queryKeys } from "./keys"
 import { useRefreshInterval } from "@/hooks/use-refresh-interval"
-import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, OutboundTestEntry, OutboundTestSettings, NodeDataPoint } from "@/lib/types"
+import type { Node, Inbound, Outbound, RoutingRule, ReverseProxy, BalancingRule, OutboundTestResult, OutboundTestEntry, OutboundTestSettings, NodeDataPoint, NodeStats, StatsRange } from "@/lib/types"
 import { toast } from "@/lib/toast"
 
 // ==================== Queries ====================
@@ -92,16 +97,78 @@ export function useNode(id: number) {
 }
 
 // Get node stats (CPU, RAM, Disk, etc.)
-export function useNodeStats(id: number, enabled = true) {
+/**
+ * The stats sweep's latest reading for one node. node.stats_updated (SSE)
+ * patches it every sweep, so pass `sseConnected` to stop polling while the
+ * stream is up; it falls back to a 15s poll whenever the stream drops.
+ */
+export function useNodeStats(id: number, enabled = true, sseConnected = false) {
+    const queryClient = useQueryClient()
     return useQuery({
         queryKey: queryKeys.nodeStats(id),
         queryFn: async () => {
-            const res = await getNodeStats(id)
-            if (!res.success) throw new Error(res.error || "Failed to fetch node stats")
-            return res.data!
+            try {
+                const res = await getNodeStats(id)
+                if (!res.success || !res.data) throw new Error(res.error || "Failed to fetch node stats")
+                const d = res.data
+                // Anchor freshness to this browser's clock via the hub-measured
+                // age, so neither agent nor browser clock skew matters.
+                const receivedAt = d.reading_age_ms != null
+                    ? Date.now() - d.reading_age_ms
+                    : d.sampled_at ? Date.parse(d.sampled_at) : undefined
+                return { ...d, stats_unavailable: d.stats_unavailable === true, received_at: receivedAt }
+            } catch (error) {
+                const previous = queryClient.getQueryData<NodeStats>(queryKeys.nodeStats(id))
+                if (previous) return { ...previous, stats_unavailable: true }
+                throw error
+            }
         },
         enabled: enabled && id > 0,
         staleTime: 15 * 1000,
+        // SSE carries every sweep; the slow poll only rescues a stream that
+        // stalled without erroring (sleep, half-open socket).
+        refetchInterval: sseConnected ? 60 * 1000 : 15 * 1000,
+    })
+}
+
+/** Refetch cadence per chart range: roughly one new bucket per refetch. */
+const SERIES_REFETCH: Record<StatsRange, number> = {
+    "1h": 60_000,
+    "6h": 5 * 60_000,
+    "24h": 5 * 60_000,
+    "7d": 30 * 60_000,
+    "30d": 30 * 60_000,
+}
+
+/** Recorded stats for one chart range, averaged server-side into buckets. */
+export function useNodeStatsSeries(id: number, range: StatsRange, enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.nodeStatsSeries(id, range),
+        queryFn: async () => {
+            const res = await getNodeStatsSeries(id, range)
+            if (!res.success || !res.data) throw new Error(res.error || "Failed to fetch stats history")
+            return res.data
+        },
+        enabled: enabled && id > 0,
+        staleTime: SERIES_REFETCH[range] / 2,
+        refetchInterval: SERIES_REFETCH[range],
+        // Keep the previous range on screen until the new one arrives.
+        placeholderData: keepPreviousData,
+    })
+}
+
+/** Connection, agent version, config sync and today's traffic for the Overview tab. */
+export function useNodeOverview(id: number, enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.nodeOverview(id),
+        queryFn: async () => {
+            const res = await getNodeOverview(id)
+            if (!res.success || !res.data) throw new Error(res.error || "Failed to fetch node overview")
+            return res.data
+        },
+        enabled: enabled && id > 0,
+        staleTime: 15_000,
+        refetchInterval: 30_000,
     })
 }
 
@@ -308,6 +375,48 @@ export function useNodeDailyTraffic(nodeId: number, days = 30, enabled = true) {
 }
 
 // Get node uptime events
+/** Outage list for a node — server-paired, so the client doesn't re-derive it. */
+export function useNodeDisconnections(nodeId: number, hours = 720, limit = 50, enabled = true) {
+    return useQuery({
+        queryKey: ["nodeDisconnections", nodeId, hours, limit],
+        queryFn: async () => {
+            const res = await getNodeDisconnections(nodeId, hours, limit)
+            if (!res.success) throw new Error(res.error || "Failed to fetch disconnections")
+            return res.data || []
+        },
+        enabled: enabled && nodeId > 0,
+        staleTime: 60 * 1000,
+    })
+}
+
+/** Daily uptime rollup; keeps working past the uptime-event retention window. */
+export function useNodeUptimeSummary(nodeId: number, days = 30, enabled = true) {
+    return useQuery({
+        queryKey: ["nodeUptimeSummary", nodeId, days],
+        queryFn: async () => {
+            const res = await getNodeUptimeSummary(nodeId, days)
+            if (!res.success) throw new Error(res.error || "Failed to fetch uptime summary")
+            return res.data
+        },
+        enabled: enabled && nodeId > 0,
+        staleTime: 5 * 60 * 1000,
+    })
+}
+
+/** Panel-down windows, so the timeline can grey them out instead of guessing. */
+export function useHubGaps(hours = 168, enabled = true) {
+    return useQuery({
+        queryKey: ["hubGaps", hours],
+        queryFn: async () => {
+            const res = await getHubGaps(hours)
+            if (!res.success) throw new Error(res.error || "Failed to fetch panel gaps")
+            return res.data || []
+        },
+        enabled,
+        staleTime: 5 * 60 * 1000,
+    })
+}
+
 export function useNodeUptimeEvents(nodeId: number, hours = 168, enabled = true) {
     return useQuery({
         queryKey: ["nodeUptimeEvents", nodeId, hours],

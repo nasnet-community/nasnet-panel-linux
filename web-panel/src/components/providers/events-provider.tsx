@@ -15,6 +15,7 @@ import type {
     XrayRecoveryPayload,
 } from '@/lib/hooks/use-events'
 import { queryKeys } from '@/lib/queries/keys'
+import type { NodeStats } from '@/lib/types'
 import type { NodeStatsBulkMap } from '@/lib/api/nodes'
 
 // Connection status type
@@ -230,6 +231,52 @@ function invalidateLiveDashboard(queryClient: QueryClient) {
     for (const queryKey of liveDashboardKeys) queryClient.invalidateQueries({ queryKey })
 }
 
+// Availability is explicit: zero is a legitimate reading after recovery.
+function mergeNodeStats(old: NodeStats, payload: NodeStatsPayload): NodeStats {
+    // A sweep that started before a live read can land after it; keep the newer.
+    if (payload.sampled_at && old.sampled_at && Date.parse(payload.sampled_at) < Date.parse(old.sampled_at)) {
+        return old
+    }
+    const next = {
+        ...old,
+        stats_unavailable: payload.stats_unavailable === true,
+        online_users: payload.online_users,
+        total_uplink: payload.total_uplink ?? old.total_uplink,
+        total_downlink: payload.total_downlink ?? old.total_downlink,
+        total_accounts: payload.total_accounts,
+        active_accounts: payload.active_accounts,
+        agent_version: payload.agent_version || old.agent_version,
+        xray_version: payload.xray_version || old.xray_version,
+        ...(payload.xray_status ? {
+            xray_status: payload.xray_status,
+            xray_pid: payload.xray_pid,
+            process_uptime: payload.uptime,
+        } : {}),
+    }
+    if (payload.stats_unavailable) return next
+    return {
+        ...next,
+        sampled_at: payload.sampled_at ?? old.sampled_at,
+        received_at: Date.now(),
+        cpu_percent: payload.cpu_percent,
+        memory_percent: payload.memory_percent,
+        disk_percent: payload.disk_percent,
+        up_speed: payload.up_speed,
+        down_speed: payload.down_speed,
+        tcp_count: payload.tcp_count,
+        udp_count: payload.udp_count,
+        fd_count: payload.fd_count,
+        memory_used_mb: payload.memory_used_mb,
+        memory_total_mb: payload.memory_total_mb,
+        disk_used_gb: payload.disk_used_gb,
+        disk_total_gb: payload.disk_total_gb,
+        system_uptime: payload.system_uptime,
+        load_avg_1: payload.load_avg_1,
+        load_avg_5: payload.load_avg_5,
+        load_avg_15: payload.load_avg_15,
+    }
+}
+
 // Events that change who belongs in which users-list group.
 const USERS_LIST_EVENTS = new Set<EventType>([
     'user.registered', 'subscription.created', 'subscription.expired',
@@ -286,38 +333,8 @@ function handleEvent(
             // Also patches every matching stats_bulk cache entry (keyed by sorted id
             // lists) so the Nodes-page grid + dashboard aggregate — both of which
             // read from the bulk cache — go live without a refetch.
-            queryClient.setQueryData(queryKeys.nodeStats(payload.node_id), (oldData: any) => {
-                if (!oldData) return undefined
-                return {
-                    ...oldData,
-                    online_users: payload.online_users,
-                    cpu_percent: payload.cpu_percent,
-                    memory_percent: payload.memory_percent,
-                    disk_percent: payload.disk_percent,
-                    up_speed: payload.up_speed,
-                    down_speed: payload.down_speed,
-                    tcp_count: payload.tcp_count,
-                    udp_count: payload.udp_count,
-                    fd_count: payload.fd_count,
-                    memory_used_mb: payload.memory_used_mb,
-                    memory_total_mb: payload.memory_total_mb,
-                    disk_used_gb: payload.disk_used_gb,
-                    disk_total_gb: payload.disk_total_gb,
-                    system_uptime: payload.system_uptime,
-                    xray_status: payload.xray_status,
-                    xray_pid: payload.xray_pid,
-                    agent_version: payload.agent_version,
-                    xray_version: payload.xray_version,
-                    process_uptime: payload.uptime > 0 ? payload.uptime : oldData.process_uptime,
-                    total_accounts: payload.total_accounts,
-                    active_accounts: payload.active_accounts,
-                    // Inject traffic totals so dashboard aggregates pick them up
-                    total_uplink: payload.total_uplink ?? oldData.total_uplink,
-                    total_downlink: payload.total_downlink ?? oldData.total_downlink,
-                    load_avg_1: payload.load_avg_1,
-                    load_avg_5: payload.load_avg_5,
-                    load_avg_15: payload.load_avg_15,
-                }
+            queryClient.setQueryData<NodeStats>(queryKeys.nodeStats(payload.node_id), (old) => {
+                return old ? mergeNodeStats(old, payload) : undefined
             })
 
             // Patch every bulk-stats cache variant that contains this node.
@@ -332,34 +349,8 @@ function handleEvent(
                         ...old,
                         [key]: {
                             ...entry,
-                            stats: {
-                                ...entry.stats,
-                                online_users: payload.online_users,
-                                cpu_percent: payload.cpu_percent,
-                                memory_percent: payload.memory_percent,
-                                disk_percent: payload.disk_percent,
-                                up_speed: payload.up_speed,
-                                down_speed: payload.down_speed,
-                                tcp_count: payload.tcp_count,
-                                udp_count: payload.udp_count,
-                                fd_count: payload.fd_count,
-                                memory_used_mb: payload.memory_used_mb,
-                                memory_total_mb: payload.memory_total_mb,
-                                disk_used_gb: payload.disk_used_gb,
-                                disk_total_gb: payload.disk_total_gb,
-                                system_uptime: payload.system_uptime,
-                                xray_status: payload.xray_status,
-                                xray_pid: payload.xray_pid,
-                                agent_version: payload.agent_version,
-                                xray_version: payload.xray_version,
-                                total_accounts: payload.total_accounts,
-                                active_accounts: payload.active_accounts,
-                                total_uplink: payload.total_uplink ?? entry.stats.total_uplink,
-                                total_downlink: payload.total_downlink ?? entry.stats.total_downlink,
-                                load_avg_1: payload.load_avg_1,
-                                load_avg_5: payload.load_avg_5,
-                                load_avg_15: payload.load_avg_15,
-                            },
+                            stats: mergeNodeStats(entry.stats, payload),
+                            error: payload.stats_unavailable ? entry.error : undefined,
                         },
                     }
                 },

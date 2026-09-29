@@ -15,8 +15,8 @@ vi.mock("@/lib/api/nodes", () => ({
 vi.mock("@/lib/queries", () => ({
     useNodes: () => ({ data: [{ id: 7, connect_mode: "direct" }, { id: 1, connect_mode: "local" }], isLoading: false }),
     useNodeStats: () => ({ data: undefined, refetch: vi.fn() }),
-    useNodeStatsHistory: () => ({ data: undefined }),
-    queryKeys: { nodeStats: (id: number) => ["stats", id], nodeStatsHistory: (id: number) => ["history", id] },
+    useNodeOverview: () => ({ data: undefined }),
+    queryKeys: { nodeStats: (id: number) => ["stats", id], nodeOverview: (id: number) => ["overview", id] },
 }))
 vi.mock("@/components/node/node-terminal", () => ({
     NodeTerminal: ({ isActive, nodeName }: { isActive: boolean; nodeName: string }) => {

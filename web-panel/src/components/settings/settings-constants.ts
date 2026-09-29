@@ -136,6 +136,7 @@ export const fieldOverrides: Record<string, FieldOverride> = {
     jwt_access_expiry: { type: "duration", unit: "minutes" },
     jwt_refresh_expiry: { type: "duration", unit: "hours" },
     sub_update_interval: { type: "duration", unit: "hours" },
+    node_offline_debounce_sec: { type: "duration", unit: "seconds" },
     expiry_warning_days: { type: "duration", unit: "days" },
     // Data-retention fields — all day-typed int settings where `0` means
     // "keep forever" (SettingField renders a pill in that case).
@@ -188,6 +189,12 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
             description: "Secure your server with TLS — choose automatic (Let's Encrypt) or manual certificates",
             keys: ["acme_enabled", "acme_email", "acme_staging", "acme_auto_renew", "tls_cert_file", "tls_key_file"],
             component: "https-mode",
+        },
+        {
+            label: "Node connectivity",
+            description:
+                "How long a node must keep failing before the outage is recorded and announced. Absorbs flapping links so the disconnection history holds one entry per real outage; the recorded time is when the failure started, not when it was confirmed.",
+            keys: ["node_offline_debounce_sec"],
         },
         {
             label: "Monitoring",

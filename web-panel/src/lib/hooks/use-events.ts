@@ -65,6 +65,9 @@ export interface NodeStatusPayload {
 }
 
 export interface NodeStatsPayload {
+    stats_unavailable?: boolean
+    /** When the agent collected the readings; absent while unavailable. */
+    sampled_at?: string
     node_id: number
     online_users: number
     total_uplink: number

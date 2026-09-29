@@ -104,3 +104,28 @@ export function tooltipContentStyle(p: ChartPalette): React.CSSProperties {
     color: p.tooltipText,
   }
 }
+
+/* Static handles for SVG attributes and inline styles (recharts strokes and
+ * fills, legend dots). They resolve through the same CSS variables as the
+ * ChartPalette slots, so they follow light and dark without a hook. Canvas
+ * drawing can't read CSS variables — use useChartPalette() there. */
+export const chart = {
+  emerald: "var(--chart-1)",
+  blue: "var(--chart-2)",
+  amber: "var(--chart-3)",
+  red: "var(--chart-4)",
+  teal: "var(--chart-5)",
+  violet: "var(--chart-6)",
+} as const
+
+export const axis = {
+  tick: "var(--text-tertiary)",
+  label: "var(--text-secondary)",
+  grid: "var(--border)",
+} as const
+
+/** Traffic direction: download is received (rx), upload is sent (tx). */
+export const network = {
+  rx: chart.emerald,
+  tx: chart.blue,
+} as const

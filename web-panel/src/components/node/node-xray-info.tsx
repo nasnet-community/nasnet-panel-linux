@@ -1,329 +1,324 @@
-import { formatUptime } from "@/lib/utils"
-import { Card } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
-import {
-    HiOutlineStatusOnline,
-    HiOutlineExclamationCircle,
-    HiOutlinePlay,
-    HiOutlineStop,
-    HiOutlineRefresh,
-    HiOutlineChevronDown,
-    HiOutlineChevronUp,
-} from "react-icons/hi"
-import { Button } from "@/components/ui/button"
+import { useCallback, useEffect, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { ChevronDown, ChevronUp, Loader2, Play, RotateCcw, Square, TriangleAlert, Upload } from "lucide-react"
 import { toast } from "@/lib/toast"
-import { startXrayProcess, stopXrayProcess, restartXrayProcess, getNodeRecentLogs } from "@/lib/api/nodes"
-import { useState, useEffect, useCallback } from "react"
-import type { Node, NodeStats } from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
+import { getNodeRecentLogs, getNodeStats, pushNodeConfig, restartXrayProcess, startXrayProcess, stopXrayProcess } from "@/lib/api/nodes"
 import type { LogEntry } from "@/lib/api/nodes"
+import { queryKeys } from "@/lib/queries"
+import type { Node, NodeOverview, NodeStats } from "@/lib/types"
+import { cn, formatUptime } from "@/lib/utils"
+import { OverviewCard } from "./overview/overview-card"
+import { XrayLogo } from "./xray-logo"
 import { XrayVersionDialog } from "./xray-version-dialog"
 
 interface NodeXrayInfoProps {
     node: Node
     stats?: NodeStats
+    configState?: NodeOverview["config"]["state"]
     isLoading?: boolean
-    onRefresh?: () => void
+    /** Phone layout: 44px controls, push as its own button. */
+    compact?: boolean
 }
 
-export function NodeXrayInfo({ node, stats, isLoading, onRefresh }: NodeXrayInfoProps) {
+type XrayAction = "start" | "stop" | "restart"
+
+// "Xray 1.8.4 (Xray, ...) ..." → "26.7.28"
+export function cleanXrayVersion(raw?: string): string | undefined {
+    if (!raw) return undefined
+    const parts = raw.split(" ")
+    if (parts.length >= 2 && parts[0] === "Xray") return parts[1]
+    return raw.replace(/^v/, "").substring(0, 20)
+}
+
+const rowCls = "flex items-center justify-between gap-2"
+
+export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: NodeXrayInfoProps) {
     const nodeId = node.id
-    const [isActionLoading, setIsActionLoading] = useState(false)
-    const [confirmingStop, setConfirmingStop] = useState(false)
+    const confirm = useConfirm()
+    const queryClient = useQueryClient()
+    const [busy, setBusy] = useState<XrayAction | "push" | null>(null)
     const [errorLogs, setErrorLogs] = useState<LogEntry[]>([])
     const [showLogs, setShowLogs] = useState(false)
     const [logsLoading, setLogsLoading] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
+    const [showRecovery, setShowRecovery] = useState(false)
 
-    const isRunning = stats?.xray_status === "running"
+    const online = node.is_online
+    const known = online && !!stats?.xray_status
+    const running = known && stats?.xray_status === "running"
+    const stopped = known && !running
+    const version = cleanXrayVersion(stats?.xray_version)
+    const recovery = node.last_crash_recovery
+    const connected = stats?.online_users ?? 0
+
+    // Reads the agent directly so the card shows the result of an action
+    // instead of waiting for the next sweep.
+    const refreshNow = useCallback(async () => {
+        try {
+            const res = await getNodeStats(nodeId, true)
+            if (res.success && res.data) {
+                queryClient.setQueryData(queryKeys.nodeStats(nodeId), { ...res.data, stats_unavailable: false, received_at: Date.now() })
+            }
+        } catch { /* the next sweep catches up */ }
+        void queryClient.invalidateQueries({ queryKey: queryKeys.nodeOverview(nodeId) })
+    }, [nodeId, queryClient])
 
     const fetchErrorLogs = useCallback(async () => {
         setLogsLoading(true)
         try {
             const res = await getNodeRecentLogs(nodeId, 50)
             if (res.success && res.data) {
-                // Filter to only warning/error level logs
-                const errors = res.data.filter(
-                    (l) => l.level === "error" || l.level === "warning"
-                )
+                const errors = res.data.filter(l => l.level === "error" || l.level === "warning")
                 setErrorLogs(errors.length > 0 ? errors : res.data.slice(-20))
             }
-        } catch {
-            // Silently fail — logs are supplementary
-        } finally {
+        } catch { /* logs are supplementary */ } finally {
             setLogsLoading(false)
         }
     }, [nodeId])
 
-    // Fetch error logs when xray is stopped
     useEffect(() => {
-        if (!isRunning && stats) {
-            fetchErrorLogs()
+        if (stopped) {
+            void fetchErrorLogs()
         } else {
             setErrorLogs([])
             setShowLogs(false)
             setActionError(null)
         }
-    }, [isRunning, stats, fetchErrorLogs])
+    }, [stopped, fetchErrorLogs])
 
-    const handleAction = async (action: "start" | "stop" | "restart") => {
-        setIsActionLoading(true)
-        setConfirmingStop(false)
+    const run = async (action: XrayAction) => {
+        setBusy(action)
         setActionError(null)
         try {
-            let res
-            if (action === "start") res = await startXrayProcess(nodeId)
-            else if (action === "stop") res = await stopXrayProcess(nodeId)
-            else res = await restartXrayProcess(nodeId)
-
+            const res = action === "start" ? await startXrayProcess(nodeId)
+                : action === "stop" ? await stopXrayProcess(nodeId)
+                : await restartXrayProcess(nodeId)
             if (res.success) {
-                toast.success(res.data?.message || `Xray ${action} command sent`)
-                setErrorLogs([])
-                setShowLogs(false)
-                onRefresh?.()
+                toast.success(action === "start" ? "Xray started" : action === "stop" ? "Xray stopped" : "Xray restarted")
+                await refreshNow()
             } else {
-                const errMsg = res.error || `Failed to ${action} Xray`
-                setActionError(errMsg)
-                toast.error(`Failed to ${action} Xray`)
-                // Fetch fresh logs after failure
-                setTimeout(() => fetchErrorLogs(), 500)
+                setActionError(res.error || `Couldn't ${action} Xray`)
+                toast.error(`Couldn't ${action} Xray`)
+                setTimeout(() => void fetchErrorLogs(), 500)
                 setShowLogs(true)
             }
-        } catch (error) {
-            toast.error("An unexpected error occurred")
+        } catch {
+            toast.error(`Couldn't ${action} Xray: the request failed`)
         } finally {
-            setIsActionLoading(false)
+            setBusy(null)
         }
     }
 
-    const handleStopClick = () => {
-        if (confirmingStop) {
-            handleAction("stop")
-        } else {
-            setConfirmingStop(true)
-            setTimeout(() => setConfirmingStop(false), 3000)
+    const askRestart = async () => {
+        const ok = await confirm({
+            title: `Restart Xray on ${node.name}?`,
+            description: connected > 0
+                ? `Xray restarts with its current config. The ${connected} ${connected === 1 ? "person" : "people"} connected right now drop for a few seconds, then reconnect on their own.`
+                : "Xray restarts with its current config. Anyone who connects in the next few seconds may need to retry.",
+            confirmLabel: "Restart Xray",
+        })
+        if (ok) await run("restart")
+    }
+
+    const askStop = async () => {
+        const ok = await confirm({
+            title: `Stop Xray on ${node.name}?`,
+            description: `${connected > 0 ? `All ${connected} connected ${connected === 1 ? "person loses their" : "people lose their"} connection, and n` : "N"}obody can connect to this node until you start Xray again.`,
+            confirmLabel: "Stop Xray",
+            variant: "destructive",
+        })
+        if (ok) await run("stop")
+    }
+
+    const push = async () => {
+        setBusy("push")
+        try {
+            const res = await pushNodeConfig(nodeId)
+            if (res.success) {
+                toast.success("Config pushed")
+                await refreshNow()
+            } else {
+                toast.error(res.error || "Couldn't push the config")
+            }
+        } catch {
+            toast.error("Couldn't push the config: the request failed")
+        } finally {
+            setBusy(null)
         }
     }
 
-    // Clean version string: "Xray 1.8.4 (Xray, ...) ..." -> "v1.8.4"
-    const getCleanVersion = (raw?: string) => {
-        if (!raw) return "Unknown"
-        const parts = raw.split(" ")
-        if (parts.length >= 2 && parts[0] === "Xray") {
-            return `v${parts[1]}`
-        }
-        return raw.substring(0, 20)
-    }
+    const status = !online ? { label: "Unknown", tone: "text-muted-foreground", ring: "bg-muted/30 ring-muted-foreground/25 text-muted-foreground" }
+        : running ? { label: "Active", tone: "text-emerald-500", ring: "bg-emerald-500/10 ring-emerald-500/25 text-emerald-500" }
+        : stopped ? { label: "Stopped", tone: "text-red-500", ring: "bg-red-500/10 ring-red-500/25 text-red-500" }
+        : { label: "Checking", tone: "text-muted-foreground", ring: "bg-muted/30 ring-muted-foreground/25 text-muted-foreground" }
 
-    const hasLogs = errorLogs.length > 0 || actionError
-    const [showRecovery, setShowRecovery] = useState(false)
-    const recovery = node.last_crash_recovery
+    const drifted = online && configState === "drifted"
+    const recoveryLabel = !node.crash_recovery_settings?.enabled ? "Off"
+        : !recovery ? "On"
+        : recovery.exhausted ? "Exhausted"
+        : recovery.success ? "Recovered"
+        : "Failed"
+    const recoveryTone = recoveryLabel === "Exhausted" || recoveryLabel === "Failed" ? "text-red-400"
+        : recoveryLabel === "Recovered" ? "text-emerald-400"
+        : "text-muted-foreground"
+
+    const ctrl = compact ? "h-11 text-xs" : "h-7 text-[11px]"
+    const btnBase = cn("w-full rounded-lg font-bold uppercase tracking-[0.06em]", ctrl)
 
     return (
-        <Card className="relative overflow-hidden group transition-shadow duration-300 hover:shadow-lg hover:shadow-indigo-500/10 rounded-2xl p-4 flex flex-col justify-between bg-card/50 backdrop-blur-sm border-white/5">
-            <div className="flex flex-col gap-3 relative z-10">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <p className="text-[12px] uppercase font-bold text-muted-foreground tracking-widest">Xray Process</p>
-                        {(isLoading || isActionLoading) && (
-                            <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
-                        )}
-                    </div>
-                    <XrayVersionDialog
-                        nodeId={nodeId}
-                        currentVersion={getCleanVersion(stats?.xray_version)}
-                        isOnline={isRunning}
-                        onRefresh={onRefresh}
-                    />
+        <OverviewCard
+            glow="indigo"
+            title="Xray process"
+            aside={
+                <div className="flex items-center gap-1.5">
+                    {(isLoading || busy) && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-hidden />}
+                    <XrayVersionDialog nodeId={nodeId} currentVersion={version ? `v${version}` : "Unknown"} isOnline={online} onRefresh={() => void refreshNow()} />
                 </div>
-
-                {/* Status Section */}
-                <div className="flex items-center gap-3">
-                    <div className={`relative flex items-center justify-center w-8 h-8 rounded-full ring-2 transition-all duration-500 ${isRunning
-                        ? "bg-emerald-500/10 text-emerald-500 ring-emerald-500/20"
-                        : "bg-red-500/10 text-red-500 ring-red-500/20"
-                        }`}>
-                        {isRunning ? (
-                            <HiOutlineStatusOnline className="w-4 h-4" />
-                        ) : (
-                            <HiOutlineExclamationCircle className="w-4 h-4" />
-                        )}
-                        {isRunning && (
-                            <span className="absolute inset-0 rounded-full animate-ping bg-emerald-500/20" />
-                        )}
-                    </div>
-
-                    <div className="flex flex-col">
-                        <span className={`text-sm font-bold tracking-tight ${isRunning ? "text-emerald-500" : "text-red-500"}`}>
-                            {isRunning ? "Active" : "Stopped"}
-                        </span>
-                        <span className="text-[12px] text-muted-foreground font-mono">
-                            {getCleanVersion(stats?.xray_version)}
-                        </span>
-                    </div>
+            }
+            className="group"
+        >
+            <div className="flex items-center gap-3">
+                <div className={cn("flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full ring-2", status.ring)}>
+                    <XrayLogo className="h-4 w-4" />
                 </div>
-
-                {/* Metrics */}
-                <div className="flex flex-col gap-1.5 border-t border-dashed border-border/50 pt-2.5">
-                    <div className="flex justify-between items-center text-[12px] uppercase font-bold tracking-wider">
-                        <span className="text-muted-foreground">PID</span>
-                        <span className="font-mono text-foreground">
-                            {stats?.xray_pid ? stats.xray_pid : "—"}
-                        </span>
-                    </div>
-                    <div className="flex justify-between items-center text-[12px] uppercase font-bold tracking-wider">
-                        <span className="text-muted-foreground">Uptime</span>
-                        <span className="font-mono text-foreground">
-                            {stats?.process_uptime ? formatUptime(stats.process_uptime) : "—"}
-                        </span>
-                    </div>
+                <div className="flex min-w-0 flex-col">
+                    <span className={cn("text-sm font-bold leading-[18px]", status.tone)}>{status.label}</span>
+                    <span className="truncate font-mono text-[12px] leading-[14px] text-muted-foreground">
+                        {online ? (version ? `v${version}` : "—") : version ? `last seen v${version}` : "—"}
+                    </span>
                 </div>
-
-                {/* Recovery Status Section (shown when stopped and recovery was attempted) */}
-                {!isRunning && recovery && (
-                    <div className="border-t border-dashed border-border/50 pt-2.5">
-                        <button
-                            type="button"
-                            className={`flex items-center justify-between w-full text-[12px] uppercase font-bold tracking-wider transition-colors ${
-                                recovery.exhausted
-                                    ? "text-red-400 hover:text-red-300"
-                                    : recovery.success
-                                      ? "text-emerald-400 hover:text-emerald-300"
-                                      : "text-amber-400 hover:text-amber-300"
-                            }`}
-                            onClick={() => setShowRecovery(!showRecovery)}
-                        >
-                            <span className="flex items-center gap-1.5">
-                                <HiOutlineRefresh className="w-3 h-3" />
-                                Recovery {recovery.exhausted ? "Exhausted" : recovery.success ? "Succeeded" : "Failed"}
-                                <span className="text-muted-foreground font-normal">
-                                    {recovery.max_attempts > 0
-                                        ? `(${recovery.attempt_num}/${recovery.max_attempts})`
-                                        : `(${recovery.attempt_num}/\u221e)`}
-                                </span>
-                            </span>
-                            {showRecovery ? (
-                                <HiOutlineChevronUp className="w-3 h-3" />
-                            ) : (
-                                <HiOutlineChevronDown className="w-3 h-3" />
-                            )}
-                        </button>
-
-                        {showRecovery && (
-                            <div className="mt-2 rounded-lg bg-black/50 border border-border/10 p-2 space-y-1.5">
-                                <div className="text-[11px] text-muted-foreground">
-                                    {new Date(recovery.timestamp).toLocaleString()}
-                                </div>
-                                {recovery.error && (
-                                    <div className="text-[11px] font-mono text-red-400 break-all">
-                                        RPC Error: {recovery.error}
-                                    </div>
-                                )}
-                                {!recovery.exhausted && !recovery.error && (
-                                    <>
-                                        <div className="text-[11px] font-mono text-muted-foreground">
-                                            Exit code: {recovery.exit_code}
-                                        </div>
-                                        {recovery.stdout && (
-                                            <div className="text-[11px] font-mono text-muted-foreground/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-                                                {recovery.stdout}
-                                            </div>
-                                        )}
-                                        {recovery.stderr && (
-                                            <div className="text-[11px] font-mono text-red-400/80 whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
-                                                {recovery.stderr}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Error Logs Section (shown when xray is stopped or action failed) */}
-                {!isRunning && hasLogs && (
-                    <div className="border-t border-dashed border-border/50 pt-2.5">
-                        <button
-                            type="button"
-                            className="flex items-center justify-between w-full text-[12px] uppercase font-bold tracking-wider text-red-400 hover:text-red-300 transition-colors"
-                            onClick={() => setShowLogs(!showLogs)}
-                        >
-                            <span className="flex items-center gap-1.5">
-                                <HiOutlineExclamationCircle className="w-3 h-3" />
-                                {actionError ? "Startup Error" : "Recent Logs"}
-                                {logsLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-                            </span>
-                            {showLogs ? (
-                                <HiOutlineChevronUp className="w-3 h-3" />
-                            ) : (
-                                <HiOutlineChevronDown className="w-3 h-3" />
-                            )}
-                        </button>
-
-                        {showLogs && (
-                            <div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-black/50 border border-red-500/10 p-2 space-y-0.5">
-                                {actionError && (
-                                    <div className="text-[11px] font-mono text-red-400 whitespace-pre-wrap break-all pb-1 mb-1 border-b border-red-500/10">
-                                        {actionError}
-                                    </div>
-                                )}
-                                {errorLogs.map((log, i) => (
-                                    <div
-                                        key={i}
-                                        className={`text-[11px] font-mono leading-relaxed break-all ${
-                                            log.level === "error"
-                                                ? "text-red-400"
-                                                : log.level === "warning"
-                                                  ? "text-yellow-400"
-                                                  : "text-muted-foreground"
-                                        }`}
-                                    >
-                                        <span className="text-muted-foreground/50">
-                                            {new Date(log.timestamp).toLocaleTimeString()}{" "}
-                                        </span>
-                                        {log.message}
-                                    </div>
-                                ))}
-                                {errorLogs.length === 0 && !actionError && (
-                                    <div className="text-[11px] text-muted-foreground italic">No recent logs available</div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
 
-            {/* Actions */}
-            <div className="mt-3">
-                {isRunning ? (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className={`h-7 w-full text-[11px] uppercase font-bold tracking-wider transition-all rounded-lg ${
-                            confirmingStop
-                                ? "bg-red-500/10 text-red-500 border-red-500/50"
-                                : "text-red-500/80 border-red-500/20 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50"
-                        }`}
-                        onClick={handleStopClick}
-                        disabled={isActionLoading}
+            <div className={cn("flex flex-col border-t border-dashed border-border/70 pt-2.5 font-bold uppercase tracking-[0.06em]", compact ? "gap-2.5 text-xs" : "gap-[7px] text-[12px] leading-[14px]")}>
+                <div className={rowCls}><span className="text-muted-foreground">PID</span><span className="font-mono">{running && stats?.xray_pid ? stats.xray_pid : "—"}</span></div>
+                <div className={rowCls}><span className="text-muted-foreground">Uptime</span><span className="font-mono">{running && stats?.process_uptime ? formatUptime(stats.process_uptime) : "—"}</span></div>
+                <div className={rowCls}>
+                    <span className="text-muted-foreground">Config</span>
+                    <span className="inline-flex items-center gap-1.5">
+                        {!online || configState === undefined || configState === "unknown"
+                            ? <span className="text-muted-foreground">—</span>
+                            : drifted ? <span className="text-amber-500">Drifted</span>
+                            : <span>In sync</span>}
+                        {drifted && !compact && (
+                            <button
+                                type="button"
+                                onClick={() => void push()}
+                                disabled={busy !== null}
+                                title="Push config"
+                                aria-label="Push config to the node"
+                                className="-my-1 inline-flex h-5 w-5 items-center justify-center rounded-[5px] border border-amber-500/35 bg-amber-500/10 text-amber-500 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                            >
+                                {busy === "push" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                            </button>
+                        )}
+                    </span>
+                </div>
+                <div className={rowCls}><span className="text-muted-foreground">Crash recovery</span><span className={recoveryTone}>{recoveryLabel}</span></div>
+            </div>
+
+            {/* Recovery details — when stopped and a recovery command ran */}
+            {stopped && recovery && (
+                <div className="border-t border-dashed border-border/70 pt-2.5">
+                    <button
+                        type="button"
+                        className={cn("flex w-full items-center justify-between text-[12px] font-bold uppercase tracking-wider transition-colors", recoveryTone)}
+                        onClick={() => setShowRecovery(v => !v)}
+                        aria-expanded={showRecovery}
                     >
-                        <HiOutlineStop className="w-3 h-3 mr-1.5 shrink-0" />
-                        {confirmingStop ? "Confirm?" : "Stop"}
+                        <span className="flex items-center gap-1.5">
+                            <RotateCcw className="h-3 w-3" />
+                            Recovery {recoveryLabel.toLowerCase()}
+                            <span className="font-normal text-muted-foreground">
+                                ({recovery.attempt_num}/{recovery.max_attempts > 0 ? recovery.max_attempts : "∞"})
+                            </span>
+                        </span>
+                        {showRecovery ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                    {showRecovery && (
+                        <div className="mt-2 space-y-1.5 rounded-lg border border-border/40 bg-black/40 p-2">
+                            <div className="text-[12px] text-muted-foreground">{new Date(recovery.timestamp).toLocaleString()}</div>
+                            {recovery.error && <div className="break-all font-mono text-[12px] text-red-400">RPC error: {recovery.error}</div>}
+                            {!recovery.exhausted && !recovery.error && (
+                                <>
+                                    <div className="font-mono text-[12px] text-muted-foreground">Exit code: {recovery.exit_code}</div>
+                                    {recovery.stdout && <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[12px] text-muted-foreground/80">{recovery.stdout}</div>}
+                                    {recovery.stderr && <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[12px] text-red-400/80">{recovery.stderr}</div>}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Recent errors — when stopped or an action failed */}
+            {stopped && (errorLogs.length > 0 || actionError) && (
+                <div className="border-t border-dashed border-border/70 pt-2.5">
+                    <button
+                        type="button"
+                        className="flex w-full items-center justify-between text-[12px] font-bold uppercase tracking-wider text-red-400 transition-colors hover:text-red-300"
+                        onClick={() => setShowLogs(v => !v)}
+                        aria-expanded={showLogs}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <TriangleAlert className="h-3 w-3" />
+                            {actionError ? "Startup error" : "Recent logs"}
+                            {logsLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                        </span>
+                        {showLogs ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                    {showLogs && (
+                        <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-red-500/10 bg-black/40 p-2">
+                            {actionError && <div className="mb-1 whitespace-pre-wrap break-all border-b border-red-500/10 pb-1 font-mono text-[12px] text-red-400">{actionError}</div>}
+                            {errorLogs.map((log, i) => (
+                                <div key={i} className={cn("break-all font-mono text-[12px] leading-relaxed", log.level === "error" ? "text-red-400" : log.level === "warning" ? "text-yellow-400" : "text-muted-foreground")}>
+                                    <span className="text-muted-foreground/50">{new Date(log.timestamp).toLocaleTimeString()} </span>
+                                    {log.message}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div className="mt-auto flex flex-col gap-2">
+                {drifted && compact && (
+                    <Button variant="outline" onClick={() => void push()} disabled={busy !== null} className={cn(btnBase, "border-amber-500/35 bg-amber-500/5 text-amber-500 hover:bg-amber-500/10 hover:text-amber-500")}>
+                        {busy === "push" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-1.5 h-3.5 w-3.5" />}
+                        Push config
+                    </Button>
+                )}
+                {stopped ? (
+                    <Button onClick={() => void run("start")} disabled={busy !== null} className={cn(btnBase, "bg-emerald-600 text-white hover:bg-emerald-700")}>
+                        {busy === "start" ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Play className="mr-1.5 h-3 w-3" />}
+                        Start Xray
                     </Button>
                 ) : (
-                    <Button
-                        variant="default"
-                        size="sm"
-                        className="h-7 w-full text-[11px] uppercase font-bold tracking-wider bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20 rounded-lg"
-                        onClick={() => handleAction("start")}
-                        disabled={isActionLoading}
-                    >
-                        <HiOutlinePlay className="w-3 h-3 mr-1.5 shrink-0" />
-                        Start Process
-                    </Button>
+                    <div className="grid grid-cols-2 gap-1.5">
+                        <Button
+                            variant="outline"
+                            onClick={() => void askRestart()}
+                            disabled={!running || busy !== null}
+                            title={online ? undefined : "Needs the node online"}
+                            className={cn(btnBase, "px-2")}
+                        >
+                            {busy === "restart" ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <RotateCcw className="mr-1.5 h-3 w-3" />}
+                            Restart
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => void askStop()}
+                            disabled={!running || busy !== null}
+                            title={online ? undefined : "Needs the node online"}
+                            className={cn(btnBase, "px-2", running && "border-red-500/25 text-red-500 hover:bg-red-500/10 hover:text-red-500")}
+                        >
+                            {busy === "stop" ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Square className="mr-1.5 h-3 w-3" />}
+                            Stop
+                        </Button>
+                    </div>
                 )}
             </div>
-        </Card>
+        </OverviewCard>
     )
 }
