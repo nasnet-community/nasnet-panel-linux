@@ -379,6 +379,9 @@ message CoreStatusResponse {
   int32 live_sessions = 3;
   int32 distinct_devices = 4;
   string detail = 5;
+  // Inbounds this core runs or will replay after a restart, so the hub can
+  // tear down the ones it no longer has.
+  repeated string inbound_ids = 6;
 }
 
 // ===== Core Dependency Installation Messages =====

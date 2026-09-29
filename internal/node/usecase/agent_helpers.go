@@ -93,6 +93,16 @@ func (u *nodeUsecase) SetInboundsChangedHook(fn func(context.Context) error) {
 	u.onInboundsChanged = fn
 }
 
+// SetCorePortLister wires the lookup of the ports a node's tunnels hold.
+func (u *nodeUsecase) SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error)) {
+	u.corePorts = fn
+}
+
+// SetCoreReconcileFn wires the tunnel core push into the node reconcile path.
+func (u *nodeUsecase) SetCoreReconcileFn(fn func(ctx context.Context, client agent.NodeClient, nodeID uint) error) {
+	u.coreReconcileFn = fn
+}
+
 // notifyInboundsChanged is nil-safe: unwired means router mode is off. An
 // accept that drifts from its inbound is worth a warning, never a failure.
 // Only the built-in node's inbounds reach the box's firewall.

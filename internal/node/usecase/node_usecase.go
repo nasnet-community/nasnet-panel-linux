@@ -290,6 +290,8 @@ type NodeUsecase interface {
 	SetRouterWANSource(fn func(context.Context) []xray.RouterWAN)
 	SetIngressUplinkSource(fn func() string)
 	SetInboundsChangedHook(fn func(context.Context) error)
+	SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error))
+	SetCoreReconcileFn(fn func(ctx context.Context, client agent.NodeClient, nodeID uint) error)
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)
@@ -512,6 +514,14 @@ type nodeUsecase struct {
 
 	// Re-derives filter_in and re-checks port mappings after an inbound edit.
 	onInboundsChanged func(context.Context) error
+
+	// corePorts lists the ports a node's tunnel inbounds hold, so an xray
+	// inbound cannot take one (SetCorePortLister); nil => no tunnels.
+	corePorts func(ctx context.Context, nodeID uint) ([]int, error)
+	// coreReconcileFn pushes tunnel core state to a node's agent after the
+	// Xray config push (SetCoreReconcileFn). Failures are non-fatal to the
+	// Xray push.
+	coreReconcileFn func(ctx context.Context, client agent.NodeClient, nodeID uint) error
 
 	// nukeAgentClientFactory: test override; nil → getAgentClient.
 	nukeAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)

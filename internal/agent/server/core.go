@@ -214,5 +214,31 @@ func (s *Server) GetCoreStatus(ctx context.Context, req *pb.CoreStatusRequest) (
 		LiveSessions:    int32(st.LiveSessions),
 		DistinctDevices: int32(st.DistinctDevices),
 		Detail:          st.Detail,
+		InboundIds:      s.coreInboundIDs(req.GetCoreType(), st.InboundIDs),
 	}, nil
+}
+
+// coreInboundIDs adds the inbounds persisted for replay to the ones the core
+// runs: an inbound whose Apply failed at startup is still replayed on the next
+// boot, so the hub has to see it to tear it down.
+func (s *Server) coreInboundIDs(coreType string, running []string) []string {
+	if s.coreState == nil {
+		return running
+	}
+	payloads, err := s.coreState.LoadAll()
+	if err != nil {
+		return running
+	}
+	seen := make(map[string]bool, len(running))
+	out := append([]string(nil), running...)
+	for _, id := range running {
+		seen[id] = true
+	}
+	for _, p := range payloads {
+		if p.GetCoreType() == coreType && !seen[p.GetInboundId()] {
+			seen[p.GetInboundId()] = true
+			out = append(out, p.GetInboundId())
+		}
+	}
+	return out
 }

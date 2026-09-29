@@ -8,7 +8,7 @@ import (
 // AssertWired verifies that the setter-injected dependencies of a nodeUsecase
 // were actually plumbed in during bootstrap. These deps are set via setters
 // (SetAuditUsecase, SetWGPeerSource, SetEmbeddedServer, SetReverseRegistry,
-// SetHubServer) after construction
+// SetHubServer, SetCoreReconcileFn) after construction
 // because they become available later in the boot sequence. If a setter is
 // missed, the field stays nil and its consumer silently degrades — most
 // dangerously audit logging for destructive Node Nuke/Wipe ops, which is
@@ -40,6 +40,9 @@ func AssertWired(uc NodeUsecase) error {
 	}
 	if u.hubServer == nil {
 		missing = append(missing, "hubServer (SetHubServer)")
+	}
+	if u.coreReconcileFn == nil {
+		missing = append(missing, "coreReconcileFn (SetCoreReconcileFn)")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("nodeUsecase wiring incomplete: %s", strings.Join(missing, ", "))

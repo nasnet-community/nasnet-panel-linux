@@ -82,6 +82,8 @@ type CoreStatus struct {
 	LiveSessions    int
 	DistinctDevices int
 	Detail          string
+	// InboundIDs are the inbounds this core currently runs.
+	InboundIDs []string
 }
 
 // Core is one protocol implementation on the agent.

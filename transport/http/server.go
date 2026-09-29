@@ -27,6 +27,8 @@ import (
 	authMiddleware "github.com/nasnet-community/nasnet-panel-linux/internal/auth/middleware"
 	chatHttp "github.com/nasnet-community/nasnet-panel-linux/internal/chat/delivery/http"
 	chatDomain "github.com/nasnet-community/nasnet-panel-linux/internal/chat/domain"
+	coreHttp "github.com/nasnet-community/nasnet-panel-linux/internal/core/delivery/http"
+	coreUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
 	eventsHttp "github.com/nasnet-community/nasnet-panel-linux/internal/events/delivery/http"
 	mntHTTP "github.com/nasnet-community/nasnet-panel-linux/internal/maintenance/delivery/http"
 	mntUC "github.com/nasnet-community/nasnet-panel-linux/internal/maintenance/usecase"
@@ -76,6 +78,8 @@ type CoreDeps struct {
 	SubUsecase  subUC.SubscriptionUsecase
 	ChatUsecase chatDomain.ChatUsecase
 	WGDevice    wireguardUC.DeviceUsecase
+	// Tunnels manages the SSH and MTProto tunnel inbounds (optional).
+	Tunnels *coreUsecase.CoreUsecase
 }
 
 // AdminDeps holds admin-panel and extended usecases (optional)
@@ -390,6 +394,17 @@ func NewServer(deps ServerDeps) *Server {
 		if deps.Admin.SNIUsecase != nil {
 			sniHandler := sniHttp.NewHandler(deps.Admin.SNIUsecase)
 			sniHandler.RegisterRoutes(adminAPI)
+		}
+
+		// Tunnels (SSH, MTProto)
+		if deps.Core.Tunnels != nil {
+			tunnels := deps.Core.Tunnels
+			// Links point at the node's public address when the caller omits ?host=.
+			hostFn := func(c *gin.Context, nodeID uint) string {
+				host, _ := tunnels.ResolveNodeHost(c.Request.Context(), nodeID)
+				return host
+			}
+			coreHttp.NewHandler(tunnels, hostFn).RegisterRoutes(adminAPI)
 		}
 
 		// Router mode

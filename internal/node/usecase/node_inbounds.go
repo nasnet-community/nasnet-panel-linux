@@ -202,6 +202,24 @@ func validatePortRange(pr string) error {
 	return nil
 }
 
+// ensureNoTunnelPort rejects an inbound whose port or range covers a port a
+// tunnel (SSH/MTProto) inbound holds on the same node.
+func (u *nodeUsecase) ensureNoTunnelPort(ctx context.Context, inbound *domain.Inbound) error {
+	if u.corePorts == nil {
+		return nil
+	}
+	ports, err := u.corePorts(ctx, inbound.NodeID)
+	if err != nil {
+		return fmt.Errorf("failed to check tunnel ports: %w", err)
+	}
+	for _, p := range ports {
+		if inbound.ListensOn(p) {
+			return fmt.Errorf("port %d is already used by a tunnel on this node", p)
+		}
+	}
+	return nil
+}
+
 // ensureUniqueTag rejects a tag already used by another inbound on the node;
 // duplicate tags stop xray from starting.
 func (u *nodeUsecase) ensureUniqueTag(ctx context.Context, inbound *domain.Inbound) error {
@@ -473,6 +491,9 @@ func (u *nodeUsecase) AddInbound(ctx context.Context, inbound *domain.Inbound) e
 	if err := u.ensureUniqueTag(ctx, inbound); err != nil {
 		return err
 	}
+	if err := u.ensureNoTunnelPort(ctx, inbound); err != nil {
+		return err
+	}
 	if err := u.guardRealityDest(ctx, inbound, nil); err != nil {
 		return err
 	}
@@ -657,6 +678,9 @@ func (u *nodeUsecase) UpdateInbound(ctx context.Context, inbound *domain.Inbound
 		return err
 	}
 	if err := u.ensureUniqueTag(ctx, inbound); err != nil {
+		return err
+	}
+	if err := u.ensureNoTunnelPort(ctx, inbound); err != nil {
 		return err
 	}
 	if err := u.guardRealityDest(ctx, inbound, prev); err != nil {

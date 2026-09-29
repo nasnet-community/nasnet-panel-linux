@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -361,11 +362,16 @@ func (c *Core) copyMetered(dst io.Writer, src io.Reader, ac *acct, isUp bool) {
 // Status implements core.Core.
 func (c *Core) Status(ctx context.Context) (core.CoreStatus, error) {
 	c.mu.Lock()
-	running := len(c.inbounds) > 0
+	ids := make([]string, 0, len(c.inbounds))
+	for id := range c.inbounds {
+		ids = append(ids, id)
+	}
 	c.mu.Unlock()
+	sort.Strings(ids)
 	return core.CoreStatus{
-		Running:      running,
+		Running:      len(ids) > 0,
 		LiveSessions: c.sessions.totalLive(),
+		InboundIDs:   ids,
 	}, nil
 }
 

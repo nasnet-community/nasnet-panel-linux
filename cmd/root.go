@@ -34,6 +34,8 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
 	hubpb "github.com/nasnet-community/nasnet-panel-linux/pkg/hub/pb"
 
+	coreDomain "github.com/nasnet-community/nasnet-panel-linux/internal/core/domain"
+	coreRepository "github.com/nasnet-community/nasnet-panel-linux/internal/core/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/preflight"
@@ -229,6 +231,9 @@ func runServe(cmd *cobra.Command, args []string) {
 		&networkDomain.LANDeviceLabel{},
 		&networkDomain.VPNProfile{},
 		&networkDomain.ApplyRecord{},
+		&coreDomain.CoreInbound{},
+		&coreDomain.CoreUser{},
+		&coreDomain.NodeCoreSetting{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
 	}
@@ -392,6 +397,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		firewallHubPort = hubPort
 	}
 
+	coreRepo := coreRepository.NewCoreRepository(db)
+
 	// Reconcile the network BEFORE the agent starts! (xray needs routing path)
 	var networkUC networkUsecase.NetworkUsecase
 	if cfg.Router.Enabled {
@@ -400,7 +407,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			DB: db, NftMgr: embeddedSrv.NftManager(),
 			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
 			NetEvents: netEvents, Log: log,
-			PanelPort: cfg.App.Port, HubPort: firewallHubPort, NodeRepo: repos.Node, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
+			PanelPort: cfg.App.Port, HubPort: firewallHubPort, NodeRepo: repos.Node, Tunnels: coreRepo, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
 			PoolSettings: poolSettings{uc: uc.Setting},
 		})
 		if rmErr != nil {
@@ -434,6 +441,21 @@ func runServe(cmd *cobra.Command, args []string) {
 		})
 	}
 	log.Info("In-process node agent started (single-binary mode)")
+
+	// SSH and MTProto tunnels: pushed to each node after its xray config.
+	var tunnelFirewall func(context.Context) error
+	if networkUC != nil {
+		tunnelFirewall = networkUC.OnInboundsChanged
+	}
+	coreUC := newTunnelUsecase(tunnelDeps{
+		Repo: coreRepo, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
+		BaseURL: cfg.App.BaseURL, PanelPort: cfg.App.Port, HubPort: hubPort,
+		InboundsChanged: tunnelFirewall, Log: log,
+	})
+	uc.Node.SetCoreReconcileFn(func(ctx context.Context, client agent.NodeClient, nodeID uint) error {
+		return coreUC.ReconcileNode(ctx, client, nodeID)
+	})
+	uc.Node.SetCorePortLister(coreUC.NodePorts)
 
 	// Reverse-mode nodes arrive through the hub; its listener starts later,
 	// only when the hub is on.
@@ -822,6 +844,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			SubUsecase:  uc.Subscription,
 			ChatUsecase: uc.Chat,
 			WGDevice:    uc.WGDevice,
+			Tunnels:     coreUC,
 		},
 		Admin: httpTransport.AdminDeps{
 			NodePools:          uc.NodePools,
@@ -995,6 +1018,8 @@ type routerModeDeps struct {
 	HubPort int
 	// NodeRepo supplies the inbound rows filter_in derives its accepts from.
 	NodeRepo inboundLister
+	// Tunnels supplies the SSH/MTProto listeners filter_in opens as well.
+	Tunnels tunnelLister
 	// LocalNodeID names the built-in node whose inbounds filter_in opens.
 	LocalNodeID func() uint
 	// HTTPFactory routes the domestic address-list refresh like every other
@@ -1057,7 +1082,7 @@ func startRouterMode(ctx context.Context, deps routerModeDeps) (networkUsecase.N
 		RouterMode:   true,
 		EventBus:     deps.Bus,
 		Events:       deps.NetEvents,
-		Inbounds:     inboundSource{repo: deps.NodeRepo, localNodeID: deps.LocalNodeID},
+		Inbounds:     inboundSource{repo: deps.NodeRepo, tunnels: deps.Tunnels, localNodeID: deps.LocalNodeID},
 		PortMapRepo:  networkRepo.NewPortMapRepository(deps.DB),
 		RangesClient: deps.HTTPFactory.ClientFor(
 			httpclient.FeatureGeofiles, httpclient.EgressForeign, 2*time.Minute),

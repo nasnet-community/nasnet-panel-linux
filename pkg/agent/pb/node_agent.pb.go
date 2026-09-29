@@ -1390,8 +1390,11 @@ type CoreStatusResponse struct {
 	LiveSessions    int32                  `protobuf:"varint,3,opt,name=live_sessions,json=liveSessions,proto3" json:"live_sessions,omitempty"`
 	DistinctDevices int32                  `protobuf:"varint,4,opt,name=distinct_devices,json=distinctDevices,proto3" json:"distinct_devices,omitempty"`
 	Detail          string                 `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Inbounds this core runs or will replay after a restart, so the hub can
+	// tear down the ones it no longer has.
+	InboundIds    []string `protobuf:"bytes,6,rep,name=inbound_ids,json=inboundIds,proto3" json:"inbound_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CoreStatusResponse) Reset() {
@@ -1457,6 +1460,13 @@ func (x *CoreStatusResponse) GetDetail() string {
 		return x.Detail
 	}
 	return ""
+}
+
+func (x *CoreStatusResponse) GetInboundIds() []string {
+	if x != nil {
+		return x.InboundIds
+	}
+	return nil
 }
 
 type ProbeDependenciesRequest struct {
@@ -7333,13 +7343,15 @@ const file_node_agent_proto_rawDesc = "" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12\x12\n" +
 	"\x04mode\x18\x03 \x01(\rR\x04mode\"0\n" +
 	"\x11CoreStatusRequest\x12\x1b\n" +
-	"\tcore_type\x18\x01 \x01(\tR\bcoreType\"\xb0\x01\n" +
+	"\tcore_type\x18\x01 \x01(\tR\bcoreType\"\xd1\x01\n" +
 	"\x12CoreStatusResponse\x12\x18\n" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12#\n" +
 	"\rlive_sessions\x18\x03 \x01(\x05R\fliveSessions\x12)\n" +
 	"\x10distinct_devices\x18\x04 \x01(\x05R\x0fdistinctDevices\x12\x16\n" +
-	"\x06detail\x18\x05 \x01(\tR\x06detail\"9\n" +
+	"\x06detail\x18\x05 \x01(\tR\x06detail\x12\x1f\n" +
+	"\vinbound_ids\x18\x06 \x03(\tR\n" +
+	"inboundIds\"9\n" +
 	"\x18ProbeDependenciesRequest\x12\x1d\n" +
 	"\n" +
 	"core_types\x18\x01 \x03(\tR\tcoreTypes\"\x9e\x01\n" +
