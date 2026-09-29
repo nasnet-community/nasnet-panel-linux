@@ -11,6 +11,7 @@ import { StatusBadges } from "@/components/sub-panel/status-banner"
 import { StatsGrid } from "@/components/sub-panel/stats-grid"
 import { ServerList } from "@/components/sub-panel/server-list"
 import { WgDevices } from "@/components/sub-panel/wg-devices"
+import { CoreConfigCard } from "@/components/sub-panel/core-config-card"
 import { TelegramChatId } from "@/components/sub-panel/telegram-chat-id"
 import { PanelSkeleton } from "@/components/sub-panel/panel-skeleton"
 import { DataForecast } from "@/components/sub-panel/data-forecast"
@@ -262,14 +263,15 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                 <StatsGrid data={data} uuid={uuid} />
                             </motion.div>
 
-                            {/* Server List — WireGuard is handled in its own card below.
-                                Hide this entirely only when WG is the sole protocol, so a
-                                WG-only sub doesn't show a misleading "No servers linked". */}
+                            {/* Server List — WireGuard and the SSH/MTProto tunnels get their
+                                own cards below. Hide the list only when those are all the sub
+                                has, so it doesn't show a misleading "No servers linked". */}
                             {(() => {
                                 const servers = data.servers ?? []
+                                const coreTunnels = data.core_tunnels ?? []
                                 const hasWg = servers.some((s) => s.protocol === "WIREGUARD")
                                 const hasOther = servers.some((s) => s.protocol !== "WIREGUARD")
-                                const showServerList = hasOther || !hasWg
+                                const showServerList = hasOther || (!hasWg && coreTunnels.length === 0)
                                 return (
                                     <>
                                         {showServerList && (
@@ -287,6 +289,16 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                 <WgDevices uuid={uuid} />
                                             </motion.div>
                                         )}
+                                        {coreTunnels.map((t, i) => (
+                                            <motion.div key={`${t.protocol}-${t.node_name}-${i}`} variants={itemVariants}>
+                                                <CoreConfigCard
+                                                    protocol={t.protocol}
+                                                    content={t.content}
+                                                    nodeName={t.node_name}
+                                                    dataUsedDisplay={t.data_used_display}
+                                                />
+                                            </motion.div>
+                                        ))}
                                     </>
                                 )
                             })()}

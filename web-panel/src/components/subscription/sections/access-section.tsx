@@ -22,6 +22,7 @@ import { getAccountLink } from "@/lib/api/accounts"
 import { bulkManageInbounds } from "@/lib/api/subscriptions"
 import { useQueryClient } from "@tanstack/react-query"
 import { SectionHeader } from "./section-header"
+import { SubscriptionCoreTunnels } from "../subscription-core-tunnels"
 
 interface AccessSectionProps {
     subscription: Subscription
@@ -174,6 +175,13 @@ export function AccessSection({
                     </div>
                 )}
             </div>
+
+            {subscription.id ? (
+                <>
+                    <Separator />
+                    <SubscriptionCoreTunnels subscriptionId={subscription.id} />
+                </>
+            ) : null}
 
             {/* Connected IPs */}
             {(ipsLoading || ips.length > 0) && (

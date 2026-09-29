@@ -30,6 +30,19 @@ export interface SubPanelData {
     servers: SubPanelServer[]
     chat_enabled: boolean
     telegram_bot_username?: string
+    /** SSH/MTProto tunnels assigned to the subscription (only while it grants access). */
+    core_tunnels?: CoreTunnelData[]
+}
+
+/** One tunnel on the public sub panel, rendered as client links. */
+export interface CoreTunnelData {
+    protocol: string
+    node_name: string
+    kind: "link"
+    /** Link URIs, one per line. */
+    content: string
+    data_used?: number
+    data_used_display?: string
 }
 
 export type UsageTrendRange = "7d" | "30d"

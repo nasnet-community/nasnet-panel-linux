@@ -182,6 +182,34 @@ export async function assignSubscriptionToInbound(subscriptionId: number, inboun
     })
 }
 
+/** One SSH/MTProto tunnel user assigned to a subscription. */
+export interface SubscriptionCoreAccount {
+    core_user_id: number
+    core_inbound_id: number
+    protocol: string
+    port: number
+    remark: string
+    node_id: number
+    email: string
+    enabled: boolean
+}
+
+export async function assignSubscriptionToCoreInbound(subscriptionId: number, coreInboundId: number): Promise<ApiResponse<void>> {
+    return api.post<void>(`/api/v1/subscriptions/${subscriptionId}/assign-core-inbound`, {
+        core_inbound_id: coreInboundId,
+    })
+}
+
+export async function unassignSubscriptionFromCoreInbound(subscriptionId: number, coreInboundId: number): Promise<ApiResponse<void>> {
+    return api.post<void>(`/api/v1/subscriptions/${subscriptionId}/unassign-core-inbound`, {
+        core_inbound_id: coreInboundId,
+    })
+}
+
+export async function listSubscriptionCoreAccounts(subscriptionId: number): Promise<ApiResponse<{ accounts: SubscriptionCoreAccount[] | null }>> {
+    return api.get<{ accounts: SubscriptionCoreAccount[] | null }>(`/api/v1/subscriptions/${subscriptionId}/core-accounts`)
+}
+
 export interface BulkManageInboundsRequest {
     subscription_ids: number[]
     add_inbound_ids: number[]

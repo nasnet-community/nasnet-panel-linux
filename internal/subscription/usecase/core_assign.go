@@ -56,9 +56,14 @@ func (u *subscriptionUsecase) AssignToCoreInbound(ctx context.Context, subscript
 	if (err == nil || errors.Is(err, coreUC.ErrReconcilePending)) && !sub.GrantsAccess() {
 		err = u.coreAssigner.DisableUsersBySubscription(ctx, subscriptionID)
 	}
+	return pendingOK(err, "AssignToCoreInbound", subscriptionID)
+}
+
+// pendingOK treats a node push that failed after the tunnel change was saved
+// as success: the node's next reconcile applies it.
+func pendingOK(err error, op string, subscriptionID uint) error {
 	if errors.Is(err, coreUC.ErrReconcilePending) {
-		// Saved; the node picks the tunnel up on its next reconcile.
-		logger.GetLogger().WithError(err).WithField("subscription_id", subscriptionID).Warn("[AssignToCoreInbound] Node not updated yet")
+		logger.GetLogger().WithError(err).WithField("subscription_id", subscriptionID).Warnf("[%s] Node not updated yet", op)
 		return nil
 	}
 	return err
@@ -69,7 +74,7 @@ func (u *subscriptionUsecase) RemoveFromCoreInbound(ctx context.Context, subscri
 	if u.coreAssigner == nil {
 		return fmt.Errorf("tunnel assignment is not available")
 	}
-	return u.coreAssigner.RemoveSubscriptionFromCoreInbound(ctx, subscriptionID, coreInboundID)
+	return pendingOK(u.coreAssigner.RemoveSubscriptionFromCoreInbound(ctx, subscriptionID, coreInboundID), "RemoveFromCoreInbound", subscriptionID)
 }
 
 // ListCoreAccounts returns the subscription's assigned tunnels.
@@ -95,11 +100,5 @@ func (u *subscriptionUsecase) DeleteCoreTunnels(ctx context.Context, subscriptio
 	if u.coreAssigner == nil {
 		return nil
 	}
-	err := u.coreAssigner.DeleteUsersBySubscription(ctx, subscriptionID)
-	if errors.Is(err, coreUC.ErrReconcilePending) {
-		// Deleted; the node's next reconcile tears the listeners' users down.
-		logger.GetLogger().WithError(err).WithField("subscription_id", subscriptionID).Warn("[DeleteCoreTunnels] Node not updated yet")
-		return nil
-	}
-	return err
+	return pendingOK(u.coreAssigner.DeleteUsersBySubscription(ctx, subscriptionID), "DeleteCoreTunnels", subscriptionID)
 }
