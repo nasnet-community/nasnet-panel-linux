@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	agentpool "github.com/nasnet-community/nasnet-panel-linux/internal/agent/pool"
 	"net/http"
 	"os"
 	"os/signal"
@@ -196,6 +197,10 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.AccessLogSummary{},
 		&nodeDomain.NodeDailyTraffic{},
 		&nodeDomain.NodeUptimeEvent{},
+		&nodeDomain.OutboundPool{},
+		&nodeDomain.OutboundPoolSource{},
+		&nodeDomain.OutboundPoolCandidate{},
+		&nodeDomain.OutboundPoolRun{},
 		&nodeDomain.NodeDailyUptime{},
 		&nodeDomain.HubLifecycleEvent{},
 		&nodeDomain.StarlinkStat{},
@@ -389,10 +394,13 @@ func runServe(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// The built-in node scans pools inside this process (D7).
+	agentpool.Configure(nodeDomain.LocalPoolScanThreads)
 	if err := embeddedSrv.StartLocal(bgCtx); err != nil {
 		log.WithError(err).Fatal("Failed to start in-process node agent server")
 	}
 	uc.Node.SetEmbeddedServer(embeddedSrv)
+	uc.NodePools.Start()
 	if networkUC != nil {
 		// Shaping follows the uplink clients arrive on.
 		uc.Node.SetIngressUplinkSource(networkUC.IngressUplinkIfName)
@@ -802,6 +810,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			WGDevice:    uc.WGDevice,
 		},
 		Admin: httpTransport.AdminDeps{
+			NodePools:          uc.NodePools,
 			AdminUsecase:       uc.Admin,
 			AccountUsecase:     uc.Account,
 			NodeUsecase:        uc.Node,
@@ -892,6 +901,8 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Close the lifecycle row before the DB goes away: a clean stop gives the
 	// gap an exact end instead of one inferred at the next boot.
 	hubLifecycle.Close(shutdownCtx)
+	// Scans write to the DB; stop them before it closes.
+	uc.NodePools.Stop()
 	if networkUC != nil {
 		// The mapper hands its leases back on the way out. Waiting is the
 		// difference between a released port and one the upstream router keeps

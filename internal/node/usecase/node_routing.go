@@ -51,6 +51,10 @@ var validProtocols = map[string]bool{
 }
 
 func validateRoutingRule(rule *domain.RoutingRule) error {
+	if strings.HasPrefix(rule.OutboundTag, "pool-") {
+		return fmt.Errorf("%w: route through the pool balancer instead of an individual member", ErrInvalidRoutingRule)
+	}
+
 	// rule_tag is required and must be reasonable
 	tag := strings.TrimSpace(rule.RuleTag)
 	if tag == "" {
@@ -513,6 +517,10 @@ func (u *nodeUsecase) AddBalancingRule(ctx context.Context, rule *domain.Balanci
 		return err
 	}
 
+	if err := u.guardPoolBalancer(ctx, rule, false); err != nil {
+		return err
+	}
+
 	if exists, err := u.balancingTagExistsOnNode(ctx, rule.NodeID, rule.Tag, 0); err != nil {
 		return fmt.Errorf("failed to check balancing rule uniqueness: %w", err)
 	} else if exists {
@@ -548,6 +556,10 @@ func (u *nodeUsecase) UpdateBalancingRule(ctx context.Context, rule *domain.Bala
 	// Pin NodeID — do not let body re-home the rule to another node.
 	rule.NodeID = existing.NodeID
 
+	if err := u.guardPoolBalancer(ctx, rule, false); err != nil {
+		return err
+	}
+
 	if exists, err := u.balancingTagExistsOnNode(ctx, rule.NodeID, rule.Tag, rule.ID); err != nil {
 		return fmt.Errorf("failed to check balancing rule uniqueness: %w", err)
 	} else if exists {
@@ -571,6 +583,10 @@ func (u *nodeUsecase) DeleteBalancingRule(ctx context.Context, id uint) error {
 	rule, err := u.nodeRepo.GetBalancingRule(ctx, id)
 	if err != nil {
 		return fmt.Errorf("balancing rule not found: %w", err)
+	}
+
+	if err := u.guardPoolBalancer(ctx, rule, true); err != nil {
+		return err
 	}
 
 	if err := u.nodeRepo.DeleteBalancingRule(ctx, id); err != nil {

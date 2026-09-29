@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
@@ -19,6 +20,10 @@ import (
 // - verifies the target tag exists on the same node
 // - detects circular chains (A→B→...→A)
 func (u *nodeUsecase) validateProxyChaining(ctx context.Context, outbound *domain.Outbound) error {
+	if (outbound.ProxySettings != nil && strings.HasPrefix(outbound.ProxySettings.Tag, "pool-")) || (outbound.SockoptSettings != nil && strings.HasPrefix(outbound.SockoptSettings.DialerProxy, "pool-")) {
+		return fmt.Errorf("route through the pool balancer instead of chaining to a managed member")
+	}
+
 	ps := outbound.ProxySettings
 	if ps == nil || ps.Tag == "" {
 		return nil
@@ -113,6 +118,10 @@ func (u *nodeUsecase) findOutboundsChainingTo(ctx context.Context, nodeID uint, 
 // Mirrors AddInbound: rolls back the DB record if the push fails so a
 // broken outbound doesn't poison drift detection.
 func (u *nodeUsecase) AddOutbound(ctx context.Context, outbound *domain.Outbound) error {
+	if outbound.ManagedPoolID != nil || strings.HasPrefix(outbound.Tag, "pool-") {
+		return fmt.Errorf("pool tags are reserved for managed outbounds")
+	}
+
 	log := logger.GetLogger()
 
 	if err := validateOutboundProtocol(outbound.Protocol); err != nil {
@@ -195,6 +204,10 @@ func (u *nodeUsecase) DeleteOutbound(ctx context.Context, id uint) error {
 		return err
 	}
 
+	if err := u.guardPoolOutbound(ctx, outbound, true); err != nil {
+		return err
+	}
+
 	// Check if any reverse proxy references this outbound's tag
 	refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, outbound.NodeID, outbound.Tag)
 	if refErr != nil {
@@ -234,6 +247,10 @@ func (u *nodeUsecase) ToggleOutboundDisabled(ctx context.Context, id uint) (*dom
 	// Fetch outbound with node to get tag and node_id
 	outbound, err := u.nodeRepo.GetOutboundWithNode(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := u.guardPoolOutbound(ctx, outbound, !outbound.IsDisabled); err != nil {
 		return nil, err
 	}
 
@@ -299,6 +316,13 @@ func (u *nodeUsecase) UpdateOutbound(ctx context.Context, outbound *domain.Outbo
 	if prevErr != nil {
 		return prevErr
 	}
+	if err := u.guardPoolOutbound(ctx, prev, prev.Tag != outbound.Tag || outbound.IsDisabled); err != nil {
+		return err
+	}
+	if outbound.ManagedPoolID != nil || strings.HasPrefix(outbound.Tag, "pool-") {
+		return fmt.Errorf("pool tags are reserved for managed outbounds")
+	}
+
 	outbound.NodeID = prev.NodeID
 	if prev.Tag != outbound.Tag {
 		if err := u.rejectReferencedTagRename(ctx, prev.NodeID, prev.Tag, "outbound", nil); err != nil {
@@ -399,6 +423,10 @@ func (u *nodeUsecase) TestOutbound(ctx context.Context, outboundID uint, opts Ou
 	if err != nil {
 		return nil, ErrOutboundNotFound
 	}
+	if outbound.ManagedPoolID != nil {
+		return nil, fmt.Errorf("rescan this outbound from its pool")
+	}
+
 	// Protocols with nothing to probe are answered without needing a node at all.
 	if !outbound.IsTestable() {
 		return u.recordTestResult(ctx, outbound.ID, &domain.OutboundTestResult{

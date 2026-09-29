@@ -423,6 +423,9 @@ type nodeUsecase struct {
 	// Heartbeat manager for the local node's status loop
 	heartbeatMgr *HeartbeatManager
 
+	// pools owns subscription pools; its members are node outbounds.
+	pools *OutboundPoolService
+
 	// Connectivity transition state (see node_connectivity.go). Guards the
 	// per-node cache of committed status + pending debounce window, and the
 	// short-lived cache of the debounce setting.

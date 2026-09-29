@@ -132,6 +132,16 @@ func (u *nodeUsecase) GetNode(ctx context.Context, id uint) (*domain.Node, error
 	return u.nodeRepo.GetNode(ctx, id)
 }
 func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error {
+	if u.pools != nil {
+		var count int64
+		if err := u.pools.db.WithContext(ctx).Model(&domain.OutboundPool{}).Where("node_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("remove the node's outbound pools first")
+		}
+	}
+
 	log := logger.GetLogger()
 	log.WithField("node_id", id).WithField("force", force).Info("[DeleteNode] Request to delete node")
 

@@ -43,6 +43,16 @@ var ErrNukeFailed = errors.New("nuke failed: all phases failed on the agent")
 // Nuke: per-node mutex + audit + unary/streaming RPC dispatch +
 // post-run record lifecycle. Keeps HTTP/SSE layer thin.
 func (u *nodeUsecase) Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error) {
+	if u.pools != nil {
+		var count int64
+		if err := u.pools.db.WithContext(ctx).Model(&domain.OutboundPool{}).Where("node_id = ?", nodeID).Count(&count).Error; err != nil {
+			return nil, err
+		}
+		if count > 0 {
+			return nil, fmt.Errorf("remove the node's outbound pools before wiping it")
+		}
+	}
+
 	// Grab the per-node lock; second caller gets a clean error rather than
 	// racing against the first RPC.
 	u.nukesInFlightMu.Lock()

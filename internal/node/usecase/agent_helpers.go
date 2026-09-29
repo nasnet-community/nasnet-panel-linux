@@ -636,6 +636,8 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		return fmt.Errorf("failed to list balancing rules: %w", dbErrors[4])
 	}
 
+	outbounds, balancingRules = overridePool(ctx, outbounds, balancingRules)
+
 	// Filter disabled inbounds — excluded from Xray config, certificate injection, and user mapping
 	enabledInbounds := make([]*domain.Inbound, 0, len(inbounds))
 	for _, in := range inbounds {

@@ -80,6 +80,7 @@ type CoreDeps struct {
 
 // AdminDeps holds admin-panel and extended usecases (optional)
 type AdminDeps struct {
+	NodePools          *nodeUCPkg.OutboundPoolService
 	AdminUsecase       adminUC.AdminUsecase
 	AccountUsecase     accountUC.AccountUsecase
 	NodeUsecase        nodeUCPkg.NodeUsecase
@@ -380,6 +381,9 @@ func NewServer(deps ServerDeps) *Server {
 			nodeHandler := nodeHttp.NewHandler(deps.Admin.NodeUsecase)
 			nodeHandler.SetHTTPClientFactory(deps.Infra.HTTPClientFactory)
 			nodeHandler.RegisterRoutes(adminAPI)
+			if deps.Admin.NodePools != nil {
+				nodeHttp.RegisterPoolRoutes(adminAPI, deps.Admin.NodePools)
+			}
 		}
 
 		// SNI/Certificate management

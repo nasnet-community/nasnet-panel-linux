@@ -116,6 +116,7 @@ type repositoryBundle struct {
 
 // usecaseBundle holds all usecase instances created during bootstrap.
 type usecaseBundle struct {
+	NodePools    *nodeUC.OutboundPoolService
 	User         userUC.UserUsecase
 	SNI          sniUC.SNIUsecase
 	Setting      settingDomain.SettingUsecase
@@ -405,6 +406,7 @@ func initUsecases(
 		Certificate:  certUsecase,
 		CertWatch:    certWatch,
 		Node:         nodeUsecase,
+		NodePools:    nodeUC.NewOutboundPoolService(db, nodeUsecase),
 		Subscription: subUsecase,
 		Admin:        adminUsecase,
 		Audit:        auditUsecase,

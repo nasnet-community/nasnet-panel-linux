@@ -782,8 +782,10 @@ func (n *Node) GetFakeDNSSettingsOrDefault() []FakeDNSPool {
 
 // Outbound represents a specific protocol/destination entry on a Node
 type Outbound struct {
-	ID     uint `gorm:"primaryKey" json:"id"`
-	NodeID uint `gorm:"not null;index" json:"node_id"`
+	ManagedPoolID *uint  `gorm:"index" json:"managed_pool_id,omitempty"`
+	ManagedConfig string `gorm:"type:text" json:"-"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	NodeID        uint   `gorm:"not null;index" json:"node_id"`
 
 	// Belongs To Relation
 	Node *Node `gorm:"foreignKey:NodeID" json:"node,omitempty"`

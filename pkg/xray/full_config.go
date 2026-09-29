@@ -217,6 +217,15 @@ func (b *FullConfigBuilder) validateBalancerRefs() error {
 
 // Build generates the complete config.json as a string with ordered keys
 func (b *FullConfigBuilder) Build() (string, error) {
+	for _, out := range b.outbounds {
+		if out != nil && out.ManagedPoolID != nil {
+			var cfg map[string]interface{}
+			if json.Unmarshal([]byte(out.ManagedConfig), &cfg) != nil || cfg["protocol"] == nil {
+				return "", fmt.Errorf("invalid managed outbound %q", out.Tag)
+			}
+		}
+	}
+
 	if err := nodeDomain.ValidateVLESSReverse(b.inbounds, b.outbounds, b.reverseProxies); err != nil {
 		return "", err
 	}
@@ -1109,9 +1118,16 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 		}
 	}
 
+	// Pool members go last (after IPv4 and every router outbound), so the
+	// default fallback never becomes a scanned share link.
+	managed := []*nodeDomain.Outbound{}
 	// 1. Add User Outbounds FIRST (First one becomes default fallback)
 	for _, out := range b.outbounds {
 		if out == nil {
+			continue
+		}
+		if out.ManagedPoolID != nil {
+			managed = append(managed, out)
 			continue
 		}
 		if !existingTags[out.Tag] {
@@ -1154,11 +1170,26 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 		})
 	}
 
+	sort.SliceStable(managed, func(i, j int) bool { return managed[i].Tag < managed[j].Tag })
+	for _, out := range managed {
+		if !existingTags[out.Tag] {
+			outbounds = append(outbounds, b.convertOutbound(out))
+			existingTags[out.Tag] = true
+		}
+	}
 	return outbounds
 }
 
 // convertOutbound converts a domain.Outbound to config format
 func (b *FullConfigBuilder) convertOutbound(out *nodeDomain.Outbound) map[string]interface{} {
+	if out.ManagedPoolID != nil && out.ManagedConfig != "" {
+		var config map[string]interface{}
+		if json.Unmarshal([]byte(out.ManagedConfig), &config) == nil {
+			config["tag"] = out.Tag
+			return config
+		}
+	}
+
 	// The panel's internal id is "hysteria2"; this xray-core registers the
 	// outbound loader under "hysteria" only (infra/conf/xray.go). Translate at
 	// emit time — otherwise the whole config fails with "unknown config id".
