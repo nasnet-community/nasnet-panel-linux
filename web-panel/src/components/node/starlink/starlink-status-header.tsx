@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { AlertOctagon, Bell, ChevronRight, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react"
 import type { StarlinkStatus } from "@/lib/types"
 import { formatUptime, getActiveAlerts, healthDotColor } from "./starlink-helpers"
@@ -8,6 +8,8 @@ interface StarlinkStatusHeaderProps {
     status: StarlinkStatus
     onAlertsClick: () => void
     dataUpdatedAt?: number
+    /** Right-hand slot next to the Alerts button (the dish actions menu). */
+    actions?: ReactNode
 }
 
 function formatRelative(ts: number, now: number): string {
@@ -40,7 +42,7 @@ const SEM = {
     },
 } as const
 
-export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: StarlinkStatusHeaderProps) {
+export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt, actions }: StarlinkStatusHeaderProps) {
     const color = healthDotColor(status)
     const sem = SEM[color]
     const alerts = getActiveAlerts(status)
@@ -125,27 +127,30 @@ export function StarlinkStatusHeader({ status, onAlertsClick, dataUpdatedAt }: S
                         )}
                 </div>
 
-                {/* Alerts was a cell in the strip with no affordance at all. It
-                    opens a drawer, so it looks like the page header's buttons. */}
-                <button
-                    type="button"
-                    onClick={onAlertsClick}
-                    aria-label={`${alerts.length} active alerts. Open alerts panel.`}
-                    className="order-2 ml-auto flex h-11 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 text-xs font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:order-3 sm:h-7"
-                >
-                    <Bell className={`h-3.5 w-3.5 ${alerts.length === 0 ? "text-muted-foreground" : hasCritical ? "text-red-400" : "text-amber-400"}`} aria-hidden />
-                    Alerts
-                    <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[12px] font-semibold tabular-nums ${
-                        alerts.length === 0
-                            ? "bg-foreground/10 text-muted-foreground"
-                            : hasCritical
-                                ? "bg-red-500/15 text-red-300"
-                                : "bg-amber-500/15 text-amber-300"
-                    }`}>
-                        {alerts.length}
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" aria-hidden />
-                </button>
+                <div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3">
+                    {/* Alerts was a cell in the strip with no affordance at all. It
+                        opens a drawer, so it looks like the page header's buttons. */}
+                    <button
+                        type="button"
+                        onClick={onAlertsClick}
+                        aria-label={`${alerts.length} active alerts. Open alerts panel.`}
+                        className="flex h-11 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 text-xs font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7"
+                    >
+                        <Bell className={`h-3.5 w-3.5 ${alerts.length === 0 ? "text-muted-foreground" : hasCritical ? "text-red-400" : "text-amber-400"}`} aria-hidden />
+                        Alerts
+                        <span className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[12px] font-semibold tabular-nums ${
+                            alerts.length === 0
+                                ? "bg-foreground/10 text-muted-foreground"
+                                : hasCritical
+                                    ? "bg-red-500/15 text-red-300"
+                                    : "bg-amber-500/15 text-amber-300"
+                        }`}>
+                            {alerts.length}
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" aria-hidden />
+                    </button>
+                    {actions}
+                </div>
             </div>
 
             {/* Outage banner — full-width sibling */}

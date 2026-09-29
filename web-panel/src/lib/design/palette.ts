@@ -129,3 +129,22 @@ export const network = {
   rx: chart.emerald,
   tx: chart.blue,
 } as const
+
+/** Semantic intent, as CSS variables (the ChartPalette success/…/info slots). */
+export const status = {
+  success: "var(--status-success)",
+  warning: "var(--status-warning)",
+  danger: "var(--status-danger)",
+  info: "var(--status-info)",
+  neutral: "var(--status-neutral)",
+} as const
+
+/** Starlink series, on the same slots the Starlink charts used via useChartPalette(). */
+export const starlink = {
+  download: status.success,
+  upload: status.info,
+  latency: status.warning,
+  dropRate: status.danger,
+  good: chart.teal,
+  power: chart.violet,
+} as const

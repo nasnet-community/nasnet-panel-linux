@@ -420,7 +420,7 @@ export default function NodeDetailPage() {
 
                     <TabsContent value="starlink" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
                         {activeTab === "starlink" && (
-                            <StarlinkDashboard nodeId={nodeId} isOnline={node.is_online} />
+                            <StarlinkDashboard nodeId={nodeId} nodeName={node.name} isOnline={node.is_online} />
                         )}
                     </TabsContent>
 

@@ -1,11 +1,11 @@
+import { ApiError } from "@/lib/api"
 import type { StarlinkStatus, StarlinkDataPoint } from "@/lib/types"
 
 // ─── Types ──────────────────────────────────────────────────────────
 
-// "sky" is the merged Signal & Dish + Obstruction Map drawer — those were
-// two cards printing the same clear-sky figure from two sources.
-export type DrawerType = "sky" | "latency" | "dropRate" | "download" | "upload" | "alerts" | null
-export type TimeRange = "1h" | "6h" | "24h" | "7d"
+// KPI cards jump to the chart now, so only the sky and alerts drawers remain.
+export type DrawerType = "sky" | "alerts" | null
+export type TimeRange = "15m" | "1h" | "6h" | "24h" | "7d"
 
 export interface AlertInfo {
     label: string
@@ -15,10 +15,19 @@ export interface AlertInfo {
 // ─── Time Range Helpers ─────────────────────────────────────────────
 
 export const TIME_RANGE_CONFIG: Record<TimeRange, { label: string; limit: number; refetchInterval: number }> = {
+    // 15m is the dish's own 1 s buffer (live endpoint), not the DB.
+    "15m": { label: "15m", limit: 0, refetchInterval: 15_000 },
     "1h": { label: "1h", limit: 120, refetchInterval: 30_000 },
     "6h": { label: "6h", limit: 360, refetchInterval: 30_000 },
     "24h": { label: "24h", limit: 500, refetchInterval: 60_000 },
     "7d": { label: "7d", limit: 500, refetchInterval: 60_000 },
+}
+
+export type EventRange = "24h" | "7d" | "30d"
+export const EVENT_RANGE_MS: Record<EventRange, number> = {
+    "24h": 24 * 3600_000,
+    "7d": 7 * 24 * 3600_000,
+    "30d": 30 * 24 * 3600_000,
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────
@@ -262,6 +271,11 @@ export function getActiveAlerts(status: StarlinkStatus): AlertInfo[] {
     if (status.alert_roaming) alerts.push({ label: "Roaming", severity: "info" })
     if (status.alert_unexpected_location) alerts.push({ label: "Unexpected Location", severity: "info" })
     if (status.alert_install_pending) alerts.push({ label: "Install Pending", severity: "info" })
+    if (status.alert_dish_water_detected) alerts.push({ label: "Water Detected", severity: "critical" })
+    if (status.alert_power_supply_thermal_throttle) alerts.push({ label: "PSU Thermal Throttle", severity: "warning" })
+    if (status.alert_lower_signal_than_predicted) alerts.push({ label: "Signal Below Predicted", severity: "warning" })
+    if (status.alert_slow_ethernet_100) alerts.push({ label: "Ethernet at 100 Mbps", severity: "warning" })
+    if (status.alert_obstruction_map_reset) alerts.push({ label: "Obstruction Map Reset", severity: "info" })
     return alerts
 }
 
@@ -310,3 +324,85 @@ export function buildAlertTimeline(history: StarlinkDataPoint[]): AlertTimelineE
     return entries.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
 }
 
+
+// ─── Enum labels ────────────────────────────────────────────────────
+
+/** SNOW_AUTO → "Auto", LOC_NONE → "None"; prefix is stripped first. */
+export function enumLabel(value: string | undefined, prefix = ""): string {
+    if (!value) return "Unknown"
+    const bare = value.replace(new RegExp(`^${prefix}`), "").replace(/^(SNOW|LOC|RATE_LIMIT)_/, "").replace(/_/g, " ").toLowerCase()
+    return bare.charAt(0).toUpperCase() + bare.slice(1)
+}
+
+/** null when the link is not capped. */
+export function rateLimitLabel(reason: string | undefined): string | null {
+    if (!reason || reason === "RATE_LIMIT_NO_LIMIT" || reason === "RATE_LIMIT_UNKNOWN") return null
+    switch (reason) {
+        case "RATE_LIMIT_POLICY_LIMIT": return "Plan policy"
+        case "RATE_LIMIT_USER_CUSTOM_LIMIT": return "Custom limit"
+        case "RATE_LIMIT_OVERAGE_LIMIT": return "Data overage"
+        case "RATE_LIMIT_LOW_SPEED_POLICY_LIMIT": return "Low-speed policy"
+        default: return enumLabel(reason)
+    }
+}
+
+// ─── Events ─────────────────────────────────────────────────────────
+
+const EVENT_LABELS: Record<string, string> = {
+    OUTAGE_UNKNOWN: "Outage",
+    OUTAGE_BOOTING: "Booting",
+    OUTAGE_STOWED: "Stowed",
+    OUTAGE_THERMAL_SHUTDOWN: "Thermal shutdown",
+    OUTAGE_NO_SCHEDULE: "No schedule",
+    OUTAGE_NO_SATS: "No satellites",
+    OUTAGE_OBSTRUCTED: "Obstructed",
+    OUTAGE_NO_DOWNLINK: "No downlink",
+    OUTAGE_NO_PINGS: "No pings",
+    OUTAGE_SLEEPING: "Sleeping (power save)",
+    OUTAGE_MOVING_WHILE_NOT_ALLOWED: "Moving, not allowed",
+    OUTAGE_SKY_SEARCH: "Searching sky",
+    OUTAGE_INHIBIT_RF: "RF inhibited",
+    HIGH_DOWNLINK_PACKET_LOSS: "High downlink loss",
+    UT_ALERT_RAIN_SNR_PERSISTENTLY_LOW: "Low signal (weather)",
+    UT_ALERT_ETH_NO_LINK: "Ethernet down",
+    UT_ALERT_ETH_SLOW_LINK: "Slow ethernet",
+    UT_ALERT_ETH_SLOW_LINK_100: "Ethernet at 100 Mbps",
+    UT_ALERT_USER_REPORTED_ISSUE: "User-reported issue",
+}
+
+export function eventReasonLabel(reason: string): string {
+    const bare = reason.replace(/^EVENT_REASON_/, "")
+    return EVENT_LABELS[bare] ?? enumLabel(bare)
+}
+
+export function isOutageReason(reason: string): boolean {
+    return reason.startsWith("EVENT_REASON_OUTAGE_")
+}
+
+/** Dish severities: WARNING = outage, CAUTION = degraded, ADVISORY = info. */
+export function eventSeverityTone(severity: string): "red" | "amber" | "blue" {
+    if (severity === "EVENT_SEVERITY_WARNING") return "red"
+    if (severity === "EVENT_SEVERITY_CAUTION") return "amber"
+    return "blue"
+}
+
+// ─── API errors ─────────────────────────────────────────────────────
+
+export function isAgentOutdated(err: unknown): boolean {
+    return err instanceof ApiError && err.code === "STARLINK_AGENT_OUTDATED"
+}
+
+export function starlinkErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) {
+        switch (err.code) {
+            case "DISH_PERMISSION_DENIED": return "The dish refused this. SpaceX only allows it from the Starlink app."
+            case "DISH_UNSUPPORTED": return "This dish firmware does not support that action."
+            case "DISH_UNREACHABLE": return "The node could not reach the dish."
+            case "DISH_ERROR": return `The dish returned an error: ${err.message.replace(/^dish:\s*/, "")}`
+            case "STARLINK_AGENT_OUTDATED": return "Update the node agent to use dish actions."
+            case "STARLINK_CONFIRM_MISMATCH": return "The confirmation text does not match the node name."
+        }
+        return err.message
+    }
+    return err instanceof Error ? err.message : "Dish action failed"
+}

@@ -20,6 +20,11 @@ import type {
     StarlinkStatus,
     StarlinkObstructionMap,
     StarlinkDataPoint,
+    StarlinkLive,
+    StarlinkDevice,
+    StarlinkEvent,
+    StarlinkAction,
+    StarlinkActionResult,
 } from "@/lib/types"
 
 // ==================== Node CRUD ====================
@@ -357,6 +362,23 @@ export async function getStarlinkHistory(nodeId: number, limit: number = 60, sin
     return api.get<StarlinkDataPoint[]>(
         `/api/v1/nodes/${nodeId}/starlink/history${buildQueryString({ limit, since })}`
     )
+}
+
+export async function getStarlinkLive(nodeId: number, step = 5): Promise<ApiResponse<StarlinkLive>> {
+    return api.get<StarlinkLive>(`/api/v1/nodes/${nodeId}/starlink/live${buildQueryString({ step })}`)
+}
+
+export async function getStarlinkDevice(nodeId: number): Promise<ApiResponse<StarlinkDevice>> {
+    return api.get<StarlinkDevice>(`/api/v1/nodes/${nodeId}/starlink/device`)
+}
+
+export async function getStarlinkEvents(nodeId: number, since: string, limit = 2000): Promise<ApiResponse<StarlinkEvent[]>> {
+    return api.get<StarlinkEvent[]>(`/api/v1/nodes/${nodeId}/starlink/events${buildQueryString({ since, limit })}`)
+}
+
+export async function runStarlinkAction(nodeId: number, action: StarlinkAction, confirm?: string): Promise<ApiResponse<StarlinkActionResult>> {
+    // A detailed self-test can outlast the default 30s.
+    return api.post<StarlinkActionResult>(`/api/v1/nodes/${nodeId}/starlink/actions/${action}`, confirm ? { confirm } : undefined, 60000)
 }
 
 // ==================== Remote Nodes: Agent ====================

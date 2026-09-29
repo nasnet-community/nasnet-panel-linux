@@ -1,18 +1,19 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react"
-import type { StarlinkStatus, StarlinkDataPoint } from "@/lib/types"
-import { getActiveAlerts, buildAlertTimeline } from "./starlink-helpers"
+import type { StarlinkStatus, StarlinkDataPoint, StarlinkEvent } from "@/lib/types"
+import { getActiveAlerts, buildAlertTimeline, eventReasonLabel, formatDurationSecs } from "./starlink-helpers"
 import { T } from "./starlink-ui"
 
 interface StarlinkAlertsProps {
     status: StarlinkStatus
     history: StarlinkDataPoint[]
+    events?: StarlinkEvent[]
 }
 
 function formatTimeShort(dateStr: string): string {
     return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
-export function StarlinkAlerts({ status, history }: StarlinkAlertsProps) {
+export function StarlinkAlerts({ status, history, events }: StarlinkAlertsProps) {
     const alerts = getActiveAlerts(status)
     const timeline = buildAlertTimeline(history)
 
@@ -55,6 +56,25 @@ export function StarlinkAlerts({ status, history }: StarlinkAlertsProps) {
                                 </span>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {events && events.length > 0 && (
+                <div>
+                    <p className={`${T.eyebrow} mb-2`}>Recent dish events</p>
+                    <div className="space-y-1.5">
+                        {[...events]
+                            .sort((a, b) => new Date(b.start_at).getTime() - new Date(a.start_at).getTime())
+                            .slice(0, 10)
+                            .map((e, i) => (
+                                <div key={i} className="flex items-center justify-between rounded-lg border border-border bg-muted/20 p-2.5 text-sm">
+                                    <span className="font-medium text-muted-foreground">{eventReasonLabel(e.reason)}</span>
+                                    <span className="font-mono text-xs text-muted-foreground">
+                                        {formatTimeShort(e.start_at)} · {formatDurationSecs(e.duration_ms / 1000)}
+                                    </span>
+                                </div>
+                            ))}
                     </div>
                 </div>
             )}

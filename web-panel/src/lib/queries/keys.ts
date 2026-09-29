@@ -43,6 +43,9 @@ export const queryKeys = {
     starlinkStatus: (id: number) => [...queryKeys.nodes, 'starlink-status', id] as const,
     starlinkMap: (id: number) => [...queryKeys.nodes, 'starlink-map', id] as const,
     starlinkHistory: (id: number, timeRange: string) => [...queryKeys.nodes, 'starlink-history', id, timeRange] as const,
+    starlinkLive: (id: number) => [...queryKeys.nodes, 'starlink-live', id] as const,
+    starlinkDevice: (id: number) => [...queryKeys.nodes, 'starlink-device', id] as const,
+    starlinkEvents: (id: number, range: string) => [...queryKeys.nodes, 'starlink-events', id, range] as const,
 
     // Hosts
     hosts: ['hosts'] as const,

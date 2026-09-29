@@ -52,6 +52,27 @@ export interface StarlinkStatus {
     altitude: number
     is_snr_above_noise_floor: boolean
     is_snr_persistently_low: boolean
+    // Optional: legacy agents do not send these.
+    passthrough?: boolean
+    signal_quality?: number
+    ready_states?: Record<string, boolean>
+    dl_bandwidth_restricted_reason?: string
+    ul_bandwidth_restricted_reason?: string
+    gps_inhibited?: boolean
+    pnt_filter_state?: string
+    stow_requested?: boolean
+    update_requires_reboot?: boolean
+    swupdate_reboot_ready?: boolean
+    reboot_reason?: string
+    is_moving_fast?: boolean
+    init_durations?: Record<string, number>
+    context_locked?: boolean
+    location_locked?: boolean
+    alert_lower_signal_than_predicted?: boolean
+    alert_obstruction_map_reset?: boolean
+    alert_dish_water_detected?: boolean
+    alert_power_supply_thermal_throttle?: boolean
+    alert_slow_ethernet_100?: boolean
 }
 
 export interface StarlinkObstructionMap {
@@ -79,3 +100,68 @@ export interface StarlinkDataPoint {
     created_at: string
 }
 
+
+export interface StarlinkOutage {
+    cause: string
+    start_at: string
+    duration_ms: number
+    did_switch: boolean
+}
+
+export interface StarlinkEvent {
+    id?: number
+    severity: string
+    reason: string
+    start_at: string
+    duration_ms: number
+}
+
+/** The dish's own rolling 15-minute buffer, bucketed by step_s. Point i is at end_at - (len-1-i)*step_s. */
+export interface StarlinkLive {
+    end_at: string
+    step_s: number
+    pop_ping_latency_ms: (number | null)[]
+    pop_ping_drop_rate: (number | null)[]
+    downlink_throughput_bps: (number | null)[]
+    uplink_throughput_bps: (number | null)[]
+    power_w: (number | null)[]
+    outages: StarlinkOutage[]
+    events: StarlinkEvent[]
+}
+
+export interface StarlinkDishConfig {
+    snow_melt_mode: string
+    location_request_mode: string
+    level_dish_mode: string
+    power_save_mode: boolean
+    power_save_start_minutes: number
+    power_save_duration_minutes: number
+    swupdate_reboot_hour: number
+    swupdate_three_day_deferral: boolean
+    asset_class: number
+}
+
+export interface StarlinkDevice {
+    id: string
+    hardware_version: string
+    software_version: string
+    manufactured_version: string
+    build_id: string
+    country_code: string
+    utc_offset_s: number
+    boot_count: number
+    hardware_self_test: "PASSED" | "FAILED" | "NO_RESULT"
+    hardware_self_test_codes: number[] | null
+    stowed: boolean
+    config?: StarlinkDishConfig
+}
+
+export type StarlinkAction =
+    | "reboot" | "stow" | "unstow" | "clear-map" | "self-test"
+    | "gps-inhibit" | "gps-restore" | "factory-reset"
+
+export interface StarlinkActionResult {
+    action: StarlinkAction
+    message: string
+    self_test?: { passed: boolean; report: string }
+}
