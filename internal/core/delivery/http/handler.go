@@ -20,6 +20,7 @@ import (
 
 type Handler struct {
 	uc       *usecase.CoreUsecase
+	install  *usecase.InstallUsecase
 	nodeHost func(c *gin.Context, nodeID uint) string
 }
 
@@ -28,6 +29,10 @@ type Handler struct {
 func NewHandler(uc *usecase.CoreUsecase, hostFn func(c *gin.Context, nodeID uint) string) *Handler {
 	return &Handler{uc: uc, nodeHost: hostFn}
 }
+
+// AttachInstall wires the tunnel binary installer, enabling the
+// /cores/nodes/:nodeID/deps routes.
+func (h *Handler) AttachInstall(iu *usecase.InstallUsecase) { h.install = iu }
 
 // RegisterRoutes mounts the core routes under an (already-authenticated) group.
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -49,6 +54,14 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		// Per-node, per-protocol enable/disable.
 		g.GET("/nodes/:nodeID/protocols", h.ListNodeProtocols)
 		g.POST("/nodes/:nodeID/protocols/:protocol/toggle", h.ToggleNodeProtocol)
+
+		// Tunnel binaries (telemt). Only mounted when wired.
+		if h.install != nil {
+			g.GET("/nodes/:nodeID/deps", h.ProbeDeps)
+			g.POST("/nodes/:nodeID/deps/install", h.StartDepInstall)
+			g.GET("/nodes/:nodeID/deps/install/:jobID", h.GetDepInstall)
+			g.GET("/nodes/:nodeID/deps/install/:jobID/stream", h.StreamDepInstall)
+		}
 	}
 }
 

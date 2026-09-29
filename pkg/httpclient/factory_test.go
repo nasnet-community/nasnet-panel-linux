@@ -178,8 +178,8 @@ func TestLiveClient_FollowsUpdates(t *testing.T) {
 
 func TestAllFeatures_CoversAll(t *testing.T) {
 	got := AllFeatures()
-	if len(got) != 8 {
-		t.Fatalf("expected 8 features, got %d", len(got))
+	if len(got) != 9 {
+		t.Fatalf("expected 9 features, got %d", len(got))
 	}
 	seen := map[Feature]bool{}
 	for _, f := range got {

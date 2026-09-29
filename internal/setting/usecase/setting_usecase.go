@@ -71,7 +71,7 @@ func (u *settingUsecase) SetOnRouterHealthChange(fn func()) {
 // family. Keep in sync with httpclient.AllFeatures().
 var outboundProxyFeatureKeys = []string{
 	"telegram", "geofiles", "xray_binary", "github_api",
-	"webhooks", "geoip", "acme", "wizard",
+	"webhooks", "geoip", "acme", "wizard", "core_binaries",
 }
 
 func (u *settingUsecase) SetAuditUsecase(auc auditDomain.AuditLogUsecase) {
@@ -423,6 +423,10 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "proxy_use_xray_binary", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route xray binary fetch via proxy",
 			Description:     "When enabled, xray-core release downloads from GitHub use outbound_proxy_url.",
+			RequiresRestart: false},
+		{Key: "proxy_use_core_binaries", Value: "false", Type: "bool", Category: "server",
+			Label:           "Route tunnel binary downloads via proxy",
+			Description:     "When enabled, the MTProto relay (telemt) download from GitHub uses outbound_proxy_url.",
 			RequiresRestart: false},
 		{Key: "proxy_use_github_api", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route GitHub API via proxy",

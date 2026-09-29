@@ -24,7 +24,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/accesslog"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 	agentcore "github.com/nasnet-community/nasnet-panel-linux/internal/agent/core"
+	mtprotocore "github.com/nasnet-community/nasnet-panel-linux/internal/agent/core/mtproto"
 	sshcore "github.com/nasnet-community/nasnet-panel-linux/internal/agent/core/ssh"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/depinstall"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/middleware"
 	agentnetif "github.com/nasnet-community/nasnet-panel-linux/internal/agent/netif"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/process"
@@ -93,6 +95,8 @@ type Server struct {
 	coreState *coreStateStore
 	// Core traffic collection loop stop signal.
 	coreTrafficStop chan struct{}
+	// depMgr installs tunnel binaries on demand; built on first use.
+	depMgr *depinstall.Manager
 
 	// Bandwidth shaping (TC)
 	tcManager *agenttc.Manager
@@ -162,6 +166,12 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	egress := agentcore.NewDialer(cfg.Cores.EgressMark, cfg.Cores.Resolve)
 	if err := s.coreRegistry.Register(sshcore.New(sshcore.WithDialer(egress.DialContext))); err != nil {
 		return nil, fmt.Errorf("register ssh core: %w", err)
+	}
+	// MTProto (telemt): a relay process per inbound. When tunnel egress is
+	// marked, telemt reaches Telegram through a loopback relay on the same
+	// dialer.
+	if err := s.coreRegistry.Register(mtprotocore.New(cfg.Cores.DataDir, egress, cfg.Cores.EgressMark != 0)); err != nil {
+		return nil, fmt.Errorf("register mtproto core: %w", err)
 	}
 
 	// Initialize bandwidth shaping (TC)

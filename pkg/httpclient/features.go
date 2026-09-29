@@ -15,6 +15,8 @@ const (
 	FeatureGeoIP      Feature = "geoip"
 	FeatureACME       Feature = "acme"
 	FeatureWizard     Feature = "wizard"
+	// FeatureCoreBinaries is the tunnel binary (telemt) download.
+	FeatureCoreBinaries Feature = "core_binaries"
 )
 
 // AllFeatures lists every known feature in display order.
@@ -28,5 +30,6 @@ func AllFeatures() []Feature {
 		FeatureGeoIP,
 		FeatureACME,
 		FeatureWizard,
+		FeatureCoreBinaries,
 	}
 }

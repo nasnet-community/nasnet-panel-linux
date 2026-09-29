@@ -31,8 +31,9 @@ type ClientArtifact struct {
 }
 
 // prepareInboundSettings fills protocol-specific server-side settings that must
-// be generated at create time (e.g. an SSH host key).
-func prepareInboundSettings(in *domain.CoreInbound) error {
+// be generated at create time (e.g. an SSH host key). relayed reports that the
+// inbound's node sends MTProto through its marked loopback relay.
+func prepareInboundSettings(in *domain.CoreInbound, relayed bool) error {
 	switch in.Protocol {
 	case domain.CoreProtoSSH:
 		st := map[string]any{}
@@ -55,7 +56,7 @@ func prepareInboundSettings(in *domain.CoreInbound) error {
 		}
 		in.Settings = raw
 	case domain.CoreProtoMTProto:
-		if err := prepareMTProtoSettings(in); err != nil {
+		if err := prepareMTProtoSettings(in, relayed); err != nil {
 			return err
 		}
 	}
@@ -65,7 +66,7 @@ func prepareInboundSettings(in *domain.CoreInbound) error {
 // prepareMTProtoSettings validates and normalizes an mtproto inbound's settings
 // so the hub never persists a combination that would leave the tunnel dead or a
 // setting the relay silently ignores.
-func prepareMTProtoSettings(in *domain.CoreInbound) error {
+func prepareMTProtoSettings(in *domain.CoreInbound, relayed bool) error {
 	s, err := mtprotoproto.ParseSettings(in.Settings)
 	if err != nil {
 		return err
@@ -83,6 +84,11 @@ func prepareMTProtoSettings(in *domain.CoreInbound) error {
 	// the relay ignores it, so persisting one is a silent no-op.
 	if s.AdtagDefault != "" && !s.MiddleProxy {
 		return fmt.Errorf("core: mtproto ad tag requires the Telegram middle proxy to be enabled")
+	}
+	// telemt's middle-proxy sockets bypass the relay, so on a router they would
+	// leave unmarked, outside the VPN pool.
+	if relayed && (s.MiddleProxy || s.AdtagDefault != "") {
+		return fmt.Errorf("core: the Telegram middle proxy and ad tag are not available on the router's built-in node")
 	}
 	if lm := strings.ToLower(strings.TrimSpace(s.LinkMode)); lm != "" && lm != "auto" {
 		switch mtprotoproto.Mode(lm) {

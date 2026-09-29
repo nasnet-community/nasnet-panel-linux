@@ -135,7 +135,7 @@ type Settings struct {
 }
 
 // Loopback port bases: an inbound's egress relay and telemt metrics listen on
-// 127.0.0.1 at base+id unless its settings pin a port.
+// 127.0.0.1 at base+(id mod 1000) unless its settings pin a port.
 const (
 	RelayPortBase   = 12300
 	MetricsPortBase = 14300
@@ -143,12 +143,17 @@ const (
 
 // LoopbackPorts returns the relay and metrics ports inbound id listens on.
 func (s Settings) LoopbackPorts(id uint) (relay, metrics int) {
+	return s.LoopbackPortsAt(int(id % 1000))
+}
+
+// LoopbackPortsAt is LoopbackPorts for an already-derived id offset.
+func (s Settings) LoopbackPortsAt(offset int) (relay, metrics int) {
 	relay, metrics = s.SocksPort, s.MetricsPort
 	if relay == 0 {
-		relay = RelayPortBase + int(id)
+		relay = RelayPortBase + offset
 	}
 	if metrics == 0 {
-		metrics = MetricsPortBase + int(id)
+		metrics = MetricsPortBase + offset
 	}
 	return relay, metrics
 }

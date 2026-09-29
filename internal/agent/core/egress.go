@@ -60,6 +60,13 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	return nd.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 }
 
+// Lookup resolves host the way DialContext does: an address literal as is,
+// else the configured resolver, else the system one (preferring an address
+// that passes the block list).
+func (d *Dialer) Lookup(ctx context.Context, host string) (netip.Addr, error) {
+	return d.lookup(ctx, host)
+}
+
 func (d *Dialer) lookup(ctx context.Context, host string) (netip.Addr, error) {
 	if ip, err := netip.ParseAddr(host); err == nil {
 		return ip.Unmap(), nil

@@ -62,6 +62,17 @@ type CoreUsecase struct {
 	nodeNameResolve NodeNameResolver
 	userPolicy      nodebridge.UserPolicyResolver
 	inboundsChanged func(ctx context.Context, nodeID uint)
+	relayed         func(nodeID uint) bool
+}
+
+// WithRelayedNodes names the nodes whose MTProto egress goes through the
+// marked loopback relay (the built-in node in router mode).
+func WithRelayedNodes(fn func(nodeID uint) bool) Option {
+	return func(u *CoreUsecase) { u.relayed = fn }
+}
+
+func (u *CoreUsecase) isRelayed(nodeID uint) bool {
+	return u.relayed != nil && u.relayed(nodeID)
 }
 
 // Option configures a CoreUsecase.
@@ -135,7 +146,7 @@ func (u *CoreUsecase) CreateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.checkPortFree(ctx, in.NodeID, in.Port, 0); err != nil {
 		return err
 	}
-	if err := prepareInboundSettings(in); err != nil {
+	if err := prepareInboundSettings(in, u.isRelayed(in.NodeID)); err != nil {
 		return err
 	}
 	if err := u.repo.CreateInbound(ctx, in); err != nil {
@@ -181,7 +192,7 @@ func (u *CoreUsecase) UpdateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.checkPortFree(ctx, in.NodeID, in.Port, in.ID); err != nil {
 		return err
 	}
-	if err := prepareInboundSettings(in); err != nil {
+	if err := prepareInboundSettings(in, u.isRelayed(in.NodeID)); err != nil {
 		return err
 	}
 	if err := u.repo.UpdateInbound(ctx, in); err != nil {

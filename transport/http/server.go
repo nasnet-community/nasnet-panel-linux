@@ -80,6 +80,8 @@ type CoreDeps struct {
 	WGDevice    wireguardUC.DeviceUsecase
 	// Tunnels manages the SSH and MTProto tunnel inbounds (optional).
 	Tunnels *coreUsecase.CoreUsecase
+	// TunnelInstall installs tunnel binaries (telemt) on nodes (optional).
+	TunnelInstall *coreUsecase.InstallUsecase
 }
 
 // AdminDeps holds admin-panel and extended usecases (optional)
@@ -404,7 +406,11 @@ func NewServer(deps ServerDeps) *Server {
 				host, _ := tunnels.ResolveNodeHost(c.Request.Context(), nodeID)
 				return host
 			}
-			coreHttp.NewHandler(tunnels, hostFn).RegisterRoutes(adminAPI)
+			coreHandler := coreHttp.NewHandler(tunnels, hostFn)
+			if deps.Core.TunnelInstall != nil {
+				coreHandler.AttachInstall(deps.Core.TunnelInstall)
+			}
+			coreHandler.RegisterRoutes(adminAPI)
 		}
 
 		// Router mode

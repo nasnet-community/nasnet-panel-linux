@@ -373,6 +373,9 @@ func runServe(cmd *cobra.Command, args []string) {
 		agentCfg.Cores.DataDir = v
 	}
 	agentCfg.Cores.Embedded = true
+	// Tunnel binaries follow the proxy settings and, on a router, the
+	// foreign uplinks like every other GitHub download.
+	agentCfg.Cores.Download = httpFactory.LiveClient(httpclient.FeatureCoreBinaries, httpclient.EgressForeign, 10*time.Minute)
 	if cfg.Router.Enabled {
 		// Tunnel egress follows the foreign pool like xray's direct-foreign, and
 		// names resolve over DoH on the same mark: the uplink's own resolver may
@@ -447,11 +450,13 @@ func runServe(cmd *cobra.Command, args []string) {
 	if networkUC != nil {
 		tunnelFirewall = networkUC.OnInboundsChanged
 	}
-	coreUC := newTunnelUsecase(tunnelDeps{
+	tunnels := tunnelDeps{
 		Repo: coreRepo, Subs: repos.Subscription, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
 		BaseURL: cfg.App.BaseURL, PanelPort: cfg.App.Port, HubPort: hubPort,
-		InboundsChanged: tunnelFirewall, Log: log,
-	})
+		InboundsChanged: tunnelFirewall, RouterMode: cfg.Router.Enabled, Log: log,
+	}
+	coreUC := newTunnelUsecase(tunnels)
+	tunnelInstaller := newTunnelInstaller(tunnels)
 	uc.Node.SetCoreReconcileFn(func(ctx context.Context, client agent.NodeClient, nodeID uint) error {
 		return coreUC.ReconcileNode(ctx, client, nodeID)
 	})
@@ -846,11 +851,12 @@ func runServe(cmd *cobra.Command, args []string) {
 	// HTTP server
 	server := httpTransport.NewServer(httpTransport.ServerDeps{
 		Core: httpTransport.CoreDeps{
-			UserUsecase: uc.User,
-			SubUsecase:  uc.Subscription,
-			ChatUsecase: uc.Chat,
-			WGDevice:    uc.WGDevice,
-			Tunnels:     coreUC,
+			UserUsecase:   uc.User,
+			SubUsecase:    uc.Subscription,
+			ChatUsecase:   uc.Chat,
+			WGDevice:      uc.WGDevice,
+			Tunnels:       coreUC,
+			TunnelInstall: tunnelInstaller,
 		},
 		Admin: httpTransport.AdminDeps{
 			NodePools:          uc.NodePools,

@@ -44,20 +44,16 @@ type tunnelDeps struct {
 	// InboundsChanged re-derives the box's firewall and port mapper; nil
 	// outside router mode.
 	InboundsChanged func(ctx context.Context) error
-	Log             *logrus.Logger
+	// RouterMode: the built-in node sends MTProto through the marked relay.
+	RouterMode bool
+	Log        *logrus.Logger
 }
 
 // newTunnelUsecase builds the SSH/MTProto tunnel usecase. The built-in node is
 // reached through the in-process agent without a database read, so a
 // reconcile inside a transaction cannot block on SQLite's single connection.
 func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
-	embedded := agent.NewEmbeddedClient(d.Embedded)
-	client := func(ctx context.Context, nodeID uint) (agent.NodeClient, error) {
-		if nodeID != 0 && nodeID == d.NodeUC.LocalNodeID() {
-			return embedded, nil
-		}
-		return d.NodeUC.GetNodeClient(ctx, nodeID)
-	}
+	client := tunnelClient(d)
 	return coreUsecase.NewCoreUsecase(d.Repo,
 		coreUsecase.WithNodeClientResolver(func(ctx context.Context, nodeID uint) (coreUsecase.CoreStatePusher, error) {
 			return client(ctx, nodeID)
@@ -85,6 +81,9 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 		coreUsecase.WithUserPolicyResolver(func(ctx context.Context, subIDs []uint) (map[uint]nodebridge.UserPolicy, error) {
 			return tunnelPolicies(ctx, d.Subs, subIDs), nil
 		}),
+		coreUsecase.WithRelayedNodes(func(nodeID uint) bool {
+			return d.RouterMode && nodeID != 0 && nodeID == d.NodeUC.LocalNodeID()
+		}),
 		coreUsecase.WithInboundsChanged(func(ctx context.Context, nodeID uint) {
 			if d.InboundsChanged == nil || nodeID != d.NodeUC.LocalNodeID() {
 				return
@@ -94,6 +93,27 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 			}
 		}),
 	)
+}
+
+// newTunnelInstaller builds the tunnel binary installer; the install runs on
+// each node through its agent.
+func newTunnelInstaller(d tunnelDeps) *coreUsecase.InstallUsecase {
+	client := tunnelClient(d)
+	return coreUsecase.NewInstallUsecase(func(ctx context.Context, nodeID uint) (coreUsecase.DepAgent, error) {
+		return client(ctx, nodeID)
+	})
+}
+
+// tunnelClient resolves a node's agent: the in-process one for the built-in
+// node, the pooled or reverse client otherwise.
+func tunnelClient(d tunnelDeps) func(ctx context.Context, nodeID uint) (agent.NodeClient, error) {
+	embedded := agent.NewEmbeddedClient(d.Embedded)
+	return func(ctx context.Context, nodeID uint) (agent.NodeClient, error) {
+		if nodeID != 0 && nodeID == d.NodeUC.LocalNodeID() {
+			return embedded, nil
+		}
+		return d.NodeUC.GetNodeClient(ctx, nodeID)
+	}
 }
 
 // tunnelPolicies pushes each tunnel user's subscription state with it: a

@@ -216,6 +216,7 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
                 "proxy_use_telegram",
                 "proxy_use_geofiles",
                 "proxy_use_xray_binary",
+                "proxy_use_core_binaries",
                 "proxy_use_github_api",
                 "proxy_use_webhooks",
                 "proxy_use_geoip",

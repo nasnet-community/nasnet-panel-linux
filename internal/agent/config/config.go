@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/netip"
 	"os"
 	"strconv"
@@ -76,6 +77,8 @@ type CoresConfig struct {
 	// Embedded skips the on-disk state replay: the panel's database is local
 	// and its push paths reconcile the cores on start.
 	Embedded bool `yaml:"-"`
+	// Download fetches tunnel binaries (telemt); nil uses a plain client.
+	Download *http.Client `yaml:"-"`
 }
 
 // TrafficConfig holds settings for agent-side traffic buffering
