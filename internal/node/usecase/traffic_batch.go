@@ -14,6 +14,15 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 )
 
+// CoreUsageProvider attributes tunnel per-email traffic to a subscription's
+// tunnels on a node. Set via SetCoreUsageProvider; nil when tunnels are off.
+// Returns core_user IDs (not domain structs) so this package need not import
+// internal/core/domain. Satisfied by the core repository.
+type CoreUsageProvider interface {
+	ListCoreTrafficRefsByNode(ctx context.Context, nodeID uint) ([]contract.CoreTrafficRef, error)
+	AddCoreUserDataBatch(ctx context.Context, deltas []contract.CoreUsageDelta) error
+}
+
 // A gate covers collection through acknowledgement, not just database writes:
 // two manual/scheduled readers of one agent would otherwise persist the same
 // buffered snapshot. Idle gates are removed so deleted nodes do not accumulate.
@@ -81,6 +90,7 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 	dailyUsers := make(map[trafficDayEmail]trafficBytes)
 	dailyNode := make(map[time.Time]trafficBytes)
 	outbounds := make(map[string]trafficBytes)
+	coreTraffic := make(map[string]map[string]int64)
 	activeInbounds := make(map[string]bool)
 	var nodeBytes trafficBytes
 	var through int64
@@ -119,6 +129,12 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 			if bytes > 0 {
 				activeInbounds[tag] = true
 			}
+		}
+		for _, usage := range record.CoreUsage {
+			if coreTraffic[usage.Email] == nil {
+				coreTraffic[usage.Email] = make(map[string]int64)
+			}
+			coreTraffic[usage.Email][usage.Protocol] += usage.Uplink + usage.Downlink
 		}
 		if record.TotalUplink > 0 || record.TotalDownlink > 0 {
 			nodeBytes.up += record.TotalUplink
@@ -206,10 +222,39 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 		}
 		wgIndex = buildWGIndex(peers)
 	}
+	coreBySub := make(map[uint][]uint)
+	coreByProtocol := make(map[uint]map[string][]uint)
+	needsCoreRefs := false
+	for email, b := range users {
+		if b.up+b.down <= 0 || subs[email] == nil {
+			continue
+		}
+		if _, wg := wgIndex[email]; wg {
+			continue
+		}
+		if len(coreTraffic[email]) > 0 || len(matchedByEmail[email]) == 0 {
+			needsCoreRefs = true
+			break
+		}
+	}
+	if u.coreUsage != nil && needsCoreRefs {
+		refs, err := u.coreUsage.ListCoreTrafficRefsByNode(ctx, node.ID)
+		if err != nil {
+			return 0, fmt.Errorf("resolve core traffic users: %w", err)
+		}
+		for _, ref := range refs {
+			coreBySub[ref.SubscriptionID] = append(coreBySub[ref.SubscriptionID], ref.ID)
+			if coreByProtocol[ref.SubscriptionID] == nil {
+				coreByProtocol[ref.SubscriptionID] = make(map[string][]uint)
+			}
+			coreByProtocol[ref.SubscriptionID][ref.Protocol] = append(coreByProtocol[ref.SubscriptionID][ref.Protocol], ref.ID)
+		}
+	}
 	now := time.Now()
 	var subDeltas []subRepo.UsageDelta
 	var dailyDeltas []subRepo.DailyUsageDelta
 	var accountDeltas []accountRepo.UsageDelta
+	var coreDeltas []contract.CoreUsageDelta
 	var peerDeltas []contract.WGUsageDelta
 	for k, b := range dailyUsers {
 		if sub := subs[k.email]; sub != nil && (b.up != 0 || b.down != 0) {
@@ -244,7 +289,32 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 				accountDeltas = append(accountDeltas, accountRepo.UsageDelta{AccountID: id, Bytes: share, LastActive: now})
 			}
 		}
-
+		if u.coreUsage == nil {
+			continue
+		}
+		tagged := false
+		for protocol, bytes := range coreTraffic[email] {
+			tagged = true
+			ids := coreByProtocol[sub.ID][protocol]
+			if bytes <= 0 || len(ids) == 0 {
+				continue
+			}
+			if share := bytes / int64(len(ids)); share > 0 {
+				for _, id := range ids {
+					coreDeltas = append(coreDeltas, contract.CoreUsageDelta{CoreUserID: id, Bytes: share})
+				}
+			}
+		}
+		if !tagged && len(matched) == 0 {
+			ids := coreBySub[sub.ID]
+			if len(ids) > 0 {
+				if share := total / int64(len(ids)); share > 0 {
+					for _, id := range ids {
+						coreDeltas = append(coreDeltas, contract.CoreUsageDelta{CoreUserID: id, Bytes: share})
+					}
+				}
+			}
+		}
 	}
 	days := make([]time.Time, 0, len(dailyNode))
 	for d := range dailyNode {
@@ -287,6 +357,11 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 		if len(accountDeltas) > 0 {
 			if err := u.accountRepo.AddUsageDeltas(txCtx, accountDeltas); err != nil {
 				return fmt.Errorf("account traffic: %w", err)
+			}
+		}
+		if len(coreDeltas) > 0 {
+			if err := u.coreUsage.AddCoreUserDataBatch(txCtx, coreDeltas); err != nil {
+				return fmt.Errorf("core traffic: %w", err)
 			}
 		}
 		if len(peerDeltas) > 0 {

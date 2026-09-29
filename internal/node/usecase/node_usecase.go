@@ -292,6 +292,7 @@ type NodeUsecase interface {
 	SetInboundsChangedHook(fn func(context.Context) error)
 	SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error))
 	SetCoreReconcileFn(fn func(ctx context.Context, client agent.NodeClient, nodeID uint) error)
+	SetCoreUsageProvider(s CoreUsageProvider)
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)
@@ -518,6 +519,9 @@ type nodeUsecase struct {
 	// corePorts lists the ports a node's tunnel inbounds hold, so an xray
 	// inbound cannot take one (SetCorePortLister); nil => no tunnels.
 	corePorts func(ctx context.Context, nodeID uint) ([]int, error)
+	// coreUsage attributes tunnel bytes to each subscription's tunnels
+	// (SetCoreUsageProvider); nil => no per-tunnel counters.
+	coreUsage CoreUsageProvider
 	// coreReconcileFn pushes tunnel core state to a node's agent after the
 	// Xray config push (SetCoreReconcileFn). Failures are non-fatal to the
 	// Xray push.

@@ -103,6 +103,24 @@ func (u *nodeUsecase) SetCoreReconcileFn(fn func(ctx context.Context, client age
 	u.coreReconcileFn = fn
 }
 
+// SetCoreUsageProvider injects the per-tunnel usage attributor.
+func (u *nodeUsecase) SetCoreUsageProvider(s CoreUsageProvider) { u.coreUsage = s }
+
+// reconcileCoresBestEffort pushes the tunnel core state to a node's agent.
+// Tunnels are independent of Xray, so a failure is logged and swallowed; it
+// never fails the Xray push. Unwired is a no-op.
+func (u *nodeUsecase) reconcileCoresBestEffort(ctx context.Context, client agent.NodeClient, nodeID uint) {
+	if u.coreReconcileFn == nil {
+		return
+	}
+	log := logger.GetLogger()
+	if err := u.coreReconcileFn(ctx, client, nodeID); err != nil {
+		log.WithError(err).WithField("node_id", nodeID).Warn("[pushConfigToAgent] Failed to reconcile tunnels (non-fatal)")
+	} else {
+		log.WithField("node_id", nodeID).Debug("[pushConfigToAgent] Tunnels reconciled")
+	}
+}
+
 // notifyInboundsChanged is nil-safe: unwired means router mode is off. An
 // accept that drifts from its inbound is worth a warning, never a failure.
 // Only the built-in node's inbounds reach the box's firewall.
@@ -852,6 +870,10 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 					"xray_running": status.XrayRunning,
 					"xray_stopped": xrayStopped,
 				}).Info("[pushConfigToAgent] Config unchanged, skipping push")
+				// Tunnels do not survive a node reboot on their own, and every
+				// recovery trigger (the scheduler's reconcile tick, a heartbeat
+				// reconnect) arrives here with an unchanged xray config.
+				u.reconcileCoresBestEffort(ctx, client, node.ID)
 				// Cache the hash so drift detection knows the current state
 				u.configHashMu.Lock()
 				u.lastPushedConfigHash[node.ID] = newHashStr
@@ -880,8 +902,10 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		log.WithError(err).Warn("[pushConfigToAgent] Failed to update agent xray api config (continuing)")
 	}
 
-	// Push config and restart
+	// Push config and restart. A failed xray push still reconciles the
+	// tunnels: they do not depend on xray.
 	if err := client.PushConfigAndRestart(ctx, configJSON, true); err != nil {
+		u.reconcileCoresBestEffort(ctx, client, node.ID)
 		return fmt.Errorf("failed to push config to agent: %w", err)
 	}
 
@@ -903,6 +927,7 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		lastHealth = h
 	}
 	if lastHealth == nil || lastHealth.Status == agent.HealthUnhealthy {
+		u.reconcileCoresBestEffort(ctx, client, node.ID)
 		return fmt.Errorf("xray failed to start after config push (port may be in use)")
 	}
 
@@ -939,6 +964,8 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 			log.WithError(err).Debug("[pushConfigToAgent] Teardown bandwidth (non-fatal, may not have been set up)")
 		}
 	}
+
+	u.reconcileCoresBestEffort(ctx, client, node.ID)
 
 	// cache the hash in a goroutine so we don't block the caller
 	clientOwned = true

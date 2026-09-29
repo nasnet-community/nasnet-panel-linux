@@ -456,6 +456,9 @@ func runServe(cmd *cobra.Command, args []string) {
 		return coreUC.ReconcileNode(ctx, client, nodeID)
 	})
 	uc.Node.SetCorePortLister(coreUC.NodePorts)
+	// Per-tunnel usage: the stats fold attributes tunnel bytes to each
+	// subscription's tunnels.
+	uc.Node.SetCoreUsageProvider(coreRepo)
 
 	// Reverse-mode nodes arrive through the hub; its listener starts later,
 	// only when the hub is on.
