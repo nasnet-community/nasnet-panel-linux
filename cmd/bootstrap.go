@@ -381,7 +381,7 @@ func initUsecases(
 	}
 	maintenanceUC := mntUC.NewUsecase(
 		&mntAdapt.SettingAdapter{UC: settingUsecase},
-		&mntAdapt.NodeAdapter{DB: db},
+		&mntAdapt.NodeAdapter{DB: db, OnMaintenanceChange: nodeUsecase.ObserveNodeMaintenance},
 		&mntAdapt.SubAdapter{DB: db},
 		maintenanceBroadcastFn,
 	)

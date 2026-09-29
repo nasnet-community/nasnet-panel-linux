@@ -31,6 +31,11 @@ func (a *SettingAdapter) UpdateMany(ctx context.Context, pairs []*mntUC.SettingP
 // NodeAdapter reads/writes maintenance columns on the nodes table directly via GORM.
 type NodeAdapter struct {
 	DB *gorm.DB
+	// OnMaintenanceChange, when set, is called after a successful write so the
+	// node's connectivity history records the planned stretch. Optional: the
+	// maintenance feature works without it, it just wouldn't show up on the
+	// uptime timeline.
+	OnMaintenanceChange func(ctx context.Context, nodeID uint, active bool)
 }
 
 func (a *NodeAdapter) GetNodeMaintenance(ctx context.Context, id uint) (bool, string, *time.Time, error) {
@@ -45,14 +50,20 @@ func (a *NodeAdapter) GetNodeMaintenance(ctx context.Context, id uint) (bool, st
 }
 
 func (a *NodeAdapter) SetNodeMaintenance(ctx context.Context, id uint, active bool, message string, since *time.Time) error {
-	return a.DB.WithContext(ctx).
+	if err := a.DB.WithContext(ctx).
 		Model(&nodeDomain.Node{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"maintenance_mode":    active,
 			"maintenance_message": message,
 			"maintenance_since":   since,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+	if a.OnMaintenanceChange != nil {
+		a.OnMaintenanceChange(ctx, id, active)
+	}
+	return nil
 }
 
 // SubAdapter reads/writes maintenance columns on subscriptions, plus looks up

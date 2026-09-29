@@ -532,6 +532,12 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 		return ErrLocalNode
 	}
 
+	// Taking a node out of service is a transition worth recording: without it
+	// the timeline shows an unexplained outage (nothing polls a disabled node,
+	// so it just stops being observed). Re-enabling records nothing — the next
+	// heartbeat or poll reports what is actually true.
+	adminDisabled := existing.IsActive && !node.IsActive
+
 	// Detect if we need to lookup
 	shouldLookupLocation := node.IP != "" && (node.IP != existing.IP || node.CountryCode == "" || node.Datacenter == "")
 	ipChanged := node.IP != existing.IP
@@ -541,6 +547,10 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	// Update DB first
 	if err := u.nodeRepo.UpdateNode(ctx, node); err != nil {
 		return err
+	}
+
+	if adminDisabled {
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAdminDisabled, "disabled by an operator")
 	}
 
 	// rebuild the heartbeat session so it doesn't keep using stale node details.

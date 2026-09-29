@@ -108,6 +108,9 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.GET("/:id/users", h.GetNodeRealtimeUsers)
 		nodes.GET("/:id/traffic/daily", h.GetNodeDailyTraffic)
 		nodes.GET("/:id/uptime", h.GetNodeUptimeEvents)
+		nodes.GET("/:id/disconnections", h.GetNodeDisconnections)
+		nodes.GET("/:id/uptime/summary", h.GetNodeUptimeSummary)
+		nodes.GET("/uptime/gaps", h.GetHubGaps)
 
 		// Agent Management
 		nodes.POST("/:id/agent/start", h.StartXray)
@@ -1748,6 +1751,65 @@ func (h *Handler) GetNodeUptimeEvents(c *gin.Context) {
 	}
 
 	data, err := h.nodeUsecase.GetNodeUptimeEvents(c.Request.Context(), uint(id), hours)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
+}
+
+// GetNodeDisconnections lists a node's outages (paired offline→online
+// stretches) newest first. GET /nodes/:id/disconnections?hours=&limit=
+func (h *Handler) GetNodeDisconnections(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+	hours, _ := strconv.Atoi(c.DefaultQuery("hours", "720"))
+	if hours <= 0 {
+		hours = 720
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+
+	since := time.Now().Add(-time.Duration(hours) * time.Hour)
+	data, err := h.nodeUsecase.GetNodeDisconnections(c.Request.Context(), uint(id), since, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
+}
+
+// GetNodeUptimeSummary returns the daily rollup and its totals. Reads the
+// rollup table, so it keeps working past the uptime-event retention window.
+// GET /nodes/:id/uptime/summary?days=
+func (h *Handler) GetNodeUptimeSummary(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "30"))
+	data, err := h.nodeUsecase.GetNodeUptimeSummary(c.Request.Context(), uint(id), days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
+}
+
+// GetHubGaps returns the windows in which the panel itself wasn't running, so
+// the timeline can grey them out instead of claiming uptime nobody observed
+// (for the built-in node they are downtime: its xray stops with the panel).
+// GET /nodes/uptime/gaps?hours=
+func (h *Handler) GetHubGaps(c *gin.Context) {
+	hours, _ := strconv.Atoi(c.DefaultQuery("hours", "168"))
+	if hours <= 0 {
+		hours = 168
+	}
+	since := time.Now().Add(-time.Duration(hours) * time.Hour)
+	data, err := h.nodeUsecase.GetHubGaps(c.Request.Context(), since)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return

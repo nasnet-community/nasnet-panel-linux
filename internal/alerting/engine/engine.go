@@ -44,6 +44,12 @@ type Engine struct {
 	latestStats map[uint]events.NodeStatsPayload
 	// cache of node online state (populated from online/offline events)
 	nodeOnline map[uint]bool
+	// nodeID → when the current outage began (the writer's OutageStartedAt),
+	// so a rule's DurationSec grace measures from the real transition
+	offlineSinceAt map[uint]time.Time
+	// nodeID → the payload of the outage still in progress, re-evaluated on
+	// the tick because no further event arrives while a node stays down
+	latestOffline map[uint]events.NodeStatusPayload
 	// cache of last known node_name/ip for richer alert messages
 	nodeMeta map[uint]nodeMetaEntry
 }
@@ -56,13 +62,15 @@ type nodeMetaEntry struct {
 // NewEngine wires an engine to the bus + repo. Call Start to begin.
 func NewEngine(bus *events.EventBus, repo repository.AlertRepository) *Engine {
 	return &Engine{
-		bus:          bus,
-		repo:         repo,
-		crashWindows: make(map[uint][]time.Time),
-		firstOverAt:  make(map[string]time.Time),
-		latestStats:  make(map[uint]events.NodeStatsPayload),
-		nodeOnline:   make(map[uint]bool),
-		nodeMeta:     make(map[uint]nodeMetaEntry),
+		bus:            bus,
+		repo:           repo,
+		crashWindows:   make(map[uint][]time.Time),
+		firstOverAt:    make(map[string]time.Time),
+		latestStats:    make(map[uint]events.NodeStatsPayload),
+		nodeOnline:     make(map[uint]bool),
+		offlineSinceAt: make(map[uint]time.Time),
+		latestOffline:  make(map[uint]events.NodeStatusPayload),
+		nodeMeta:       make(map[uint]nodeMetaEntry),
 	}
 }
 
@@ -176,11 +184,24 @@ func (e *Engine) tick(ctx context.Context) {
 	}
 	e.mu.Unlock()
 
+	// Nodes still down: their grace period may have elapsed since the offline
+	// event arrived, and no further event will arrive while they stay down.
+	e.mu.Lock()
+	pending := make([]events.NodeStatusPayload, 0, len(e.latestOffline))
+	for _, p := range e.latestOffline {
+		pending = append(pending, p)
+	}
+	e.mu.Unlock()
+
 	for _, rule := range rules {
 		switch rule.RuleType {
 		case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk:
 			for _, s := range stats {
 				e.evalStatsForRule(ctx, rule, s)
+			}
+		case domain.RuleTypeNodeOffline:
+			for _, p := range pending {
+				e.evalNodeOfflineForRule(ctx, rule, p)
 			}
 		}
 	}
@@ -201,6 +222,39 @@ func (e *Engine) rememberMeta(nodeID uint, name, ip string) {
 		m.IP = ip
 	}
 	e.nodeMeta[nodeID] = m
+	e.mu.Unlock()
+}
+
+// rememberOfflineSince records when a node's current outage began, preferring
+// the writer's OutageStartedAt (the real transition time) over arrival time.
+// Kept so the tick can re-evaluate a still-down node once its rule's grace
+// period elapses, the same way sustained CPU/disk rules work.
+func (e *Engine) rememberOfflineSince(p events.NodeStatusPayload) {
+	if p.NodeID == 0 {
+		return
+	}
+	at := time.Now()
+	if p.OutageStartedAt != nil && !p.OutageStartedAt.IsZero() {
+		at = *p.OutageStartedAt
+	}
+	e.mu.Lock()
+	if _, exists := e.offlineSinceAt[p.NodeID]; !exists {
+		e.offlineSinceAt[p.NodeID] = at
+	}
+	e.latestOffline[p.NodeID] = p
+	e.mu.Unlock()
+}
+
+func (e *Engine) offlineSince(nodeID uint) time.Time {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.offlineSinceAt[nodeID]
+}
+
+func (e *Engine) forgetOfflineSince(nodeID uint) {
+	e.mu.Lock()
+	delete(e.offlineSinceAt, nodeID)
+	delete(e.latestOffline, nodeID)
 	e.mu.Unlock()
 }
 

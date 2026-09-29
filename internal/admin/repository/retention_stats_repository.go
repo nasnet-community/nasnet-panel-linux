@@ -29,6 +29,7 @@ var retentionTables = []retentionTable{
 	{"retention_node_stats_days", "node_stats", "created_at"},
 	{"retention_node_daily_traffic_days", "node_daily_traffics", "date"},
 	{"retention_node_uptime_events_days", "node_uptime_events", "timestamp"},
+	{"retention_node_daily_uptime_days", "node_daily_uptimes", "date"},
 	{"retention_starlink_stats_days", "starlink_stats", "created_at"},
 	{"retention_online_users_history_days", "online_users_snapshots", "created_at"},
 	{"retention_access_log_days", "access_log_summaries", "hour_time"},
@@ -42,6 +43,7 @@ var retentionTables = []retentionTable{
 	{"retention_notification_logs_days", "notification_logs", "sent_at"},
 	{"retention_alert_events_days", "alert_events", "created_at"},
 	{"retention_chat_messages_days", "chat_messages", "created_at"},
+	{"retention_hub_lifecycle_events_days", "hub_lifecycle_events", "started_at"},
 }
 
 // RetentionStatsRepository answers "how big / how old" for each retention

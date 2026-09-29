@@ -196,6 +196,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.AccessLogSummary{},
 		&nodeDomain.NodeDailyTraffic{},
 		&nodeDomain.NodeUptimeEvent{},
+		&nodeDomain.NodeDailyUptime{},
+		&nodeDomain.HubLifecycleEvent{},
 		&nodeDomain.StarlinkStat{},
 		&nodeDomain.AgentCertificate{},
 		&nodeDomain.NodeCertSighting{},
@@ -715,6 +717,17 @@ func runServe(cmd *cobra.Command, args []string) {
 		return expirationScheduler.RunRetentionNow(ctx)
 	})
 
+	// --- Connectivity history ---
+	// Seed the transition columns from any existing uptime events so nodes
+	// that flapped before this shipped don't read as "never disconnected".
+	if err := repos.Node.BackfillNodeTransitionColumns(bgCtx); err != nil {
+		log.WithError(err).Warn("Failed to backfill node transition columns")
+	}
+	// Bracket this run. The complement of these rows is time in which nothing
+	// observed the nodes — the built-in node counts it as downtime (its xray
+	// stops with the panel), remote nodes as not observed.
+	hubLifecycle := nodeUC.OpenHubLifecycle(bgCtx, repos.Node, Version)
+
 	// Monitor
 	// Resolved per send: the bot may still be coming up.
 	botNotifier := notifPkg.Notifier(lazyBotNotifier{ref: &transportBotRef})
@@ -875,6 +888,9 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// Stop background event producers so SSE connections can drain
 	bgCancel() // stops monitor service
+	// Close the lifecycle row before the DB goes away: a clean stop gives the
+	// gap an exact end instead of one inferred at the next boot.
+	hubLifecycle.Close(shutdownCtx)
 	if networkUC != nil {
 		// The mapper hands its leases back on the way out. Waiting is the
 		// difference between a released port and one the upstream router keeps

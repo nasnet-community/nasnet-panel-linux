@@ -732,3 +732,44 @@ func (m *mockSubscriptionRepo) AddDailyUsageSplits(ctx context.Context, deltas [
 func (m *mockNodeRepo) UpdateNodeLogSettings(_ context.Context, _ uint, _ nodeDomain.XrayLogSettings) error {
 	return nil
 }
+func (m *mockNodeRepo) GetUptimeEventsRange(_ context.Context, _ uint, _, _ time.Time) ([]*nodeDomain.NodeUptimeEvent, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) GetLastUptimeEventBefore(_ context.Context, _ uint, _ time.Time) (*nodeDomain.NodeUptimeEvent, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) UpdateNodeConnectivity(_ context.Context, _ uint, _ bool, _ time.Time, _ string) error {
+	return nil
+}
+func (m *mockNodeRepo) SetOfflineCandidate(_ context.Context, _ uint, _ *time.Time) error { return nil }
+func (m *mockNodeRepo) BackfillNodeTransitionColumns(_ context.Context) error             { return nil }
+func (m *mockNodeRepo) CreateHubLifecycleEvent(_ context.Context, _ *nodeDomain.HubLifecycleEvent) error {
+	return nil
+}
+func (m *mockNodeRepo) CloseHubLifecycleEvent(_ context.Context, _ uint, _ time.Time) error {
+	return nil
+}
+func (m *mockNodeRepo) CloseStaleHubLifecycleEvents(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+func (m *mockNodeRepo) GetHubLifecycleEvents(_ context.Context, _ time.Time) ([]*nodeDomain.HubLifecycleEvent, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) UpsertNodeDailyUptime(_ context.Context, _ *nodeDomain.NodeDailyUptime) error {
+	return nil
+}
+func (m *mockNodeRepo) GetNodeDailyUptime(_ context.Context, _ uint, _ time.Time) ([]*nodeDomain.NodeDailyUptime, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) GetLatestNodeDailyUptimeDate(_ context.Context) (time.Time, error) {
+	return time.Time{}, nil
+}
+func (m *mockNodeRepo) CleanupOldNodeDailyUptime(_ context.Context, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *mockNodeRepo) CleanupOldHubLifecycleEvents(_ context.Context, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *mockNodeRepo) FirstHubLifecycleStart(_ context.Context) (time.Time, error) {
+	return time.Time{}, nil
+}

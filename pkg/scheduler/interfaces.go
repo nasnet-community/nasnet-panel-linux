@@ -61,6 +61,10 @@ type SubscriptionUsecase interface {
 
 // NodeUsecase defines what the scheduler needs from the node business logic layer.
 type NodeUsecase interface {
+	// RollupNodeUptime stores one day of per-node connectivity; the rollup
+	// outlives node_uptime_events, which retention prunes.
+	RollupNodeUptime(ctx context.Context, day time.Time) error
+	BackfillNodeUptimeRollup(ctx context.Context, maxDays int) error
 	ListNodes(ctx context.Context) ([]*nodeDomain.Node, error)
 	SyncInbounds(ctx context.Context, nodeID uint) (*SyncResult, error)
 	SyncNodeStats(ctx context.Context) error
@@ -116,6 +120,8 @@ type NodeRepository interface {
 	CleanupOldAccessLogSummaries(ctx context.Context, before time.Time) (int64, error)
 	CleanupOldNodeDailyTraffic(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldUptimeEvents(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldNodeDailyUptime(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldHubLifecycleEvents(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldStarlinkStats(ctx context.Context, olderThanDays int) (int64, error)
 }
 

@@ -219,6 +219,18 @@ type NodeUsecase interface {
 	// Uptime Events
 	GetNodeUptimeEvents(ctx context.Context, nodeID uint, hours int) ([]*domain.NodeUptimeEvent, error)
 
+	// Connectivity history (node_connectivity.go / node_uptime_history.go).
+	// ObserveNodeHealth is the single writer for is_online + transition
+	// history; every detector reports through it.
+	ObserveNodeHealth(ctx context.Context, node *domain.Node, online bool, reason, detail string)
+	ObserveNodeMaintenance(ctx context.Context, nodeID uint, active bool)
+	HasLiveHeartbeatSession(nodeID uint) bool
+	GetNodeDisconnections(ctx context.Context, nodeID uint, since time.Time, limit int) ([]*NodeOutage, error)
+	GetNodeUptimeSummary(ctx context.Context, nodeID uint, days int) (*NodeUptimeSummary, error)
+	GetHubGaps(ctx context.Context, since time.Time) ([]domain.TimeWindow, error)
+	RollupNodeUptime(ctx context.Context, day time.Time) error
+	BackfillNodeUptimeRollup(ctx context.Context, maxDays int) error
+
 	// Agent Process Control
 	StartXray(ctx context.Context, nodeID uint) error
 	StopXray(ctx context.Context, nodeID uint) error
@@ -388,6 +400,14 @@ type nodeUsecase struct {
 
 	// Heartbeat manager for the local node's status loop
 	heartbeatMgr *HeartbeatManager
+
+	// Connectivity transition state (see node_connectivity.go). Guards the
+	// per-node cache of committed status + pending debounce window, and the
+	// short-lived cache of the debounce setting.
+	connMu           sync.Mutex
+	connStates       map[uint]*nodeConnState
+	debounceCache    time.Duration
+	debounceCachedAt time.Time
 	// heartbeatStartMu makes StartHeartbeats idempotent.
 	heartbeatStartMu sync.Mutex
 

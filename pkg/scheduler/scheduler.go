@@ -44,6 +44,7 @@ type Scheduler struct {
 
 	// Daily usage snapshot
 	usageRepo         UserDailyUsageRepository
+	lastUptimeRollup  time.Time
 	lastUsageSnapshot time.Time
 
 	// Prometheus metrics collector
@@ -552,6 +553,18 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 			s.runRetentionCleanup(ctx)
 			s.mu.Lock()
 			s.lastRetentionClean = time.Now()
+			s.mu.Unlock()
+		}
+	}
+
+	if s.nodeUsecase != nil {
+		s.mu.Lock()
+		shouldRollup := time.Since(s.lastUptimeRollup) > time.Hour
+		s.mu.Unlock()
+		if shouldRollup {
+			s.rollupNodeUptime(ctx)
+			s.mu.Lock()
+			s.lastUptimeRollup = time.Now()
 			s.mu.Unlock()
 		}
 	}

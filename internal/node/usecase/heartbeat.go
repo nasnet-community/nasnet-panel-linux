@@ -303,10 +303,13 @@ func (hm *HeartbeatManager) runSession(ctx context.Context, node *domain.Node, s
 			s.consecutiveFailures++
 		}
 
-		// Mark node offline on stream failure
-		if updateErr := hm.usecase.nodeRepo.UpdateNodeStatus(ctx, node.ID, false, time.Now()); updateErr != nil {
-			log.WithError(updateErr).Error("[HeartbeatManager] Failed to update offline status")
+		// Report the stream failure. The writer debounces, so a stream that
+		// reconnects inside the window never becomes a recorded outage.
+		detail := ""
+		if err != nil {
+			detail = err.Error()
 		}
+		hm.usecase.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonHeartbeatTimeout, detail)
 
 		// Wait before reconnecting with exponential backoff + jitter
 		backoff := hm.reconnectBackoff(s.consecutiveFailures)
@@ -343,12 +346,8 @@ func (hm *HeartbeatManager) runHeartbeatLoop(ctx context.Context, node *domain.N
 	// Detect offline→online transition
 	wasOffline := !node.IsOnline
 
-	// Mark node online
-	if updateErr := hm.usecase.nodeRepo.UpdateNodeStatus(ctx, node.ID, true, time.Now()); updateErr != nil {
-		log.WithError(updateErr).Warn("[HeartbeatManager] Failed to update online status")
-	}
-	// Update local state
-	node.IsOnline = true
+	// The writer flips is_online, records the event and emits node.online.
+	hm.usecase.ObserveNodeHealth(ctx, node, true, domain.NodeOnlineReasonHeartbeat, "")
 
 	// Reset failure counter on successful connection
 	s.consecutiveFailures = 0
@@ -1014,9 +1013,14 @@ func (hm *HeartbeatManager) HandleReverseConnect(nodeID uint) {
 	log.Info("[HeartbeatManager] Reverse agent connected")
 
 	ctx := context.Background()
-	if err := hm.usecase.nodeRepo.UpdateNodeStatus(ctx, nodeID, true, time.Now()); err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Failed to mark reverse node online")
+	// The writer stamps the transition columns and announces it; it needs
+	// the row first.
+	node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		log.WithError(err).Error("[HeartbeatManager] Failed to load reverse node for status update")
+		return
 	}
+	hm.usecase.ObserveNodeHealth(ctx, node, true, domain.NodeOnlineReasonAgentReachable, "reverse tunnel connected")
 
 	// Passive session: the hub server owns the connection lifecycle. A
 	// direct-mode stream left from before a mode switch is ended here.
@@ -1031,11 +1035,6 @@ func (hm *HeartbeatManager) HandleReverseConnect(nodeID uint) {
 	}
 	hm.mu.Unlock()
 
-	node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID)
-	if err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Failed to fetch reverse node for config push")
-		return
-	}
 	hm.triggerConfigPush(node)
 }
 
@@ -1045,8 +1044,12 @@ func (hm *HeartbeatManager) HandleReverseDisconnect(nodeID uint) {
 	log := logger.GetLogger().WithField("node_id", nodeID)
 	log.Info("[HeartbeatManager] Reverse agent disconnected")
 
-	if err := hm.usecase.nodeRepo.UpdateNodeStatus(context.Background(), nodeID, false, time.Now()); err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Failed to mark reverse node offline")
+	// Debounced — a tunnel that comes straight back is a flap, not an outage.
+	ctx := context.Background()
+	if node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID); err == nil {
+		hm.usecase.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAgentUnreachable, "reverse tunnel disconnected")
+	} else {
+		log.WithError(err).Error("[HeartbeatManager] Failed to load reverse node for status update")
 	}
 
 	hm.mu.Lock()

@@ -314,9 +314,7 @@ func (u *nodeUsecase) CheckAgentHealth(ctx context.Context, id uint) (*domain.No
 	client, err := u.getAgentClient(node)
 	if err != nil {
 		logger.GetLogger().Warnf("[CheckAgentHealth] Connection failed for node %d: %v", id, err)
-		if updateErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, false, time.Now()); updateErr != nil {
-			logger.GetLogger().Errorf("[CheckAgentHealth] Failed to update status DB: %v", updateErr)
-		}
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAgentUnreachable, err.Error())
 		return &domain.NodeHealth{
 			Healthy: false,
 			Message: fmt.Sprintf("Agent connection failed: %v", err),
@@ -329,9 +327,7 @@ func (u *nodeUsecase) CheckAgentHealth(ctx context.Context, id uint) (*domain.No
 	latency, err := client.Ping(ctx)
 	if err != nil {
 		logger.GetLogger().Warnf("[CheckAgentHealth] Ping failed for node %d: %v", id, err)
-		if statusErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, false, time.Now()); statusErr != nil {
-			logger.GetLogger().WithError(statusErr).WithField("node_id", node.ID).Warn("[CheckAgentHealth] Failed to update node status after ping failure")
-		}
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonHealthCheck, err.Error())
 		return &domain.NodeHealth{
 			Healthy: false,
 			Message: fmt.Sprintf("Agent ping failed: %v", err),
@@ -343,9 +339,7 @@ func (u *nodeUsecase) CheckAgentHealth(ctx context.Context, id uint) (*domain.No
 	health, err := client.HealthCheck(ctx)
 	if err != nil {
 		logger.GetLogger().Warnf("[CheckAgentHealth] HealthCheck failed for node %d: %v", id, err)
-		if statusErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, false, time.Now()); statusErr != nil {
-			logger.GetLogger().WithError(statusErr).WithField("node_id", node.ID).Warn("[CheckAgentHealth] Failed to update node status after health check failure")
-		}
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonHealthCheck, err.Error())
 		return &domain.NodeHealth{
 			Healthy: false,
 			Message: fmt.Sprintf("Health check failed: %v", err),
@@ -362,9 +356,7 @@ func (u *nodeUsecase) CheckAgentHealth(ctx context.Context, id uint) (*domain.No
 	}
 
 	logger.GetLogger().Infof("[CheckAgentHealth] Node %d health: true", id)
-	if updateErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, isHealthy, time.Now()); updateErr != nil {
-		logger.GetLogger().Errorf("[CheckAgentHealth] Failed to update status DB: %v", updateErr)
-	}
+	u.ObserveNodeHealth(ctx, node, isHealthy, domain.NodeOnlineReasonAgentReachable, "")
 
 	return &domain.NodeHealth{
 		Healthy: isHealthy, // Always true if reachable
@@ -1137,7 +1129,9 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 			if u.httpFactory != nil {
 				route = u.httpFactory.RouteFor(httpclient.FeatureXrayBinary, "https://github.com")
 			}
-			cached, ok := u.xrayBM.(interface{ IsCached(version, arch string) bool })
+			cached, ok := u.xrayBM.(interface {
+				IsCached(version, arch string) bool
+			})
 			switch {
 			case ok && cached.IsCached(version, arch):
 				reportXrayUpdate(ctx, "downloading", "Using the cached binary.")

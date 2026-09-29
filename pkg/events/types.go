@@ -115,6 +115,16 @@ type NodeStatusPayload struct {
 	IP       string `json:"ip"`
 	IsOnline bool   `json:"is_online"`
 	Message  string `json:"message,omitempty"`
+	// Reason is the transition cause (domain.NodeOfflineReason*/NodeOnlineReason*).
+	Reason string `json:"reason,omitempty"`
+	// Planned marks an operator-caused stretch (disable, maintenance) so
+	// consumers can keep it out of fault reporting.
+	Planned bool `json:"planned,omitempty"`
+	// OutageStartedAt is when the state actually changed, which is earlier
+	// than this event whenever the offline debounce held the transition back.
+	// Alert grace periods measure from here so a configured grace isn't
+	// silently lengthened by the debounce window.
+	OutageStartedAt *time.Time `json:"outage_started_at,omitempty"`
 }
 
 // NodeStatsPayload contains updated stats for a node

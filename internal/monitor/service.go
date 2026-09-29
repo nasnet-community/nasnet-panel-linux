@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
@@ -13,11 +12,19 @@ import (
 
 type NodeRepository interface {
 	ListNodes(ctx context.Context) ([]*domain.Node, error)
-	UpdateNodeStatus(ctx context.Context, id uint, isOnline bool, lastCheck time.Time) error
 }
 
 type NodeHealthChecker interface {
 	CheckNodeHealth(ctx context.Context, id uint) (*domain.NodeHealth, error)
+}
+
+// heartbeatSessionProbe is satisfied by the node usecase. When available, the
+// monitor skips nodes that already have a live heartbeat stream: two detectors
+// at 8s and 10s on the same node race, and the paired flaps they produce are
+// noise no debounce can fully absorb. Optional so the monitor still works
+// standalone (tests, or a build without the heartbeat manager).
+type heartbeatSessionProbe interface {
+	HasLiveHeartbeatSession(nodeID uint) bool
 }
 
 // NodeStatsSyncer interface removed
@@ -84,67 +91,24 @@ func (s *MonitorService) checkNodes(ctx context.Context) {
 		return
 	}
 
+	probe, hasProbe := s.healthChecker.(heartbeatSessionProbe)
+
 	for _, node := range nodes {
 		// Only check active nodes
 		if !node.IsActive {
 			continue
 		}
-
-		var isOnline bool
-		var checkErr error
-
-		res, err := s.healthChecker.CheckNodeHealth(ctx, node.ID)
-		if err != nil {
-			isOnline = false
-			checkErr = err
-		} else {
-			isOnline = res.Healthy
-			if !res.Healthy {
-				checkErr = fmt.Errorf("%s", res.Message)
-			}
+		// A live heartbeat stream is already reporting this node — polling it
+		// would only add a second, slower opinion.
+		if hasProbe && probe.HasLiveHeartbeatSession(node.ID) {
+			continue
 		}
 
-		// Determine if status changed
-		statusChanged := node.IsOnline != isOnline
-
-		// Update node status
-		// Critical Fix: Use UpdateNodeStatus instead of UpdateNode/Save to avoid resurrecting soft-deleted nodes
-		// if a deletion happened concurrently. Save() overwrites DeletedAt with nil.
-		node.IsOnline = isOnline
-		node.LastCheck = time.Now()
-
-		if updateErr := s.nodeRepo.UpdateNodeStatus(ctx, node.ID, isOnline, node.LastCheck); updateErr != nil {
-			log.Errorf("Monitor: Failed to update node %s status: %v", node.Name, updateErr)
-		}
-
-		if statusChanged {
-			payload := events.NodeStatusPayload{
-				NodeID:   node.ID,
-				NodeName: node.Name,
-				IP:       node.IP,
-				IsOnline: isOnline,
-			}
-
-			if isOnline {
-				log.Infof("Monitor: Node %s is back ONLINE", node.Name)
-				if s.eventBus != nil {
-					s.eventBus.Publish(events.Event{
-						Type:      events.EventNodeOnline,
-						Timestamp: time.Now(),
-						Payload:   payload,
-					})
-				}
-			} else {
-				log.Warnf("Monitor: Node %s is OFFLINE: %v", node.Name, checkErr)
-				payload.Message = checkErr.Error()
-				if s.eventBus != nil {
-					s.eventBus.Publish(events.Event{
-						Type:      events.EventNodeOffline,
-						Timestamp: time.Now(),
-						Payload:   payload,
-					})
-				}
-			}
+		// The health check reports the result through the connectivity writer,
+		// which owns is_online, the transition history and the SSE/alert event.
+		// Nothing to do here but drive the poll for sessionless nodes.
+		if _, err := s.healthChecker.CheckNodeHealth(ctx, node.ID); err != nil {
+			log.Debugf("Monitor: health check for node %s failed to run: %v", node.Name, err)
 		}
 	}
 }

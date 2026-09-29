@@ -65,6 +65,22 @@ func (s *Scheduler) tryCleanup(
 	}
 }
 
+// rollupNodeUptime stores yesterday's per-node connectivity, plus any days
+// missed while the panel was stopped. Runs on the same slow tick as retention:
+// the rollup only ever covers finished days, so cadence beyond daily buys
+// nothing.
+func (s *Scheduler) rollupNodeUptime(ctx context.Context) {
+	if s.nodeUsecase == nil {
+		return
+	}
+	log := logger.GetLogger()
+	if err := s.nodeUsecase.BackfillNodeUptimeRollup(ctx, 30); err != nil {
+		log.WithError(err).Warn("Uptime rollup: backfill failed")
+		return
+	}
+	log.Debug("Uptime rollup: up to date")
+}
+
 // runRetentionCleanup: 6h scheduler tick. RunRetentionNow wraps it for
 // the admin manual cleanup endpoint.
 func (s *Scheduler) runRetentionCleanup(ctx context.Context) CleanupSummary {
@@ -75,6 +91,8 @@ func (s *Scheduler) runRetentionCleanup(ctx context.Context) CleanupSummary {
 		s.tryCleanup(ctx, summary, "node_stats", "retention_node_stats_days", 30, s.nodeRepository.CleanupOldNodeStats)
 		s.tryCleanup(ctx, summary, "node_daily_traffic", "retention_node_daily_traffic_days", 365, s.nodeRepository.CleanupOldNodeDailyTraffic)
 		s.tryCleanup(ctx, summary, "node_uptime_events", "retention_node_uptime_events_days", 90, s.nodeRepository.CleanupOldUptimeEvents)
+		s.tryCleanup(ctx, summary, "node_daily_uptime", "retention_node_daily_uptime_days", 0, s.nodeRepository.CleanupOldNodeDailyUptime)
+		s.tryCleanup(ctx, summary, "hub_lifecycle_events", "retention_hub_lifecycle_events_days", 365, s.nodeRepository.CleanupOldHubLifecycleEvents)
 		s.tryCleanup(ctx, summary, "starlink_stats", "retention_starlink_stats_days", 30, s.nodeRepository.CleanupOldStarlinkStats)
 		s.tryCleanup(ctx, summary, "access_log_summaries", "retention_access_log_days", 30, func(ctx context.Context, days int) (int64, error) {
 			before := time.Now().AddDate(0, 0, -days)

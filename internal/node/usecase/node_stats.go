@@ -554,33 +554,22 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	client, err := u.getAgentClientForStats(ctx, node)
 	if err != nil {
 		log.Warn("Failed to connect to agent for stats collection")
-		// Mark node as offline if it was online
-		if node.IsOnline {
-			if statusErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, false, time.Now()); statusErr != nil {
-				log.WithError(statusErr).Warn("[SyncNodeStats] Failed to update node offline status")
-			}
-			u.nodeRepo.CreateUptimeEvent(ctx, &domain.NodeUptimeEvent{
-				NodeID: node.ID, Status: "offline", Timestamp: time.Now(),
-			})
-		}
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAgentUnreachable, err.Error())
 		return
 	}
 
 	// Detect offline→online transition for config re-push
 	wasOffline := !node.IsOnline
 
-	// Update node as online since we connected successfully
-	if wasOffline {
-		if updateErr := u.nodeRepo.UpdateNodeStatus(ctx, node.ID, true, time.Now()); updateErr != nil {
-			log.Warnf("Failed to update node online status: %v", updateErr)
-		}
-		u.nodeRepo.CreateUptimeEvent(ctx, &domain.NodeUptimeEvent{
-			NodeID: node.ID, Status: "online", Timestamp: time.Now(),
-		})
-	}
-
+	// Reachability is decided below, by an RPC that answered (or a fresh
+	// heartbeat pong) — never by the fact that we hold a client. In direct
+	// mode the pool hands back a cached conn after the agent dies, so "got a
+	// client" proves nothing; reporting online here would also clear the
+	// offline candidate every 5s and the 30s debounce could never elapse.
 	// A. System Stats
 	agentSysStats, err := client.GetSystemStats(ctx)
+	reachable := err == nil
+	unreachableErr := err
 	if err != nil {
 		log.Warnf("Failed to get system stats: %v", err)
 	} else {
@@ -626,6 +615,7 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	if u.heartbeatMgr != nil {
 		if st, at, ok := u.heartbeatMgr.GetLastStatus(node.ID); ok && time.Since(at) < heartbeatStatusFreshness {
 			status = st
+			reachable = true
 		}
 	}
 	if status == nil {
@@ -634,8 +624,25 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 		if statusErr != nil {
 			log.Debugf("Failed to get xray status: %v", statusErr)
 			status = nil
+			if unreachableErr == nil {
+				unreachableErr = statusErr
+			}
+		} else {
+			reachable = true
 		}
 	}
+
+	// Now we know whether anything on the other end answered; the writer
+	// decides whether that is a transition.
+	if !reachable {
+		detail := "agent answered no stats RPC"
+		if unreachableErr != nil {
+			detail = unreachableErr.Error()
+		}
+		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAgentUnreachable, detail)
+		return
+	}
+	u.ObserveNodeHealth(ctx, node, true, domain.NodeOnlineReasonAgentReachable, "")
 	if status != nil {
 		if status.XrayRunning {
 			xrayStatus = "running"

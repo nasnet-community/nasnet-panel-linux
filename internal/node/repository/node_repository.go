@@ -119,6 +119,8 @@ type NodeRepository interface {
 	CleanupOldNodeStats(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldNodeDailyTraffic(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldUptimeEvents(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldNodeDailyUptime(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldHubLifecycleEvents(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldStarlinkStats(ctx context.Context, olderThanDays int) (int64, error)
 
 	// Batch fetch inbounds by IDs with Node preloaded
@@ -163,6 +165,25 @@ type NodeRepository interface {
 	// Uptime Events
 	CreateUptimeEvent(ctx context.Context, event *domain.NodeUptimeEvent) error
 	GetUptimeEvents(ctx context.Context, nodeID uint, since time.Time) ([]*domain.NodeUptimeEvent, error)
+	GetUptimeEventsRange(ctx context.Context, nodeID uint, from, to time.Time) ([]*domain.NodeUptimeEvent, error)
+	GetLastUptimeEventBefore(ctx context.Context, nodeID uint, before time.Time) (*domain.NodeUptimeEvent, error)
+
+	// Connectivity transitions (see node_connectivity_repository.go)
+	UpdateNodeConnectivity(ctx context.Context, id uint, isOnline bool, at time.Time, reason string) error
+	SetOfflineCandidate(ctx context.Context, id uint, since *time.Time) error
+	BackfillNodeTransitionColumns(ctx context.Context) error
+
+	// Hub lifecycle — the windows where nothing was observing the nodes
+	CreateHubLifecycleEvent(ctx context.Context, event *domain.HubLifecycleEvent) error
+	CloseHubLifecycleEvent(ctx context.Context, id uint, at time.Time) error
+	CloseStaleHubLifecycleEvents(ctx context.Context, at time.Time) (int64, error)
+	GetHubLifecycleEvents(ctx context.Context, since time.Time) ([]*domain.HubLifecycleEvent, error)
+	FirstHubLifecycleStart(ctx context.Context) (time.Time, error)
+
+	// Daily uptime rollup — outlives the events it is computed from
+	UpsertNodeDailyUptime(ctx context.Context, row *domain.NodeDailyUptime) error
+	GetNodeDailyUptime(ctx context.Context, nodeID uint, since time.Time) ([]*domain.NodeDailyUptime, error)
+	GetLatestNodeDailyUptimeDate(ctx context.Context) (time.Time, error)
 
 	// Starlink Stats
 	CreateStarlinkStat(ctx context.Context, stat *domain.StarlinkStat) error
@@ -1468,7 +1489,7 @@ func (r *nodeRepository) CreateUptimeEvent(ctx context.Context, event *domain.No
 func (r *nodeRepository) GetUptimeEvents(ctx context.Context, nodeID uint, since time.Time) ([]*domain.NodeUptimeEvent, error) {
 	var events []*domain.NodeUptimeEvent
 	if err := r.db.WithContext(ctx).
-		Where("node_id = ? AND timestamp >= ?", nodeID, since).
+		Where("node_id = ? AND timestamp >= ?", nodeID, since.UTC()).
 		Order("timestamp ASC").
 		Find(&events).Error; err != nil {
 		return nil, err

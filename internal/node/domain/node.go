@@ -36,9 +36,22 @@ type Node struct {
 	IsPersistentStealth bool   `gorm:"default:false" json:"is_persistent_stealth"`   // Whether stealth agent should be persistent
 
 	// Monitoring Status (transient or persistent)
-	IsOnline    bool      `gorm:"default:false" json:"is_online"`
-	XrayStopped bool      `gorm:"default:false" json:"xray_stopped"` // User explicitly stopped Xray; suppresses auto-restart
-	LastCheck   time.Time `json:"last_check"`
+	IsOnline bool `gorm:"default:false" json:"is_online"`
+
+	// Connectivity history. LastCheck below is only "when did we last look";
+	// these record the transitions themselves so the node list can show the
+	// last outage without scanning node_uptime_events (which expires).
+	//
+	// OfflineCandidateSince is the debounce window's start: the first failed
+	// detection that hasn't yet been confirmed as an outage. Persisted rather
+	// than held in memory so a hub restart mid-window doesn't lose the real
+	// outage start.
+	LastDisconnectedAt    *time.Time `json:"last_disconnected_at,omitempty"`
+	LastConnectedAt       *time.Time `json:"last_connected_at,omitempty"`
+	LastOfflineReason     string     `gorm:"size:32;default:''" json:"last_offline_reason,omitempty"`
+	OfflineCandidateSince *time.Time `json:"-"`
+	XrayStopped           bool       `gorm:"default:false" json:"xray_stopped"` // User explicitly stopped Xray; suppresses auto-restart
+	LastCheck             time.Time  `json:"last_check"`
 
 	// LastAccessLogSyncedAt is stamped after each successful hourly
 	// summary Ack from this node. Nil = never synced. Surfaced as a

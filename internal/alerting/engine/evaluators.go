@@ -12,22 +12,49 @@ import (
 // ----- node_offline -----
 
 func (e *Engine) evalNodeOffline(ctx context.Context, p events.NodeStatusPayload) {
+	// Operator-caused stretches (disable, maintenance) are recorded in the
+	// node's history but are not faults — alerting on them trains people to
+	// ignore the alert.
+	if p.Planned {
+		return
+	}
+	e.rememberOfflineSince(p)
 	rules := e.rulesOfType(ctx, domain.RuleTypeNodeOffline)
-	entity := nodeEntityKey(p.NodeID)
 	for _, rule := range rules {
-		if !e.ruleAppliesToNode(rule, p.NodeID) {
-			continue
-		}
-		title := fmt.Sprintf("Node offline: %s", displayName(p.NodeName, p.NodeID))
-		msg := fmt.Sprintf("Node %s (%s) is not responding.", displayName(p.NodeName, p.NodeID), p.IP)
-		if p.Message != "" {
-			msg = msg + " Detail: " + p.Message
-		}
-		e.fireOrSkip(ctx, rule, entity, title, msg, valueAsJSON(p))
+		e.evalNodeOfflineForRule(ctx, rule, p)
 	}
 }
 
+// evalNodeOfflineForRule honours the rule's DurationSec as a grace period,
+// measured from when the node actually went down (OutageStartedAt) rather than
+// from when the event reached us — the connectivity writer debounces offline
+// transitions, and measuring from arrival would silently add that window to
+// every configured grace. Re-checked on the engine tick so a node that stays
+// down eventually fires without a new event arriving.
+func (e *Engine) evalNodeOfflineForRule(ctx context.Context, rule *domain.Rule, p events.NodeStatusPayload) {
+	if !e.ruleAppliesToNode(rule, p.NodeID) {
+		return
+	}
+	since := e.offlineSince(p.NodeID)
+	if grace := time.Duration(rule.Threshold.DurationSec) * time.Second; grace > 0 {
+		if since.IsZero() || time.Since(since) < grace {
+			return
+		}
+	}
+	entity := nodeEntityKey(p.NodeID)
+	title := fmt.Sprintf("Node offline: %s", displayName(p.NodeName, p.NodeID))
+	msg := fmt.Sprintf("Node %s (%s) is not responding.", displayName(p.NodeName, p.NodeID), p.IP)
+	if !since.IsZero() {
+		msg = msg + fmt.Sprintf(" Down for %s.", time.Since(since).Round(time.Second))
+	}
+	if p.Message != "" {
+		msg = msg + " Detail: " + p.Message
+	}
+	e.fireOrSkip(ctx, rule, entity, title, msg, valueAsJSON(p))
+}
+
 func (e *Engine) resolveNodeOffline(ctx context.Context, p events.NodeStatusPayload) {
+	e.forgetOfflineSince(p.NodeID)
 	rules := e.rulesOfType(ctx, domain.RuleTypeNodeOffline)
 	entity := nodeEntityKey(p.NodeID)
 	for _, rule := range rules {

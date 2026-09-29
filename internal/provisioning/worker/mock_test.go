@@ -610,3 +610,18 @@ func (m *mockNodeUsecase) AutoUpdateAgent(context.Context, uint, chan<- nodeUC.U
 func (m *mockNodeUsecase) BulkUpdateAgent(context.Context, []uint) map[uint]*nodeUC.NodeBulkActionResult {
 	return nil
 }
+func (m *mockNodeUsecase) ObserveNodeHealth(context.Context, *nodeDomain.Node, bool, string, string) {
+}
+func (m *mockNodeUsecase) ObserveNodeMaintenance(context.Context, uint, bool) {}
+func (m *mockNodeUsecase) HasLiveHeartbeatSession(uint) bool                  { return false }
+func (m *mockNodeUsecase) GetNodeDisconnections(context.Context, uint, time.Time, int) ([]*nodeUC.NodeOutage, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetNodeUptimeSummary(context.Context, uint, int) (*nodeUC.NodeUptimeSummary, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetHubGaps(context.Context, time.Time) ([]nodeDomain.TimeWindow, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) RollupNodeUptime(context.Context, time.Time) error   { return nil }
+func (m *mockNodeUsecase) BackfillNodeUptimeRollup(context.Context, int) error { return nil }
