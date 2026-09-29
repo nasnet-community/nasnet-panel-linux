@@ -45,17 +45,18 @@ type ACMEConfig struct {
 }
 
 type AppConfig struct {
-	Env           string
-	Port          int
-	BaseURL       string   // Base URL for subscription links (e.g. https://sub.example.com)
-	HubEnabled    bool     // Serve the reverse-agent hub (remote nodes)
-	HubPort       int      // Port for the reverse-agent hub
-	BackupDir     string   // Directory for database backups
-	SubPanelURL   string   // URL of the subscription panel (e.g. https://panel.example.com). When set, browser requests to /sub/:uuid are redirected here.
-	TLSCertFile   string   // Path to TLS certificate PEM file
-	TLSKeyFile    string   // Path to TLS private key PEM file
-	PanelBasePath string   // URL path prefix for admin panel (e.g., /x7k2m9)
-	CORSOrigins   []string // CORS_ORIGINS (comma-separated)
+	Env              string
+	Port             int
+	BaseURL          string   // Base URL for subscription links (e.g. https://sub.example.com)
+	HubEnabled       bool     // Serve the reverse-agent hub (remote nodes)
+	HubPort          int      // Port for the reverse-agent hub
+	BackupDir        string   // Directory for database backups
+	BackupPassphrase string   // Initial age passphrase for encrypted Telegram backups (seeds the panel setting once)
+	SubPanelURL      string   // URL of the subscription panel (e.g. https://panel.example.com). When set, browser requests to /sub/:uuid are redirected here.
+	TLSCertFile      string   // Path to TLS certificate PEM file
+	TLSKeyFile       string   // Path to TLS private key PEM file
+	PanelBasePath    string   // URL path prefix for admin panel (e.g., /x7k2m9)
+	CORSOrigins      []string // CORS_ORIGINS (comma-separated)
 }
 
 type DatabaseConfig struct {
@@ -128,12 +129,13 @@ func Load() *Config {
 			HubEnabled: getEnvAsBool("HUB_ENABLED", false),
 			HubPort:    parseHubPort(getEnv("HUB_LISTEN_ADDR", ":9091")),
 
-			BackupDir:     getEnv("BACKUP_DIR", "./data/backups"),
-			SubPanelURL:   getEnv("SUB_PANEL_URL", ""),
-			TLSCertFile:   getEnv("TLS_CERT_FILE", ""),
-			TLSKeyFile:    getEnv("TLS_KEY_FILE", ""),
-			PanelBasePath: CleanBasePath(getEnv("APP_PANEL_BASE_PATH", "")),
-			CORSOrigins:   getEnvAsStringSlice("CORS_ORIGINS"),
+			BackupDir:        getEnv("BACKUP_DIR", "./data/backups"),
+			BackupPassphrase: getEnv("BACKUP_PASSPHRASE", ""),
+			SubPanelURL:      getEnv("SUB_PANEL_URL", ""),
+			TLSCertFile:      getEnv("TLS_CERT_FILE", ""),
+			TLSKeyFile:       getEnv("TLS_KEY_FILE", ""),
+			PanelBasePath:    CleanBasePath(getEnv("APP_PANEL_BASE_PATH", "")),
+			CORSOrigins:      getEnvAsStringSlice("CORS_ORIGINS"),
 		},
 		Database: DatabaseConfig{
 			Driver:          getEnv("DB_DRIVER", "postgres"),

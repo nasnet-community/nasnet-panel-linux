@@ -11,6 +11,7 @@ import {
     HiOutlineBell,
     HiOutlineGlobeAlt,
     HiOutlineExclamationCircle,
+    HiOutlineSave,
 } from "react-icons/hi"
 import { LuRouter } from "react-icons/lu"
 import { BsTelegram, BsDiscord } from "react-icons/bs"
@@ -83,6 +84,12 @@ export const categoryMeta: Record<string, CategoryMeta> = {
         order: 7,
         label: "Data Retention",
     },
+    backup: {
+        icon: HiOutlineSave,
+        description: "Scheduled database backups delivered via Telegram, encrypted when a passphrase is set",
+        order: 7.5,
+        label: "Backup",
+    },
     xray_monitoring: {
         icon: HiOutlineExclamationCircle,
         description: "Configure xray crash detection, notification throttling, and auto-disable behavior",
@@ -147,6 +154,8 @@ export const fieldOverrides: Record<string, FieldOverride> = {
     retention_notification_logs_days: { type: "duration", unit: "days" },
     retention_alert_events_days: { type: "duration", unit: "days" },
     retention_chat_messages_days: { type: "duration", unit: "days" },
+    // Scheduled backup
+    backup_interval_hours: { type: "duration", unit: "hours" },
     // Xray monitoring duration fields
     xray_crash_loop_cooldown: { type: "duration", unit: "minutes" },
     xray_stability_period: { type: "duration", unit: "minutes" },

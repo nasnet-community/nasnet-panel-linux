@@ -1079,6 +1079,18 @@ func (b *Bot) NotifyAdmin(message string) error {
 	return nil
 }
 
+// SendDocumentToChat sends a local file as a Telegram document to an
+// arbitrary chat ID (used for backup delivery).
+func (b *Bot) SendDocumentToChat(chatID int64, filePath, fileName, caption string) error {
+	doc := &telebot.Document{
+		File:     telebot.FromDisk(filePath),
+		FileName: fileName,
+		Caption:  caption,
+	}
+	_, err := b.bot.Send(&telebot.Chat{ID: chatID}, doc)
+	return err
+}
+
 func (b *Bot) registerManualUserCommands() {
 	mw := b.adminMiddleware.RequireAdmin
 	h := b.adminHandler

@@ -328,6 +328,14 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "retention_alert_events_days", Value: "180", Type: "int", Category: "data", Description: "How many days to keep alerting event history (0 = keep forever). Alert rules continue firing regardless — only old fire events are pruned.", Label: "Alert Events Retention (days)"},
 		{Key: "retention_chat_messages_days", Value: "0", Type: "int", Category: "data", Description: "How many days to keep admin↔user chat messages (0 = keep forever).", Label: "Chat Message Retention (days)"},
 
+		// Scheduled Telegram backup
+		{Key: "backup_enabled", Value: "false", Type: "bool", Category: "backup", Description: "Periodically dump the database and send it to the backup Telegram chat, age-encrypted when a backup passphrase is set, otherwise as a plain gzip dump.", Label: "Scheduled Backup"},
+		{Key: "backup_interval_hours", Value: "24", Type: "int", Category: "backup", Description: "Hours between scheduled backups.", Label: "Backup Interval (hours)"},
+		{Key: "backup_chat_id", Value: "", Type: "string", Category: "backup", Description: "Numeric Telegram chat ID that receives backup files (a private channel works well). Empty = send to the admin IDs from ADMIN_IDS; admins added only through the panel are not included.", Label: "Backup Chat ID"},
+		{Key: "backup_passphrase", Value: "", Type: "string", Category: "backup", Description: "Passphrase used to age-encrypt backups before sending. Decrypt with: age -d file.sql.gz.age | gunzip > file.sql. Changing it does not re-encrypt previously sent files. Leave empty to send unencrypted dumps (not recommended).", Label: "Backup Passphrase", Sensitive: true},
+		{Key: "backup_retention_count", Value: "7", Type: "int", Category: "backup", Description: "How many plain .sql backups to keep in the backup directory; older ones are deleted on each run. 0 = keep forever.", Label: "Local Backup Retention (count)"},
+		{Key: "backup_last_run_at", Value: "", Type: "string", Category: "backup", Description: "RFC3339 timestamp of the last scheduled backup attempt. Set automatically; not user-editable.", Label: "Last Scheduled Backup"},
+
 		// Notification — Channel Configuration
 		{Key: "notification_discord_webhook_url", Value: "", Type: "string", Category: "notification", Description: "Discord webhook URL for notifications", Label: "Discord Webhook URL", Sensitive: true},
 		{Key: "notification_webhook_url", Value: "", Type: "string", Category: "notification", Description: "Generic webhook URL for notifications", Label: "Webhook URL", Sensitive: true},

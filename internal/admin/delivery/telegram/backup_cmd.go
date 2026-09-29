@@ -2,68 +2,34 @@ package telegram
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
 	"gopkg.in/telebot.v3"
 )
 
-// HandleBackup creates a database backup and sends it as a document
+// HandleBackup runs the shared backup pipeline (plain dump + rotation +
+// gzip, age-encrypted when a backup passphrase is set) and delivers the file
+// to the backup chat plus the requesting admin.
 func (h *Handler) HandleBackup(c telebot.Context) error {
-	if h.backupSvc == nil {
-		return c.Send("Backup is not configured (missing database config).")
+	if h.backupRunner == nil {
+		return c.Send("Backup is not configured.")
 	}
 
-	// Acquire service-level lock (shared with HTTP handler)
-	if !h.backupSvc.TryLock() {
-		return c.Send("Another backup or restore operation is already in progress.")
-	}
-	defer h.backupSvc.Unlock()
-
-	// Notify the user that backup is in progress
 	c.Send("🔄 Creating database backup...")
 
-	// Use the shared backup directory so Telegram backups appear in history.
-	// Fall back to temp directory if no backup dir is configured.
-	backupDir := h.backupSvc.BackupDir()
-	keepFile := backupDir != ""
-	if !keepFile {
-		backupDir = os.TempDir()
-	}
-	if err := os.MkdirAll(backupDir, 0750); err != nil {
-		return c.Send(fmt.Sprintf("Failed to create backup directory: %v", err))
-	}
-
-	now := time.Now()
-	filename := fmt.Sprintf("backup_%s_%04d.sql", now.Format("20060102_150405"), now.Nanosecond()/100000)
-	filePath := filepath.Join(backupDir, filename)
-
-	ctx, cancel := tgctx.FromTelebotWithTimeout(c, 5*time.Minute)
+	ctx, cancel := tgctx.FromTelebotWithTimeout(c, 15*time.Minute)
 	defer cancel()
 
-	if err := h.backupSvc.RunPgDump(ctx, filePath); err != nil {
-		return c.Send(fmt.Sprintf("pg\\_dump failed: %v", err), telebot.ModeMarkdown)
-	}
-	// Only remove if using temp dir; otherwise keep in backup history
-	if !keepFile {
-		defer os.Remove(filePath)
-	}
-
-	// Get file info
-	info, err := os.Stat(filePath)
+	res, err := h.backupRunner.RunNow(ctx, c.Chat().ID)
 	if err != nil {
-		return c.Send("Backup created but failed to read file info.")
+		return c.Send(fmt.Sprintf("Backup failed: %v", err))
 	}
-
-	sizeMB := float64(info.Size()) / 1024 / 1024
-
-	doc := &telebot.Document{
-		File:     telebot.FromDisk(filePath),
-		FileName: filename,
-		Caption:  fmt.Sprintf("💾 Database Backup\nFile: %s\nSize: %.2f MB", filename, sizeMB),
+	// The dump succeeded but never left the server (too large for Telegram, or
+	// the bot is disabled) — say so, otherwise the last thing the admin sees is
+	// "Creating..." and it reads as a hang.
+	if res.Skipped != "" {
+		return c.Send("⚠️ Backup created but " + res.Skipped)
 	}
-
-	return c.Send(doc)
+	return nil
 }

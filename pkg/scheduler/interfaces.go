@@ -105,6 +105,12 @@ type SettingUsecase interface {
 
 // NodeRepository defines what the scheduler needs from node persistence
 // (retention cleanup).
+// BackupRunner triggers scheduled database backups (panel-configured
+// interval, Telegram delivery). MaybeRun is cheap when no backup is due.
+type BackupRunner interface {
+	MaybeRun(ctx context.Context)
+}
+
 type NodeRepository interface {
 	CleanupOldNodeStats(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldAccessLogSummaries(ctx context.Context, before time.Time) (int64, error)

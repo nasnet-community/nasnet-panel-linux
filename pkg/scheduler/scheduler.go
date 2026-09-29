@@ -150,6 +150,10 @@ type Config struct {
 	// Used deployment tokens cleanup (optional)
 	UsedTokenRepo UsedTokenRepository
 
+	// BackupRunner performs scheduled DB backups. Optional (nil disables);
+	// due-checking is internal to the runner.
+	BackupRunner BackupRunner
+
 	// Additional retention cleaners (all optional — nil disables the task).
 	AlertEventCleaner             AlertEventCleaner
 	SubscriptionDailyUsageCleaner SubscriptionDailyUsageCleaner
@@ -580,6 +584,14 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 			s.lastIPCleanup = time.Now()
 			s.mu.Unlock()
 		}
+	}
+
+	// Scheduled backup — the runner gates itself on the panel-configured
+	// interval via a persisted last-run timestamp, so calling every reconcile
+	// tick is cheap. It runs the cycle itself on a detached goroutine and
+	// reports its own outcome, so there is nothing here for observeTask.
+	if s.cfg.BackupRunner != nil {
+		s.cfg.BackupRunner.MaybeRun(ctx)
 	}
 }
 

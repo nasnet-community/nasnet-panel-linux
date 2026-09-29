@@ -327,6 +327,17 @@ func initUsecases(
 		log.WithError(err).Warn("Failed to seed default settings")
 	}
 
+	// Seed the backup passphrase from the environment once; after that the
+	// panel-stored value wins (write-only setting, env is only the initial seed).
+	if cfg.App.BackupPassphrase != "" {
+		if s, err := repos.Setting.GetByKey(context.Background(), "backup_passphrase"); err == nil && s != nil && s.Value == "" {
+			s.Value = cfg.App.BackupPassphrase
+			if err := repos.Setting.Update(context.Background(), s); err != nil {
+				log.WithError(err).Warn("Failed to seed backup passphrase from env")
+			}
+		}
+	}
+
 	// After a SQLite backup restore the process restarts, but the restored
 	// database may contain deployment-specific settings (URLs, ports, tokens)
 	// from a different server. Check for the marker file and re-apply env values.

@@ -39,8 +39,9 @@ type Handler struct {
 	settingUC settingDomain.SettingUsecase
 	nodeUC    nodeUC.NodeUsecase
 	provRepo  provisioningRepo.ProvisioningRepository
-	backupSvc *usecase.BackupService
 	db        *gorm.DB
+
+	backupRunner *usecase.ScheduledBackupRunner
 }
 
 // NewHandler creates a new admin handler
@@ -55,7 +56,6 @@ func NewHandler(
 	settingUC settingDomain.SettingUsecase,
 	nodeUC nodeUC.NodeUsecase,
 	provRepo provisioningRepo.ProvisioningRepository,
-	backupSvc *usecase.BackupService,
 	db *gorm.DB,
 ) *Handler {
 	return &Handler{
@@ -69,7 +69,6 @@ func NewHandler(
 		settingUC:    settingUC,
 		nodeUC:       nodeUC,
 		provRepo:     provRepo,
-		backupSvc:    backupSvc,
 		db:           db,
 	}
 }
@@ -77,6 +76,12 @@ func NewHandler(
 // SetBot sets the bot instance (for circular dependency resolution)
 func (h *Handler) SetBot(bot *telebot.Bot) {
 	h.bot = bot
+}
+
+// SetBackupRunner wires the backup pipeline (same late-binding pattern as
+// SetBot).
+func (h *Handler) SetBackupRunner(r *usecase.ScheduledBackupRunner) {
+	h.backupRunner = r
 }
 
 // === DASHBOARD ===

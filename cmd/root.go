@@ -512,6 +512,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	// The transport wrapper is what the monitor notifier and shutdown need.
 	var transportBotRef atomic.Pointer[telegramTransport.Bot]
 	backupSvc := adminUC.NewBackupService(db, cfg.Database, cfg.App.BackupDir)
+	// Scheduled backups run with the bot off too (dump + rotation); the bot
+	// becomes the sender once it exists.
+	backupRunner := adminUC.NewScheduledBackupRunner(backupSvc, repos.Setting, nil, cfg.Admin.InitialAdminIDs)
 
 	if cfg.Telegram.Enabled {
 		stateManager := conversation.NewStateManager(db)
@@ -544,13 +547,15 @@ func runServe(cmd *cobra.Command, args []string) {
 		nodeTelegramHandler := nodeTg.NewHandler(uc.Node, uc.SNI, stateManager)
 		maintenanceTelegramHandler := mntTg.NewHandler(uc.Maintenance)
 		accountTelegramHandler := accountTg.NewHandler(uc.Account)
-		adminTelegramHandler := adminTg.NewHandler(uc.Admin, uc.Account, uc.Subscription, userRepo.NewUserRepository(db), stateManager, nil, uc.Audit, uc.Setting, uc.Node, repos.Provisioning, backupSvc, db) // Bot set later
+		adminTelegramHandler := adminTg.NewHandler(uc.Admin, uc.Account, uc.Subscription, userRepo.NewUserRepository(db), stateManager, nil, uc.Audit, uc.Setting, uc.Node, repos.Provisioning, db) // Bot set later
+		adminTelegramHandler.SetBackupRunner(backupRunner)
 
 		// wireBot binds the finished bot into everything that needs it and
 		// starts polling. It runs on the supervisor goroutine.
 		wireBot := func(bot *telegramTransport.Bot) {
 			accountTg.RegisterHandlers(bot.GetBot(), accountTelegramHandler, adminMW.RequireAdmin)
 			adminTelegramHandler.SetBot(bot.GetBot())
+			backupRunner.SetSender(bot)
 			uc.Admin.SetBot(bot.GetBot())
 			subTelegramHandler.SetMaintenanceUC(uc.Maintenance)
 			setMaintenanceBroadcastBot(bot.GetBot())
@@ -685,6 +690,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		ChatCleanupFn:                 uc.Chat.CleanupOldMessages,
 		JWTBlacklistCleanupFn:         blacklist.Cleanup,
 		UsedTokenRepo:                 repos.UsedToken,
+		BackupRunner:                  backupRunner,
 		OnlineUsersSnapshotRecorder:   uc.Admin,
 		OnlineUsersSnapshotCleaner:    repos.OnlineUsersSnapshot,
 		AlertEventCleaner:             repos.Alert,
