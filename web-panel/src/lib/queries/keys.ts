@@ -111,6 +111,19 @@ export const queryKeys = {
     certOverview: () => [...queryKeys.certificates, 'overview'] as const,
     certDetails: (id: number) => [...queryKeys.certificates, 'details', id] as const,
 
+    // Tunnels (SSH, MTProto)
+    cores: ['cores'] as const,
+    coreInbounds: (nodeId: number) => [...queryKeys.cores, 'inbounds', nodeId] as const,
+    // Distinct from the per-node coreInbounds(nodeId) key so the cross-node
+    // overview and a node tab don't collide in the cache.
+    coreAllInbounds: () => [...queryKeys.cores, 'inbounds', 'all'] as const,
+    coreUsers: (inboundId: number) => [...queryKeys.cores, 'users', inboundId] as const,
+    coreUserConfig: (userId: number, host?: string) =>
+        [...queryKeys.cores, 'user-config', userId, host ?? ''] as const,
+    coreInboundStatus: (inboundId: number) => [...queryKeys.cores, 'status', inboundId] as const,
+    coreNodeProtocols: (nodeId: number) => [...queryKeys.cores, 'node-protocols', nodeId] as const,
+    coreNodeDeps: (nodeId: number) => [...queryKeys.cores, 'node-deps', nodeId] as const,
+
     // SNI (Domain TLS Certificates)
     sni: ['sni'] as const,
     sniList: () => [...queryKeys.sni, 'list'] as const,

@@ -216,3 +216,22 @@ export {
     useConfirmNetworkApply,
     useRollbackNetworkApply,
 } from "./use-network"
+
+// Tunnel (SSH, MTProto) Queries & Mutations
+export {
+    useCoreInbounds,
+    useAllCoreInbounds,
+    useCoreInboundStatus,
+    useCoreUsers,
+    useCoreUserConfig,
+    useCreateCoreInbound,
+    useUpdateCoreInbound,
+    useDeleteCoreInbound,
+    useCreateCoreUser,
+    useUpdateCoreUser,
+    useToggleCoreUser,
+    useDeleteCoreUser,
+    useNodeProtocols,
+    useToggleNodeProtocol,
+    useNodeDeps,
+} from "./use-cores"

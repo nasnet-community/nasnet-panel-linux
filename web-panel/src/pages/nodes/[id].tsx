@@ -22,7 +22,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { getNode, restartXrayProcess } from "@/lib/api/nodes"
-import { Loader2, Satellite } from "lucide-react"
+import { Cable, Loader2, Satellite } from "lucide-react"
 import { useNodeStats, queryKeys } from "@/lib/queries"
 import { useEventsStatus } from "@/components/providers/events-provider"
 import { useQueryClient } from "@tanstack/react-query"
@@ -34,6 +34,7 @@ import { Globe } from "lucide-react"
 // Import modular components
 import { NodeOverview } from "@/components/node/node-overview"
 import { NodeNetworkConfig } from "@/components/node/node-network-config"
+import { NodeCoresTab } from "@/components/node/node-cores-tab"
 import { NodeSettings } from "@/components/node/node-settings"
 import { NodeLogs } from "@/components/node/node-logs"
 import { NodeAccessLogs } from "@/components/node/node-access-logs"
@@ -50,6 +51,7 @@ import { isLocalNode, nodeAddress } from "@/lib/node-kind"
 const nodeTabs = [
     { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
     { value: "network", label: "Network", description: "Inbounds & Outbounds", icon: HiOutlineGlobeAlt },
+    { value: "tunnels", label: "Tunnels", description: "SSH & MTProto", icon: Cable },
     { value: "starlink", label: "Starlink", description: "Satellite Link", icon: Satellite },
     { value: "settings", label: "Settings", description: "Node Configuration", icon: HiOutlineCog },
     { value: "access-logs", label: "Access Logs", description: "Destinations & Domains", icon: HiOutlineGlobeAlt },
@@ -416,6 +418,10 @@ export default function NodeDetailPage() {
                                 isOnline={node?.is_online || false}
                             />
                         )}
+                    </TabsContent>
+
+                    <TabsContent value="tunnels" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        {activeTab === "tunnels" && <NodeCoresTab nodeId={nodeId} node={node} />}
                     </TabsContent>
 
                     <TabsContent value="starlink" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">

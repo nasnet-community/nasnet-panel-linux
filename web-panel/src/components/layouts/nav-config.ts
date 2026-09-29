@@ -1,5 +1,5 @@
 import {
-    Activity, Archive, Bell, Box, ClipboardList, Globe, History, House, IdCard, KeyRound,
+    Activity, Archive, Bell, Box, Cable, ClipboardList, Globe, History, House, IdCard, KeyRound,
     Link as LinkIcon, Router, Server, Settings, ShieldCheck, Users, Waypoints, type LucideIcon,
 } from "lucide-react"
 
@@ -46,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
                 label: "Nodes", href: "/nodes", icon: Server, also: ["/server"],
                 children: [
                     { label: "Hosts", href: "/hosts", icon: LinkIcon },
+                    { label: "Tunnels", href: "/tunnels", icon: Cable },
                     { label: "Xray Core", href: "/xray-binaries", icon: Box },
                 ],
             },
@@ -80,6 +81,7 @@ const EXTRA_PAGES: NavItem[] = [
     { label: "Users: Banned", href: "/users?group=banned", icon: Users },
     { label: "This router: Overview", href: "/server?tab=overview", icon: Server },
     { label: "This router: Network", href: "/server?tab=network", icon: Server },
+    { label: "This router: Tunnels", href: "/server?tab=tunnels", icon: Server },
     { label: "This router: Starlink", href: "/server?tab=starlink", icon: Server },
     { label: "This router: Settings", href: "/server?tab=settings", icon: Server },
     { label: "This router: Access Logs", href: "/server?tab=access-logs", icon: Server },

@@ -32,6 +32,7 @@ vi.mock("@/components/node/node-overview", () => ({ NodeOverview: () => <div>Ove
 vi.mock("@/components/node/node-logs", () => ({ NodeLogs: () => <div>Logs content</div> }))
 vi.mock("@/components/node/node-settings", () => ({ NodeSettings: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => <button onClick={() => onDirtyChange(true)}>Edit settings</button> }))
 vi.mock("@/components/node/node-network-config", () => ({ NodeNetworkConfig: () => <div>Network content</div> }))
+vi.mock("@/components/node/node-cores-tab", () => ({ NodeCoresTab: () => <div>Tunnels content</div> }))
 vi.mock("@/components/node/node-access-logs", () => ({ NodeAccessLogs: () => null }))
 vi.mock("@/components/node/starlink/starlink-dashboard", () => ({ StarlinkDashboard: () => null }))
 vi.mock("@/components/node/geofiles-dialog", () => ({ GeofilesDialog: () => null }))

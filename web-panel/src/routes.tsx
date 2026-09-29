@@ -22,6 +22,7 @@ const Settings = lazy(() => import("@/pages/settings"))
 const Certificates = lazy(() => import("@/pages/certificates"))
 const Domains = lazy(() => import("@/pages/domains"))
 const Hosts = lazy(() => import("@/pages/hosts"))
+const Tunnels = lazy(() => import("@/pages/tunnels"))
 const AccessLogs = lazy(() => import("@/pages/access-logs"))
 const AccessHistory = lazy(() => import("@/pages/access-history"))
 const Audit = lazy(() => import("@/pages/audit"))
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
         { path: "/certificates", element: r(<Certificates />) },
         { path: "/domains", element: r(<Domains />) },
         { path: "/hosts", element: r(<Hosts />) },
+        { path: "/tunnels", element: r(<Tunnels />) },
         { path: "/access-logs", element: r(<AccessLogs />) },
         { path: "/access-history", element: r(<AccessHistory />) },
         { path: "/access-history-search", element: <RedirectWithSearch to="/access-history" /> },
