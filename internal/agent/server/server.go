@@ -911,6 +911,42 @@ func (s *Server) GetXrayStats(ctx context.Context, req *pb.StatsRequest) (*pb.Xr
 	}, nil
 }
 
+// GetStatsBundle aggregates the hot-path stats RPCs (system stats, node
+// status, buffered traffic, optional online IPs) into one response for the
+// hub's periodic sweep. Each part is best-effort: a failed collector leaves
+// its field nil, mirroring how the hub treated the individual RPCs' errors.
+func (s *Server) GetStatsBundle(ctx context.Context, req *pb.StatsBundleRequest) (*pb.StatsBundle, error) {
+	bundle := &pb.StatsBundle{}
+
+	if sys, err := s.GetSystemStats(ctx, &pb.Empty{}); err == nil {
+		bundle.System = sys
+	} else {
+		logrus.WithError(err).Debug("GetStatsBundle: system stats failed")
+	}
+
+	if st, err := s.GetStatus(ctx, &pb.Empty{}); err == nil {
+		bundle.Status = st
+	} else {
+		logrus.WithError(err).Debug("GetStatsBundle: status failed")
+	}
+
+	if buf, err := s.GetBufferedTraffic(ctx, &pb.Empty{}); err == nil {
+		bundle.BufferedTraffic = buf
+	} else {
+		logrus.WithError(err).Debug("GetStatsBundle: buffered traffic failed")
+	}
+
+	if req.GetIncludeOnlineIps() {
+		if ips, err := s.GetAllUsersOnlineIPs(ctx, &pb.Empty{}); err == nil {
+			bundle.OnlineIps = ips
+		} else {
+			logrus.WithError(err).Debug("GetStatsBundle: online IPs failed")
+		}
+	}
+
+	return bundle, nil
+}
+
 // GetBufferedTraffic returns time-bucketed traffic records from the agent's local buffer.
 func (s *Server) GetBufferedTraffic(ctx context.Context, _ *pb.Empty) (*pb.BufferedTrafficStats, error) {
 	if s.trafficStore == nil {

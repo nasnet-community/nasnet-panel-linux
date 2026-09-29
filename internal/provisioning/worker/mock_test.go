@@ -625,3 +625,12 @@ func (m *mockNodeUsecase) GetHubGaps(context.Context, time.Time) ([]nodeDomain.T
 }
 func (m *mockNodeUsecase) RollupNodeUptime(context.Context, time.Time) error   { return nil }
 func (m *mockNodeUsecase) BackfillNodeUptimeRollup(context.Context, int) error { return nil }
+func (m *mockNodeUsecase) GetNodeLiveStats(context.Context, uint) (*nodeUC.NodeStats, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetNodeStatsSeries(context.Context, uint, string) (*nodeUC.NodeStatsSeries, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetNodeOverview(context.Context, uint) (*nodeUC.NodeOverview, error) {
+	return nil, nil
+}

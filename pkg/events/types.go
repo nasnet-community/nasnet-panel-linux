@@ -129,34 +129,39 @@ type NodeStatusPayload struct {
 
 // NodeStatsPayload contains updated stats for a node
 type NodeStatsPayload struct {
-	NodeID         uint    `json:"node_id"`
-	NodeName       string  `json:"node_name"`
-	OnlineUsers    int     `json:"online_users"`
-	TotalUplink    int64   `json:"total_uplink"`
-	TotalDownlink  int64   `json:"total_downlink"`
-	CPUPercent     float64 `json:"cpu_percent"`
-	MemoryPercent  float64 `json:"memory_percent"`
-	DiskPercent    float64 `json:"disk_percent"`
-	MemoryUsedMB   uint64  `json:"memory_used_mb"`
-	MemoryTotalMB  uint64  `json:"memory_total_mb"`
-	DiskUsedGB     uint64  `json:"disk_used_gb"`
-	DiskTotalGB    uint64  `json:"disk_total_gb"`
-	UpSpeed        uint64  `json:"up_speed"`
-	DownSpeed      uint64  `json:"down_speed"`
-	TcpCount       uint64  `json:"tcp_count"`
-	UdpCount       uint64  `json:"udp_count"`
-	FdCount        uint64  `json:"fd_count"`
-	Uptime         uint64  `json:"uptime"`
-	SystemUptime   int64   `json:"system_uptime"`
-	XrayStatus     string  `json:"xray_status"`
-	XrayPID        int64   `json:"xray_pid"`
-	AgentVersion   string  `json:"agent_version"`
-	XrayVersion    string  `json:"xray_version"`
-	LoadAvg1       float64 `json:"load_avg_1"`
-	LoadAvg5       float64 `json:"load_avg_5"`
-	LoadAvg15      float64 `json:"load_avg_15"`
-	TotalAccounts  int64   `json:"total_accounts"`
-	ActiveAccounts int64   `json:"active_accounts"`
+	// Missing system telemetry must not overwrite the last valid readings.
+	StatsUnavailable bool    `json:"stats_unavailable"`
+	NodeID           uint    `json:"node_id"`
+	NodeName         string  `json:"node_name"`
+	OnlineUsers      int     `json:"online_users"`
+	TotalUplink      int64   `json:"total_uplink"`
+	TotalDownlink    int64   `json:"total_downlink"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	MemoryPercent    float64 `json:"memory_percent"`
+	DiskPercent      float64 `json:"disk_percent"`
+	MemoryUsedMB     uint64  `json:"memory_used_mb"`
+	MemoryTotalMB    uint64  `json:"memory_total_mb"`
+	DiskUsedGB       uint64  `json:"disk_used_gb"`
+	DiskTotalGB      uint64  `json:"disk_total_gb"`
+	UpSpeed          uint64  `json:"up_speed"`
+	DownSpeed        uint64  `json:"down_speed"`
+	TcpCount         uint64  `json:"tcp_count"`
+	UdpCount         uint64  `json:"udp_count"`
+	FdCount          uint64  `json:"fd_count"`
+	Uptime           uint64  `json:"uptime"`
+	SystemUptime     int64   `json:"system_uptime"`
+	XrayStatus       string  `json:"xray_status"`
+	XrayPID          int64   `json:"xray_pid"`
+	AgentVersion     string  `json:"agent_version"`
+	XrayVersion      string  `json:"xray_version"`
+	LoadAvg1         float64 `json:"load_avg_1"`
+	LoadAvg5         float64 `json:"load_avg_5"`
+	LoadAvg15        float64 `json:"load_avg_15"`
+	TotalAccounts    int64   `json:"total_accounts"`
+	ActiveAccounts   int64   `json:"active_accounts"`
+	// SampledAt is when the agent collected the system readings; absent
+	// when this pass had none (StatsUnavailable).
+	SampledAt *time.Time `json:"sampled_at,omitempty"`
 }
 
 // SubscriptionEventPayload contains data for subscription-related events

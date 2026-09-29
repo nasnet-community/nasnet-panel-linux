@@ -93,6 +93,15 @@ type NodeRepository interface {
 	// Stats Operations
 	CreateNodeStat(ctx context.Context, stat *domain.NodeStat) error
 	GetNodeStatsHistory(ctx context.Context, nodeID uint, limit int) ([]*domain.NodeStat, error)
+	// SaveNodeHostInfo stores the agent's latest host info on the node row
+	// without touching any other column.
+	SaveNodeHostInfo(ctx context.Context, nodeID uint, info *domain.HostInfo) error
+	// GetNodeStatsSeries averages node_stats in [from, to) into stepSec-wide
+	// buckets, oldest first. Empty buckets are absent.
+	GetNodeStatsSeries(ctx context.Context, nodeID uint, from, to time.Time, stepSec int) ([]domain.NodeStatBucket, error)
+	// GetNodeStatsPeakThroughput is the highest up+down rate (bytes/s)
+	// recorded since the given time; 0 when nothing was recorded.
+	GetNodeStatsPeakThroughput(ctx context.Context, nodeID uint, since time.Time) (float64, error)
 	// GetNodesStatsHistoryBulk: most recent `limit` per node, grouped in
 	// Go. Powers /nodes/stats/history/bulk for sparklines.
 	GetNodesStatsHistoryBulk(ctx context.Context, nodeIDs []uint, limit int) (map[uint][]*domain.NodeStat, error)
@@ -296,7 +305,9 @@ func (r *nodeRepository) GetNodeByUUID(ctx context.Context, uuid string) (*domai
 }
 
 func (r *nodeRepository) UpdateNode(ctx context.Context, node *domain.Node) error {
-	return r.db.WithContext(ctx).Save(node).Error
+	// last_host_info is written only by SaveNodeHostInfo: callers holding a
+	// long-lived node pointer (the heartbeat loop) would put back a stale copy.
+	return r.db.WithContext(ctx).Omit("LastHostInfo").Save(node).Error
 }
 
 // SetNodeConnectMode changes only a node's connect mode and active flag.
@@ -682,6 +693,68 @@ func (r *nodeRepository) GetNodeStatsHistory(ctx context.Context, nodeID uint, l
 	}
 	// Returned newest-first; callers reverse for chart rendering.
 	return stats, nil
+}
+
+// node_stats rows are stamped in UTC by the stats sweep and SQLite compares
+// times as text, so the series bounds are bound in UTC too.
+func (r *nodeRepository) SaveNodeHostInfo(ctx context.Context, nodeID uint, info *domain.HostInfo) error {
+	// UpdateColumns: a host-info refresh isn't an edit, so updated_at stays.
+	return r.db.WithContext(ctx).
+		Model(&domain.Node{ID: nodeID}).
+		Select("last_host_info").
+		UpdateColumns(&domain.Node{LastHostInfo: info}).Error
+}
+
+func (r *nodeRepository) GetNodeStatsSeries(ctx context.Context, nodeID uint, from, to time.Time, stepSec int) ([]domain.NodeStatBucket, error) {
+	f := database.CastFloat
+	bucket := database.EpochBucket("created_at", stepSec)
+	sel := strings.Join([]string{
+		bucket + " AS bucket",
+		f("AVG(cpu)") + " AS cpu_avg",
+		f("MAX(cpu)") + " AS cpu_max",
+		f("AVG(memory)") + " AS mem_avg",
+		f("MAX(memory)") + " AS mem_max",
+		f("AVG(disk)") + " AS disk_avg",
+		f("AVG(up_speed)") + " AS up_avg",
+		f("MAX(up_speed)") + " AS up_max",
+		f("AVG(down_speed)") + " AS down_avg",
+		f("MAX(down_speed)") + " AS down_max",
+		f("AVG(tcp_count)") + " AS tcp_avg",
+		f("AVG(udp_count)") + " AS udp_avg",
+		f("AVG(fd_count)") + " AS fd_avg",
+		f("AVG(load_avg1)") + " AS load1_avg",
+		f("AVG(online_users)") + " AS users_avg",
+		f("MAX(online_users)") + " AS users_max",
+		"COUNT(*) AS samples",
+	}, ", ")
+	var out []domain.NodeStatBucket
+	err := r.db.WithContext(ctx).
+		Model(&domain.NodeStat{}).
+		Select(sel).
+		Where("node_id = ? AND created_at >= ? AND created_at < ?", nodeID, from.UTC(), to.UTC()).
+		Group("bucket").
+		Order("bucket ASC").
+		Scan(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].T = out[i].Bucket * int64(stepSec)
+	}
+	return out, nil
+}
+
+func (r *nodeRepository) GetNodeStatsPeakThroughput(ctx context.Context, nodeID uint, since time.Time) (float64, error) {
+	var peak *float64
+	err := r.db.WithContext(ctx).
+		Model(&domain.NodeStat{}).
+		Select(database.CastFloat("MAX(up_speed + down_speed)")).
+		Where("node_id = ? AND created_at >= ?", nodeID, since.UTC()).
+		Scan(&peak).Error
+	if err != nil || peak == nil {
+		return 0, err
+	}
+	return *peak, nil
 }
 
 // GetNodesStatsHistoryBulk loads recent stats for several nodes in

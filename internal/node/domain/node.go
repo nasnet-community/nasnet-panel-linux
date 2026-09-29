@@ -117,6 +117,10 @@ type Node struct {
 	// Last crash recovery attempt result (for panel display)
 	LastCrashRecovery *LastCrashRecovery `gorm:"serializer:json;type:jsonb" json:"last_crash_recovery"`
 
+	// LastHostInfo is the host info the agent last reported, kept so the
+	// Overview still describes the machine while the node is offline.
+	LastHostInfo *HostInfo `gorm:"serializer:json;type:jsonb" json:"-"`
+
 	// Per-node outbound connectivity test tuning (concurrency, timeouts, test URL)
 	OutboundTestSettings *OutboundTestSettings `gorm:"serializer:json;type:jsonb" json:"outbound_test_settings"`
 
@@ -294,6 +298,10 @@ type HostInfo struct {
 	TotalMemory          uint64 `json:"total_memory"` // bytes
 	TotalSwap            uint64 `json:"total_swap"`   // bytes
 	BootTime             uint64 `json:"boot_time"`
+	// FetchedAt is when the agent reported this.
+	FetchedAt *time.Time `json:"fetched_at,omitempty"`
+	// Stale: the agent couldn't be asked; this is the last stored copy.
+	Stale bool `json:"stale,omitempty"`
 }
 
 // Inbound represents a specific protocol/port entry on a Node

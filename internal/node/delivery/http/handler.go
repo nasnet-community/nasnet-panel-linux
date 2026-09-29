@@ -104,6 +104,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.GET("/:id/health", h.CheckHealth)
 		nodes.GET("/:id/stats", h.GetNodeStats)
 		nodes.GET("/:id/stats/history", h.GetNodeStatsHistory)
+		nodes.GET("/:id/stats/series", h.GetNodeStatsSeries)
+		nodes.GET("/:id/overview", h.GetNodeOverview)
 		nodes.GET("/:id/info", h.GetNodeHostInfo)
 		nodes.GET("/:id/users", h.GetNodeRealtimeUsers)
 		nodes.GET("/:id/traffic/daily", h.GetNodeDailyTraffic)
@@ -587,7 +589,14 @@ func (h *Handler) GetNodeStats(c *gin.Context) {
 		return
 	}
 
-	stats, err := h.nodeUsecase.GetNodeStats(c.Request.Context(), uint(id))
+	// The panel reads the stats sweep's snapshot; ?fresh=1 asks the agent
+	// directly, for the read right after an action changed something.
+	var stats *usecase.NodeStats
+	if c.Query("fresh") == "1" {
+		stats, err = h.nodeUsecase.GetNodeStats(c.Request.Context(), uint(id))
+	} else {
+		stats, err = h.nodeUsecase.GetNodeLiveStats(c.Request.Context(), uint(id))
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -1714,6 +1723,41 @@ func (h *Handler) GetNodeStatsHistory(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": stats})
+}
+
+// GetNodeStatsSeries: GET /nodes/:id/stats/series?range=1h|6h|24h|7d|30d
+func (h *Handler) GetNodeStatsSeries(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+	series, err := h.nodeUsecase.GetNodeStatsSeries(c.Request.Context(), uint(id), c.DefaultQuery("range", "1h"))
+	if errors.Is(err, usecase.ErrUnknownStatsRange) {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": series})
+}
+
+// GetNodeOverview: GET /nodes/:id/overview — connection, agent version,
+// config sync and today's traffic for the Overview tab.
+func (h *Handler) GetNodeOverview(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+	overview, err := h.nodeUsecase.GetNodeOverview(c.Request.Context(), uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": overview})
 }
 
 func (h *Handler) GetNodeDailyTraffic(c *gin.Context) {

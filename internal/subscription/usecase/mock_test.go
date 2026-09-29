@@ -773,3 +773,12 @@ func (m *mockNodeRepo) CleanupOldHubLifecycleEvents(_ context.Context, _ int) (i
 func (m *mockNodeRepo) FirstHubLifecycleStart(_ context.Context) (time.Time, error) {
 	return time.Time{}, nil
 }
+func (m *mockNodeRepo) GetNodeStatsSeries(_ context.Context, _ uint, _, _ time.Time, _ int) ([]nodeDomain.NodeStatBucket, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) GetNodeStatsPeakThroughput(_ context.Context, _ uint, _ time.Time) (float64, error) {
+	return 0, nil
+}
+func (m *mockNodeRepo) SaveNodeHostInfo(_ context.Context, _ uint, _ *nodeDomain.HostInfo) error {
+	return nil
+}

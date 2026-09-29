@@ -7,7 +7,7 @@ import (
 // NodeStat represents a snapshot of node statistics
 type NodeStat struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
-	NodeID      uint      `gorm:"index;not null" json:"node_id"`
+	NodeID      uint      `gorm:"index;index:idx_node_stats_node_time,priority:1;not null" json:"node_id"`
 	CPU         float64   `json:"cpu"`        // Percent
 	Memory      float64   `json:"memory"`     // Percent
 	Disk        float64   `json:"disk"`       // Percent
@@ -18,7 +18,30 @@ type NodeStat struct {
 	FdCount     uint64    `json:"fd_count"`
 	LoadAvg1    float64   `json:"load_avg_1"`
 	OnlineUsers int       `gorm:"default:0" json:"online_users"`
-	CreatedAt   time.Time `gorm:"index" json:"created_at"`
+	CreatedAt   time.Time `gorm:"index;index:idx_node_stats_node_time,priority:2" json:"created_at"`
+}
+
+// NodeStatBucket is one fixed-width time bucket of node_stats, averaged in
+// SQL for the ranged charts. Bucket is floor(unix seconds / step).
+type NodeStatBucket struct {
+	Bucket   int64   `json:"-"`
+	T        int64   `gorm:"-" json:"t"` // bucket start, unix seconds
+	CPUAvg   float64 `json:"cpu_avg"`
+	CPUMax   float64 `json:"cpu_max"`
+	MemAvg   float64 `json:"mem_avg"`
+	MemMax   float64 `json:"mem_max"`
+	DiskAvg  float64 `json:"disk_avg"`
+	UpAvg    float64 `json:"up_avg"`
+	UpMax    float64 `json:"up_max"`
+	DownAvg  float64 `json:"down_avg"`
+	DownMax  float64 `json:"down_max"`
+	TcpAvg   float64 `json:"tcp_avg"`
+	UdpAvg   float64 `json:"udp_avg"`
+	FdAvg    float64 `json:"fd_avg"`
+	Load1Avg float64 `json:"load1_avg"`
+	UsersAvg float64 `json:"users_avg"`
+	UsersMax float64 `json:"users_max"`
+	Samples  int64   `json:"samples"`
 }
 
 type NodeDailyTraffic struct {

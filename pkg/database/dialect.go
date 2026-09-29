@@ -158,3 +158,14 @@ func TruncateTime(column, granularity string) string {
 	}
 	return fmt.Sprintf("strftime('%%Y-%%m-%%d %%H:00:00', %s)", column)
 }
+
+// EpochBucket: cross-dialect fixed-width time bucket for GROUP BY — the
+// bucket index is floor(unix seconds / stepSec), so bucket*stepSec is the
+// bucket's start in unix seconds. SQLite's strftime('%s') honours a stored
+// zone offset, so buckets land on the same epoch boundaries in any TZ.
+func EpochBucket(column string, stepSec int) string {
+	if IsPostgres() {
+		return fmt.Sprintf("CAST(FLOOR(EXTRACT(EPOCH FROM %s) / %d) AS BIGINT)", column, stepSec)
+	}
+	return fmt.Sprintf("(CAST(strftime('%%s', %s) AS INTEGER) / %d)", column, stepSec)
+}

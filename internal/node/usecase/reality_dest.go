@@ -83,7 +83,11 @@ func (u *nodeUsecase) CheckRealityDest(ctx context.Context, nodeID uint, setting
 // isUnknownMethod matches the reverse tunnel's answer for an RPC the agent
 // build does not dispatch; direct gRPC reports codes.Unimplemented instead.
 func isUnknownMethod(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unknown method")
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unknown method") || strings.Contains(msg, "code = unimplemented")
 }
 
 // guardRealityDest blocks saving a REALITY inbound whose dest cannot be

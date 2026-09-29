@@ -152,6 +152,12 @@ func (f *fakeStatsAgentClient) GetSystemStats(_ context.Context) (*agent.SystemS
 	return nil, errStatsNotAvailable
 }
 
+func (f *fakeStatsAgentClient) GetStatsBundle(_ context.Context, _ bool) (*agent.StatsBundle, error) {
+	// Error → syncSingleNode falls back to the individual RPCs below, which
+	// is the path these tests exercise.
+	return nil, errStatsNotAvailable
+}
+
 func (f *fakeStatsAgentClient) GetStatus(_ context.Context) (*pb.NodeStatus, error) {
 	// XrayRunning=true keeps xrayStatus = "running" so GetBufferedTraffic
 	// fires. Without this the sweep short-circuits before touching the

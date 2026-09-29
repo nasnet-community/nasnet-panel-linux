@@ -296,6 +296,7 @@ func (u *nodeUsecase) cleanupNodeCaches(nodeID uint) {
 	if u.statsCache != nil {
 		u.statsCache.Invalidate(nodeID)
 	}
+	u.liveStats.forget(nodeID)
 
 	if u.heartbeatMgr != nil {
 		u.heartbeatMgr.StopNode(nodeID)

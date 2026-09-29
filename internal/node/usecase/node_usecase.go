@@ -94,6 +94,15 @@ type NodeStats struct {
 	// Account counts
 	TotalAccounts  int64 `json:"total_accounts"`
 	ActiveAccounts int64 `json:"active_accounts"`
+	// StatsUnavailable: the system readings above are the last known ones,
+	// not a live sample (agent unreachable, or the node is offline).
+	StatsUnavailable bool `json:"stats_unavailable,omitempty"`
+	// SampledAt is when the agent collected the system readings (agent clock).
+	SampledAt *time.Time `json:"sampled_at,omitempty"`
+	// ReadingAgeMs is how long ago the hub received those readings, by the
+	// hub's clock — what the panel judges "live" by, so a skewed agent or
+	// browser clock can't make a live node look stale.
+	ReadingAgeMs *int64 `json:"reading_age_ms,omitempty"`
 }
 
 // InboundStats holds traffic statistics for a specific inbound
@@ -149,6 +158,14 @@ type NodeUsecase interface {
 
 	// Statistics
 	GetNodeStats(ctx context.Context, nodeID uint) (*NodeStats, error)
+	// GetNodeLiveStats serves the stats sweep's latest snapshot, falling back
+	// to one live read, then to the last recorded row.
+	GetNodeLiveStats(ctx context.Context, nodeID uint) (*NodeStats, error)
+	// GetNodeStatsSeries averages recorded stats into buckets for one chart
+	// range (1h, 6h, 24h, 7d, 30d).
+	GetNodeStatsSeries(ctx context.Context, nodeID uint, rangeKey string) (*NodeStatsSeries, error)
+	// GetNodeOverview returns the Overview tab's facts beyond live stats.
+	GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOverview, error)
 	GetNodesStatsBulk(ctx context.Context, ids []uint) (map[uint]*NodeStatsResult, error)
 	GetNodeHostInfo(ctx context.Context, nodeID uint) (*domain.HostInfo, error)
 	GetInboundStats(ctx context.Context, inboundID uint) (*InboundStats, error)
@@ -420,11 +437,21 @@ type nodeUsecase struct {
 	versionCacheMu sync.Mutex
 	versionCache   map[uint]agentVersionCacheEntry
 
-	// Stats-sweep cadence: per-node last-run stamps for the slow collectors
-	// (online IPs, access-log summaries) so they don't run on every tick.
-	statsCadenceMu  sync.Mutex
-	lastOnlineIPsAt map[uint]time.Time
-	lastAccessLogAt map[uint]time.Time
+	// liveStats holds the stats sweep's latest result per node; panel reads
+	// are served from it (see GetNodeLiveStats).
+	liveStats *liveStatsStore
+
+	// seriesCache memoizes the ranged chart aggregates per (node, range).
+	seriesCache statsSeriesCache
+
+	// Stats-sweep cadence + capability tracking: per-node last-run stamps
+	// for the slow collectors (online IPs, access-log summaries) and the
+	// last time GetStatsBundle came back Unimplemented (old agent → back
+	// off to individual RPCs for a while).
+	statsCadenceMu      sync.Mutex
+	lastOnlineIPsAt     map[uint]time.Time
+	lastAccessLogAt     map[uint]time.Time
+	bundleUnsupportedAt map[uint]time.Time
 
 	// Per-node config push rate limiting to prevent infinite retry loops
 	pushStateMu sync.Mutex
@@ -525,6 +552,7 @@ func NewNodeUsecase(nodeRepo repository.NodeRepository, subRepo subRepo.Subscrip
 		nukesInFlight:        map[uint]struct{}{},
 		clientPool:           newAgentClientPool(),
 		statsCache:           newNodeStatsCache(nodeStatsCacheTTL),
+		liveStats:            newLiveStatsStore(),
 	}
 }
 
