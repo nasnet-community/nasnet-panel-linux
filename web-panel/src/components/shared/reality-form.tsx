@@ -1,4 +1,4 @@
-import React, { useState } from "react"
+import React, { useState, type ReactNode } from "react"
 import { Copy } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -35,12 +35,15 @@ interface RealityFormProps {
     settings?: RealitySettings
     onChange: (settings: RealitySettings) => void
     isInbound?: boolean
+    /** Rendered right under the destination and server names they judge. */
+    afterServerNames?: ReactNode
 }
 
 export function RealityForm({
     settings,
     onChange,
     isInbound = false,
+    afterServerNames,
 }: RealityFormProps) {
     const data = settings || {}
     const [generating, setGenerating] = useState(false)
@@ -96,7 +99,11 @@ export function RealityForm({
                         value={data.dest || ""}
                         onChange={(e) => onChange({ ...data, dest: e.target.value })}
                     />
-                    <p className="text-xs text-muted-foreground">Fallback destination</p>
+                    <p className="text-xs text-muted-foreground">
+                        {isInbound
+                            ? "Site whose TLS handshake this listener mirrors. It must speak TLS 1.3 with X25519."
+                            : "Fallback destination"}
+                    </p>
                 </div>
                 <div className="space-y-2">
                     <Label>Fingerprint</Label>
@@ -132,6 +139,8 @@ export function RealityForm({
                 />
                 <p className="text-xs text-muted-foreground">One per line</p>
             </div>
+
+            {afterServerNames}
 
             <div className="space-y-2">
                 <div className="flex items-center justify-between">

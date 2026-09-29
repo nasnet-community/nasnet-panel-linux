@@ -26,6 +26,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest"
 )
 
 var (
@@ -136,6 +137,8 @@ type NodeUsecase interface {
 	DeleteInbound(ctx context.Context, id uint) error
 	GetInbound(ctx context.Context, id uint) (*domain.Inbound, error)
 	UpdateInbound(ctx context.Context, inbound *domain.Inbound) error
+	// CheckRealityDest verifies from the node that a REALITY dest can be hijacked.
+	CheckRealityDest(ctx context.Context, nodeID uint, settings *domain.RealitySettings) (*realitydest.Report, error)
 
 	// Inbound Discovery & Sync
 	DiscoverInbounds(ctx context.Context, nodeID uint) ([]*domain.Inbound, error)

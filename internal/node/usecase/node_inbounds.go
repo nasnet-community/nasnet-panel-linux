@@ -473,6 +473,9 @@ func (u *nodeUsecase) AddInbound(ctx context.Context, inbound *domain.Inbound) e
 	if err := u.ensureUniqueTag(ctx, inbound); err != nil {
 		return err
 	}
+	if err := u.guardRealityDest(ctx, inbound, nil); err != nil {
+		return err
+	}
 
 	// 1. Create DB Record
 	if err := u.nodeRepo.CreateInbound(ctx, inbound); err != nil {
@@ -654,6 +657,9 @@ func (u *nodeUsecase) UpdateInbound(ctx context.Context, inbound *domain.Inbound
 		return err
 	}
 	if err := u.ensureUniqueTag(ctx, inbound); err != nil {
+		return err
+	}
+	if err := u.guardRealityDest(ctx, inbound, prev); err != nil {
 		return err
 	}
 

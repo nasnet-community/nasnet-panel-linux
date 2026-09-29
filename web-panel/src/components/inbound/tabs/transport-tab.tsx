@@ -13,6 +13,8 @@ import {
 import { TransportForm } from "@/components/shared/transport-form"
 import { TLSForm } from "@/components/shared/tls-form"
 import { RealityForm } from "@/components/shared/reality-form"
+import { RealityDestCheck } from "@/components/shared/reality-dest-check"
+import type { RealityDestReport } from "@/lib/api/reality-dest"
 import { Callout, FormSection } from "@/components/connection-dialog/section"
 import { NestedErrors } from "@/components/connection-dialog/error-summary"
 import { shortNetworkLabel } from "@/components/connection-dialog/labels"
@@ -23,12 +25,17 @@ const REALITY_NETWORKS = ["tcp", "xhttp", "splithttp", "grpc"]
 interface TransportTabProps {
     form: UseFormReturn<InboundFormData>
     sectionVisibility: SectionVisibility
+    nodeId: number
+    /** Dest check for the current Reality dest/server names, if one ran. */
+    destReport: RealityDestReport | null
+    onDestReport: (report: RealityDestReport | null) => void
+    destBlocking?: boolean
 }
 
 // Network, its transport settings and the security layer on one page. They
 // used to be three tabs, two of which only appeared after choices made on the
 // third.
-export function TransportTab({ form, sectionVisibility }: TransportTabProps) {
+export function TransportTab({ form, sectionVisibility, nodeId, destReport, onDestReport, destBlocking }: TransportTabProps) {
     const protocol = form.watch("protocol")
     const network = form.watch("network")
     const security = form.watch("security")
@@ -158,6 +165,15 @@ export function TransportTab({ form, sectionVisibility }: TransportTabProps) {
                         settings={realitySettings}
                         onChange={(s) => form.setValue("reality_settings", s, { shouldDirty: true })}
                         isInbound
+                        afterServerNames={
+                            <RealityDestCheck
+                                nodeId={nodeId}
+                                settings={realitySettings}
+                                report={destReport}
+                                onReport={onDestReport}
+                                blocking={destBlocking}
+                            />
+                        }
                     />
                     <NestedErrors errors={form.formState.errors.reality_settings} />
                 </FormSection>

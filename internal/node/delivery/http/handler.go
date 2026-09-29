@@ -119,6 +119,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		// Inbound Operations
 		nodes.GET("/:id/inbounds", h.ListInbounds)
 		nodes.POST("/:id/inbounds", h.AddInbound)
+		nodes.POST("/:id/reality-dest/check", h.CheckRealityDest)
 		nodes.POST("/:id/inbounds/discover", h.DiscoverInbounds)
 		nodes.POST("/:id/inbounds/sync", h.SyncInbounds)
 
@@ -868,10 +869,55 @@ func (h *Handler) AddInbound(c *gin.Context) {
 	inbound.NodeID = uint(nodeID)
 
 	if err := h.nodeUsecase.AddInbound(c.Request.Context(), &inbound); err != nil {
+		if rejectRealityDest(c, err) {
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": inbound})
+}
+
+// rejectRealityDest answers a save blocked by the REALITY dest check with the
+// report attached, so the panel can show what failed and offer "Save anyway".
+func rejectRealityDest(c *gin.Context, err error) bool {
+	var destErr *usecase.RealityDestError
+	if !errors.As(err, &destErr) {
+		return false
+	}
+	c.JSON(http.StatusUnprocessableEntity, gin.H{
+		"success": false,
+		"error":   err.Error(),
+		"code":    "REALITY_DEST_UNSUPPORTED",
+		"data":    destErr.Report,
+	})
+	return true
+}
+
+// CheckRealityDest runs the dest handshake for settings that may not be saved
+// yet. A failing dest is a normal 200 with ok=false; errors are for bad input
+// or an unreachable node.
+func (h *Handler) CheckRealityDest(c *gin.Context) {
+	nodeID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid id"})
+		return
+	}
+	var settings domain.RealitySettings
+	if err := c.ShouldBindJSON(&settings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	report, err := h.nodeUsecase.CheckRealityDest(c.Request.Context(), uint(nodeID), &settings)
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, usecase.ErrNodeNotFound) {
+			code = http.StatusNotFound
+		}
+		c.JSON(code, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": report})
 }
 
 func (h *Handler) UpdateInbound(c *gin.Context) {
@@ -912,6 +958,9 @@ func (h *Handler) UpdateInbound(c *gin.Context) {
 	}
 
 	if err := h.nodeUsecase.UpdateInbound(c.Request.Context(), inbound); err != nil {
+		if rejectRealityDest(c, err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}

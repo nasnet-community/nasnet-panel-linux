@@ -330,6 +330,10 @@ type Inbound struct {
 	HysteriaSettings    *HysteriaSettings    `gorm:"serializer:json;type:jsonb" json:"hysteria_settings"`
 	FinalMask           *FinalMask           `gorm:"serializer:json;type:jsonb" json:"finalmask"`
 
+	// SkipDestCheck lets the panel save a REALITY inbound whose dest failed the
+	// hijack check ("Save anyway"). Request-only; never stored.
+	SkipDestCheck bool `gorm:"-" json:"skip_dest_check,omitempty"`
+
 	// LinkFormat is the template for generating the client link.
 	// Placeholders: {uuid}, {email}, {host}, {port}, {name}
 	// Example: vless://{uuid}@{host}:{port}?security=reality&sni=google.com&fp=chrome&pbk=...&type=grpc&serviceName=grpc# {name}

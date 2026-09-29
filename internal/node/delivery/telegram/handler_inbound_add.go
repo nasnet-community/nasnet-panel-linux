@@ -1,11 +1,13 @@
 package telegram
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/conversation"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/keyboards"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/tgctx"
@@ -500,8 +502,35 @@ func (h *Handler) finishAddInbound(c telebot.Context, format string) error {
 	ctx, cancel := tgctx.FromTelebot(c)
 	defer cancel()
 	if err := h.nodeUsecase.AddInbound(ctx, inbound); err != nil {
+		var destErr *usecase.RealityDestError
+		if errors.As(err, &destErr) {
+			return c.Send(realityDestBlockMessage(destErr), keyboards.AdminMenu())
+		}
 		return c.Send("❌ Failed to add inbound: "+err.Error(), keyboards.AdminMenu())
 	}
 
 	return c.Send("✅ Inbound Added & Pushed to Xray!", keyboards.AdminMenu())
+}
+
+// realityDestBlockMessage lists each server name the dest check failed, one
+// per line, and points at the panel's "Save anyway".
+func realityDestBlockMessage(e *usecase.RealityDestError) string {
+	var b strings.Builder
+	b.WriteString("❌ The REALITY dest " + e.Report.Dest + " can't be used:\n")
+	for _, c := range e.Report.Checks {
+		if c.OK {
+			continue
+		}
+		reason := c.Message
+		if reason == "" {
+			reason = c.Reason
+		}
+		name := c.ServerName
+		if name == "" {
+			name = "(no name)"
+		}
+		b.WriteString(name + ": " + reason + "\n")
+	}
+	b.WriteString("\nPick another dest, or save it from the panel with Save anyway.")
+	return b.String()
 }

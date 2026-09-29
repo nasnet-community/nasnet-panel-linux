@@ -14,6 +14,8 @@ export interface Inbound {
     security: string
     tls_settings?: TLSSettings
     reality_settings?: RealitySettings
+    /** Request-only: save a REALITY inbound whose dest failed its check. */
+    skip_dest_check?: boolean
     transport_settings?: TransportSettings
     sniffing_settings?: SniffingSettings
     shadowsocks_settings?: ShadowsocksSettings

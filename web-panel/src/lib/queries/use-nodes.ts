@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { isRealityDestError } from "@/lib/api/reality-dest"
 import {
     listNodes,
     getNode,
@@ -607,7 +608,7 @@ export function useDeleteInbound() {
             queryClient.invalidateQueries({ queryKey: queryKeys.nodeInbounds(nodeId) })
         },
         onError: (error: Error) => {
-            toast.error(error.message)
+            if (!isRealityDestError(error)) toast.error(error.message)
         },
     })
 }
@@ -651,7 +652,8 @@ export function useToggleInbound(nodeId: number) {
             queryClient.invalidateQueries({ queryKey: queryKeys.nodeInbounds(nodeId) })
         },
         onError: (error: Error) => {
-            toast.error(error.message)
+            // A blocked REALITY dest is shown inline by the inbound dialog.
+            if (!isRealityDestError(error)) toast.error(error.message)
         },
     })
 }

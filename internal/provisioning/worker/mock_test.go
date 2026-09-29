@@ -17,6 +17,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest"
 )
 
 // ============================================================
@@ -238,6 +239,9 @@ func (m *mockNodeUsecase) GetInbound(context.Context, uint) (*nodeDomain.Inbound
 	return nil, nil
 }
 func (m *mockNodeUsecase) UpdateInbound(context.Context, *nodeDomain.Inbound) error { return nil }
+func (m *mockNodeUsecase) CheckRealityDest(context.Context, uint, *nodeDomain.RealitySettings) (*realitydest.Report, error) {
+	return &realitydest.Report{OK: true}, nil
+}
 
 // Inbound Discovery & Sync
 func (m *mockNodeUsecase) DiscoverInbounds(context.Context, uint) ([]*nodeDomain.Inbound, error) {
