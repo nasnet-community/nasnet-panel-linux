@@ -94,6 +94,7 @@ func (s *Scheduler) runRetentionCleanup(ctx context.Context) CleanupSummary {
 		s.tryCleanup(ctx, summary, "node_daily_uptime", "retention_node_daily_uptime_days", 0, s.nodeRepository.CleanupOldNodeDailyUptime)
 		s.tryCleanup(ctx, summary, "hub_lifecycle_events", "retention_hub_lifecycle_events_days", 365, s.nodeRepository.CleanupOldHubLifecycleEvents)
 		s.tryCleanup(ctx, summary, "starlink_stats", "retention_starlink_stats_days", 30, s.nodeRepository.CleanupOldStarlinkStats)
+		s.tryCleanup(ctx, summary, "starlink_events", "retention_starlink_events_days", 30, s.nodeRepository.CleanupOldStarlinkEvents)
 		s.tryCleanup(ctx, summary, "access_log_summaries", "retention_access_log_days", 30, func(ctx context.Context, days int) (int64, error) {
 			before := time.Now().AddDate(0, 0, -days)
 			return s.nodeRepository.CleanupOldAccessLogSummaries(ctx, before)

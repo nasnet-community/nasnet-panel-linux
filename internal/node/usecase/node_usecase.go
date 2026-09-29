@@ -25,6 +25,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/starlink"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest"
 )
@@ -362,9 +363,13 @@ type NodeUsecase interface {
 	GetAccessLogTopDomains(ctx context.Context, filter repository.AccessLogSummaryFilter, topN int) ([]DomainCount, error)
 
 	// Starlink Monitoring
-	GetStarlinkStatus(ctx context.Context, nodeID uint) (*agent.StarlinkStatus, error)
+	GetStarlinkStatus(ctx context.Context, nodeID uint) (*StarlinkStatusView, error)
 	GetStarlinkObstructionMap(ctx context.Context, nodeID uint) (*agent.StarlinkObstructionMap, error)
 	GetStarlinkHistory(ctx context.Context, nodeID uint, limit int, since *time.Time) ([]*domain.StarlinkStat, error)
+	GetStarlinkLive(ctx context.Context, nodeID uint, step int) (*starlink.History, error)
+	GetStarlinkDevice(ctx context.Context, nodeID uint) (*starlink.DeviceInfo, error)
+	GetStarlinkEvents(ctx context.Context, nodeID uint, since time.Time, limit int) ([]*domain.StarlinkEvent, error)
+	RunStarlinkAction(ctx context.Context, nodeID uint, req StarlinkActionRequest) (*StarlinkActionResult, error)
 
 	// Inbound Migration
 	MigrateInbound(ctx context.Context, sourceInboundID, targetInboundID uint) (*InboundMigrationResult, error)
@@ -452,6 +457,10 @@ type nodeUsecase struct {
 	lastOnlineIPsAt     map[uint]time.Time
 	lastAccessLogAt     map[uint]time.Time
 	bundleUnsupportedAt map[uint]time.Time
+
+	// Last Starlink event-log sync per node (time.Time); at most one per
+	// starlinkEventSyncInterval.
+	starlinkEventSyncAt sync.Map
 
 	// Per-node config push rate limiting to prevent infinite retry loops
 	pushStateMu sync.Mutex

@@ -11,6 +11,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type NodeRepository interface {
@@ -131,6 +132,7 @@ type NodeRepository interface {
 	CleanupOldNodeDailyUptime(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldHubLifecycleEvents(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldStarlinkStats(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldStarlinkEvents(ctx context.Context, olderThanDays int) (int64, error)
 
 	// Batch fetch inbounds by IDs with Node preloaded
 	FindInboundsByIDs(ctx context.Context, ids []uint) ([]*domain.Inbound, error)
@@ -198,6 +200,8 @@ type NodeRepository interface {
 	// Starlink Stats
 	CreateStarlinkStat(ctx context.Context, stat *domain.StarlinkStat) error
 	GetStarlinkStatsHistory(ctx context.Context, nodeID uint, limit int, since *time.Time) ([]*domain.StarlinkStat, error)
+	UpsertStarlinkEvents(ctx context.Context, events []*domain.StarlinkEvent) error
+	ListStarlinkEvents(ctx context.Context, nodeID uint, since time.Time, limit int) ([]*domain.StarlinkEvent, error)
 }
 
 // HourlyAggregate holds connection stats aggregated by hour of day (0-23).
@@ -1615,6 +1619,36 @@ func (r *nodeRepository) GetStarlinkStatsHistory(ctx context.Context, nodeID uin
 		return stats, nil
 	}
 	return downsampleStarlinkStats(stats, limit), nil
+}
+
+// UpsertStarlinkEvents stores dish events; an event still in progress on the
+// last sync gets its duration updated. StartAt is written in UTC (the dedupe
+// key, and SQLite compares times as text), so every bound below is UTC too.
+func (r *nodeRepository) UpsertStarlinkEvents(ctx context.Context, events []*domain.StarlinkEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "node_id"}, {Name: "reason"}, {Name: "start_at"}},
+		DoUpdates: clause.AssignmentColumns([]string{"duration_ms", "severity"}),
+	}).Create(&events).Error
+}
+
+func (r *nodeRepository) ListStarlinkEvents(ctx context.Context, nodeID uint, since time.Time, limit int) ([]*domain.StarlinkEvent, error) {
+	var events []*domain.StarlinkEvent
+	err := r.db.WithContext(ctx).
+		Where("node_id = ? AND start_at >= ?", nodeID, since.UTC()).
+		Order("start_at DESC").
+		Limit(limit).
+		Find(&events).Error
+	return events, err
+}
+
+// CleanupOldStarlinkEvents prunes dish events older than the retention window.
+func (r *nodeRepository) CleanupOldStarlinkEvents(ctx context.Context, olderThanDays int) (int64, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
+	result := r.db.WithContext(ctx).Where("start_at < ?", cutoff).Delete(&domain.StarlinkEvent{})
+	return result.RowsAffected, result.Error
 }
 
 // downsampleStarlinkStats: mean numerics + OR alert flags per bucket.

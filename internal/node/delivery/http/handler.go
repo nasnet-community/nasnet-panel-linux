@@ -155,6 +155,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.GET("/:id/starlink/status", h.GetStarlinkStatus)
 		nodes.GET("/:id/starlink/obstruction-map", h.GetStarlinkObstructionMap)
 		nodes.GET("/:id/starlink/history", h.GetStarlinkHistory)
+		nodes.GET("/:id/starlink/live", h.GetStarlinkLive)
+		nodes.GET("/:id/starlink/device", h.GetStarlinkDevice)
+		nodes.GET("/:id/starlink/events", h.GetStarlinkEvents)
+		nodes.POST("/:id/starlink/actions/:action", h.RunStarlinkAction)
 
 		// Migration
 		nodes.POST("/:id/migrate", h.MigrateNode)

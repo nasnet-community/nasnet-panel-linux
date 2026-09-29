@@ -2,9 +2,14 @@ package server
 
 import (
 	"context"
+	"time"
 
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/starlink"
+	slpb "github.com/nasnet-community/nasnet-panel-linux/pkg/starlink/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // dishAddr resolves a request's dish address with the package default.
@@ -115,4 +120,54 @@ func (s *Server) GetStarlinkObstructionMap(ctx context.Context, req *pb.Starlink
 		MaxThetaDeg:    m.MaxThetaDeg,
 		ReferenceFrame: m.ReferenceFrame,
 	}, nil
+}
+
+// StarlinkHandle forwards an allowlisted dish request. Dish failures travel
+// in the response code, not as an RPC error, so the hub can tell a refusing
+// dish from an agent that lacks this RPC.
+func (s *Server) StarlinkHandle(ctx context.Context, req *pb.StarlinkHandleRequest) (*pb.StarlinkHandleResponse, error) {
+	var dishReq slpb.Request
+	if err := proto.Unmarshal(req.GetRequest(), &dishReq); err != nil {
+		return &pb.StarlinkHandleResponse{Code: int32(codes.InvalidArgument), Message: "malformed dish request"}, nil
+	}
+	// Forward only the oneof. Unknown fields (a request type this build does
+	// not know) and routing fields would otherwise ride through re-marshal
+	// past the allowlist.
+	clean := &slpb.Request{Request: dishReq.Request}
+	if !starlink.PassthroughAllowed(clean) {
+		return &pb.StarlinkHandleResponse{Code: int32(codes.PermissionDenied), Message: "request type not allowed by agent"}, nil
+	}
+
+	// Give up on the dish before the caller gives up on us, so a dish that
+	// goes silent (mid-reboot) comes back as a relayed DeadlineExceeded
+	// instead of the hub's own timeout.
+	if dl, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, dl.Add(-2*time.Second))
+		defer cancel()
+	}
+
+	addr := req.GetDishAddress()
+	if addr == "" {
+		addr = starlink.DefaultDishAddress
+	}
+	client, err := starlink.SharedClient(addr)
+	if err != nil {
+		return &pb.StarlinkHandleResponse{Code: int32(codes.Unavailable), Message: err.Error()}, nil
+	}
+
+	resp, err := client.Handle(ctx, clean)
+	if err != nil {
+		st := status.Convert(err)
+		if st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded {
+			starlink.EvictPooled(addr)
+		}
+		return &pb.StarlinkHandleResponse{Code: int32(st.Code()), Message: st.Message()}, nil
+	}
+
+	raw, err := proto.Marshal(resp)
+	if err != nil {
+		return &pb.StarlinkHandleResponse{Code: int32(codes.Internal), Message: "marshal dish response: " + err.Error()}, nil
+	}
+	return &pb.StarlinkHandleResponse{Response: raw}, nil
 }

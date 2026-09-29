@@ -785,3 +785,12 @@ func (m *mockNodeRepo) SaveNodeHostInfo(_ context.Context, _ uint, _ *nodeDomain
 func (m *mockNodeRepo) TouchHubLifecycleEvent(_ context.Context, _ uint, _ time.Time) error {
 	return nil
 }
+func (m *mockNodeRepo) UpsertStarlinkEvents(_ context.Context, _ []*nodeDomain.StarlinkEvent) error {
+	return nil
+}
+func (m *mockNodeRepo) ListStarlinkEvents(_ context.Context, _ uint, _ time.Time, _ int) ([]*nodeDomain.StarlinkEvent, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) CleanupOldStarlinkEvents(_ context.Context, _ int) (int64, error) {
+	return 0, nil
+}

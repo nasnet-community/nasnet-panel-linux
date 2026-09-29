@@ -16,6 +16,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/starlink"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest"
 )
@@ -550,7 +551,19 @@ func (m *mockNodeUsecase) GetAccessLogTopDomains(context.Context, nodeRepo.Acces
 }
 
 // Starlink Monitoring
-func (m *mockNodeUsecase) GetStarlinkStatus(context.Context, uint) (*agent.StarlinkStatus, error) {
+func (m *mockNodeUsecase) GetStarlinkStatus(context.Context, uint) (*nodeUC.StarlinkStatusView, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetStarlinkLive(context.Context, uint, int) (*starlink.History, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetStarlinkDevice(context.Context, uint) (*starlink.DeviceInfo, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetStarlinkEvents(context.Context, uint, time.Time, int) ([]*nodeDomain.StarlinkEvent, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) RunStarlinkAction(context.Context, uint, nodeUC.StarlinkActionRequest) (*nodeUC.StarlinkActionResult, error) {
 	return nil, nil
 }
 func (m *mockNodeUsecase) GetStarlinkObstructionMap(context.Context, uint) (*agent.StarlinkObstructionMap, error) {

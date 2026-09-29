@@ -199,6 +199,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.NodeDailyUptime{},
 		&nodeDomain.HubLifecycleEvent{},
 		&nodeDomain.StarlinkStat{},
+		&nodeDomain.StarlinkEvent{},
 		&nodeDomain.AgentCertificate{},
 		&nodeDomain.NodeCertSighting{},
 		&nodeDomain.UsedDeploymentToken{},

@@ -31,6 +31,7 @@ var retentionTables = []retentionTable{
 	{"retention_node_uptime_events_days", "node_uptime_events", "timestamp"},
 	{"retention_node_daily_uptime_days", "node_daily_uptimes", "date"},
 	{"retention_starlink_stats_days", "starlink_stats", "created_at"},
+	{"retention_starlink_events_days", "starlink_events", "start_at"},
 	{"retention_online_users_history_days", "online_users_snapshots", "created_at"},
 	{"retention_access_log_days", "access_log_summaries", "hour_time"},
 	// Subscription activity

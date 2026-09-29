@@ -8,15 +8,20 @@ import (
 
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/starlink/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 const DefaultDishAddress = "192.168.100.1:9200"
 
+// Handler sends one dish request and returns its response. The agent uses a
+// direct gRPC channel; the hub goes through the agent's StarlinkHandle RPC.
+type Handler func(ctx context.Context, req *pb.Request) (*pb.Response, error)
+
 // Client wraps gRPC communication with a Starlink dish.
 type Client struct {
 	conn   *grpc.ClientConn
-	device pb.DeviceClient
+	handle Handler
 }
 
 // NewClient opens a lazy gRPC channel to the Starlink dish (insecure LAN).
@@ -34,10 +39,23 @@ func NewClient(addr string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create Starlink client for %s: %w", addr, err)
 	}
 
+	device := pb.NewDeviceClient(conn)
 	return &Client{
-		conn:   conn,
-		device: pb.NewDeviceClient(conn),
+		conn: conn,
+		handle: func(ctx context.Context, req *pb.Request) (*pb.Response, error) {
+			return device.Handle(ctx, req)
+		},
 	}, nil
+}
+
+// NewClientWithHandler builds a client that sends every request through h.
+func NewClientWithHandler(h Handler) *Client {
+	return &Client{handle: h}
+}
+
+// Handle sends a raw dish request.
+func (c *Client) Handle(ctx context.Context, req *pb.Request) (*pb.Response, error) {
+	return c.handle(ctx, req)
 }
 
 // Close closes the gRPC connection.
@@ -171,6 +189,31 @@ type StarlinkStatus struct {
 	// Signal
 	IsSnrAboveNoiseFloor bool `json:"is_snr_above_noise_floor"`
 	IsSnrPersistentlyLow bool `json:"is_snr_persistently_low"`
+
+	// Link health
+	SignalQuality          float64          `json:"signal_quality"`
+	ReadyStates            map[string]bool  `json:"ready_states,omitempty"`
+	DlBandwidthRestriction string           `json:"dl_bandwidth_restricted_reason"`
+	UlBandwidthRestriction string           `json:"ul_bandwidth_restricted_reason"`
+	GpsInhibited           bool             `json:"gps_inhibited"`
+	PntFilterState         string           `json:"pnt_filter_state"`
+	StowRequested          bool             `json:"stow_requested"`
+	UpdateRequiresReboot   bool             `json:"update_requires_reboot"`
+	SwupdateRebootReady    bool             `json:"swupdate_reboot_ready"`
+	RebootReason           string           `json:"reboot_reason"`
+	IsMovingFast           bool             `json:"is_moving_fast"`
+	InitDurations          map[string]int32 `json:"init_durations,omitempty"`
+
+	// The dish answers PermissionDenied for these on current firmware; the
+	// panel shows a hint instead of zeroes.
+	ContextLocked  bool `json:"context_locked"`
+	LocationLocked bool `json:"location_locked"`
+
+	AlertLowerSignalThanPredicted   bool `json:"alert_lower_signal_than_predicted"`
+	AlertObstructionMapReset        bool `json:"alert_obstruction_map_reset"`
+	AlertDishWaterDetected          bool `json:"alert_dish_water_detected"`
+	AlertPowerSupplyThermalThrottle bool `json:"alert_power_supply_thermal_throttle"`
+	AlertSlowEthernet100            bool `json:"alert_slow_ethernet_100"`
 }
 
 // ObstructionMap holds the dish obstruction map data.
@@ -187,10 +230,6 @@ type Location struct {
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 	Altitude  float64 `json:"altitude"`
-}
-
-func (c *Client) handle(ctx context.Context, req *pb.Request) (*pb.Response, error) {
-	return c.device.Handle(ctx, req)
 }
 
 // GetStatus retrieves the dish status, context, and location in a single flattened struct.
@@ -223,6 +262,14 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 		ClassOfService:        s.ClassOfService.String(),
 		SoftwareUpdateState:   s.SoftwareUpdateState.String(),
 		DisablementCode:       s.DisablementCode.String(),
+
+		SignalQuality:          float64(s.SignalQuality),
+		DlBandwidthRestriction: s.DlBandwidthRestrictedReason.String(),
+		UlBandwidthRestriction: s.UlBandwidthRestrictedReason.String(),
+		StowRequested:          s.StowRequested,
+		SwupdateRebootReady:    s.SwupdateRebootReady,
+		RebootReason:           s.RebootReason.String(),
+		IsMovingFast:           s.IsMovingFastPersisted,
 	}
 
 	// Obstruction stats
@@ -246,6 +293,11 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 		status.AlertRoaming = a.Roaming
 		status.AlertMastNotNearVert = a.MastNotNearVertical
 		status.AlertInstallPending = a.InstallPending
+		status.AlertLowerSignalThanPredicted = a.LowerSignalThanPredicted
+		status.AlertObstructionMapReset = a.ObstructionMapReset
+		status.AlertDishWaterDetected = a.DishWaterDetected
+		status.AlertPowerSupplyThermalThrottle = a.PowerSupplyThermalThrottle
+		status.AlertSlowEthernet100 = a.SlowEthernetSpeeds_100
 	}
 
 	// Device info
@@ -265,6 +317,8 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 	if gps := s.GpsStats; gps != nil {
 		status.GpsValid = gps.GpsValid
 		status.GpsSats = gps.GpsSats
+		status.GpsInhibited = gps.InhibitGps
+		status.PntFilterState = gps.PntFilterConvergenceState.String()
 	}
 
 	// Alignment
@@ -285,6 +339,28 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 	if su := s.SoftwareUpdateStats; su != nil {
 		status.SoftwareUpdateState = su.SoftwareUpdateState.String()
 		status.SoftwareUpdateProgress = float64(su.SoftwareUpdateProgress)
+		status.UpdateRequiresReboot = su.UpdateRequiresReboot
+	}
+
+	if rs := s.ReadyStates; rs != nil {
+		status.ReadyStates = map[string]bool{
+			"cady": rs.Cady, "scp": rs.Scp, "l1l2": rs.L1L2,
+			"xphy": rs.Xphy, "aap": rs.Aap, "rf": rs.Rf,
+		}
+	}
+	if d := s.InitializationDurationSeconds; d != nil {
+		status.InitDurations = map[string]int32{
+			"attitude_initialization": d.AttitudeInitialization,
+			"burst_detected":          d.BurstDetected,
+			"ekf_converged":           d.EkfConverged,
+			"first_cplane":            d.FirstCplane,
+			"first_pop_ping":          d.FirstPopPing,
+			"gps_valid":               d.GpsValid,
+			"initial_network_entry":   d.InitialNetworkEntry,
+			"network_schedule":        d.NetworkSchedule,
+			"rf_ready":                d.RfReady,
+			"stable_connection":       d.StableConnection,
+		}
 	}
 
 	// Outage
@@ -304,6 +380,8 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 			status.GatewayID = dc.InitialGatewayId
 			status.OnBackupBeam = dc.OnBackupBeam
 		}
+	} else if DishCode(err) == codes.PermissionDenied {
+		status.ContextLocked = true
 	}
 
 	// Get location
@@ -318,6 +396,8 @@ func (c *Client) GetStatus(ctx context.Context) (*StarlinkStatus, error) {
 				status.Altitude = lla.Alt
 			}
 		}
+	} else if DishCode(err) == codes.PermissionDenied {
+		status.LocationLocked = true
 	}
 
 	// Sanitize NaN/Inf values
@@ -406,6 +486,7 @@ func clampNonNeg(v float64) float64 {
 }
 
 func sanitizeStatus(s *StarlinkStatus) {
+	s.SignalQuality = clampUnit(s.SignalQuality)
 	s.DownlinkThroughputBps = clampNonNeg(s.DownlinkThroughputBps)
 	s.UplinkThroughputBps = clampNonNeg(s.UplinkThroughputBps)
 	s.PopPingLatencyMs = clampNonNeg(s.PopPingLatencyMs)

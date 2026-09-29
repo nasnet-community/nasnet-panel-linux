@@ -123,6 +123,7 @@ type NodeRepository interface {
 	CleanupOldNodeDailyUptime(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldHubLifecycleEvents(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldStarlinkStats(ctx context.Context, olderThanDays int) (int64, error)
+	CleanupOldStarlinkEvents(ctx context.Context, olderThanDays int) (int64, error)
 }
 
 // ProvisioningRepository defines what the scheduler needs from provisioning

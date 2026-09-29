@@ -186,3 +186,15 @@ func AlertFlagsFromBooleans(
 	}
 	return flags
 }
+
+// StarlinkEvent is one dish event-log entry (outage, packet-loss burst,
+// reboot…), kept past the dish's own ~36h window.
+type StarlinkEvent struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	NodeID     uint      `gorm:"not null;uniqueIndex:idx_starlink_event_key,priority:1" json:"node_id"`
+	Reason     string    `gorm:"size:64;not null;uniqueIndex:idx_starlink_event_key,priority:2" json:"reason"`
+	StartAt    time.Time `gorm:"not null;uniqueIndex:idx_starlink_event_key,priority:3;index" json:"start_at"`
+	Severity   string    `gorm:"size:32" json:"severity"`
+	DurationMs int64     `json:"duration_ms"`
+	CreatedAt  time.Time `json:"created_at"`
+}
