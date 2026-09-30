@@ -255,7 +255,14 @@ func (u *CoreUsecase) UpdateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.repo.UpdateInbound(ctx, in); err != nil {
 		return err
 	}
-	if nodebridge.TunnelSocksPort(existing) != nodebridge.TunnelSocksPort(in) {
+	if before, after := nodebridge.TunnelSocksPort(existing), nodebridge.TunnelSocksPort(in); before != after {
+		// Moving to Xray, the SOCKS inbound takes the port an MTProto relay
+		// held in router mode: let the core drop the relay before Xray binds.
+		if after != 0 {
+			if err := u.ReconcileNodeByID(ctx, in.NodeID); err != nil {
+				logger.GetLogger().WithError(err).WithField("node_id", in.NodeID).Warn("[core] Tunnel reconcile before the Xray push failed")
+			}
+		}
 		u.syncXray(ctx, in.NodeID)
 	}
 	u.notifyInboundsChanged(ctx, in.NodeID)
