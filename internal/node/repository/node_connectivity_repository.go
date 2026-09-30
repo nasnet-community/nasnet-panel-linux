@@ -217,6 +217,9 @@ func (r *nodeRepository) GetLatestNodeDailyUptimeDate(ctx context.Context) (time
 // CleanupOldNodeDailyUptime prunes rollup rows older than retention. Default
 // retention is 0 (keep forever) — the rollup exists to outlive the events.
 func (r *nodeRepository) CleanupOldNodeDailyUptime(ctx context.Context, olderThanDays int) (int64, error) {
+	if olderThanDays <= 0 {
+		return 0, nil // a zero cutoff would be "now" and delete every day
+	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
 	res := r.db.WithContext(ctx).
 		Where("date < ?", cutoff).

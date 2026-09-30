@@ -91,7 +91,9 @@ func (s *Scheduler) runRetentionCleanup(ctx context.Context) CleanupSummary {
 		s.tryCleanup(ctx, summary, "node_stats", "retention_node_stats_days", 30, s.nodeRepository.CleanupOldNodeStats)
 		s.tryCleanup(ctx, summary, "node_daily_traffic", "retention_node_daily_traffic_days", 365, s.nodeRepository.CleanupOldNodeDailyTraffic)
 		s.tryCleanup(ctx, summary, "node_uptime_events", "retention_node_uptime_events_days", 90, s.nodeRepository.CleanupOldUptimeEvents)
-		s.tryCleanup(ctx, summary, "node_daily_uptime", "retention_node_daily_uptime_days", 0, s.nodeRepository.CleanupOldNodeDailyUptime)
+		// Kept forever unless set: the rollup can't be rebuilt once the events
+		// behind it are pruned.
+		s.tryCleanup(ctx, summary, "node_daily_uptime", "retention_node_daily_uptime_days", -1, s.nodeRepository.CleanupOldNodeDailyUptime)
 		s.tryCleanup(ctx, summary, "hub_lifecycle_events", "retention_hub_lifecycle_events_days", 365, s.nodeRepository.CleanupOldHubLifecycleEvents)
 		s.tryCleanup(ctx, summary, "starlink_stats", "retention_starlink_stats_days", 30, s.nodeRepository.CleanupOldStarlinkStats)
 		s.tryCleanup(ctx, summary, "starlink_events", "retention_starlink_events_days", 30, s.nodeRepository.CleanupOldStarlinkEvents)
