@@ -75,8 +75,8 @@ func WithXrayConfigPusher(fn func(ctx context.Context, nodeID uint) error) Optio
 }
 
 // syncXray pushes the node's Xray config after its tunnel SOCKS inbounds
-// changed. The tunnel change is saved either way; a failed push leaves the
-// config drift check to retry it.
+// changed. The tunnel change is saved either way; after a failed push the
+// node's next config push (a reconnect, any Xray change) brings the inbound.
 func (u *CoreUsecase) syncXray(ctx context.Context, nodeID uint) {
 	if u.pushXray == nil {
 		return

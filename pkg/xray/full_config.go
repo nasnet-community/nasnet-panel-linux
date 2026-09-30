@@ -9,6 +9,7 @@ import (
 
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
 
@@ -117,6 +118,31 @@ type TunnelSocks struct {
 
 // Tag is the inbound's tag in the Xray config.
 func (t TunnelSocks) Tag() string { return fmt.Sprintf("%s%d", TunnelSocksTagPrefix, t.InboundID) }
+
+// usableTunnelSocks drops a SOCKS inbound whose port is out of range or
+// already taken in this config: one saved before its port was checked
+// would otherwise stop Xray for every user on the node.
+func (b *FullConfigBuilder) usableTunnelSocks() []TunnelSocks {
+	taken := map[int]bool{}
+	if b.apiEnabled {
+		taken[b.apiPort] = true
+	}
+	for _, inb := range b.inbounds {
+		if inb != nil && inb.PortRange == "" {
+			taken[inb.Port] = true
+		}
+	}
+	out := make([]TunnelSocks, 0, len(b.tunnelSocks))
+	for _, t := range b.tunnelSocks {
+		if t.Port < 1 || t.Port > 65535 || taken[t.Port] {
+			logger.GetLogger().WithField("tag", t.Tag()).WithField("port", t.Port).Warn("[xray] Tunnel SOCKS inbound left out: its port is unusable")
+			continue
+		}
+		taken[t.Port] = true
+		out = append(out, t)
+	}
+	return out
+}
 
 // WithTunnelSocks adds the loopback SOCKS inbounds tunnels leave through.
 func (b *FullConfigBuilder) WithTunnelSocks(socks []TunnelSocks) *FullConfigBuilder {
@@ -352,7 +378,7 @@ func (b *FullConfigBuilder) buildInbounds() []map[string]interface{} {
 	// Xray (they count their own users' traffic), and a tunnel user can't
 	// reach loopback through their tunnel. The SSH core sends IP literals it
 	// has checked, so sniffing puts the domain back for routing only.
-	for _, t := range b.tunnelSocks {
+	for _, t := range b.usableTunnelSocks() {
 		inbounds = append(inbounds, map[string]interface{}{
 			"tag":      t.Tag(),
 			"listen":   "127.0.0.1",
