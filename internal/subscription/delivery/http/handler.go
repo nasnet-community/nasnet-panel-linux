@@ -135,10 +135,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		subs.POST("/:id/reset-data", h.ResetData)
 		// Inbound assignment
 		subs.POST("/:id/assign-inbound", h.AssignToInbound)
-		// SSH/MTProto tunnel assignment
-		subs.POST("/:id/assign-core-inbound", h.AssignToCoreInbound)
-		subs.POST("/:id/unassign-core-inbound", h.UnassignCoreInbound)
-		subs.GET("/:id/core-accounts", h.ListCoreAccounts)
 		subs.PUT("/:id/panel-password", h.SetPanelPassword)
 
 		// User-specific subscriptions

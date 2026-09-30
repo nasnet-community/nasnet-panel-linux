@@ -14,6 +14,10 @@ import (
 // intentionally has no public registration.
 func (h *Handler) RegisterAdminRoutes(rg *gin.RouterGroup) {
 	rg.GET("/admin/subscriptions/expiring-soon/count", h.CountExpiring)
+	// SSH/MTProto tunnel assignment: admins only, like the tunnels themselves.
+	rg.POST("/subscriptions/:id/assign-core-inbound", h.AssignToCoreInbound)
+	rg.POST("/subscriptions/:id/unassign-core-inbound", h.UnassignCoreInbound)
+	rg.GET("/subscriptions/:id/core-accounts", h.ListCoreAccounts)
 }
 
 func (h *Handler) CountExpiring(c *gin.Context) {
