@@ -186,6 +186,9 @@ type NodeLifecyclePayload struct {
 	NodeName string `json:"node_name"`
 	IP       string `json:"ip"`
 	Action   string `json:"action"` // "created", "updated", "deleted"
+	// Planned marks a node taken out of service on purpose (disabled or in
+	// maintenance), so pending offline alerts for it stop.
+	Planned bool `json:"planned,omitempty"`
 }
 
 // UserRegisteredPayload contains data for user registration events

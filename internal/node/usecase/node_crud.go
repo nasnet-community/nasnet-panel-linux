@@ -647,6 +647,7 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 				NodeName: node.Name,
 				IP:       node.IP,
 				Action:   "updated",
+				Planned:  !node.IsActive || node.MaintenanceMode,
 			},
 		})
 	}

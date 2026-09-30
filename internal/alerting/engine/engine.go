@@ -159,6 +159,12 @@ func (e *Engine) handleEvent(ctx context.Context, ev events.Event) {
 			e.rememberMeta(p.NodeID, p.NodeName, p.IP)
 			e.resolveCrashLoop(ctx, p)
 		}
+	case events.EventNodeDeleted, events.EventNodeUpdated:
+		// A node that is gone or taken out of service on purpose is not an
+		// outage: stop re-alerting on the tick.
+		if p, ok := ev.Payload.(events.NodeLifecyclePayload); ok && (ev.Type == events.EventNodeDeleted || p.Planned) {
+			e.forgetOfflineSince(p.NodeID)
+		}
 	case events.EventNodeStatsUpdated:
 		if p, ok := ev.Payload.(events.NodeStatsPayload); ok {
 			e.rememberMeta(p.NodeID, p.NodeName, "")

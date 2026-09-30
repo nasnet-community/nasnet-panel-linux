@@ -16,6 +16,7 @@ func (e *Engine) evalNodeOffline(ctx context.Context, p events.NodeStatusPayload
 	// node's history but are not faults — alerting on them trains people to
 	// ignore the alert.
 	if p.Planned {
+		e.forgetOfflineSince(p.NodeID)
 		return
 	}
 	e.rememberOfflineSince(p)
