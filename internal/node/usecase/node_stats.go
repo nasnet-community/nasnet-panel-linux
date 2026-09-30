@@ -423,6 +423,14 @@ type agentVersionCacheEntry struct {
 // the agent's GetVersion RPC only when the cache is stale or forceRefresh
 // is set (reconnect path). On a failed refresh the stale pair is served —
 // a wrong-for-minutes version beats an empty one in the panel.
+// forgetAgentVersion drops a node's cached versions so the next sweep asks
+// the agent again (after an agent update).
+func (u *nodeUsecase) forgetAgentVersion(nodeID uint) {
+	u.versionCacheMu.Lock()
+	delete(u.versionCache, nodeID)
+	u.versionCacheMu.Unlock()
+}
+
 func (u *nodeUsecase) agentVersions(ctx context.Context, client agent.NodeClient, nodeID uint, forceRefresh bool) (string, string) {
 	u.versionCacheMu.Lock()
 	entry, ok := u.versionCache[nodeID]

@@ -1070,6 +1070,9 @@ func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binary
 	if !result.Success {
 		return fmt.Errorf("agent update failed: %s", result.Message)
 	}
+	// The restart is too quick to mark the node offline, so without this the
+	// panel keeps showing the old version until the cache expires.
+	u.forgetAgentVersion(nodeID)
 
 	log.WithFields(map[string]interface{}{
 		"node_id":     nodeID,
@@ -1225,6 +1228,7 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 	if err := client.UpdateXrayBinary(ctx, version, true, downloadURL, downloadToken, checksum); err != nil {
 		return fmt.Errorf("failed to update xray version: %w", err)
 	}
+	u.forgetAgentVersion(nodeID)
 
 	reportXrayUpdate(ctx, "verifying", fmt.Sprintf("Waiting for Xray to report %s.", version))
 	if err := verifyXrayUpdate(ctx, client, version); err != nil {
