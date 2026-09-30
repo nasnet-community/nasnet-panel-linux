@@ -70,8 +70,8 @@ type Core struct {
 
 	// dial opens the egress connection for a direct-tcpip channel.
 	dial DialFunc
-	// check refuses a destination before it's handed to Xray.
-	check func(ctx context.Context, address string) error
+	// target resolves and checks a destination before it's handed to Xray.
+	target func(ctx context.Context, address string) (string, error)
 }
 
 // DialFunc opens an egress connection.
@@ -86,10 +86,11 @@ func WithDialer(dial DialFunc) Option {
 	return func(c *Core) { c.dial = dial }
 }
 
-// WithCheck sets the block-list check for destinations that leave through
-// Xray, which resolves them itself (the core.Dialer's Check in production).
-func WithCheck(check func(ctx context.Context, address string) error) Option {
-	return func(c *Core) { c.check = check }
+// WithTarget sets how a destination leaving through Xray is resolved and
+// checked: the core.Dialer's Target in production, so Xray gets the checked
+// IP literal rather than a name to resolve again.
+func WithTarget(target func(ctx context.Context, address string) (string, error)) Option {
+	return func(c *Core) { c.target = target }
 }
 
 // egressTimeout bounds resolving and dialing one direct-tcpip destination.
@@ -180,8 +181,11 @@ func (c *Core) Apply(ctx context.Context, d core.DesiredState) error {
 		go c.acceptLoop(ib)
 	} else {
 		// Hot-swap config on the running listener; in-flight handlers keep the
-		// snapshot they already loaded.
-		ib.cfg.Store(newCfg)
+		// snapshot they already loaded, so a session opened on the other
+		// egress path is dropped and reconnects on this one.
+		if old := ib.cfg.Swap(newCfg); old != nil && old.socksAddr != newCfg.socksAddr {
+			c.closeSessionsLocked(ib.id)
+		}
 	}
 
 	ib.accounts.replace(d.Users)
@@ -219,7 +223,11 @@ func (c *Core) teardownLocked(id string) {
 	// A handshake still in flight must not authenticate against it.
 	ib.accounts.replace(nil)
 	delete(c.inbounds, id)
-	// Kill live sessions belonging to this inbound.
+	c.closeSessionsLocked(id)
+}
+
+// closeSessionsLocked kills the live sessions of inbound id.
+func (c *Core) closeSessionsLocked(id string) {
 	for _, list := range c.sessions.sessionsByEmail() {
 		for _, s := range list {
 			if s.inbound == id && s.closeFn != nil {
@@ -337,12 +345,14 @@ func (c *Core) dialEgress(ctx context.Context, icfg *ibConfig, dest string) (net
 	if icfg.socksAddr == "" {
 		return c.dial(ctx, "tcp", dest)
 	}
-	// Xray resolves names itself, so refuse here whatever the direct path
-	// would: "localhost" reaches Xray's own API otherwise.
-	if c.check != nil {
-		if err := c.check(ctx, dest); err != nil {
-			return nil, err
-		}
+	// Hand Xray the address checked here, not the name: it would resolve
+	// that again, and "localhost" or a rebinding name reaches loopback.
+	if c.target == nil {
+		return nil, fmt.Errorf("ssh core: no egress check for Xray")
+	}
+	dest, err := c.target(ctx, dest)
+	if err != nil {
+		return nil, err
 	}
 	d, err := proxy.SOCKS5("tcp", icfg.socksAddr, nil, &net.Dialer{Timeout: 10 * time.Second})
 	if err != nil {

@@ -42,53 +42,33 @@ func NewDialer(mark uint32, resolve func(ctx context.Context, host string) (neti
 
 // DialContext dials address after resolving it and checking the block list.
 func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(address)
+	target, err := d.Target(ctx, address)
 	if err != nil {
 		return nil, err
-	}
-	ip, err := d.lookup(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	if d.blocked(ip) {
-		return nil, fmt.Errorf("%w: %s", ErrDestinationBlocked, ip)
 	}
 	nd := &net.Dialer{Timeout: egressDialTimeout}
 	if d.mark != 0 {
 		nd = httpclient.MarkedDialer(d.mark, egressDialTimeout)
 	}
-	return nd.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+	return nd.DialContext(ctx, network, target)
 }
 
-// Check refuses an address that is, or whose name resolves to anything, on
-// the block list, for a destination another dialer resolves again itself
-// (Xray): a name with any blocked address might be dialed at that one.
-func (d *Dialer) Check(ctx context.Context, address string) error {
-	host, _, err := net.SplitHostPort(address)
+// Target resolves address and checks it the way DialContext does, and
+// returns the IP literal to dial. For a destination another dialer opens
+// (Xray): handed the name, it would resolve it again, maybe to "localhost".
+func (d *Dialer) Target(ctx context.Context, address string) (string, error) {
+	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return err
+		return "", err
 	}
-	var ips []netip.Addr
-	switch ip, err := netip.ParseAddr(host); {
-	case err == nil:
-		ips = []netip.Addr{ip}
-	case d.resolve != nil:
-		ip, err := d.resolve(ctx, host)
-		if err != nil {
-			return err
-		}
-		ips = []netip.Addr{ip}
-	default:
-		if ips, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host); err != nil {
-			return err
-		}
+	ip, err := d.lookup(ctx, host)
+	if err != nil {
+		return "", err
 	}
-	for _, ip := range ips {
-		if d.blocked(ip.Unmap()) {
-			return fmt.Errorf("%w: %s is %s", ErrDestinationBlocked, host, ip.Unmap())
-		}
+	if d.blocked(ip) {
+		return "", fmt.Errorf("%w: %s", ErrDestinationBlocked, ip)
 	}
-	return nil
+	return net.JoinHostPort(ip.String(), port), nil
 }
 
 // Lookup resolves host the way DialContext does: an address literal as is,

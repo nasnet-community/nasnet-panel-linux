@@ -350,7 +350,8 @@ func (b *FullConfigBuilder) buildInbounds() []map[string]interface{} {
 
 	// Loopback only, and without auth: the tunnel cores identify nobody to
 	// Xray (they count their own users' traffic), and a tunnel user can't
-	// reach loopback through their tunnel.
+	// reach loopback through their tunnel. The SSH core sends IP literals it
+	// has checked, so sniffing puts the domain back for routing only.
 	for _, t := range b.tunnelSocks {
 		inbounds = append(inbounds, map[string]interface{}{
 			"tag":      t.Tag(),
@@ -360,6 +361,11 @@ func (b *FullConfigBuilder) buildInbounds() []map[string]interface{} {
 			"settings": map[string]interface{}{
 				"auth": "noauth",
 				"udp":  false,
+			},
+			"sniffing": map[string]interface{}{
+				"enabled":      true,
+				"destOverride": []string{"http", "tls"},
+				"routeOnly":    true,
 			},
 		})
 	}
