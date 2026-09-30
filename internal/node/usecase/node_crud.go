@@ -132,6 +132,11 @@ func (u *nodeUsecase) GetNode(ctx context.Context, id uint) (*domain.Node, error
 	return u.nodeRepo.GetNode(ctx, id)
 }
 func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error {
+	// Decided before any read: a failed fetch under force must not let the
+	// cascade reach the built-in node's inbounds and routing.
+	if id != 0 && id == u.LocalNodeID() {
+		return ErrLocalNode
+	}
 	if u.pools != nil {
 		var count int64
 		if err := u.pools.db.WithContext(ctx).Model(&domain.OutboundPool{}).Where("node_id = ?", id).Count(&count).Error; err != nil {
@@ -302,6 +307,16 @@ func (u *nodeUsecase) cleanupNodeCaches(nodeID uint) {
 	u.pushStateMu.Lock()
 	delete(u.pushState, nodeID)
 	u.pushStateMu.Unlock()
+
+	u.credCacheMu.Lock()
+	delete(u.credCache, nodeID)
+	u.credCacheMu.Unlock()
+
+	// The pool has no janitor: a deleted node's conn would keep redialling
+	// the uninstalled box until shutdown.
+	if u.clientPool != nil {
+		u.clientPool.Evict(nodeID)
+	}
 
 	if u.statsCache != nil {
 		u.statsCache.Invalidate(nodeID)
