@@ -44,6 +44,15 @@ func (u *adminUsecase) CleanupDatabase(ctx context.Context) (*CleanupResult, err
 			}
 		}
 	}
+	// Tunnel users too, so the nodes drop them now rather than on some later
+	// reconcile.
+	if u.subUC != nil {
+		for _, sub := range activeSubs {
+			if err := u.subUC.DeleteCoreTunnels(ctx, sub.ID); err != nil {
+				log.WithField("sub_id", sub.ID).WithError(err).Warn("CleanupDatabase: failed to remove tunnels")
+			}
+		}
+	}
 
 	// Phase 2: Bulk DB deletion in FK-safe order
 	execAndCount := func(sql string, args ...interface{}) int64 {
@@ -58,6 +67,9 @@ func (u *adminUsecase) CleanupDatabase(ctx context.Context) (*CleanupResult, err
 	// Delete orphan accounts (any remaining after phase 1)
 	orphanAccounts := execAndCount("DELETE FROM accounts")
 	result.AccountsRemoved += orphanAccounts
+
+	// Tunnel users of subscriptions not reached above (inactive ones).
+	execAndCount("DELETE FROM core_users WHERE subscription_id IS NOT NULL")
 
 	// Delete subscriptions
 	result.SubscriptionsDeleted = execAndCount("DELETE FROM subscriptions")
