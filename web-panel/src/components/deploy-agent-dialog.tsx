@@ -119,13 +119,13 @@ export function DeployAgentDialog({ nodeId, open, onOpenChange }: DeployAgentDia
                 </DialogHeader>
 
                 {loading && !info ? (
-                    <div className="space-y-3 py-2">
+                    <div className="min-w-0 space-y-3 py-2">
                         <Skeleton className="h-4 w-1/2" />
                         <Skeleton className="h-10 w-full" />
                         <Skeleton className="h-4 w-2/3" />
                     </div>
                 ) : info && (
-                    <div className="space-y-3 py-2">
+                    <div className="min-w-0 space-y-3 py-2">
                         {pull && (
                             <section className="space-y-2.5 rounded-lg border p-3.5">
                                 <div className="flex items-center justify-between gap-3">
