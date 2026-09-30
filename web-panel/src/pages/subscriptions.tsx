@@ -986,6 +986,7 @@ export default function SubscriptionsPage() {
                                                 clearSearch()
                                                 setMobileSearchExpanded(false)
                                             }}
+                                            aria-label="Close search"
                                         >
                                             <HiOutlineX className="w-4 h-4" />
                                         </Button>

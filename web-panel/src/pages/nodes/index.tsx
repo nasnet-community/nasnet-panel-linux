@@ -565,11 +565,11 @@ export default function NodesPage() {
                 <div className="flex items-center gap-1">
                     <Button variant="ghost" size="icon" className="h-9 w-9"
                         onClick={() => handleRefresh()}
-                        disabled={isRefetching}>
+                        disabled={isRefetching} aria-label="Refresh">
                         <HiOutlineRefresh className={cn("w-4.5 h-4.5", isRefetching && "animate-spin")} />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-9 w-9"
-                        onClick={openAddDialog}>
+                        onClick={openAddDialog} aria-label="Add node">
                         <HiOutlinePlus className="w-4.5 h-4.5" />
                     </Button>
                 </div>
