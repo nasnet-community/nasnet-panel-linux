@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/csv"
 	"fmt"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/httputil"
 	"net/http"
 	"strconv"
 	"time"
@@ -102,8 +103,9 @@ func userExportRow(u *adminDomain.UserListItem) []string {
 		lastSeen = *u.LastActiveAt
 	}
 	return []string{
-		strconv.FormatUint(uint64(u.ID), 10), strconv.FormatInt(u.TelegramID, 10), u.Username, u.FirstName, u.LastName,
-		telegram, string(u.Group), title, status, end, used, limit, lastSeen, exportGB(u.DataUsed),
+		strconv.FormatUint(uint64(u.ID), 10), strconv.FormatInt(u.TelegramID, 10),
+		httputil.CSVText(u.Username), httputil.CSVText(u.FirstName), httputil.CSVText(u.LastName),
+		telegram, string(u.Group), httputil.CSVText(title), status, end, used, limit, lastSeen, exportGB(u.DataUsed),
 		strconv.FormatBool(u.IsAdmin), strconv.FormatBool(u.IsBanned), u.CreatedAt,
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/httputil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -80,9 +81,9 @@ func (h *Handler) exportUsers(ctx context.Context) (string, error) {
 		if err := w.Write([]string{
 			strconv.FormatUint(uint64(u.ID), 10),
 			strconv.FormatInt(u.TelegramID, 10),
-			u.Username,
-			u.FirstName,
-			u.LastName,
+			httputil.CSVText(u.Username),
+			httputil.CSVText(u.FirstName),
+			httputil.CSVText(u.LastName),
 			strconv.FormatBool(u.IsAdmin),
 			strconv.FormatBool(u.IsBanned),
 			strconv.Itoa(u.ActiveSubscriptions),
@@ -132,12 +133,12 @@ func (h *Handler) exportSubscriptions(ctx context.Context) (string, error) {
 			strconv.FormatUint(uint64(s.GetUserID()), 10),
 			string(s.Status),
 			string(s.ProductType),
-			s.Label,
+			httputil.CSVText(s.Label),
 			startDate,
 			endDate,
 			strconv.FormatInt(s.DataUsed, 10),
 			strconv.FormatInt(s.DataLimit, 10),
-			s.ConfigEmail,
+			httputil.CSVText(s.ConfigEmail),
 		}); err != nil {
 			return "", err
 		}
