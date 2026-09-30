@@ -197,6 +197,8 @@ func (c *Core) teardownLocked(id string) {
 	}
 	close(ib.quit)
 	_ = ib.ln.Close()
+	// A handshake still in flight must not authenticate against it.
+	ib.accounts.replace(nil)
 	delete(c.inbounds, id)
 	// Kill live sessions belonging to this inbound.
 	for _, list := range c.sessions.sessionsByEmail() {
@@ -208,11 +210,19 @@ func (c *Core) teardownLocked(id string) {
 	}
 }
 
-// killDisabledLocked closes sessions on ib whose account is no longer enabled.
+// staleLocked reports whether s no longer matches ib's pushed users: its
+// account is gone, disabled, or has a new secret or email.
+func (c *Core) staleLocked(ib *inbound, s *sessInfo) bool {
+	a, ok := ib.accounts.lookup(s.username)
+	return !ok || !a.enabled || a.password != s.secret || a.email != s.email || !ib.enabledEmails[s.email]
+}
+
+// killDisabledLocked closes sessions on ib whose account is no longer
+// enabled, or whose credentials changed.
 func (c *Core) killDisabledLocked(ib *inbound) {
 	for _, list := range c.sessions.sessionsByEmail() {
 		for _, s := range list {
-			if s.inbound == ib.id && !ib.enabledEmails[s.email] && s.closeFn != nil {
+			if s.inbound == ib.id && c.staleLocked(ib, s) && s.closeFn != nil {
 				s.closeFn()
 			}
 		}
@@ -238,6 +248,7 @@ func (c *Core) handleConn(ib *inbound, nConn net.Conn) {
 	// even if Apply hot-swaps a new snapshot mid-connection.
 	icfg := ib.cfg.Load()
 
+	var login account
 	cfg := &gossh.ServerConfig{
 		MaxAuthTries: 6,
 		PasswordCallback: func(cm gossh.ConnMetadata, pw []byte) (*gossh.Permissions, error) {
@@ -245,10 +256,8 @@ func (c *Core) handleConn(ib *inbound, nConn net.Conn) {
 			if !ok {
 				return nil, fmt.Errorf("authentication failed")
 			}
-			return &gossh.Permissions{Extensions: map[string]string{
-				"email":  a.email,
-				"klimit": strconv.Itoa(a.kLimit),
-			}}, nil
+			login = a
+			return &gossh.Permissions{}, nil
 		},
 	}
 	cfg.AddHostKey(icfg.signer)
@@ -261,12 +270,21 @@ func (c *Core) handleConn(ib *inbound, nConn net.Conn) {
 	}
 	_ = nConn.SetDeadline(time.Time{})
 
-	email := sc.Permissions.Extensions["email"]
-	kLimit, _ := strconv.Atoi(sc.Permissions.Extensions["klimit"])
+	email := login.email
 	srcIP := hostOnly(sc.RemoteAddr().String())
 
-	sess, evicted, ok := c.sessions.admit(email, srcIP, ib.id, kLimit, icfg.strategy, func() { _ = sc.Close() })
+	sess, evicted, ok := c.sessions.admit(login, srcIP, ib.id, icfg.strategy, func() { _ = sc.Close() })
 	if !ok {
+		_ = sc.Close()
+		return
+	}
+	// A push can land between the password check and admit: its sweep ran
+	// before this session existed, so check again against the state now.
+	c.mu.Lock()
+	stale := c.inbounds[ib.id] != ib || c.staleLocked(ib, sess)
+	c.mu.Unlock()
+	if stale {
+		c.sessions.unregister(email, sess.id)
 		_ = sc.Close()
 		return
 	}

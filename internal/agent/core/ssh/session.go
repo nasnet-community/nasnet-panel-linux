@@ -20,13 +20,17 @@ type acct struct {
 }
 
 type sessInfo struct {
-	id      uint64
-	email   string
-	srcIP   string
-	inbound string // core_inbound id this session belongs to
-	since   time.Time
-	account *acct  // shared per-email byte counters (== registry.counters[email])
-	closeFn func() // force-close the underlying connection (eviction / kill)
+	id    uint64
+	email string
+	// username and secret are the credentials the session logged in with,
+	// so a push that changes or removes them can close it.
+	username string
+	secret   string
+	srcIP    string
+	inbound  string // core_inbound id this session belongs to
+	since    time.Time
+	account  *acct  // shared per-email byte counters (== registry.counters[email])
+	closeFn  func() // force-close the underlying connection (eviction / kill)
 }
 
 // sessionRegistry tracks live SSH sessions per account, enforces the
@@ -80,7 +84,8 @@ func oldestSession(sessions map[uint64]*sessInfo) *sessInfo {
 // must close them), and whether the login is admitted. A connection from an IP
 // already present is treated as the same device and always admitted without
 // counting against the limit.
-func (r *sessionRegistry) admit(email, srcIP, inboundID string, kLimit int, strategy string, closeFn func()) (*sessInfo, []*sessInfo, bool) {
+func (r *sessionRegistry) admit(login account, srcIP, inboundID string, strategy string, closeFn func()) (*sessInfo, []*sessInfo, bool) {
+	email, kLimit := login.email, login.kLimit
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -93,9 +98,21 @@ func (r *sessionRegistry) admit(email, srcIP, inboundID string, kLimit int, stra
 		if strategy == strategyReject {
 			return nil, nil, false
 		}
-		if o := oldestSession(sessions); o != nil {
-			evict = append(evict, o)
-			delete(r.live[o.email], o.id) // free the slot for the new device
+		// A device is a source IP: evict whole devices, oldest first, until
+		// the new one fits. Evicting one session would leave its IP's other
+		// sessions counting against the limit.
+		for len(ips) >= k {
+			o := oldestSession(sessions)
+			if o == nil {
+				break
+			}
+			for id, s := range sessions {
+				if s.srcIP == o.srcIP {
+					evict = append(evict, s)
+					delete(sessions, id)
+				}
+			}
+			ips = distinctIPs(sessions)
 		}
 	}
 
@@ -104,11 +121,13 @@ func (r *sessionRegistry) admit(email, srcIP, inboundID string, kLimit int, stra
 		r.counters[email] = &acct{}
 	}
 	s := &sessInfo{
-		id:      r.nextID,
-		email:   email,
-		srcIP:   srcIP,
-		inbound: inboundID,
-		since:   time.Now(),
+		id:       r.nextID,
+		email:    email,
+		username: login.username,
+		secret:   login.password,
+		srcIP:    srcIP,
+		inbound:  inboundID,
+		since:    time.Now(),
 		// Cache the shared per-email counter so the byte-copy hot path
 		// (Core.copyMetered) tallies with a lockless atomic add instead of
 		// taking the registry mutex on every 32 KiB chunk.
