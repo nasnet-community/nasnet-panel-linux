@@ -36,7 +36,7 @@ func oneOf(v string, allowed ...string) string {
 }
 
 // joinedRange turns the Joined filter into [from, to) bounds. Custom dates are
-// whole UTC days and "to" includes its own day.
+// whole days on this box's clock and "to" includes its own day.
 func joinedRange(preset, from, to string, now time.Time) (*time.Time, *time.Time) {
 	switch preset {
 	case "7d", "30d", "90d":
@@ -45,10 +45,11 @@ func joinedRange(preset, from, to string, now time.Time) (*time.Time, *time.Time
 		return &start, nil
 	case "custom":
 		var start, end *time.Time
-		if t, err := time.Parse("2006-01-02", from); err == nil {
+		// The operator picks calendar dates on this box's clock.
+		if t, err := time.ParseInLocation("2006-01-02", from, time.Local); err == nil {
 			start = &t
 		}
-		if t, err := time.Parse("2006-01-02", to); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02", to, time.Local); err == nil {
 			next := t.AddDate(0, 0, 1)
 			end = &next
 		}
