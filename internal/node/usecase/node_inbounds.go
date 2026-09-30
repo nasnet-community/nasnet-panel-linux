@@ -12,6 +12,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
 )
 
 // transports xray still accepts for an inbound (h2/http and quic are gone).
@@ -223,6 +224,9 @@ func (u *nodeUsecase) ensureNoTunnelPort(ctx context.Context, inbound *domain.In
 // ensureUniqueTag rejects a tag already used by another inbound on the node;
 // duplicate tags stop xray from starting.
 func (u *nodeUsecase) ensureUniqueTag(ctx context.Context, inbound *domain.Inbound) error {
+	if strings.HasPrefix(inbound.Tag, xray.TunnelSocksTagPrefix) {
+		return fmt.Errorf("inbound tags starting with %q are kept for tunnels", xray.TunnelSocksTagPrefix)
+	}
 	existing, err := u.nodeRepo.ListInboundsByNode(ctx, inbound.NodeID)
 	if err != nil {
 		return fmt.Errorf("failed to check inbound tags: %w", err)
