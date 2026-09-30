@@ -34,15 +34,20 @@ func AllCoreProtocols() []CoreProtocol {
 	return out
 }
 
-// EgressMode selects how a core's traffic leaves the node. Direct is the only
-// mode: the core dials out through the node's filtered egress dialer (the
-// foreign pool in router mode).
+// EgressMode selects how a core's traffic leaves the node.
 type EgressMode string
 
-const EgressDirect EgressMode = "direct"
+const (
+	// EgressDirect: the core dials out through the node's filtered egress
+	// dialer (the foreign pool in router mode).
+	EgressDirect EgressMode = "direct"
+	// EgressXray: the core dials out through a loopback SOCKS inbound in the
+	// node's Xray config, so Xray's routing rules and outbounds apply.
+	EgressXray EgressMode = "xray"
+)
 
 // IsValid reports whether e is a known egress mode.
-func (e EgressMode) IsValid() bool { return e == EgressDirect }
+func (e EgressMode) IsValid() bool { return e == EgressDirect || e == EgressXray }
 
 // CoreInbound is one protocol listener on one node.
 type CoreInbound struct {

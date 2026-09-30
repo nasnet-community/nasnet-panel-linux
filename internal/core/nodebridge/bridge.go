@@ -91,6 +91,10 @@ func BuildCoreStatePayloads(ctx context.Context, repo repository.CoreRepository,
 			}
 			pbUsers = append(pbUsers, pu)
 		}
+		settings, err := withSocksAddr(in)
+		if err != nil {
+			return nil, err
+		}
 		payloads = append(payloads, &pb.CoreStatePayload{
 			CoreType:   string(in.Protocol),
 			InboundId:  strconv.FormatUint(uint64(in.ID), 10),
@@ -98,7 +102,7 @@ func BuildCoreStatePayloads(ctx context.Context, repo repository.CoreRepository,
 			Listen:     in.Listen,
 			Port:       int32(in.Port),
 			EgressMode: string(in.EgressMode),
-			Settings:   in.Settings,
+			Settings:   settings,
 			Users:      pbUsers,
 		})
 	}

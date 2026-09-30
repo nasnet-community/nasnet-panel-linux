@@ -291,6 +291,7 @@ type NodeUsecase interface {
 	SetIngressUplinkSource(fn func() string)
 	SetInboundsChangedHook(fn func(context.Context) error)
 	SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error))
+	SetTunnelSocksLister(fn func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error))
 	SetCoreReconcileFn(fn func(ctx context.Context, client agent.NodeClient, nodeID uint) error)
 	SetCoreUsageProvider(s CoreUsageProvider)
 
@@ -519,6 +520,9 @@ type nodeUsecase struct {
 	// corePorts lists the ports a node's tunnel inbounds hold, so an xray
 	// inbound cannot take one (SetCorePortLister); nil => no tunnels.
 	corePorts func(ctx context.Context, nodeID uint) ([]int, error)
+	// tunnelSocks lists the SOCKS inbounds a node's tunnels with egress=xray
+	// leave through, added to its Xray config (SetTunnelSocksLister).
+	tunnelSocks func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error)
 	// coreUsage attributes tunnel bytes to each subscription's tunnels
 	// (SetCoreUsageProvider); nil => no per-tunnel counters.
 	coreUsage CoreUsageProvider

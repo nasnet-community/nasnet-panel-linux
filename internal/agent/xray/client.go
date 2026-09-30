@@ -282,6 +282,14 @@ type XrayStats struct {
 	TotalDownlink    int64
 }
 
+// countsInTotal reports whether an inbound's bytes belong in the node total.
+// The api inbound is loopback control traffic, and a tunnel's SOCKS inbound
+// (tag prefix pkg/xray.TunnelSocksTagPrefix) carries bytes its tunnel core
+// already counts.
+func countsInTotal(tag string) bool {
+	return tag != "api" && !strings.HasPrefix(tag, "tunnel-socks-")
+}
+
 // QueryStats queries traffic statistics matching a pattern
 func (c *LocalClient) QueryStats(ctx context.Context, pattern string, reset bool) (*XrayStats, error) {
 	conn, err := c.dial(ctx)
@@ -333,13 +341,12 @@ func (c *LocalClient) QueryStats(ctx context.Context, pattern string, reset bool
 		case "inbound":
 			if direction == "uplink" {
 				stats.InboundUplink[name] = stat.Value
-				// Exclude api tag (loopback control traffic).
-				if name != "api" {
+				if countsInTotal(name) {
 					stats.TotalUplink += stat.Value
 				}
 			} else if direction == "downlink" {
 				stats.InboundDownlink[name] = stat.Value
-				if name != "api" {
+				if countsInTotal(name) {
 					stats.TotalDownlink += stat.Value
 				}
 			}

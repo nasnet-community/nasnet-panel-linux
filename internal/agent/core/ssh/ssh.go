@@ -15,12 +15,14 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/core"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/traffic"
 	gossh "golang.org/x/crypto/ssh"
+	"golang.org/x/net/proxy"
 )
 
 // settings is the per-inbound JSON blob (core_inbounds.settings) for SSH.
 type settings struct {
-	HostKeyPEM string `json:"host_key"` // PEM-encoded ed25519 private key
-	Strategy   string `json:"strategy"` // "accept" (default) | "reject"
+	HostKeyPEM string `json:"host_key"`   // PEM-encoded ed25519 private key
+	Strategy   string `json:"strategy"`   // "accept" (default) | "reject"
+	SocksAddr  string `json:"socks_addr"` // loopback Xray SOCKS inbound for egress=xray
 }
 
 // ibConfig is the hot-reloadable part of an inbound: the fields Apply rewrites
@@ -32,6 +34,9 @@ type settings struct {
 type ibConfig struct {
 	signer   gossh.Signer
 	strategy string
+	// socksAddr is Xray's loopback SOCKS inbound the tunnel leaves through
+	// (egress=xray); empty => the core's dialer.
+	socksAddr string
 }
 
 // inbound is one bound SSH listener.
@@ -65,6 +70,8 @@ type Core struct {
 
 	// dial opens the egress connection for a direct-tcpip channel.
 	dial DialFunc
+	// check refuses a destination before it's handed to Xray.
+	check func(ctx context.Context, address string) error
 }
 
 // DialFunc opens an egress connection.
@@ -77,6 +84,12 @@ type Option func(*Core)
 // production). Without it the core dials directly.
 func WithDialer(dial DialFunc) Option {
 	return func(c *Core) { c.dial = dial }
+}
+
+// WithCheck sets the block-list check for destinations that leave through
+// Xray, which resolves them itself (the core.Dialer's Check in production).
+func WithCheck(check func(ctx context.Context, address string) error) Option {
+	return func(c *Core) { c.check = check }
 }
 
 // egressTimeout bounds resolving and dialing one direct-tcpip destination.
@@ -134,6 +147,12 @@ func (c *Core) Apply(ctx context.Context, d core.DesiredState) error {
 	newCfg := &ibConfig{
 		signer:   signer,
 		strategy: strategy,
+	}
+	if d.EgressMode == core.EgressXray {
+		if st.SocksAddr == "" {
+			return fmt.Errorf("ssh core: egress=xray needs socks_addr")
+		}
+		newCfg.socksAddr = st.SocksAddr
 	}
 
 	ib := c.inbounds[d.InboundID]
@@ -308,8 +327,31 @@ func (c *Core) handleConn(ib *inbound, nConn net.Conn) {
 			_ = nc.Reject(gossh.Prohibited, "only direct-tcpip is permitted")
 			continue
 		}
-		go c.handleDirectTCPIP(ac, nc)
+		go c.handleDirectTCPIP(icfg, ac, nc)
 	}
+}
+
+// dialEgress opens dest: through Xray's loopback SOCKS inbound when the
+// tunnel leaves through Xray, else on the core's dialer.
+func (c *Core) dialEgress(ctx context.Context, icfg *ibConfig, dest string) (net.Conn, error) {
+	if icfg.socksAddr == "" {
+		return c.dial(ctx, "tcp", dest)
+	}
+	// Xray resolves names itself, so refuse here whatever the direct path
+	// would: "localhost" reaches Xray's own API otherwise.
+	if c.check != nil {
+		if err := c.check(ctx, dest); err != nil {
+			return nil, err
+		}
+	}
+	d, err := proxy.SOCKS5("tcp", icfg.socksAddr, nil, &net.Dialer{Timeout: 10 * time.Second})
+	if err != nil {
+		return nil, err
+	}
+	if cd, ok := d.(proxy.ContextDialer); ok {
+		return cd.DialContext(ctx, "tcp", dest)
+	}
+	return d.Dial("tcp", dest)
 }
 
 type directTCPIPMsg struct {
@@ -319,7 +361,7 @@ type directTCPIPMsg struct {
 	OriginatorPort uint32
 }
 
-func (c *Core) handleDirectTCPIP(ac *acct, nc gossh.NewChannel) {
+func (c *Core) handleDirectTCPIP(icfg *ibConfig, ac *acct, nc gossh.NewChannel) {
 	var msg directTCPIPMsg
 	if err := gossh.Unmarshal(nc.ExtraData(), &msg); err != nil {
 		_ = nc.Reject(gossh.ConnectionFailed, "bad direct-tcpip payload")
@@ -327,7 +369,7 @@ func (c *Core) handleDirectTCPIP(ac *acct, nc gossh.NewChannel) {
 	}
 	dest := net.JoinHostPort(msg.HostToConnect, strconv.Itoa(int(msg.PortToConnect)))
 	ctx, cancel := context.WithTimeout(context.Background(), egressTimeout)
-	remote, err := c.dial(ctx, "tcp", dest)
+	remote, err := c.dialEgress(ctx, icfg, dest)
 	cancel()
 	if err != nil {
 		_ = nc.Reject(gossh.ConnectionFailed, err.Error())

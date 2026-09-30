@@ -63,8 +63,9 @@ type RenderInput struct {
 	InboundID string
 	Listen    string // bind address; "" or 0.0.0.0 => all interfaces
 	Port      int    // public listen port
-	// RelayAddr, when set, is the loopback SOCKS5 relay telemt reaches Telegram
-	// through ([[upstreams]] socks5); empty => direct.
+	// RelayAddr, when set, is the loopback SOCKS5 proxy telemt reaches Telegram
+	// through ([[upstreams]] socks5): the marked relay, or Xray's inbound
+	// (no user); empty => direct.
 	RelayAddr string
 	RelayUser string
 	RelayPass string
@@ -120,13 +121,14 @@ type RenderResult struct {
 func (r RenderResult) Config() string { return r.Core + r.Access }
 
 // Render builds the split config.toml for one telemt inbound. It returns an
-// error when the requested settings are internally inconsistent: the relay is
-// incompatible with middle-proxy / adtag, because telemt's middle-proxy sockets
-// do not go through [[upstreams]] and would leave unmarked.
+// error when the requested settings are internally inconsistent: a SOCKS
+// upstream is incompatible with middle-proxy / adtag, because telemt's
+// middle-proxy sockets do not go through [[upstreams]] and would leave
+// unmarked, or around Xray.
 func Render(in RenderInput) (RenderResult, error) {
 	s := in.Settings
 	if in.RelayAddr != "" && (s.MiddleProxy || s.AdtagDefault != "") {
-		return RenderResult{}, fmt.Errorf("mtproto: the Telegram middle proxy and ad tag are not available in router mode")
+		return RenderResult{}, fmt.Errorf("mtproto: the Telegram middle proxy and ad tag need direct egress outside router mode")
 	}
 	useMiddleProxy := s.MiddleProxy
 	// An ad tag only reaches Telegram through the middle proxy; emitting one in
@@ -187,8 +189,10 @@ func Render(in RenderInput) (RenderResult, error) {
 	} else {
 		w("type = \"socks5\"\n")
 		w("address = %s\n", tomlString(in.RelayAddr))
-		w("username = %s\n", tomlString(in.RelayUser))
-		w("password = %s\n", tomlString(in.RelayPass))
+		if in.RelayUser != "" {
+			w("username = %s\n", tomlString(in.RelayUser))
+			w("password = %s\n", tomlString(in.RelayPass))
+		}
 	}
 
 	// --- Access (hot-reloadable) ---

@@ -166,7 +166,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 	// Register the tunnel cores. Registration is cheap: no listener or daemon
 	// until the hub pushes an ApplyCoreState with a desired inbound.
 	egress := agentcore.NewDialer(cfg.Cores.EgressMark, cfg.Cores.Resolve)
-	if err := s.coreRegistry.Register(sshcore.New(sshcore.WithDialer(egress.DialContext))); err != nil {
+	if err := s.coreRegistry.Register(sshcore.New(sshcore.WithDialer(egress.DialContext), sshcore.WithCheck(egress.Check))); err != nil {
 		return nil, fmt.Errorf("register ssh core: %w", err)
 	}
 	// MTProto (telemt): a relay process per inbound. When tunnel egress is

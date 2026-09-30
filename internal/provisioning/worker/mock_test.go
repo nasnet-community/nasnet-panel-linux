@@ -422,9 +422,11 @@ func (m *mockNodeUsecase) SetWGPeerSource(nodeUC.WGPeerSource)      {}
 func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
 func (m *mockNodeUsecase) SetRouterWANSource(func(context.Context) []xray.RouterWAN) {
 }
-func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)                                   {}
-func (m *mockNodeUsecase) SetInboundsChangedHook(func(context.Context) error)                     {}
-func (m *mockNodeUsecase) SetCorePortLister(func(context.Context, uint) ([]int, error))           {}
+func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)                         {}
+func (m *mockNodeUsecase) SetInboundsChangedHook(func(context.Context) error)           {}
+func (m *mockNodeUsecase) SetCorePortLister(func(context.Context, uint) ([]int, error)) {}
+func (m *mockNodeUsecase) SetTunnelSocksLister(func(context.Context, uint) ([]xray.TunnelSocks, error)) {
+}
 func (m *mockNodeUsecase) SetCoreReconcileFn(func(context.Context, agent.NodeClient, uint) error) {}
 func (m *mockNodeUsecase) SetCoreUsageProvider(nodeUC.CoreUsageProvider)                          {}
 func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)                                  {}

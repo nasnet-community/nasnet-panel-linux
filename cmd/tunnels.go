@@ -81,6 +81,11 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 		coreUsecase.WithUserPolicyResolver(func(ctx context.Context, subIDs []uint) (map[uint]nodebridge.UserPolicy, error) {
 			return tunnelPolicies(ctx, d.Subs, subIDs), nil
 		}),
+		// Tunnels with egress=xray leave through a SOCKS inbound in the node's
+		// Xray config; adding or removing one pushes that config.
+		coreUsecase.WithXrayConfigPusher(func(ctx context.Context, nodeID uint) error {
+			return d.NodeUC.PushFullConfig(ctx, nodeID)
+		}),
 		coreUsecase.WithRelayedNodes(func(nodeID uint) bool {
 			return d.RouterMode && nodeID != 0 && nodeID == d.NodeUC.LocalNodeID()
 		}),

@@ -93,6 +93,24 @@ func (u *nodeUsecase) SetInboundsChangedHook(fn func(context.Context) error) {
 	u.onInboundsChanged = fn
 }
 
+// SetTunnelSocksLister wires the lookup of the SOCKS inbounds a node's
+// tunnels with egress=xray leave through.
+func (u *nodeUsecase) SetTunnelSocksLister(fn func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error)) {
+	u.tunnelSocks = fn
+}
+
+// nodeTunnelSocks lists the node's tunnel SOCKS inbounds; none when unwired.
+func (u *nodeUsecase) nodeTunnelSocks(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error) {
+	if u.tunnelSocks == nil {
+		return nil, nil
+	}
+	socks, err := u.tunnelSocks(ctx, nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("list tunnel SOCKS inbounds: %w", err)
+	}
+	return socks, nil
+}
+
 // SetCorePortLister wires the lookup of the ports a node's tunnels hold.
 func (u *nodeUsecase) SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error)) {
 	u.corePorts = fn
@@ -834,6 +852,11 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		apiPort = 10085
 	}
 
+	socks, err := u.nodeTunnelSocks(ctx, node.ID)
+	if err != nil {
+		return err
+	}
+
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
 		WithRouterMode(u.routerModeFor(node)).
@@ -844,6 +867,7 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
 		WithUsers(usersMap).
+		WithTunnelSocks(socks).
 		WithAPI(true, apiPort)
 
 	configJSON, err := configBuilder.Build()

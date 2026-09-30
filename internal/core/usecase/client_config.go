@@ -90,6 +90,10 @@ func prepareMTProtoSettings(in *domain.CoreInbound, relayed bool) error {
 	if relayed && (s.MiddleProxy || s.AdtagDefault != "") {
 		return fmt.Errorf("core: the Telegram middle proxy and ad tag are not available on the router's built-in node")
 	}
+	// Nor through Xray's SOCKS inbound.
+	if in.EgressMode == domain.EgressXray && (s.MiddleProxy || s.AdtagDefault != "") {
+		return fmt.Errorf("core: the Telegram middle proxy and ad tag are not available with Xray egress")
+	}
 	if lm := strings.ToLower(strings.TrimSpace(s.LinkMode)); lm != "" && lm != "auto" {
 		switch mtprotoproto.Mode(lm) {
 		case mtprotoproto.ModeClassic, mtprotoproto.ModeSecure, mtprotoproto.ModeTLS:

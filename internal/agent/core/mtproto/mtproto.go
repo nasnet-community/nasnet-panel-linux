@@ -142,8 +142,13 @@ func (c *Core) Apply(ctx context.Context, d core.DesiredState) error {
 	}
 
 	// The relay comes up before telemt dials through it; a changed port
-	// (settings) moves it.
-	if err := c.ensureRelay(inst, in.RelayAddr); err != nil {
+	// (settings) moves it. Through Xray there is none: Xray's SOCKS inbound
+	// holds that port.
+	relayAddr := in.RelayAddr
+	if d.EgressMode == core.EgressXray {
+		relayAddr = ""
+	}
+	if err := c.ensureRelay(inst, relayAddr); err != nil {
 		inst.lastErr = err.Error()
 		return err
 	}
@@ -163,8 +168,9 @@ func (c *Core) Apply(ctx context.Context, d core.DesiredState) error {
 	return nil
 }
 
-// renderInput builds the renderer input for d, pointing telemt at the
-// inbound's relay when the node marks tunnel egress.
+// renderInput builds the renderer input for d, pointing telemt at Xray's
+// SOCKS inbound when the tunnel leaves through Xray, else at the inbound's
+// relay when the node marks tunnel egress.
 func (c *Core) renderInput(d core.DesiredState, dir string, s Settings) RenderInput {
 	in := RenderInput{
 		InboundID: d.InboundID,
@@ -174,7 +180,11 @@ func (c *Core) renderInput(d core.DesiredState, dir string, s Settings) RenderIn
 		Settings:  s,
 		Users:     toUsers(d.Users),
 	}
-	if c.useRelay {
+	switch {
+	case d.EgressMode == core.EgressXray:
+		// Same port as the relay would take; Xray's inbound takes no auth.
+		in.RelayAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(in.relayPort()))
+	case c.useRelay:
 		in.RelayAddr = net.JoinHostPort("127.0.0.1", strconv.Itoa(in.relayPort()))
 		in.RelayUser, in.RelayPass = c.relayUser, c.relayPass
 	}

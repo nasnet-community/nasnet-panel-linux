@@ -461,6 +461,17 @@ func runServe(cmd *cobra.Command, args []string) {
 		return coreUC.ReconcileNode(ctx, client, nodeID)
 	})
 	uc.Node.SetCorePortLister(coreUC.NodePorts)
+	uc.Node.SetTunnelSocksLister(func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error) {
+		list, err := coreUC.XraySocks(ctx, nodeID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]xray.TunnelSocks, len(list))
+		for i, t := range list {
+			out[i] = xray.TunnelSocks{InboundID: t.InboundID, Port: t.Port}
+		}
+		return out, nil
+	})
 	// Per-tunnel usage: the stats fold attributes tunnel bytes to each
 	// subscription's tunnels.
 	uc.Node.SetCoreUsageProvider(coreRepo)

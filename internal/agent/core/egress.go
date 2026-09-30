@@ -60,6 +60,37 @@ func (d *Dialer) DialContext(ctx context.Context, network, address string) (net.
 	return nd.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 }
 
+// Check refuses an address that is, or whose name resolves to anything, on
+// the block list, for a destination another dialer resolves again itself
+// (Xray): a name with any blocked address might be dialed at that one.
+func (d *Dialer) Check(ctx context.Context, address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	var ips []netip.Addr
+	switch ip, err := netip.ParseAddr(host); {
+	case err == nil:
+		ips = []netip.Addr{ip}
+	case d.resolve != nil:
+		ip, err := d.resolve(ctx, host)
+		if err != nil {
+			return err
+		}
+		ips = []netip.Addr{ip}
+	default:
+		if ips, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host); err != nil {
+			return err
+		}
+	}
+	for _, ip := range ips {
+		if d.blocked(ip.Unmap()) {
+			return fmt.Errorf("%w: %s is %s", ErrDestinationBlocked, host, ip.Unmap())
+		}
+	}
+	return nil
+}
+
 // Lookup resolves host the way DialContext does: an address literal as is,
 // else the configured resolver, else the system one (preferring an address
 // that passes the block list).

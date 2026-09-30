@@ -27,10 +27,17 @@ const (
 // EgressMode selects how a core's traffic leaves the node.
 type EgressMode string
 
-// EgressDirect is the only mode: the core dials out itself (SSH through the
-// filtered egress dialer, MTProto through its loopback relay) and accounts
-// natively (in-process bytes / Prometheus scrape).
-const EgressDirect EgressMode = "direct"
+const (
+	// EgressDirect: the core dials out itself (SSH through the filtered
+	// egress dialer, MTProto through its loopback relay in router mode).
+	EgressDirect EgressMode = "direct"
+	// EgressXray: the core dials out through a loopback SOCKS inbound in the
+	// node's Xray config, so Xray's routing and outbounds apply.
+	EgressXray EgressMode = "xray"
+)
+
+// Either way the core counts its own users' traffic (in-process bytes /
+// Prometheus scrape): Xray's SOCKS inbound doesn't know the user.
 
 // UserSpec is one pushed credential for a core. The pushed set is the sole
 // source of truth on the agent (which has no database).

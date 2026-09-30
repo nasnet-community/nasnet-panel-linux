@@ -100,6 +100,28 @@ type FullConfigBuilder struct {
 	balancing      []*nodeDomain.BalancingRule
 	routerMode     bool
 	routerWANs     []RouterWAN
+	tunnelSocks    []TunnelSocks
+}
+
+// TunnelSocksTagPrefix starts the tag of each loopback SOCKS inbound a tunnel
+// leaves through. The agent leaves these out of the node's traffic total: the
+// tunnel core already counts those bytes.
+const TunnelSocksTagPrefix = "tunnel-socks-"
+
+// TunnelSocks is the loopback SOCKS inbound an SSH or MTProto tunnel with
+// egress=xray dials out through.
+type TunnelSocks struct {
+	InboundID uint // the core_inbound it serves
+	Port      int
+}
+
+// Tag is the inbound's tag in the Xray config.
+func (t TunnelSocks) Tag() string { return fmt.Sprintf("%s%d", TunnelSocksTagPrefix, t.InboundID) }
+
+// WithTunnelSocks adds the loopback SOCKS inbounds tunnels leave through.
+func (b *FullConfigBuilder) WithTunnelSocks(socks []TunnelSocks) *FullConfigBuilder {
+	b.tunnelSocks = socks
+	return b
 }
 
 // NewFullConfigBuilder creates a new config builder
@@ -322,6 +344,22 @@ func (b *FullConfigBuilder) buildInbounds() []map[string]interface{} {
 			"protocol": "dokodemo-door",
 			"settings": map[string]interface{}{
 				"address": "127.0.0.1",
+			},
+		})
+	}
+
+	// Loopback only, and without auth: the tunnel cores identify nobody to
+	// Xray (they count their own users' traffic), and a tunnel user can't
+	// reach loopback through their tunnel.
+	for _, t := range b.tunnelSocks {
+		inbounds = append(inbounds, map[string]interface{}{
+			"tag":      t.Tag(),
+			"listen":   "127.0.0.1",
+			"port":     t.Port,
+			"protocol": "socks",
+			"settings": map[string]interface{}{
+				"auth": "noauth",
+				"udp":  false,
 			},
 		})
 	}

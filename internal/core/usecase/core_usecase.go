@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/core/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/core/nodebridge"
 	mtprotoproto "github.com/nasnet-community/nasnet-panel-linux/internal/core/protocol/mtproto"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/core/repository"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
 // Validation errors, comparable via errors.Is.
@@ -63,6 +65,48 @@ type CoreUsecase struct {
 	userPolicy      nodebridge.UserPolicyResolver
 	inboundsChanged func(ctx context.Context, nodeID uint)
 	relayed         func(nodeID uint) bool
+	pushXray        func(ctx context.Context, nodeID uint) error
+}
+
+// WithXrayConfigPusher wires the Xray config push that follows a change to
+// the SOCKS inbounds tunnels with egress=xray leave through.
+func WithXrayConfigPusher(fn func(ctx context.Context, nodeID uint) error) Option {
+	return func(u *CoreUsecase) { u.pushXray = fn }
+}
+
+// syncXray pushes the node's Xray config after its tunnel SOCKS inbounds
+// changed. The tunnel change is saved either way; a failed push leaves the
+// config drift check to retry it.
+func (u *CoreUsecase) syncXray(ctx context.Context, nodeID uint) {
+	if u.pushXray == nil {
+		return
+	}
+	if err := u.pushXray(ctx, nodeID); err != nil {
+		logger.GetLogger().WithError(err).WithField("node_id", nodeID).Warn("[core] Xray config push for tunnel egress failed")
+	}
+}
+
+// TunnelSocks is the loopback SOCKS inbound one tunnel leaves through.
+type TunnelSocks struct {
+	InboundID uint
+	Port      int
+}
+
+// XraySocks lists the SOCKS inbounds the node's Xray config must carry for
+// its tunnels with egress=xray. Disabled tunnels keep theirs, so turning one
+// on or off doesn't restart Xray.
+func (u *CoreUsecase) XraySocks(ctx context.Context, nodeID uint) ([]TunnelSocks, error) {
+	inbounds, err := u.repo.ListInboundsByNode(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	var out []TunnelSocks
+	for _, in := range inbounds {
+		if p := nodebridge.TunnelSocksPort(in); p != 0 {
+			out = append(out, TunnelSocks{InboundID: in.ID, Port: p})
+		}
+	}
+	return out, nil
 }
 
 // WithRelayedNodes names the nodes whose MTProto egress goes through the
@@ -152,12 +196,15 @@ func (u *CoreUsecase) CreateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.repo.CreateInbound(ctx, in); err != nil {
 		return err
 	}
-	// An MTProto inbound's loopback ports derive from its ID, known only now.
+	// A tunnel's loopback ports derive from its ID, known only now.
 	if err := u.checkLoopbackPorts(ctx, in); err != nil {
 		if delErr := u.repo.DeleteInbound(ctx, in.ID); delErr != nil {
 			return errors.Join(err, delErr)
 		}
 		return err
+	}
+	if nodebridge.TunnelSocksPort(in) != 0 {
+		u.syncXray(ctx, in.NodeID)
 	}
 	u.notifyInboundsChanged(ctx, in.NodeID)
 	return nil
@@ -207,6 +254,9 @@ func (u *CoreUsecase) UpdateInbound(ctx context.Context, in *domain.CoreInbound)
 	}
 	if err := u.repo.UpdateInbound(ctx, in); err != nil {
 		return err
+	}
+	if nodebridge.TunnelSocksPort(existing) != nodebridge.TunnelSocksPort(in) {
+		u.syncXray(ctx, in.NodeID)
 	}
 	u.notifyInboundsChanged(ctx, in.NodeID)
 	return nil
@@ -287,6 +337,9 @@ func (u *CoreUsecase) DeleteInbound(ctx context.Context, id uint) error {
 	}
 	if err := u.repo.DeleteInbound(ctx, id); err != nil {
 		return err
+	}
+	if nodebridge.TunnelSocksPort(in) != 0 {
+		u.syncXray(ctx, in.NodeID)
 	}
 	u.notifyInboundsChanged(ctx, in.NodeID)
 	return nil
@@ -375,37 +428,56 @@ func inboundPorts(inbounds []*domain.CoreInbound, excludeInboundID uint) []int {
 			continue
 		}
 		ports = append(ports, in.Port)
-		if in.Protocol == domain.CoreProtoMTProto {
-			if st, err := mtprotoproto.ParseSettings(in.Settings); err == nil {
-				relay, metrics := st.LoopbackPorts(in.ID)
-				ports = append(ports, relay, metrics)
-			}
-		}
+		ports = append(ports, loopbackPorts(in)...)
 	}
 	return ports
 }
 
-// checkLoopbackPorts refuses an MTProto inbound whose relay or metrics port
-// (127.0.0.1, base+id or pinned in settings) is its own listener, another
+// loopbackPorts are the 127.0.0.1 ports a tunnel holds besides its listener:
+// an MTProto inbound's relay (or Xray SOCKS) and metrics ports, an SSH
+// inbound's Xray SOCKS port with egress=xray.
+func loopbackPorts(in *domain.CoreInbound) []int {
+	switch in.Protocol {
+	case domain.CoreProtoMTProto:
+		if st, err := mtprotoproto.ParseSettings(in.Settings); err == nil {
+			relay, metrics := st.LoopbackPorts(in.ID)
+			return []int{relay, metrics}
+		}
+	case domain.CoreProtoSSH:
+		if p := nodebridge.TunnelSocksPort(in); p != 0 {
+			return []int{p}
+		}
+	}
+	return nil
+}
+
+// checkLoopbackPorts refuses a tunnel whose loopback ports (127.0.0.1,
+// base+id or pinned in settings) are its own listener or each other, another
 // tunnel's port, or held by something else on the node.
 func (u *CoreUsecase) checkLoopbackPorts(ctx context.Context, in *domain.CoreInbound) error {
-	if in.Protocol != domain.CoreProtoMTProto || in.ID == 0 {
+	if in.ID == 0 {
 		return nil
 	}
-	st, err := mtprotoproto.ParseSettings(in.Settings)
-	if err != nil {
-		return err
+	if in.Protocol == domain.CoreProtoMTProto {
+		if _, err := mtprotoproto.ParseSettings(in.Settings); err != nil {
+			return err
+		}
 	}
-	relay, metrics := st.LoopbackPorts(in.ID)
-	if relay == metrics || relay == in.Port || metrics == in.Port {
-		return fmt.Errorf("%w: node=%d: the relay (%d) and metrics (%d) ports must differ from each other and from the listener", ErrPortInUse, in.NodeID, relay, metrics)
+	ports := loopbackPorts(in)
+	for i, p := range ports {
+		if p == in.Port || slices.Contains(ports[:i], p) {
+			return fmt.Errorf("%w: node=%d: the loopback ports %v must differ from each other and from the listener", ErrPortInUse, in.NodeID, ports)
+		}
+	}
+	if len(ports) == 0 {
+		return nil
 	}
 	inbounds, err := u.repo.ListInboundsByNode(ctx, in.NodeID)
 	if err != nil {
 		return err
 	}
 	taken := inboundPorts(inbounds, in.ID)
-	for _, p := range []int{relay, metrics} {
+	for _, p := range ports {
 		if p < 1 || p > 65535 {
 			return fmt.Errorf("%w: %d", ErrInvalidPort, p)
 		}

@@ -235,6 +235,10 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 		apiPort = 10085
 	}
 
+	socks, err := u.nodeTunnelSocks(ctx, node.ID)
+	if err != nil {
+		return "", err
+	}
 	configJSON, err := xray.NewFullConfigBuilder(node).
 		WithRouterMode(u.routerModeFor(node)).
 		WithRouterWANs(u.currentRouterWANs(ctx, node)).
@@ -244,6 +248,7 @@ func (u *nodeUsecase) buildNodeConfigForDiff(ctx context.Context, node *domain.N
 		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
 		WithUsers(usersMap).
+		WithTunnelSocks(socks).
 		WithAPI(true, apiPort).
 		Build()
 	if err != nil {
