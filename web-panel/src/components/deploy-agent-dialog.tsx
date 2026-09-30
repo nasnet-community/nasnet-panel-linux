@@ -76,9 +76,23 @@ export function DeployAgentDialog({ nodeId, open, onOpenChange }: DeployAgentDia
     const copyPaste = async () => {
         if (!nodeId) return
         setBusy("copy")
+        // Safari and Firefox allow a clipboard write only inside the click, so
+        // the browser gets a promise of the text while the script is built.
+        const text = getPasteScript(nodeId).then(script => `echo ${base64UTF8(script)} | base64 -d | bash`)
         try {
-            const script = await getPasteScript(nodeId)
-            await copyToClipboard(`echo ${base64UTF8(script)} | base64 -d | sudo bash`)
+            let copied = false
+            if (window.isSecureContext && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+                try {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ "text/plain": text.then(t => new Blob([t], { type: "text/plain" })) }),
+                    ])
+                    copied = true
+                } catch {
+                    // fall back to copying the finished text
+                }
+            }
+            if (!copied) copied = await copyToClipboard(await text)
+            if (!copied) throw new Error("The browser blocked the copy. Use Download install.sh instead.")
             flash("paste")
         } catch (e) {
             toast.error(e instanceof Error ? e.message : "Failed to build the installer")
