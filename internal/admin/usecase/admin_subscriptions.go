@@ -119,6 +119,10 @@ func (u *adminUsecase) GetSubscriptionLink(ctx context.Context, id uint) (string
 }
 
 func (u *adminUsecase) ResetDataUsage(ctx context.Context, id uint) error {
+	// The full reset: account and tunnel counters and warning levels too.
+	if u.subUC != nil {
+		return u.subUC.ResetDataUsed(ctx, id)
+	}
 	return u.subRepo.ResetDataUsed(ctx, id)
 }
 
