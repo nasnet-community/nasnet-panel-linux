@@ -74,7 +74,11 @@ var rpcDeadlines = map[string]time.Duration{
 	"ExecuteCommand": 60 * time.Second,
 
 	// Binary uploads and self-update
-	"SelfUpdate":       5 * time.Minute,
+	"SelfUpdate": 5 * time.Minute,
+	// Wipe runs every nuke phase (30 s each by default, one up to 5 min) and
+	// is also how reverse nodes nuke; a short budget reports a wipe that
+	// carries on as failed and keeps the node row.
+	"Wipe":             10 * time.Minute,
 	"UpdateXrayBinary": 5 * time.Minute,
 	"Uninstall":        60 * time.Second,
 

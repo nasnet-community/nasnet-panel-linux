@@ -116,8 +116,7 @@ func (u *nodeUsecase) Nuke(ctx context.Context, nodeID uint, opts NukeOptions, e
 
 // callAgentForNuke dispatches on the requested mode — WIPE over the unary RPC,
 // NUKE over the streaming one — and fans streaming frames out to the caller via
-// emit. Node connect mode is not consulted: the hub talks to every node through
-// the in-process embedded client, which supports both RPCs.
+// emit. Reverse nodes can't stream, so they always go through Wipe.
 func (u *nodeUsecase) callAgentForNuke(ctx context.Context, node *domain.Node, req *pb.NukeRequest, emit NukeEmitter) (*pb.NukeReport, error) {
 	client, err := u.getAgentClientForNuke(ctx, node)
 	if err != nil {
