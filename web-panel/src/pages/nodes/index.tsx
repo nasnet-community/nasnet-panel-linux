@@ -698,7 +698,7 @@ export default function NodesPage() {
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Add node</DialogTitle>
-                        <DialogDescription>A server that runs the NasNet agent.</DialogDescription>
+                        <DialogDescription>A remote machine that runs the NasNet agent.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
@@ -706,14 +706,14 @@ export default function NodesPage() {
                             <Input id="name" placeholder="Frankfurt VPS" value={newNode.name} onChange={(e) => updateNewNode({ name: e.target.value })} />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="ip">Server address</Label>
+                            <Label htmlFor="ip">Node address</Label>
                             <Input id="ip" className="font-mono" placeholder="203.0.113.24" value={newNode.ip} onChange={(e) => updateNewNode({ ip: e.target.value })} />
                         </div>
                         <fieldset className="space-y-2">
                             <legend className="text-sm font-medium">How the panel reaches it</legend>
                             {([
-                                { value: "direct", label: "Direct", hint: "This router dials the server's agent port. Works from behind NAT." },
-                                { value: "reverse", label: "Reverse", hint: "The server dials this panel's hub. Needs the hub on and an Agent Hub Address the server can reach." },
+                                { value: "direct", label: "Direct", hint: "This router dials the node's agent port. Works from behind NAT." },
+                                { value: "reverse", label: "Reverse", hint: "The node dials this panel. Needs reverse connections on and a panel address the node can reach." },
                             ] as const).map((m) => (
                                 <label
                                     key={m.value}

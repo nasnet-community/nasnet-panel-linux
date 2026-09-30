@@ -632,7 +632,7 @@ func certAttention(ov *CertOverview, orphanIDs, legacyIDs []uint) []AttentionIte
 	}
 	if len(legacyIDs) > 0 {
 		items = append(items, AttentionItem{Kind: "legacy", Count: len(legacyIDs), CertIDs: legacyIDs,
-			Message: fmt.Sprintf("%d legacy certificate(s) (master or public) the hub no longer uses.", len(legacyIDs))})
+			Message: fmt.Sprintf("%d legacy certificate(s) (master or public) the panel no longer uses.", len(legacyIDs))})
 	}
 	return items
 }
@@ -873,7 +873,7 @@ func (u *nodeUsecase) alertNodeCertExpiry(ctx context.Context, n *domain.Node, c
 		level = "error"
 	}
 	u.publishSystemAlert(level, "Node certificate expiring", fmt.Sprintf(
-		"Node %s: its agent certificate expires in %d day(s) and was not rotated (%v). When it expires the hub loses this node until it is redeployed.",
+		"Node %s: its agent certificate expires in %d day(s) and was not rotated (%v). When it expires the panel loses this node until it is redeployed.",
 		n.Name, int(left.Hours()/24), failure))
 	if err := u.certUC.SetExpiryNotifyLevel(ctx, cur.ID, bucket); err != nil {
 		logger.GetLogger().WithError(err).Warn("[CertMaintenance] Failed to record expiry alert")
@@ -894,8 +894,8 @@ func (u *nodeUsecase) alertCAExpiry(ctx context.Context) {
 	if bucket <= 30 {
 		level = "error"
 	}
-	u.publishSystemAlert(level, "Hub CA expiring", fmt.Sprintf(
-		"The hub's CA expires in %d day(s). Every node certificate depends on it.", int(left.Hours()/24)))
+	u.publishSystemAlert(level, "Panel CA expiring", fmt.Sprintf(
+		"The panel's CA expires in %d day(s). Every node certificate depends on it.", int(left.Hours()/24)))
 	if err := u.certUC.SetExpiryNotifyLevel(ctx, ca.ID, bucket); err != nil {
 		logger.GetLogger().WithError(err).Warn("[CertMaintenance] Failed to record CA alert")
 	}

@@ -235,9 +235,9 @@ func (h *DeployHandler) GetInstallCommand(c *gin.Context) {
 	if base == "" {
 		data["mode"] = "paste"
 		data["command"] = ""
-		data["reason"] = "Set an https Agent Hub Address in settings to install with one command; until then, run the installer script on the node."
+		data["reason"] = "Set an https Panel Address for Agents in settings to install with one command; until then, run the installer script on the node."
 		if connectMode(node) == domain.ConnectModeReverse && h.hubDialAddr(c) == "" {
-			data["reason"] = "Reverse-mode nodes dial the panel. Set the Agent Hub Address in settings first."
+			data["reason"] = "Reverse-mode nodes dial the panel. Set the Panel Address for Agents in settings first."
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 		return
@@ -282,7 +282,7 @@ func (h *DeployHandler) GetInstallScript(c *gin.Context) {
 
 	base := h.pullBaseURL(c)
 	if base == "" {
-		c.JSON(http.StatusConflict, gin.H{"error": "Pull install needs an https Agent Hub Address"})
+		c.JSON(http.StatusConflict, gin.H{"error": "Pull install needs an https Panel Address for Agents"})
 		return
 	}
 	script, err := renderInstallScript(installScript{
@@ -346,7 +346,7 @@ func (h *DeployHandler) GetPasteScript(c *gin.Context) {
 	hubURL := ""
 	if connectMode(node) == domain.ConnectModeReverse {
 		if hubURL = h.hubDialAddr(c); hubURL == "" {
-			c.JSON(http.StatusConflict, gin.H{"error": "Reverse-mode nodes dial the panel. Set the Agent Hub Address in settings first."})
+			c.JSON(http.StatusConflict, gin.H{"error": "Reverse-mode nodes dial the panel. Set the Panel Address for Agents in settings first."})
 			return
 		}
 	}

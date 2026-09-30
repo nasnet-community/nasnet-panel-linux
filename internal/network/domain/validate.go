@@ -602,7 +602,7 @@ func ValidatePortForward(in PortForwardInput) []Verdict {
 	}
 	if pf.Proto == "tcp" && in.HubPort > 0 && pf.DPort == in.HubPort {
 		confirm("V28", "this forward takes over port %d on that uplink, so reverse-mode "+
-			"nodes can no longer reach the hub there. Type CONFIRM to continue.", pf.DPort)
+			"nodes can no longer reach the panel there. Type CONFIRM to continue.", pf.DPort)
 	}
 	if pf.Proto == "tcp" && (pf.ToPort == in.PanelPort || pf.ToPort == in.SSHPort) {
 		what := "the panel"

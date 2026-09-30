@@ -27,7 +27,7 @@ func (e *RealityDestError) Error() string {
 }
 
 // hubVantageWarning is attached when the check had to run from the hub.
-const hubVantageWarning = "Checked from the hub because the agent on this node predates destination checks. Update the agent to test from the node's own network, which is what clients will hit."
+const hubVantageWarning = "Checked from the panel because the agent on this node predates destination checks. Update the agent to test from the node's own network, which is what clients will hit."
 
 // CheckRealityDest performs the dest handshake from the node's network. When
 // the agent is too old for the RPC the hub runs the same probe itself and says

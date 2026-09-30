@@ -513,6 +513,11 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 				existing.Category = s.Category
 				needsUpdate = true
 			}
+			// Labels and descriptions are the code's copy; keep them current.
+			if s.Label != "" && (existing.Label != s.Label || existing.Description != s.Description) {
+				existing.Label, existing.Description = s.Label, s.Description
+				needsUpdate = true
+			}
 			if needsUpdate {
 				if err := u.repo.Update(ctx, existing); err != nil {
 					return err
@@ -553,10 +558,10 @@ func (u *settingUsecase) buildEnvSettings() []*domain.Setting {
 		{Key: "metrics_password", Value: u.initialCfg.MetricsPassword, Type: "string", Category: "server", Description: "Password for /metrics Basic Auth (empty = public)", Label: "Metrics Password", RequiresRestart: true, Sensitive: true},
 		{Key: "log_level", Value: u.initialCfg.LogLevel, Type: "string", Category: "server", Description: "Application log level (debug, info, warn, error)", Label: "Log Level"},
 		{Key: "panel_base_path", Value: u.initialCfg.PanelBasePath, Type: "string", Category: "server", Description: "URL path prefix for the admin panel (e.g., /x7k2m9). Requires restart.", Label: "Panel Base Path", RequiresRestart: true},
-		{Key: "hub_enabled", Value: "false", Type: "bool", Category: "server", Description: "Serve the hub that reverse-mode remote nodes dial into", Label: "Hub Enabled", RequiresRestart: true},
-		{Key: "hub_port", Value: fmt.Sprintf("%d", u.initialCfg.HubPort), Type: "int", Category: "server", Description: "Port for the reverse-mode node hub", Label: "Hub Port", RequiresRestart: true},
+		{Key: "hub_enabled", Value: "false", Type: "bool", Category: "server", Description: "Accept connections from nodes in reverse mode, which dial this panel", Label: "Reverse Connections", RequiresRestart: true},
+		{Key: "hub_port", Value: fmt.Sprintf("%d", u.initialCfg.HubPort), Type: "int", Category: "server", Description: "Port reverse-mode nodes dial into", Label: "Reverse Connection Port", RequiresRestart: true},
 		{Key: "node_offline_debounce_sec", Value: "30", Type: "int", Category: "server", Description: "How long a node must keep failing before the outage is recorded and announced (0 = record immediately). Absorbs flapping links: one event per real outage instead of one per bounce. The recorded timestamp is when the failure started, not when it was confirmed.", Label: "Node Offline Debounce (seconds)"},
-		{Key: "agent_hub_url", Value: "", Type: "string", Category: "server", Description: "Address remote nodes use to reach this panel (host or https URL). Set it when the panel sits on a LAN address; empty uses the base URL.", Label: "Agent Hub Address"},
+		{Key: "agent_hub_url", Value: "", Type: "string", Category: "server", Description: "Address remote nodes use to reach this panel (host or https URL). Set it when the panel sits on a LAN address; empty uses the base URL.", Label: "Panel Address for Agents"},
 		{Key: "telegram_proxy_enabled", Value: boolStr(u.initialCfg.ProxyEnabled), Type: "bool", Category: "telegram", Description: "Route Telegram API traffic through a SOCKS5 proxy", Label: "Proxy Enabled", RequiresRestart: true},
 		{Key: "telegram_proxy_type", Value: u.initialCfg.ProxyType, Type: "string", Category: "telegram", Description: "Proxy protocol type", Label: "Proxy Type", RequiresRestart: true},
 		{Key: "telegram_proxy_host", Value: u.initialCfg.ProxyHost, Type: "string", Category: "telegram", Description: "Proxy server hostname or IP address", Label: "Proxy Host", RequiresRestart: true},

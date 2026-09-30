@@ -114,7 +114,7 @@ export function DeployAgentDialog({ nodeId, open, onOpenChange }: DeployAgentDia
                 <DialogHeader>
                     <DialogTitle>Deploy {name}</DialogTitle>
                     <DialogDescription>
-                        Run {pull ? "one of these" : "this"} on the server as root. It installs Xray and the agent.
+                        Run {pull ? "one of these" : "this"} on the node as root. It installs Xray and the agent.
                     </DialogDescription>
                 </DialogHeader>
 

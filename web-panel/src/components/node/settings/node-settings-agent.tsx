@@ -129,7 +129,7 @@ export function NodeSettingsAgent({ node, settingsForm, onRefresh }: NodeSetting
                                 <strong>Direct:</strong> The panel connects to the agent via its IP and port.
                                 Requires the agent port to be open and reachable.
                                 <br /><br />
-                                <strong>Reverse:</strong> The agent dials this panel's hub.
+                                <strong>Reverse:</strong> The agent dials this panel.
                                 Useful when the node is behind NAT or a firewall.
                             </InfoPopover>
                             <Badge
@@ -142,7 +142,7 @@ export function NodeSettingsAgent({ node, settingsForm, onRefresh }: NodeSetting
                         <p className="text-[0.8625rem] text-muted-foreground">
                             {currentMode === "direct"
                                 ? "The panel connects directly to the agent"
-                                : "The agent dials this panel's hub"}
+                                : "The agent dials this panel"}
                         </p>
                     </div>
                     <Button
@@ -165,7 +165,7 @@ export function NodeSettingsAgent({ node, settingsForm, onRefresh }: NodeSetting
                         <DialogTitle>Switch to {targetMode} mode?</DialogTitle>
                         <DialogDescription>
                             {targetMode === "reverse"
-                                ? "The agent will be reconfigured to dial this panel's hub. This is useful when the node is behind NAT or a firewall; the hub must be on and reachable at the Agent Hub Address."
+                                ? "The agent will be reconfigured to dial this panel. This is useful when the node is behind NAT or a firewall; reverse connections must be on and the panel reachable at its address for agents."
                                 : `The agent will be reconfigured to listen on port ${node.agent_port} for direct connections from the panel. The node must be directly reachable.`}
                         </DialogDescription>
                     </DialogHeader>

@@ -214,7 +214,7 @@ func DeriveFilterInput(spec FilterInputSpec) *nft.FilterInput {
 		// Remote nodes dial in from anywhere; mTLS guards it.
 		f.Accepts = append(f.Accepts, nft.InputAccept{
 			IfNames: allUplinks, Proto: "tcp", Port: spec.HubPort,
-			Comment: "node hub (reverse-mode remote nodes)",
+			Comment: "reverse-mode node connections",
 		})
 		seen[key("tcp", spec.HubPort)] = true
 	}

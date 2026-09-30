@@ -75,7 +75,7 @@ function ReportBody({ report }: { report: RealityDestReport }) {
         ...(report.warnings ?? []),
         ...report.checks.flatMap((c) => c.warnings ?? []),
     ]
-    const vantage = report.checked_from === "hub" ? "hub" : "node"
+    const vantage = report.checked_from === "hub" ? "panel" : "node"
     return (
         <div className="space-y-2.5 border-t border-border-subtle px-3 py-2.5 text-[14px] leading-[18px]" role="status">
             <div className="flex items-start gap-2">
