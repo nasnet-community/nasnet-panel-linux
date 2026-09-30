@@ -17,7 +17,10 @@ type ReverseSession struct {
 	ConnectedAt  time.Time
 	AgentVersion string
 
-	mu       sync.Mutex
+	mu sync.Mutex
+	// sendMu serialises writes to Stream. It is separate from mu so a send
+	// blocked on flow control never holds up response routing or pongs.
+	sendMu   sync.Mutex
 	pending  map[string]chan *hubpb.AgentEnvelope
 	lastPong time.Time
 	lastRTT  int64
@@ -190,28 +193,37 @@ func (r *ConnectedAgentRegistry) SendCommand(nodeUUID, method string, payload []
 		DeadlineMs: timeout.Milliseconds(),
 	}
 
-	// Send under session lock to prevent concurrent writes to the stream
-	s.mu.Lock()
-	err := s.Stream.Send(env)
-	s.mu.Unlock()
-	if err != nil {
-		return nil, fmt.Errorf("failed to send command %s to %s: %w", method, nodeUUID, err)
-	}
-
+	// The budget covers the send too: on a half-dead tunnel Send can block on
+	// flow control far longer than the method's deadline.
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	select {
-	case resp, ok := <-respCh:
-		if !ok {
-			return nil, fmt.Errorf("session closed while waiting for response to %s", method)
+	sent := make(chan error, 1)
+	go func(done chan<- error) {
+		s.sendMu.Lock()
+		defer s.sendMu.Unlock()
+		done <- s.Stream.Send(env)
+	}(sent)
+
+	for {
+		select {
+		case err := <-sent:
+			if err != nil {
+				return nil, fmt.Errorf("failed to send command %s to %s: %w", method, nodeUUID, err)
+			}
+			sent = nil // sent; keep waiting for the response
+			continue
+		case resp, ok := <-respCh:
+			if !ok {
+				return nil, fmt.Errorf("session closed while waiting for response to %s", method)
+			}
+			if resp.Error != "" {
+				return nil, fmt.Errorf("agent error for %s: %s", method, resp.Error)
+			}
+			return resp.Payload, nil
+		case <-timer.C:
+			return nil, fmt.Errorf("timeout waiting for response to %s from %s", method, nodeUUID)
 		}
-		if resp.Error != "" {
-			return nil, fmt.Errorf("agent error for %s: %s", method, resp.Error)
-		}
-		return resp.Payload, nil
-	case <-timer.C:
-		return nil, fmt.Errorf("timeout waiting for response to %s from %s", method, nodeUUID)
 	}
 }
 
@@ -225,8 +237,8 @@ func (r *ConnectedAgentRegistry) SendControl(nodeUUID string, env *hubpb.HubEnve
 		return fmt.Errorf("reverse agent %s is not connected", nodeUUID)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	return s.Stream.Send(env)
 }
 
@@ -240,17 +252,19 @@ func (r *ConnectedAgentRegistry) RouteResponse(nodeUUID string, env *hubpb.Agent
 		return
 	}
 
+	// Deliver under the lock: Register and Unregister close pending channels
+	// under it, and a send on a closed channel panics even in a select. The
+	// channel is buffered and the send never blocks.
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	ch, ok := s.pending[env.RequestId]
-	s.mu.Unlock()
 	if !ok {
 		return
 	}
-
 	select {
 	case ch <- env:
 	default:
-		// Channel full or already closed — drop
+		// Already answered — drop the duplicate
 	}
 }
 
