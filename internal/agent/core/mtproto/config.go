@@ -303,8 +303,31 @@ func boolOr(v *bool, def bool) bool {
 // backslash and double-quote. Sufficient for domains, emails, hex secrets and
 // adtags — none of which legitimately carry control characters.
 func tomlString(v string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-	return `"` + r.Replace(v) + `"`
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range v {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			// Any other control character would end the line or be rejected
+			// by the TOML parser, taking the whole config (and live reload)
+			// down with it.
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // tomlStringArray renders a TOML array of basic strings.
