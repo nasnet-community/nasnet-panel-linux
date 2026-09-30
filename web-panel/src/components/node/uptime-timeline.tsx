@@ -194,7 +194,7 @@ export function UptimeTimeline({ nodeId, isOnline, enabled = true, local = false
         const unknownSegs: Segment[] = []
         let unknownMs = 0
         for (const gap of hubGaps ?? []) {
-            const gapStart = new Date(gap.from) < start ? start : new Date(gap.from)
+            const gapStart = new Date(gap.from) < from ? from : new Date(gap.from)
             const gapEnd = new Date(gap.to) > now ? now : new Date(gap.to)
             if (gapEnd <= gapStart) continue
             const durationMs = gapEnd.getTime() - gapStart.getTime()
