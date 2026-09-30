@@ -39,6 +39,10 @@ const DefaultTimeout = 8 * time.Second
 // MaxTimeout caps what a caller may ask for.
 const MaxTimeout = 20 * time.Second
 
+// MaxServerNames bounds one check so a request cannot fan out into hundreds
+// of handshakes.
+const MaxServerNames = 16
+
 // maxRecordBytes mirrors reality's `size`: a server record longer than this,
 // header included, aborts the hijack.
 const maxRecordBytes = 8192

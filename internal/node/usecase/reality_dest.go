@@ -44,18 +44,19 @@ func (u *nodeUsecase) CheckRealityDest(ctx context.Context, nodeID uint, setting
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	if len(req.ServerNames) > realitydest.MaxServerNames {
+		return nil, fmt.Errorf("at most %d server names per check", realitydest.MaxServerNames)
+	}
 
 	client, err := u.getAgentClient(node)
 	if err != nil {
 		return nil, fmt.Errorf("node is unreachable: %w", err)
 	}
 	defer closeAgentClient(client)
-	if node.IsLocal() {
-		// In-process calls carry no gRPC deadline; the remote RPC's is 45s.
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
-		defer cancel()
-	}
+	// The remote RPC's deadline is 45s; in-process calls and the hub's own
+	// probe get the same bound.
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
 
 	if rc, ok := client.(agent.RealityDestClient); ok {
 		resp, err := rc.ProbeRealityDest(ctx, realitydest.ToProto(req))
@@ -93,12 +94,21 @@ func isUnknownMethod(err error) bool {
 // guardRealityDest blocks saving a REALITY inbound whose dest cannot be
 // hijacked. It runs only when the dest-related fields are new or changed and
 // the caller did not opt out. A node that cannot be reached is not a verdict:
-// the push that follows reports that on its own.
+// the push that follows reports that on its own. A remote node already marked
+// offline is skipped rather than dialled, so the save doesn't wait out the
+// check's deadline.
 func (u *nodeUsecase) guardRealityDest(ctx context.Context, inbound, prev *domain.Inbound) error {
 	if inbound.Security != "reality" || inbound.RealitySettings == nil || inbound.SkipDestCheck {
 		return nil
 	}
 	if prev != nil && prev.Security == "reality" && prev.RealitySettings != nil && sameRealityDest(prev.RealitySettings, inbound.RealitySettings) {
+		return nil
+	}
+	if node, err := u.nodeRepo.GetNode(ctx, inbound.NodeID); err == nil && !node.IsLocal() && !node.IsOnline {
+		logger.GetLogger().WithFields(map[string]interface{}{
+			"node_id": inbound.NodeID,
+			"tag":     inbound.Tag,
+		}).Warn("[guardRealityDest] Destination check skipped, node offline")
 		return nil
 	}
 	report, err := u.CheckRealityDest(ctx, inbound.NodeID, inbound.RealitySettings)

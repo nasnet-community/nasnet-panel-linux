@@ -9,16 +9,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// maxRealityDestNames bounds one probe so a hub request cannot fan out into
-// hundreds of handshakes from the node.
-const maxRealityDestNames = 16
-
 // ProbeRealityDest runs the REALITY dest check from the node's own network,
 // which is the vantage point that matters: the dest is dialled from here when
 // the inbound serves clients.
 func (s *Server) ProbeRealityDest(ctx context.Context, req *pb.RealityDestProbeRequest) (*pb.RealityDestProbeResponse, error) {
-	if len(req.GetServerNames()) > maxRealityDestNames {
-		return nil, status.Errorf(codes.InvalidArgument, "at most %d server names per check", maxRealityDestNames)
+	if len(req.GetServerNames()) > realitydest.MaxServerNames {
+		return nil, status.Errorf(codes.InvalidArgument, "at most %d server names per check", realitydest.MaxServerNames)
 	}
 	report, err := realitydest.Probe(ctx, realitydest.FromProtoRequest(req))
 	if err != nil {
