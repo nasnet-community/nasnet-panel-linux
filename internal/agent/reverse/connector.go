@@ -18,6 +18,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/certs"
 	hubpb "github.com/nasnet-community/nasnet-panel-linux/pkg/hub/pb"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -619,6 +620,18 @@ func (c *Connector) sendOnStream(stream hubpb.AgentHub_CommandChannelClient, env
 func (c *Connector) buildTLS() (*tls.Config, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Every node certificate chains to the same CA; one naming a node
+		// must not be accepted as the hub.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return nil
+			}
+			cn := cs.PeerCertificates[0].Subject.CommonName
+			if id, ok := certs.NodeIDFromCommonName(cn); ok && id != 0 {
+				return fmt.Errorf("node certificate %q cannot act as the hub", cn)
+			}
+			return nil
+		},
 	}
 
 	// Load CA certificate for server verification

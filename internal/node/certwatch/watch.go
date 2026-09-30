@@ -127,13 +127,23 @@ func (w *Watch) Observe(nodeID uint, mode string, leaf *x509.Certificate) {
 // Check applies strict mode: a revoked certificate, or one whose node ID
 // differs from the node it connects as, is refused.
 func (w *Watch) Check(nodeID uint, leaf *x509.Certificate) error {
-	if !w.Strict() || leaf == nil {
+	if leaf == nil {
+		return nil
+	}
+	// A certificate that names another node is refused even outside strict
+	// mode: it would let one node register as another and receive its
+	// config. Strict mode also refuses certificates that name no node.
+	id, named := certs.NodeIDFromCommonName(leaf.Subject.CommonName)
+	if named && id != nodeID {
+		return fmt.Errorf("certificate %q does not belong to node %d", leaf.Subject.CommonName, nodeID)
+	}
+	if !w.Strict() {
 		return nil
 	}
 	if err := w.CheckRevoked(leaf); err != nil {
 		return err
 	}
-	if id, ok := certs.NodeIDFromCommonName(leaf.Subject.CommonName); !ok || id != nodeID {
+	if !named {
 		return fmt.Errorf("certificate %q does not belong to node %d", leaf.Subject.CommonName, nodeID)
 	}
 	return nil
