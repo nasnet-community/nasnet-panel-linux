@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { useAllCoreInbounds, useNodes } from "@/lib/queries"
+import { queryKeys } from "@/lib/queries/keys"
 import { coreProtocolMeta, type CoreProtocol } from "@/lib/types/cores"
 import { CoreProtocolIcon } from "@/components/cores/core-protocol-badge"
 import {
@@ -51,7 +52,11 @@ export function SubscriptionCoreTunnels({ subscriptionId }: { subscriptionId: nu
         [allCore, assignedIds],
     )
 
-    const refetch = () => qc.invalidateQueries({ queryKey })
+    // The tunnel lists count each inbound's users, so they change too.
+    const refetch = () => {
+        qc.invalidateQueries({ queryKey })
+        qc.invalidateQueries({ queryKey: queryKeys.cores })
+    }
 
     const assign = async (coreInboundId: number) => {
         setBusy(coreInboundId)
@@ -63,6 +68,8 @@ export function SubscriptionCoreTunnels({ subscriptionId }: { subscriptionId: nu
             } else {
                 toast.error(res.error || "Failed to assign tunnel")
             }
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to assign tunnel")
         } finally {
             setBusy(null)
         }
@@ -85,6 +92,8 @@ export function SubscriptionCoreTunnels({ subscriptionId }: { subscriptionId: nu
             } else {
                 toast.error(res.error || "Failed to remove tunnel")
             }
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to remove tunnel")
         } finally {
             setBusy(null)
         }
