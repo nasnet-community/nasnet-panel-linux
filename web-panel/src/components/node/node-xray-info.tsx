@@ -78,15 +78,18 @@ export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: N
         }
     }, [nodeId])
 
+    // Reverse-mode nodes can't stream logs yet; don't ask on every render.
+    const canTailLogs = node.connect_mode !== "reverse"
+
     useEffect(() => {
-        if (stopped) {
+        if (stopped && canTailLogs) {
             void fetchErrorLogs()
         } else {
             setErrorLogs([])
             setShowLogs(false)
             setActionError(null)
         }
-    }, [stopped, fetchErrorLogs])
+    }, [stopped, canTailLogs, fetchErrorLogs])
 
     const run = async (action: XrayAction) => {
         setBusy(action)
