@@ -118,38 +118,49 @@ export function useToggleAdmin() {
     })
 }
 
-// Bulk ban users
-export function useBulkBan() {
+// Bulk ban/unban: one call per user, so some can fail while the rest go
+// through. Report those and refresh either way; each ban also pauses (and
+// each unban resumes) the user's subscriptions.
+function useBulkBanToggle(ban: boolean) {
     const queryClient = useQueryClient()
     return useMutation({
         mutationFn: async (userIds: number[]) => {
-            await Promise.all(userIds.map(id => banUser(id)))
+            const results = await Promise.allSettled(userIds.map(async id => {
+                const res = ban ? await banUser(id) : await unbanUser(id)
+                if (!res.success) throw new Error(res.error || "Failed to update user")
+                return res.data
+            }))
+            const failed = userIds.filter((_, i) => results[i].status === "rejected")
+            if (failed.length === userIds.length) {
+                const first = results.find(r => r.status === "rejected")
+                throw first?.status === "rejected" && first.reason instanceof Error ? first.reason : new Error("Failed to update users")
+            }
+            const subsFailed = results.flatMap(r => r.status === "fulfilled" ? r.value?.failed ?? [] : [])
+            return { done: userIds.length - failed.length, failed, subsFailed }
         },
-        onSuccess: (_, userIds) => {
-            toast.success(`${userIds.length} users banned`)
-            queryClient.invalidateQueries({ queryKey: queryKeys.users })
+        onSuccess: ({ done, failed, subsFailed }) => {
+            toast.success(`${done} user${done === 1 ? "" : "s"} ${ban ? "banned" : "unbanned"}`)
+            if (failed.length) toast.error(`Couldn't ${ban ? "ban" : "unban"} user #${failed.join(", #")}`)
+            if (subsFailed.length) toast.error(`Couldn't ${ban ? "pause" : "resume"} #${subsFailed.join(", #")}`)
         },
         onError: (error: Error) => {
             toast.error(error.message)
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: queryKeys.users })
+            queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions })
         },
     })
 }
 
+// Bulk ban users
+export function useBulkBan() {
+    return useBulkBanToggle(true)
+}
+
 // Bulk unban users
 export function useBulkUnban() {
-    const queryClient = useQueryClient()
-    return useMutation({
-        mutationFn: async (userIds: number[]) => {
-            await Promise.all(userIds.map(id => unbanUser(id)))
-        },
-        onSuccess: (_, userIds) => {
-            toast.success(`${userIds.length} users unbanned`)
-            queryClient.invalidateQueries({ queryKey: queryKeys.users })
-        },
-        onError: (error: Error) => {
-            toast.error(error.message)
-        },
-    })
+    return useBulkBanToggle(false)
 }
 
 // Update user Telegram ID
