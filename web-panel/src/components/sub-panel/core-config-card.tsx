@@ -161,7 +161,17 @@ export function CoreConfigCard({ protocol, content, nodeName, dataUsedDisplay }:
                     </>
                 )}
             </CardContent>
-            <QRDialog open={qrValue !== null} onOpenChange={(o) => !o && setQrValue(null)} value={qrValue || ""} />
+            <QRDialog
+                open={qrValue !== null}
+                onOpenChange={(o) => !o && setQrValue(null)}
+                value={qrValue || ""}
+                title={protocol === "mtproto" ? "Telegram proxy" : "SSH tunnel"}
+                description={
+                    protocol === "mtproto"
+                        ? "Scan with your phone's camera to open this proxy in Telegram."
+                        : "Scan with an SSH-tunnel app that imports ssh:// links."
+                }
+            />
         </Card>
     )
 }

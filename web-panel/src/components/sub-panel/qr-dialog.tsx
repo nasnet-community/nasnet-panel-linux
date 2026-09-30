@@ -11,17 +11,24 @@ interface QRDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     value: string
+    /** Defaults to the subscription wording. */
+    title?: string
+    description?: string
 }
 
-export function QRDialog({ open, onOpenChange, value }: QRDialogProps) {
+export function QRDialog({
+    open,
+    onOpenChange,
+    value,
+    title = "Subscription QR Code",
+    description = "Scan this code with your proxy client (v2rayNG, Streisand, Shadowrocket, etc.) to import the subscription.",
+}: QRDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-sm">
                 <DialogHeader>
-                    <DialogTitle>Subscription QR Code</DialogTitle>
-                    <DialogDescription>
-                        Scan this code with your proxy client (v2rayNG, Streisand, Shadowrocket, etc.) to import the subscription.
-                    </DialogDescription>
+                    <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>{description}</DialogDescription>
                 </DialogHeader>
                 <div className="flex justify-center py-4">
                     <div className="bg-white p-4 rounded-xl">
