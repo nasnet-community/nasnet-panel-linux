@@ -249,7 +249,7 @@ export function MtprotoForm({
                 />
                 <SettingRow
                     label="Loopback ports"
-                    description="0 auto-assigns (metrics 14300+, egress relay 12300+). The relay only runs on a router's built-in node."
+                    description="0 auto-assigns (metrics 14300+, egress relay 12300+). The relay only runs on a router's built-in node; with Xray egress, Xray's SOCKS inbound takes that port."
                 >
                     <div className="grid grid-cols-2 gap-3">
                         <NumberSetting

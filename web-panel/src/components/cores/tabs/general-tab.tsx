@@ -1,5 +1,6 @@
 import type { UseFormReturn } from "react-hook-form"
 import { Server, ArrowRightLeft } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import {
     FormField,
@@ -20,6 +21,7 @@ export function GeneralTab({
     /** the tunnel lives on the panel's built-in node */
     builtIn: boolean
 }) {
+    const egress = form.watch("egress_mode") ?? "direct"
 
     return (
         <div className="space-y-4">
@@ -90,18 +92,62 @@ export function GeneralTab({
                 )}
             />
 
-            {/* Egress (read-only: tunnels dial out from the node) */}
+            {/* Egress */}
             <div className="space-y-1.5">
                 <span className="text-sm font-medium">Egress</span>
+                <div className="grid grid-cols-2 gap-2">
+                    <EgressOption
+                        active={egress === "direct"}
+                        onClick={() => form.setValue("egress_mode", "direct", { shouldDirty: true })}
+                        title="Direct"
+                        subtitle={builtIn ? "From this box" : "Straight out of the node"}
+                    />
+                    <EgressOption
+                        active={egress === "xray"}
+                        onClick={() => form.setValue("egress_mode", "xray", { shouldDirty: true })}
+                        title="Through Xray"
+                        subtitle="Route via the node's Xray rules and outbounds"
+                    />
+                </div>
                 <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                     <ArrowRightLeft className="mt-0.5 size-4 shrink-0" />
                     <span>
-                        {builtIn
-                            ? "From this box, through the VPN pool when router mode is on. Addresses on the box and its networks are refused."
-                            : "Straight out of the node. Addresses on the node and its networks are refused."}
+                        {egress === "xray"
+                            ? "Connections leave through the node's Xray routing rules and outbounds. Addresses on the node and its networks are still refused, and the tunnel still counts its users' traffic."
+                            : builtIn
+                                ? "From this box, through the VPN pool when router mode is on. Addresses on the box and its networks are refused."
+                                : "Straight out of the node. Addresses on the node and its networks are refused."}
                     </span>
                 </div>
             </div>
         </div>
+    )
+}
+
+function EgressOption({
+    active,
+    onClick,
+    title,
+    subtitle,
+}: {
+    active: boolean
+    onClick: () => void
+    title: string
+    subtitle: string
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+                "rounded-lg border p-3 text-left transition-colors",
+                active
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                    : "hover:border-foreground/20 hover:bg-accent",
+            )}
+        >
+            <div className="text-sm font-medium">{title}</div>
+            <div className="text-xs text-muted-foreground">{subtitle}</div>
+        </button>
     )
 }

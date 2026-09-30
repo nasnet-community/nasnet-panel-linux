@@ -9,7 +9,7 @@ import { TerminalSquare, Send } from "lucide-react"
 export type CoreProtocol = "ssh" | "mtproto"
 
 /** Tunnels dial out themselves (the foreign uplinks on a router). */
-export type EgressMode = "direct"
+export type EgressMode = "direct" | "xray"
 
 /** Per-node enable state of one core protocol (GET /cores/nodes/:id/protocols). */
 export interface NodeProtocolState {

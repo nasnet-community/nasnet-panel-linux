@@ -19,6 +19,7 @@ export const coreFormSchema = z
         protocol: coreProtocolEnum,
         listen: z.string().optional(),
         port: z.number().int().min(1, "Port must be 1–65535").max(65535, "Port must be 1–65535"),
+        egress_mode: z.enum(["direct", "xray"]).optional(),
         remark: z.string().max(100, "Remark is too long").optional(),
         is_disabled: z.boolean().optional(),
         ssh_settings: z.any().optional(),
@@ -43,6 +44,14 @@ export const coreFormSchema = z
                 break
 
             case "mtproto": {
+                // telemt's middle-proxy sockets would go around Xray.
+                if (data.egress_mode === "xray" && (s.middle_proxy === true || str("adtag_default") !== "")) {
+                    ctx.addIssue({
+                        code: "custom",
+                        message: "The middle proxy and ad tag aren't available with Xray egress.",
+                        path: [slot, "middle_proxy"],
+                    })
+                }
                 // An ad tag only reaches Telegram through the middle proxy; without
                 // it the relay ignores the setting entirely.
                 if (str("adtag_default") !== "" && s.middle_proxy !== true) {

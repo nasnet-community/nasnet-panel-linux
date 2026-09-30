@@ -17,13 +17,14 @@ export function coreSummaryChips(inbound: CoreInbound): string[] {
     const str = (k: string) => (typeof s[k] === "string" ? (s[k] as string) : "")
     switch (inbound.protocol) {
         case "ssh":
-            push("userspace")
+            push(inbound.egress_mode === "xray" ? "Xray egress" : "userspace")
             break
         case "mtproto": {
             const modes = (s.modes ?? {}) as Record<string, boolean>
             const on = ["classic", "secure", "tls"].filter((m) => modes[m])
             push(on.length ? on.join("·") : "all modes")
             push(str("tls_domain") && `SNI ${str("tls_domain")}`)
+            push(inbound.egress_mode === "xray" && "Xray egress")
             break
         }
     }
