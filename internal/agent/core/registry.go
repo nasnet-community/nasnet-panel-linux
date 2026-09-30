@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/traffic"
 )
@@ -13,7 +15,15 @@ import (
 // traffic pipeline.
 type Registry struct {
 	cores map[CoreType]Core
+
+	// mu keeps Apply and Shutdown apart: once shut down, no push may start a
+	// daemon again, or it outlives the agent and holds its port.
+	mu     sync.RWMutex
+	closed bool
 }
+
+// ErrShutDown is returned by Apply once the registry has shut down.
+var ErrShutDown = errors.New("tunnel cores are shut down")
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -48,6 +58,11 @@ func (r *Registry) Types() []CoreType {
 
 // Apply dispatches a desired state to the matching core.
 func (r *Registry) Apply(ctx context.Context, d DesiredState) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return ErrShutDown
+	}
 	c, ok := r.cores[d.CoreType]
 	if !ok {
 		return fmt.Errorf("no core registered for type %q", d.CoreType)
@@ -132,17 +147,32 @@ func (r *Registry) CollectTrafficByType(ctx context.Context) (map[CoreType]*traf
 }
 
 // Shutdown stops every core that holds listeners or daemons (the optional
-// Shutdown(ctx) method), returning the first error.
+// Shutdown stops every inbound of every core that can stop them all at once,
+// the cores side by side, and refuses Apply from then on.
 func (r *Registry) Shutdown(ctx context.Context) error {
-	var first error
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	var (
+		wg   sync.WaitGroup
+		emu  sync.Mutex
+		errs []error
+	)
 	for t, c := range r.cores {
 		sd, ok := c.(interface{ Shutdown(context.Context) error })
 		if !ok {
 			continue
 		}
-		if err := sd.Shutdown(ctx); err != nil && first == nil {
-			first = fmt.Errorf("shutdown %q: %w", t, err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sd.Shutdown(ctx); err != nil {
+				emu.Lock()
+				errs = append(errs, fmt.Errorf("shutdown %q: %w", t, err))
+				emu.Unlock()
+			}
+		}()
 	}
-	return first
+	wg.Wait()
+	return errors.Join(errs...)
 }

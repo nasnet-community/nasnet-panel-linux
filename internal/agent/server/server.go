@@ -326,6 +326,9 @@ func (s *Server) stop(ctx context.Context) {
 		s.trafficCollector.Stop()
 	}
 	s.stopCoreTrafficCollector()
+	// Count the tunnels' last bytes into the store (flushed to disk below)
+	// before their counters go with them.
+	s.collectCoreTrafficOnce(ctx)
 	if s.coreRegistry != nil {
 		if err := s.coreRegistry.Shutdown(ctx); err != nil {
 			logrus.WithError(err).Warn("Failed to stop tunnel cores")
