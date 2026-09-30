@@ -363,6 +363,13 @@ func (u *nodeUsecase) GetStarlinkObstructionMap(ctx context.Context, nodeID uint
 	}
 	defer closeAgentClient(client)
 
+	// In process on the built-in node nothing else bounds the call; a dish
+	// that accepts TCP but stops answering would pin the request.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 	return client.GetStarlinkObstructionMap(ctx, settings.DishAddress)
 }
 
