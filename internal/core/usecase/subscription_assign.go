@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/nasnet-community/nasnet-panel-linux/internal/core/domain"
 )
 
 // SubscriptionCoreAccount is a view of one core_user provisioned for a
@@ -112,6 +114,37 @@ func (u *CoreUsecase) RebindSubscription(ctx context.Context, subID uint, email 
 		}
 	}
 	nodeSet, err := u.nodeSetForUsers(ctx, users)
+	if err != nil {
+		return err
+	}
+	return u.reconcileNodeSet(ctx, nodeSet)
+}
+
+// SetKLimitBySubscription applies a subscription's device limit to all of its
+// tunnel users (0 keeps the default of one device) and reconciles the nodes.
+func (u *CoreUsecase) SetKLimitBySubscription(ctx context.Context, subID uint, kLimit int) error {
+	if kLimit < 1 {
+		kLimit = 1
+	}
+	users, err := u.repo.FindUsersBySubscription(ctx, subID)
+	if err != nil {
+		return err
+	}
+	var changed []*domain.CoreUser
+	for _, cu := range users {
+		if cu.KLimit == kLimit {
+			continue
+		}
+		cu.KLimit = kLimit
+		if err := u.repo.UpdateUser(ctx, cu); err != nil {
+			return err
+		}
+		changed = append(changed, cu)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	nodeSet, err := u.nodeSetForUsers(ctx, changed)
 	if err != nil {
 		return err
 	}

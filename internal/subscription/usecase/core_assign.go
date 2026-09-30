@@ -31,6 +31,9 @@ type CoreAssigner interface {
 	// RebindSubscription moves the subscription's tunnel users to a new email
 	// and rotates their secrets.
 	RebindSubscription(ctx context.Context, subID uint, email string) error
+	// SetKLimitBySubscription applies the subscription's device limit to its
+	// tunnel users.
+	SetKLimitBySubscription(ctx context.Context, subID uint, kLimit int) error
 }
 
 // SetCoreAssigner wires the tunnel usecase.

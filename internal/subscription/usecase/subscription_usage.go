@@ -240,6 +240,12 @@ func (u *subscriptionUsecase) SetMaxDevices(ctx context.Context, id uint, maxDev
 	if err := u.subRepo.SetMaxDevices(ctx, id, maxDevices); err != nil {
 		return err
 	}
+	// Tunnel users carry their own copy of the limit.
+	if u.coreAssigner != nil {
+		if err := pendingOK(u.coreAssigner.SetKLimitBySubscription(ctx, id, maxDevices), "SetMaxDevices", id); err != nil {
+			log.WithError(err).WithField("subscription_id", id).Warn("[SetMaxDevices] Failed to update tunnel device limits")
+		}
+	}
 
 	actionStr := "reset to default"
 	if maxDevices > 0 {
