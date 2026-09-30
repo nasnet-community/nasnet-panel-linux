@@ -405,6 +405,9 @@ func (u *nodeUsecase) syncStarlinkStats(ctx context.Context, node *domain.Node, 
 	u.maybeSyncStarlinkEvents(node, settings.DishAddress)
 
 	stat := &domain.StarlinkStat{
+		// UTC like the other time series: SQLite compares these as text and
+		// the history query binds UTC.
+		CreatedAt:             time.Now().UTC(),
 		NodeID:                node.ID,
 		DownlinkThroughputBps: status.DownlinkThroughputBps,
 		UplinkThroughputBps:   status.UplinkThroughputBps,

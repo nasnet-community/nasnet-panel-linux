@@ -800,7 +800,7 @@ func (r *nodeRepository) GetNodesStatsHistoryBulk(ctx context.Context, nodeIDs [
 }
 
 func (r *nodeRepository) CleanupOldNodeStats(ctx context.Context, olderThanDays int) (int64, error) {
-	cutoff := time.Now().AddDate(0, 0, -olderThanDays)
+	cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
 	result := r.db.WithContext(ctx).
 		Where("created_at < ?", cutoff).
 		Delete(&domain.NodeStat{})
@@ -819,7 +819,7 @@ func (r *nodeRepository) CleanupOldNodeDailyTraffic(ctx context.Context, olderTh
 // CleanupOldUptimeEvents prunes uptime events older than retention.
 // Grows fast under network flapping (1 row per transition).
 func (r *nodeRepository) CleanupOldUptimeEvents(ctx context.Context, olderThanDays int) (int64, error) {
-	cutoff := time.Now().AddDate(0, 0, -olderThanDays)
+	cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
 	result := r.db.WithContext(ctx).
 		Where("timestamp < ?", cutoff).
 		Delete(&domain.NodeUptimeEvent{})
@@ -830,7 +830,7 @@ func (r *nodeRepository) CleanupOldUptimeEvents(ctx context.Context, olderThanDa
 // window by `created_at`. Sample-rate is higher than NodeStat (dish telemetry
 // is polled per stats-tick), so retention here is usually the shortest.
 func (r *nodeRepository) CleanupOldStarlinkStats(ctx context.Context, olderThanDays int) (int64, error) {
-	cutoff := time.Now().AddDate(0, 0, -olderThanDays)
+	cutoff := time.Now().UTC().AddDate(0, 0, -olderThanDays)
 	result := r.db.WithContext(ctx).
 		Where("created_at < ?", cutoff).
 		Delete(&domain.StarlinkStat{})
@@ -1609,7 +1609,7 @@ func (r *nodeRepository) GetStarlinkStatsHistory(ctx context.Context, nodeID uin
 
 	var stats []*domain.StarlinkStat
 	if err := r.db.WithContext(ctx).
-		Where("node_id = ? AND created_at >= ?", nodeID, *since).
+		Where("node_id = ? AND created_at >= ?", nodeID, since.UTC()).
 		Order("created_at ASC").
 		Find(&stats).Error; err != nil {
 		return nil, err
