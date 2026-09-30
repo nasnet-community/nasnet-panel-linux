@@ -22,6 +22,7 @@ export function GeneralTab({
     builtIn: boolean
 }) {
     const egress = form.watch("egress_mode") ?? "direct"
+    const egressError = form.formState.errors.egress_mode?.message
 
     return (
         <div className="space-y-4">
@@ -119,6 +120,7 @@ export function GeneralTab({
                                 : "Straight out of the node. Addresses on the node and its networks are refused."}
                     </span>
                 </div>
+                {egressError && <p className="text-sm font-medium text-destructive">{egressError}</p>}
             </div>
         </div>
     )

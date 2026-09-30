@@ -146,7 +146,7 @@ function CoreFormBody({
     const onSubmit = submit(onClose)
 
     const errors = form.formState.errors as Record<string, unknown>
-    const generalHasError = !!(errors.port || errors.listen || errors.remark)
+    const generalHasError = !!(errors.port || errors.listen || errors.remark || errors.egress_mode)
     const builtIn = node.connect_mode === "local"
     const slotErrorsRaw = (errors[slot] ?? {}) as Record<string, { message?: string }>
     const configHasError = !!errors[slot]

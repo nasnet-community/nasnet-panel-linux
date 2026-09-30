@@ -49,7 +49,7 @@ export const coreFormSchema = z
                     ctx.addIssue({
                         code: "custom",
                         message: "The middle proxy and ad tag aren't available with Xray egress.",
-                        path: [slot, "middle_proxy"],
+                        path: ["egress_mode"],
                     })
                 }
                 // An ad tag only reaches Telegram through the middle proxy; without
