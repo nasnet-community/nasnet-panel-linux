@@ -49,6 +49,7 @@ import { toast } from "@/lib/toast"
 import { formatDistanceToNowStrict } from "date-fns"
 import { SubscriptionAutocomplete } from "@/components/ui/subscription-autocomplete"
 import type { AggregatedAccessLogEntry, Node } from "@/lib/types"
+import { csvCell } from "@/lib/csv"
 
 // --- Column Helper ---
 const features = tableFeatures({
@@ -333,7 +334,7 @@ export default function AccessLogsPage() {
                 d.port,
                 d.inbound_tag,
                 d.outbound_tag,
-            ].join(",")
+            ].map(csvCell).join(",")
         })
         const csv = [headers.join(","), ...csvRows].join("\n")
         const blob = new Blob([csv], { type: "text/csv" })

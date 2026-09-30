@@ -42,6 +42,7 @@ import { DateRangePicker } from "./date-range-picker"
 import { AccessHistorySearchPanel } from "./search-panel"
 import { cn } from "@/lib/utils"
 import type { AccessHistoryGranularity } from "@/lib/types"
+import { csvCell } from "@/lib/csv"
 
 interface AccessHistoryDialogProps {
     subId: number | undefined
@@ -502,9 +503,4 @@ function downloadAccessHistoryCSV(
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-}
-
-function csvCell(v: string): string {
-    if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`
-    return v
 }
