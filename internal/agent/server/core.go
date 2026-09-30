@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/core"
@@ -148,6 +150,11 @@ func desiredStateFromPayload(req *pb.CoreStatePayload) core.DesiredState {
 func (s *Server) ApplyCoreState(ctx context.Context, req *pb.CoreStatePayload) (*pb.CommandResponse, error) {
 	if s.coreRegistry == nil {
 		return &pb.CommandResponse{Success: false, Message: "core registry not initialized"}, nil
+	}
+	// Inbound IDs are the hub's decimal row IDs; they name directories and
+	// state files, so anything else is refused before it touches the disk.
+	if _, err := strconv.ParseUint(req.GetInboundId(), 10, 64); err != nil {
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("invalid inbound id %q", req.GetInboundId())}, nil
 	}
 	// Persist the hub's desired state on receipt (before Apply) so a reboot can
 	// replay it even if this Apply fails transiently. Enabled=false is a teardown,
