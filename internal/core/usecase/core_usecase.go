@@ -152,6 +152,13 @@ func (u *CoreUsecase) CreateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.repo.CreateInbound(ctx, in); err != nil {
 		return err
 	}
+	// An MTProto inbound's loopback ports derive from its ID, known only now.
+	if err := u.checkLoopbackPorts(ctx, in); err != nil {
+		if delErr := u.repo.DeleteInbound(ctx, in.ID); delErr != nil {
+			return errors.Join(err, delErr)
+		}
+		return err
+	}
 	u.notifyInboundsChanged(ctx, in.NodeID)
 	return nil
 }
@@ -190,6 +197,9 @@ func (u *CoreUsecase) UpdateInbound(ctx context.Context, in *domain.CoreInbound)
 		return err
 	}
 	if err := u.checkPortFree(ctx, in.NodeID, in.Port, in.ID); err != nil {
+		return err
+	}
+	if err := u.checkLoopbackPorts(ctx, in); err != nil {
 		return err
 	}
 	if err := prepareInboundSettings(in, u.isRelayed(in.NodeID)); err != nil {
@@ -373,6 +383,48 @@ func inboundPorts(inbounds []*domain.CoreInbound, excludeInboundID uint) []int {
 		}
 	}
 	return ports
+}
+
+// checkLoopbackPorts refuses an MTProto inbound whose relay or metrics port
+// (127.0.0.1, base+id or pinned in settings) is its own listener, another
+// tunnel's port, or held by something else on the node.
+func (u *CoreUsecase) checkLoopbackPorts(ctx context.Context, in *domain.CoreInbound) error {
+	if in.Protocol != domain.CoreProtoMTProto || in.ID == 0 {
+		return nil
+	}
+	st, err := mtprotoproto.ParseSettings(in.Settings)
+	if err != nil {
+		return err
+	}
+	relay, metrics := st.LoopbackPorts(in.ID)
+	if relay == metrics || relay == in.Port || metrics == in.Port {
+		return fmt.Errorf("%w: node=%d: the relay (%d) and metrics (%d) ports must differ from each other and from the listener", ErrPortInUse, in.NodeID, relay, metrics)
+	}
+	inbounds, err := u.repo.ListInboundsByNode(ctx, in.NodeID)
+	if err != nil {
+		return err
+	}
+	taken := inboundPorts(inbounds, in.ID)
+	for _, p := range []int{relay, metrics} {
+		if p < 1 || p > 65535 {
+			return fmt.Errorf("%w: %d", ErrInvalidPort, p)
+		}
+		for _, t := range taken {
+			if t == p {
+				return fmt.Errorf("%w: node=%d port=%d (this inbound's loopback port)", ErrPortInUse, in.NodeID, p)
+			}
+		}
+		if u.externalPort != nil {
+			used, err := u.externalPort(ctx, in.NodeID, p)
+			if err != nil {
+				return err
+			}
+			if used {
+				return fmt.Errorf("%w (external): node=%d port=%d (this inbound's loopback port)", ErrPortInUse, in.NodeID, p)
+			}
+		}
+	}
+	return nil
 }
 
 func (u *CoreUsecase) checkPortFree(ctx context.Context, nodeID uint, port int, excludeInboundID uint) error {
