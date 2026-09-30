@@ -167,8 +167,14 @@ func through(ctx context.Context, client *http.Client, testURL string, timeout t
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 
+	// A generate_204 endpoint answers 204 and nothing else; a 200 there is a
+	// captive portal or a hijacked response, not a working exit.
+	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
+	if strings.Contains(req.URL.Path, "generate_204") {
+		ok = resp.StatusCode == http.StatusNoContent
+	}
 	out := &pb.OutboundTestResponse{
-		Success:       resp.StatusCode >= 200 && resp.StatusCode < 300,
+		Success:       ok,
 		Status:        "passed",
 		LatencyMs:     latency,
 		TtfbMs:        ttfb,
