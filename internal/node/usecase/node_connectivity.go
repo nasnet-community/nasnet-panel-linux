@@ -39,7 +39,10 @@ const (
 // detectors don't re-read the node row on every observation. The DB stays
 // authoritative — this is only a cache, seeded from the node on first use.
 type nodeConnState struct {
-	online bool
+	// observe serialises one node's observations from the decision through
+	// the commit, so two detectors can't both record the same transition.
+	observe sync.Mutex
+	online  bool
 	// candidateSince is the start of an unconfirmed outage; zero = none.
 	candidateSince time.Time
 }
@@ -104,6 +107,8 @@ func (u *nodeUsecase) ObserveNodeHealth(ctx context.Context, node *domain.Node, 
 		return
 	}
 	st := u.connStateFor(node)
+	st.observe.Lock()
+	defer st.observe.Unlock()
 	now := time.Now()
 	// Detectors often report right after an RPC used up their deadline; the
 	// writes that record the observation must not fail because of it.
