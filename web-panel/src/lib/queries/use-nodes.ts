@@ -680,7 +680,7 @@ export function useAddInbound() {
             queryClient.invalidateQueries({ queryKey: queryKeys.nodeInbounds(nodeId) })
         },
         onError: (error: Error) => {
-            toast.error(error.message)
+            if (!isRealityDestError(error)) toast.error(error.message)
         },
     })
 }
@@ -699,7 +699,7 @@ export function useUpdateInbound() {
             queryClient.invalidateQueries({ queryKey: queryKeys.nodeInbounds(nodeId) })
         },
         onError: (error: Error) => {
-            toast.error(error.message)
+            if (!isRealityDestError(error)) toast.error(error.message)
         },
     })
 }
@@ -717,7 +717,7 @@ export function useDeleteInbound() {
             queryClient.invalidateQueries({ queryKey: queryKeys.nodeInbounds(nodeId) })
         },
         onError: (error: Error) => {
-            if (!isRealityDestError(error)) toast.error(error.message)
+            toast.error(error.message)
         },
     })
 }
@@ -762,7 +762,7 @@ export function useToggleInbound(nodeId: number) {
         },
         onError: (error: Error) => {
             // A blocked REALITY dest is shown inline by the inbound dialog.
-            if (!isRealityDestError(error)) toast.error(error.message)
+            toast.error(error.message)
         },
     })
 }
