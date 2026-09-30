@@ -89,6 +89,8 @@ type Server struct {
 
 	// coreRegistry holds the tunnel cores (ssh, mtproto).
 	coreRegistry *agentcore.Registry
+
+	stopOnce sync.Once
 	// coreState persists the last hub-pushed desired state per core inbound so
 	// StartBackgroundServices can re-Apply the cores after a reboot/restart.
 	// Nil on the built-in node.
@@ -306,8 +308,13 @@ func (s *Server) StartLocal(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the agent server
+// Stop stops the agent server. Only the first call does the work; a
+// self-update restart can reach it from the signal handler and restartSelf.
 func (s *Server) Stop(ctx context.Context) {
+	s.stopOnce.Do(func() { s.stop(ctx) })
+}
+
+func (s *Server) stop(ctx context.Context) {
 	if s.statsCollect != nil {
 		s.statsCollect.Stop()
 	}

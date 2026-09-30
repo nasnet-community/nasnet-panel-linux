@@ -25,6 +25,7 @@ type FileStore struct {
 	interval time.Duration
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
+	closed   sync.Once
 }
 
 // NewFileStore creates a disk-persisted traffic store.
@@ -170,11 +171,15 @@ func (fs *FileStore) SetBaseline(snapshot *XrayStatsSnapshot) {
 	fs.mem.SetBaseline(snapshot)
 }
 
+// Close stops the flush loop and flushes once more. Safe to call twice: a
+// self-update restart can stop the agent from two places.
 func (fs *FileStore) Close() error {
-	close(fs.stopCh)
-	fs.wg.Wait()
-	// Final flush
-	fs.flush()
+	fs.closed.Do(func() {
+		close(fs.stopCh)
+		fs.wg.Wait()
+		// Final flush
+		fs.flush()
+	})
 	return nil
 }
 
