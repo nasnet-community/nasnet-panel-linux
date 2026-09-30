@@ -80,7 +80,11 @@ export default function NodeDetailPage() {
     // Tab state from URL
     const rawTab = searchParams.get("tab") || "overview"
     const resolvedTab = rawTab === "users" || rawTab === "accounts" ? "network" : rawTab
-    const activeTab = node?.is_stealth && ["access-logs", "terminal"].includes(resolvedTab) ? "overview" : resolvedTab
+    // A deep link to a tab this node doesn't show (Starlink with monitoring
+    // off, the stealth-hidden ones) lands on Overview instead of an error.
+    const hiddenTab = (node?.is_stealth && ["access-logs", "terminal"].includes(resolvedTab))
+        || (resolvedTab === "starlink" && !!node && !(node.starlink_settings?.enabled && !node.is_stealth))
+    const activeTab = hiddenTab ? "overview" : resolvedTab
     useEffect(() => {
         if (rawTab !== "users" && rawTab !== "accounts") return
         const next = new URLSearchParams(searchParams)
