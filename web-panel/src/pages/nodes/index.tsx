@@ -64,7 +64,7 @@ import { BulkNodeActionsBar } from "@/components/node/bulk-node-actions-bar"
 import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
 import { wipeNode } from "@/lib/api/nuke"
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
-import { isLocalNode, nodeAddress } from "@/lib/node-kind"
+import { isLocalNode, nodeAddress, outageReasonLabel } from "@/lib/node-kind"
 import { useChartPalette } from "@/lib/design/palette"
 
 // ─── Compact Node Card ────────────────────────────────────────────
@@ -185,7 +185,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
                         <span
                             className="text-[11px] md:text-[12px] text-muted-foreground/70 font-mono shrink-0"
                             title={`Last disconnected ${new Date(node.last_disconnected_at).toLocaleString()}${
-                                node.last_offline_reason ? ` — ${node.last_offline_reason.replace(/_/g, " ")}` : ""
+                                node.last_offline_reason ? ` — ${outageReasonLabel(node.last_offline_reason, isLocalNode(node))}` : ""
                             }`}
                         >
                             {node.is_online ? "last down " : "down "}

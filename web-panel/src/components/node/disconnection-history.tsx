@@ -5,29 +5,14 @@ import { cn } from "@/lib/utils"
 import { SegmentedControl, T } from "./node-ui"
 import { OverviewCard } from "./overview/overview-card"
 import { useNodeDisconnections, useNodeUptimeSummary } from "@/lib/queries/use-nodes"
-import type { NodeOutage, NodeTransitionReason } from "@/lib/types"
+import type { NodeOutage } from "@/lib/types"
+import { outageReasonLabel } from "@/lib/node-kind"
 
 interface DisconnectionHistoryProps {
     nodeId: number
     enabled?: boolean
     /** The built-in node: no agent, and panel-down time is an outage. */
     local?: boolean
-}
-
-const REASON_LABELS: Partial<Record<NodeTransitionReason, string>> = {
-    heartbeat_timeout: "Heartbeat timed out",
-    agent_unreachable: "Agent unreachable",
-    health_check_failed: "Health check failed",
-    hub_shutdown: "Panel stopped",
-    admin_disabled: "Disabled by operator",
-    maintenance: "Maintenance",
-    panel_down: "Panel down",
-}
-
-// The built-in node has no agent (D19): name what failed without one.
-const LOCAL_REASON_LABELS: Partial<Record<NodeTransitionReason, string>> = {
-    agent_unreachable: "Not responding",
-    heartbeat_timeout: "Not responding",
 }
 
 const WINDOWS = [
@@ -61,7 +46,7 @@ function formatWhen(iso: string): string {
 
 function OutageRow({ outage, local }: { outage: NodeOutage; local?: boolean }) {
     const label = outage.reason
-        ? (local ? LOCAL_REASON_LABELS[outage.reason] : undefined) ?? REASON_LABELS[outage.reason] ?? outage.reason
+        ? outageReasonLabel(outage.reason, !!local)
         : "Unknown cause"
     const Icon = outage.planned ? PauseCircle : PlugZap
     const end = outage.ended_at

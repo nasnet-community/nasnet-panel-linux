@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import type { Node } from "@/lib/types"
+import { LocalNodeBadge } from "@/components/node/local-node-badge"
+import { isLocalNode, nodeAddress } from "@/lib/node-kind"
 import { useAllCoreInbounds, useNodeDeps, useNodes } from "@/lib/queries"
 import { useCoresStore, type CoreProtocolFilter } from "@/store/cores-store"
 import type { CoreInbound } from "@/lib/types/cores"
@@ -297,6 +299,7 @@ function NodeGroupHeader({ group }: { group: NodeGroup }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b pb-2">
             <Server className="size-4 text-muted-foreground" />
             <span className="font-semibold">{name}</span>
+            {isLocalNode(node) && <LocalNodeBadge />}
             {node ? (
                 <span
                     className={cn(
@@ -317,7 +320,7 @@ function NodeGroupHeader({ group }: { group: NodeGroup }) {
             {node?.country_code && (
                 <span className="text-xs text-muted-foreground">{node.country_code}</span>
             )}
-            {node?.ip && <span className="font-mono text-xs text-muted-foreground">{node.ip}</span>}
+            {node?.ip && <span className="font-mono text-xs text-muted-foreground">{nodeAddress(node)}</span>}
             <span className="ml-auto text-xs text-muted-foreground">
                 {inbounds.length} tunnel{inbounds.length === 1 ? "" : "s"}
             </span>

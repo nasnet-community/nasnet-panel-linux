@@ -153,8 +153,8 @@ export function NodeDetailSheet({ node, open, onOpenChange, onDeploy }: NodeDeta
                                     <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versions</h4>
                                     <div className="grid grid-cols-2 gap-3 text-xs">
                                         <div>
-                                            <p className="text-muted-foreground">Agent</p>
-                                            <p className="font-medium">{stats.agent_version}</p>
+                                            <p className="text-muted-foreground">{isLocalNode(node) ? "Panel" : "Agent"}</p>
+                                            <p className="font-medium">{isLocalNode(node) ? `v${stats.agent_version.replace(/^v/, "")}` : stats.agent_version}</p>
                                         </div>
                                         {stats.xray_version && (
                                             <div>

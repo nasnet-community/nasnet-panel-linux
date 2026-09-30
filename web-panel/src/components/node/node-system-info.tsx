@@ -127,7 +127,7 @@ export function NodeSystemInfo({ node, overview, compact }: NodeSystemInfoProps)
                         <Spec compact={compact} label="Connection" icon={<ArrowLeftRight className={cn(iconCls, node.is_online ? "text-teal-400" : "text-red-400")} />}
                             value={MODE_LABEL[mode as NodeOverview["connection"]["mode"]] ?? mode}
                             sub={!node.is_online
-                                ? <span className="text-red-400">{mode === "direct" ? "Unreachable" : "Tunnel closed"}</span>
+                                ? <span className="text-red-400">{local ? "Not responding" : mode === "direct" ? "Unreachable" : "Tunnel closed"}</span>
                                 : rtt != null ? (rtt < 1 ? "Under 1 ms latency" : `${rtt} ms latency`) : undefined} />
                     </div>
                 </>
