@@ -313,7 +313,11 @@ func OpenHubLifecycle(ctx context.Context, repo hubLifecycleRepo, version string
 	} else if closed > 0 {
 		log.Warnf("[connectivity] closed %d hub lifecycle row(s) left open by an unclean shutdown", closed)
 	}
-	ev := &domain.HubLifecycleEvent{StartedAt: time.Now().UTC(), Version: version}
+	// Alive from the start: a run that dies before its first 30 s stamp is
+	// then closed at its start, not at the next boot (which would count the
+	// whole outage as panel uptime).
+	started := time.Now().UTC()
+	ev := &domain.HubLifecycleEvent{StartedAt: started, LastAliveAt: &started, Version: version}
 	if err := repo.CreateHubLifecycleEvent(ctx, ev); err != nil {
 		log.WithError(err).Warn("[connectivity] opening hub lifecycle row failed")
 		return &HubLifecycle{repo: repo}
