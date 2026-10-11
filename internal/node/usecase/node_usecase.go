@@ -278,6 +278,8 @@ type NodeUsecase interface {
 	SwitchConnectMode(ctx context.Context, nodeID uint, newMode string) (*AgentMove, error)
 	MoveAgentPort(ctx context.Context, nodeID uint, port int) (*AgentMove, error)
 	MoveNodeAddress(ctx context.Context, nodeID uint, address string) (*AgentMove, error)
+	UsersLeftOn(nodeID uint) bool
+	RemoveLeftoverUsers(ctx context.Context, everyIdle bool)
 	UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error
 	AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error
 	BulkUpdateAgent(ctx context.Context, ids []uint) map[uint]*NodeBulkActionResult
@@ -433,6 +435,10 @@ type nodeUsecase struct {
 	// Used to detect when an agent's config drifts from what the master last pushed.
 	configHashMu         sync.RWMutex
 	lastPushedConfigHash map[uint]string // nodeID -> config hash after last successful push
+
+	// out-of-service nodes the panel couldn't reach yet, so their Xray may still hold users
+	leftMu    sync.Mutex
+	usersLeft map[uint]bool
 
 	// Heartbeat manager for the local node's status loop
 	heartbeatMgr *HeartbeatManager
@@ -591,6 +597,7 @@ func NewNodeUsecase(nodeRepo repository.NodeRepository, subRepo subRepo.Subscrip
 		settingUC:            settingUC,
 		tm:                   tm,
 		lastPushedConfigHash: make(map[uint]string),
+		usersLeft:            map[uint]bool{},
 		credCache:            make(map[uint]*cachedCreds),
 		pushState:            make(map[uint]*configPushState),
 		nukesInFlight:        map[uint]struct{}{},

@@ -73,6 +73,8 @@ type NodeUsecase interface {
 	// RunAgentCertMaintenance self-gates to every 12 h: rotates node certs
 	// close to expiry and alerts when it can't.
 	RunAgentCertMaintenance(ctx context.Context) error
+	// RemoveLeftoverUsers takes users off out-of-service nodes the panel couldn't reach before.
+	RemoveLeftoverUsers(ctx context.Context, everyIdle bool)
 }
 
 // UsedTokenRepository drops one-time deployment tokens past their expiry.

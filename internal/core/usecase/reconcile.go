@@ -34,6 +34,14 @@ func (u *CoreUsecase) ReconcileNode(ctx context.Context, pusher CoreStatePusher,
 	if err != nil {
 		return fmt.Errorf("build core payloads for node %d: %w", nodeID, err)
 	}
+	if !u.servesUsers(ctx, nodeID) {
+		// out of service: the tunnels keep running but let nobody in, and live sessions end
+		for _, p := range payloads {
+			for _, cu := range p.Users {
+				cu.Enabled = false
+			}
+		}
+	}
 	var errs []error
 	known := make(map[string]bool, len(payloads))
 	for _, p := range payloads {

@@ -15,6 +15,7 @@ func (s *Scheduler) reconcileNodes(ctx context.Context) {
 		return
 	}
 
+	s.nodeUsecase.RemoveLeftoverUsers(ctx, false)
 	for _, node := range nodes {
 		if !node.IsActive || node.IsLite() {
 			continue
@@ -45,6 +46,8 @@ func (s *Scheduler) syncAgentNodes(ctx context.Context) {
 		return
 	}
 
+	// nodes taken out of service before this start may still hold users
+	s.nodeUsecase.RemoveLeftoverUsers(ctx, true)
 	for _, node := range nodes {
 		if !node.IsActive || node.IsLite() {
 			continue

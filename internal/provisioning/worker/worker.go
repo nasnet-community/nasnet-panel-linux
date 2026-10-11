@@ -174,6 +174,9 @@ func (w *Worker) addUserToXray(ctx context.Context, task *domain.ProvisioningTas
 		}
 		return fmt.Errorf("failed to get node %d: %w", task.NodeID, err)
 	}
+	if !node.IsActive {
+		return nil // out of service: the push that puts it back brings this user
+	}
 
 	flow := task.UserFlow
 	protocol := strings.ToLower(task.Protocol)

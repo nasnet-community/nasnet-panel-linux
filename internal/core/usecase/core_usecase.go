@@ -74,6 +74,17 @@ type CoreUsecase struct {
 	pushXray        func(ctx context.Context, nodeID uint) error
 	nodeKind        func(ctx context.Context, nodeID uint) (string, error)
 	coverCheck      func(ctx context.Context, nodeID uint, domain string) error
+	inService       func(ctx context.Context, nodeID uint) bool
+}
+
+// WithNodeInService: a node out of service gets its tunnels without users, and its links stay hidden.
+func WithNodeInService(fn func(ctx context.Context, nodeID uint) bool) Option {
+	return func(u *CoreUsecase) { u.inService = fn }
+}
+
+// servesUsers reports whether a node's tunnels should let users in.
+func (u *CoreUsecase) servesUsers(ctx context.Context, nodeID uint) bool {
+	return u.inService == nil || u.inService(ctx, nodeID)
 }
 
 // WithCoverSiteCheck vets an MTProto node tunnel's cover site from its node before saving.

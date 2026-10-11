@@ -14,7 +14,10 @@ import (
 type settingsUpdateUsecase struct {
 	usecase.NodeUsecase
 	saved *domain.Node
+	left  bool
 }
+
+func (u *settingsUpdateUsecase) UsersLeftOn(uint) bool { return u.left }
 
 func (u *settingsUpdateUsecase) GetNode(context.Context, uint) (*domain.Node, error) {
 	return &domain.Node{ID: 6, Name: "Existing", IP: "192.0.2.6", AgentPort: 8080, APIPort: 10085}, nil
@@ -73,3 +76,21 @@ func TestNodeSettingsValidationAtHTTPBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestTakingANodeOutOfServiceWarnsWhenUsersAreLeft(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, left := range []bool{false, true} {
+		uc := &settingsUpdateUsecase{left: left}
+		router := gin.New()
+		router.PUT("/nodes/:id", (&Handler{nodeUsecase: uc}).UpdateNode)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/nodes/6", strings.NewReader(`{"is_active":false}`)))
+		if rec.Code != http.StatusOK || uc.saved == nil || uc.saved.IsActive {
+			t.Fatalf("left=%v: code %d saved %+v", left, rec.Code, uc.saved)
+		}
+		if got := strings.Contains(rec.Body.String(), `"warning"`); got != left {
+			t.Fatalf("left=%v: warning in body = %v: %s", left, got, rec.Body.String())
+		}
+	}
+}
+

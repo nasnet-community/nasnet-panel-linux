@@ -25,7 +25,7 @@ func TestProcessTask_AddUser_Success(t *testing.T) {
 	nuc := newMockNodeUsecase()
 
 	// Register a node
-	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4"}
+	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4", IsActive: true}
 
 	task := &domain.ProvisioningTask{
 		ID:             1,
@@ -85,13 +85,36 @@ func TestProcessTask_AddUser_Success(t *testing.T) {
 	}
 }
 
+// A node out of service gets no users; the push that puts it back brings them.
+func TestProcessTask_AddUser_NodeOutOfService(t *testing.T) {
+	repo := newMockProvisioningRepo()
+	nuc := newMockNodeUsecase()
+	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4", IsActive: false}
+
+	task := &domain.ProvisioningTask{
+		ID: 4, NodeID: 1, Type: domain.TypeAddUser, Status: domain.StatusPending,
+		InboundTag: "vless-in", UserEmail: "user@test.com", UserUUID: "abc-123", Protocol: "vless",
+	}
+	repo.tasks[task.ID] = task
+
+	w := newTestWorker(repo, nuc)
+	w.processTask(w.ctx, task)
+
+	if len(nuc.addUserCalls) != 0 {
+		t.Fatalf("AddUserViaAgent called %d times on a node out of service", len(nuc.addUserCalls))
+	}
+	if len(repo.markSuccessCalls) != 1 {
+		t.Fatalf("expected the task to finish, got %d MarkSuccess calls", len(repo.markSuccessCalls))
+	}
+}
+
 // TestProcessTask_AddUser_AlreadyExists verifies idempotent handling:
 // when AddUserViaAgent returns "already exists", the task is still completed.
 func TestProcessTask_AddUser_AlreadyExists(t *testing.T) {
 	repo := newMockProvisioningRepo()
 	nuc := newMockNodeUsecase()
 
-	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4"}
+	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4", IsActive: true}
 	nuc.addUserErr = fmt.Errorf("user already exists on this inbound")
 
 	task := &domain.ProvisioningTask{
@@ -124,7 +147,7 @@ func TestProcessTask_AddUser_Failure(t *testing.T) {
 	repo := newMockProvisioningRepo()
 	nuc := newMockNodeUsecase()
 
-	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4"}
+	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "test-node", IP: "1.2.3.4", IsActive: true}
 	nuc.addUserErr = fmt.Errorf("connection refused")
 
 	task := &domain.ProvisioningTask{
@@ -270,7 +293,7 @@ func TestProcessBatch_ProcessesMultipleTasks(t *testing.T) {
 	repo := newMockProvisioningRepo()
 	nuc := newMockNodeUsecase()
 
-	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "node-1", IP: "1.2.3.4"}
+	nuc.nodes[1] = &nodeDomain.Node{ID: 1, Name: "node-1", IP: "1.2.3.4", IsActive: true}
 
 	tasks := []*domain.ProvisioningTask{
 		{

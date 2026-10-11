@@ -487,7 +487,11 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 		}()
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": node})
+	out := gin.H{"success": true, "data": node}
+	if !node.IsActive && h.nodeUsecase.UsersLeftOn(node.ID) {
+		out["warning"] = "The node didn't answer, so its users can still connect until it does. The panel keeps trying."
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *Handler) DeleteNode(c *gin.Context) {

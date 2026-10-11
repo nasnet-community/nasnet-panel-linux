@@ -630,6 +630,8 @@ func (m *mockNodeUsecase) MoveAgentPort(context.Context, uint, int) (*nodeUC.Age
 func (m *mockNodeUsecase) MoveNodeAddress(context.Context, uint, string) (*nodeUC.AgentMove, error) {
 	return nil, nil
 }
+func (m *mockNodeUsecase) UsersLeftOn(uint) bool                     { return false }
+func (m *mockNodeUsecase) RemoveLeftoverUsers(context.Context, bool) {}
 
 // Agent updates
 func (m *mockNodeUsecase) UpdateAgentBinary(context.Context, uint, []byte, string, string, []byte) error {

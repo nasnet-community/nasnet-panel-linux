@@ -217,6 +217,7 @@ func (u *CoreUsecase) GenerateSubscriptionArtifacts(ctx context.Context, subID u
 	}
 	var arts []*ClientArtifact
 	disabledByNode := map[uint]map[domain.CoreProtocol]bool{}
+	serving := map[uint]bool{}
 	inboundCache := map[uint]*domain.CoreInbound{}
 	for _, cu := range users {
 		in, ok := inboundCache[cu.CoreInboundID]
@@ -239,6 +240,14 @@ func (u *CoreUsecase) GenerateSubscriptionArtifacts(ctx context.Context, subID u
 		}
 		if dis[in.Protocol] {
 			continue
+		}
+		on, ok := serving[in.NodeID]
+		if !ok {
+			on = u.servesUsers(ctx, in.NodeID)
+			serving[in.NodeID] = on
+		}
+		if !on {
+			continue // node out of service: its links would be dead
 		}
 		art, err := u.GenerateUserConfigAuto(ctx, cu.ID)
 		if err != nil {

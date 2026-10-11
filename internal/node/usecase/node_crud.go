@@ -569,6 +569,7 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	// so it just stops being observed). Re-enabling records nothing — the next
 	// heartbeat or poll reports what is actually true.
 	adminDisabled := existing.IsActive && !node.IsActive
+	serviceChanged := existing.IsActive != node.IsActive && !node.IsLite()
 
 	// Detect if we need to lookup
 	shouldLookupLocation := node.IP != "" && (node.IP != existing.IP || node.CountryCode == "" || node.Datacenter == "")
@@ -583,6 +584,12 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 
 	if adminDisabled {
 		u.ObserveNodeHealth(ctx, node, false, domain.NodeOfflineReasonAdminDisabled, "disabled by an operator")
+	}
+	if serviceChanged {
+		u.applyService(ctx, node)
+		if u.heartbeatMgr != nil {
+			u.heartbeatMgr.TriggerSync()
+		}
 	}
 
 	// rebuild the heartbeat session so it doesn't keep using stale node details.

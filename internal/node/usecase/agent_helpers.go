@@ -729,7 +729,8 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 
 	// Merge managed WireGuard device peers into each WG inbound's settings.
 	// wg_peers is the source of truth; this is in-memory only, never persisted.
-	if u.wgPeerSource != nil {
+	// A node out of service gets no device peers, like it gets no users.
+	if u.wgPeerSource != nil && node.IsActive {
 		for _, in := range inbounds {
 			if !strings.EqualFold(in.Protocol, "wireguard") {
 				continue
@@ -754,59 +755,9 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 	}
 	outbounds = enabledOutbounds
 
-	// Populate users from the accounts table — the single source of truth.
-	// Active accounts determine which users exist on each inbound.
-	// Admin-excluded accounts (status=disabled) are naturally filtered out.
-	usersMap := make(map[string][]*xray.User)
-	addedUUIDs := make(map[string]map[string]bool) // tag -> uuid -> true (prevent duplicates)
-
-	if u.accountRepo != nil {
-		allAccounts, err := u.accountRepo.ListByNodeID(ctx, node.ID)
-		if err != nil {
-			return fmt.Errorf("failed to list accounts for node %d: %w", node.ID, err)
-		}
-		for _, acc := range allAccounts {
-			if acc.Status != "active" || acc.Inbound == nil {
-				continue
-			}
-			// An account's own status is only as correct as the last lifecycle
-			// hook that wrote it, and an account assigned to an already-terminal
-			// subscription is created active with nothing to correct it. The
-			// subscription's state is the authority for what reaches a node.
-			if acc.Subscription != nil && !acc.Subscription.GrantsAccess() {
-				continue
-			}
-			if acc.Inbound.IsDisabled {
-				continue
-			}
-			tag := acc.Inbound.Tag
-
-			// Deduplicate by UUID within the same inbound
-			if addedUUIDs[tag] == nil {
-				addedUUIDs[tag] = make(map[string]bool)
-			}
-			if addedUUIDs[tag][acc.UUID] {
-				log.Warnf("[pushConfigToAgent] Skipping duplicate UUID %s (email=%s) on inbound %s", acc.UUID, acc.Email, tag)
-				continue
-			}
-
-			var accLevel uint32
-			if acc.Subscription != nil {
-				accLevel = bandwidth.GetTier(acc.Subscription.GetEffectiveBandwidthLimit()).Level
-			}
-
-			usersMap[tag] = append(usersMap[tag], &xray.User{
-				Email:      acc.Email,
-				UUID:       acc.UUID,
-				Level:      accLevel,
-				Protocol:   xray.Protocol(acc.Inbound.Protocol),
-				Flow:       acc.Flow,
-				Encryption: acc.Encryption,
-				AlterId:    0,
-			})
-
-			addedUUIDs[tag][acc.UUID] = true
-		}
+	usersMap, err := u.nodeUsers(ctx, node)
+	if err != nil {
+		return err
 	}
 
 	// Inject managed certificates for inbounds
@@ -1535,4 +1486,65 @@ func computeDenylistHash(serials []string) string {
 	sort.Strings(sorted)
 	h := sha256.Sum256([]byte(strings.Join(sorted, ",")))
 	return hex.EncodeToString(h[:])
+}
+
+// nodeUsers lists the Xray users each inbound of a node should carry, by inbound tag.
+func (u *nodeUsecase) nodeUsers(ctx context.Context, node *domain.Node) (map[string][]*xray.User, error) {
+	log := logger.GetLogger()
+	// Populate users from the accounts table — the single source of truth.
+	// Active accounts determine which users exist on each inbound.
+	// Admin-excluded accounts (status=disabled) are naturally filtered out.
+	usersMap := make(map[string][]*xray.User)
+	addedUUIDs := make(map[string]map[string]bool) // tag -> uuid -> true (prevent duplicates)
+
+	// A node out of service gets no users at all; its Xray keeps running.
+	if u.accountRepo != nil && node.IsActive {
+		allAccounts, err := u.accountRepo.ListByNodeID(ctx, node.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list accounts for node %d: %w", node.ID, err)
+		}
+		for _, acc := range allAccounts {
+			if acc.Status != "active" || acc.Inbound == nil {
+				continue
+			}
+			// An account's own status is only as correct as the last lifecycle
+			// hook that wrote it, and an account assigned to an already-terminal
+			// subscription is created active with nothing to correct it. The
+			// subscription's state is the authority for what reaches a node.
+			if acc.Subscription != nil && !acc.Subscription.GrantsAccess() {
+				continue
+			}
+			if acc.Inbound.IsDisabled {
+				continue
+			}
+			tag := acc.Inbound.Tag
+
+			// Deduplicate by UUID within the same inbound
+			if addedUUIDs[tag] == nil {
+				addedUUIDs[tag] = make(map[string]bool)
+			}
+			if addedUUIDs[tag][acc.UUID] {
+				log.Warnf("[pushConfigToAgent] Skipping duplicate UUID %s (email=%s) on inbound %s", acc.UUID, acc.Email, tag)
+				continue
+			}
+
+			var accLevel uint32
+			if acc.Subscription != nil {
+				accLevel = bandwidth.GetTier(acc.Subscription.GetEffectiveBandwidthLimit()).Level
+			}
+
+			usersMap[tag] = append(usersMap[tag], &xray.User{
+				Email:      acc.Email,
+				UUID:       acc.UUID,
+				Level:      accLevel,
+				Protocol:   xray.Protocol(acc.Inbound.Protocol),
+				Flow:       acc.Flow,
+				Encryption: acc.Encryption,
+				AlterId:    0,
+			})
+
+			addedUUIDs[tag][acc.UUID] = true
+		}
+	}
+	return usersMap, nil
 }

@@ -105,6 +105,13 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 			}
 			return tunnelHost(n, d.BaseURL), nil
 		}),
+		coreUsecase.WithNodeInService(func(ctx context.Context, nodeID uint) bool {
+			if nodeID == 0 || nodeID == d.NodeUC.LocalNodeID() {
+				return true // the built-in node is always in service; no DB read inside a transaction
+			}
+			n, err := d.Nodes.GetNode(ctx, nodeID)
+			return err != nil || n.IsActive // a failed read keeps users on
+		}),
 		coreUsecase.WithNodeNameResolver(func(ctx context.Context, nodeID uint) (string, error) {
 			n, err := d.Nodes.GetNode(ctx, nodeID)
 			if err != nil {
