@@ -15,9 +15,12 @@ export function useCoreForm({
     nodeId,
     protocol,
     editInbound,
+    lite = false,
 }: {
     nodeId: number
     protocol: CoreProtocol
+    /** the tunnel lives on an MTProto node: its egress is the panel's */
+    lite?: boolean
     editInbound?: CoreInbound | null
 }) {
     const slot = SETTINGS_SLOT[protocol]
@@ -38,7 +41,7 @@ export function useCoreForm({
             protocol,
             listen: editInbound?.listen || "0.0.0.0",
             port: editInbound?.port ?? CORE_DEFAULT_PORTS[protocol],
-            egress_mode: editInbound?.egress_mode ?? "direct",
+            egress_mode: editInbound?.egress_mode ?? (lite ? "hub" : "direct"),
             remark: editInbound?.remark ?? "",
             is_disabled: editInbound?.is_disabled ?? false,
             [slot]: initialSettings,
@@ -64,7 +67,7 @@ export function useCoreForm({
                 protocol,
                 listen: data.listen || "0.0.0.0",
                 port: data.port,
-                egress_mode: data.egress_mode ?? "direct",
+                egress_mode: data.egress_mode ?? (lite ? "hub" : "direct"),
                 remark: data.remark || "",
                 settings,
                 is_disabled: data.is_disabled,

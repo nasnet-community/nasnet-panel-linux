@@ -64,7 +64,7 @@ export function MtprotoForm({
         <div className="space-y-5">
             <FormSection
                 title="Camouflage modes"
-                description="What the relay accepts on the wire. The client link encodes the mode, so this also decides what users are handed."
+                description="What the proxy accepts on the wire. The client link encodes the mode, so this also decides what users are handed."
             >
                 <div className="space-y-2">
                     {MODE_LABELS.map(({ key, label, hint }) => (
@@ -171,7 +171,7 @@ export function MtprotoForm({
             <FormSection title="Routing">
                 {builtIn ? (
                     <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
-                        On a router's built-in node the relay reaches Telegram through the VPN pool, so the
+                        On a router's built-in node the proxy reaches Telegram through the VPN pool, so the
                         middle proxy and ad tag are unavailable: their connections would bypass it.
                     </div>
                 ) : (
@@ -223,13 +223,13 @@ export function MtprotoForm({
                     value={value.unique_ip_window_secs ?? 0}
                     onChange={(v) => set({ unique_ip_window_secs: v })}
                     min={0}
-                    description="How long an IP keeps counting against a user's device limit. 0 uses the relay's default."
+                    description="How long an IP keeps counting against a user's device limit. 0 uses the proxy's default."
                 />
             </FormSection>
 
             <FormSection title="Advanced">
                 <SelectSetting
-                    label="Relay log level"
+                    label="Proxy log level"
                     value={value.log_level ?? "normal"}
                     onChange={(v) => set({ log_level: v as MtprotoSettings["log_level"] })}
                     options={[
@@ -245,11 +245,11 @@ export function MtprotoForm({
                     value={value.listen_backlog ?? 0}
                     onChange={(v) => set({ listen_backlog: v })}
                     min={0}
-                    description="0 uses the relay's default."
+                    description="0 uses the proxy's default."
                 />
                 <SettingRow
                     label="Loopback ports"
-                    description="0 auto-assigns (metrics 14300+, egress relay 12300+). The relay only runs on a router's built-in node; with Xray egress, Xray's SOCKS inbound takes that port."
+                    description="0 auto-assigns (metrics 14300+, egress 12300+). The egress port is only used on a router's built-in node; with Xray egress, Xray's SOCKS inbound takes that port."
                 >
                     <div className="grid grid-cols-2 gap-3">
                         <NumberSetting
@@ -259,7 +259,7 @@ export function MtprotoForm({
                             min={0}
                         />
                         <NumberSetting
-                            label="Relay port"
+                            label="Egress port"
                             value={value.socks_port ?? 0}
                             onChange={(v) => set({ socks_port: v })}
                             min={0}

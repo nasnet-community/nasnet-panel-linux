@@ -48,6 +48,14 @@ export const queryKeys = {
     starlinkDevice: (id: number) => [...queryKeys.nodes, 'starlink-device', id] as const,
     starlinkEvents: (id: number, range: string) => [...queryKeys.nodes, 'starlink-events', id, range] as const,
 
+    // MTProto (lite) nodes
+    mtproto: ['mtproto'] as const,
+    mtprotoNode: (id: number) => [...queryKeys.mtproto, 'node', id] as const,
+    mtprotoLogs: (id: number, lines: number) => [...queryKeys.mtproto, 'logs', id, lines] as const,
+    mtprotoAllowlist: () => [...queryKeys.mtproto, 'allowlist'] as const,
+    mtprotoNodes: () => [...queryKeys.mtproto, 'nodes'] as const,
+    mtprotoEvents: (id: number) => [...queryKeys.mtproto, 'events', id] as const,
+
     // Hosts
     hosts: ['hosts'] as const,
     hostList: (filters: object) => [...queryKeys.hosts, 'list', filters] as const,

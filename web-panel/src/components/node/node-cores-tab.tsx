@@ -22,6 +22,7 @@ import { CreateCoreDialog } from "@/components/cores/create-core-dialog"
 import { NodeProtocolsDialog } from "@/components/cores/node-protocols-dialog"
 import { countDisabledProtocols } from "@/components/node/node-protocols-panel"
 import { TunnelDependencies } from "@/components/node/node-setup-tab"
+import { isLiteNode } from "@/lib/node-kind"
 
 const PROTOCOL_TABS: { value: CoreProtocolFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -44,9 +45,11 @@ export function NodeCoresTab({ nodeId, node }: { nodeId: number; node: Node }) {
     const [protocolsOpen, setProtocolsOpen] = useState(false)
 
     const offCount = countDisabledProtocols(protocols)
+    // an MTProto node's agent brings its own proxy: nothing to install, no Xray
+    const lite = isLiteNode(node)
 
     // Same cache entry as the Dependencies section below.
-    const { data: depReports = [] } = useNodeDeps(nodeId, node.is_online)
+    const { data: depReports = [] } = useNodeDeps(nodeId, node.is_online && !lite)
     const setupRequired = useMemo(
         () => new Set(depReports.filter((r) => !r.ready).map((r) => r.core_type)),
         [depReports],
@@ -103,7 +106,7 @@ export function NodeCoresTab({ nodeId, node }: { nodeId: number; node: Node }) {
                         )}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                        SSH and MTProto servers running alongside Xray.
+                        {lite ? "This node's MTProto tunnel, carried through the panel." : "SSH and MTProto servers running alongside Xray."}
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -191,7 +194,7 @@ export function NodeCoresTab({ nodeId, node }: { nodeId: number; node: Node }) {
             />
 
             {/* What the protocols need installed on this node */}
-            <TunnelDependencies nodeId={nodeId} node={node} />
+            {!lite && <TunnelDependencies nodeId={nodeId} node={node} />}
 
             {/* Per-node protocol enable/disable */}
             <NodeProtocolsDialog

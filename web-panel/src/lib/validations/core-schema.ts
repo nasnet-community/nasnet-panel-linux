@@ -19,7 +19,7 @@ export const coreFormSchema = z
         protocol: coreProtocolEnum,
         listen: z.string().optional(),
         port: z.number().int().min(1, "Port must be 1–65535").max(65535, "Port must be 1–65535"),
-        egress_mode: z.enum(["direct", "xray"]).optional(),
+        egress_mode: z.enum(["direct", "xray", "hub"]).optional(),
         remark: z.string().max(100, "Remark is too long").optional(),
         is_disabled: z.boolean().optional(),
         ssh_settings: z.any().optional(),
@@ -31,6 +31,15 @@ export const coreFormSchema = z
         const s = ((data as Record<string, unknown>)[slot] ?? {}) as Record<string, unknown>
 
         const str = (k: string) => (typeof s[k] === "string" ? (s[k] as string) : "")
+
+        // "hub" is an MTProto node's egress: its Telegram connections leave through the panel.
+        if (data.egress_mode === "hub" && proto !== "mtproto") {
+            ctx.addIssue({
+                code: "custom",
+                message: "An MTProto node runs only MTProto tunnels.",
+                path: ["egress_mode"],
+            })
+        }
 
         switch (proto) {
             case "ssh":
@@ -49,6 +58,15 @@ export const coreFormSchema = z
                     ctx.addIssue({
                         code: "custom",
                         message: "The middle proxy and ad tag aren't available with Xray egress.",
+                        path: ["egress_mode"],
+                    })
+                }
+                // The middle proxy and ad tag make telemt contact Telegram directly,
+                // which the MTProto node's capture does not cover.
+                if (data.egress_mode === "hub" && (s.middle_proxy === true || str("adtag_default") !== "")) {
+                    ctx.addIssue({
+                        code: "custom",
+                        message: "The middle proxy and ad tag aren't available on an MTProto node.",
                         path: ["egress_mode"],
                     })
                 }
@@ -84,6 +102,14 @@ export const coreFormSchema = z
                         (s.tls_domains_extra as unknown[]).some(
                             (d) => typeof d === "string" && d.trim() !== "",
                         ))
+                // An MTProto node runs its link on the main cover site: extras alone won't do.
+                if (data.egress_mode === "hub" && str("tls_domain").trim() === "") {
+                    ctx.addIssue({
+                        code: "custom",
+                        message: "An MTProto node's tunnel needs a cover site.",
+                        path: [slot, "tls_domain"],
+                    })
+                }
                 if (modesGiven && modes.tls && !hasDomain) {
                     ctx.addIssue({
                         code: "custom",

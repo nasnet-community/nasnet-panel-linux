@@ -14,7 +14,7 @@ import {
     HiOutlineGlobeAlt,
 } from "react-icons/hi"
 import { getNode } from "@/lib/api/nodes"
-import { Cable, Satellite } from "lucide-react"
+import { Cable, Satellite, Send } from "lucide-react"
 import { useNodeStats, queryKeys } from "@/lib/queries"
 import { useEventsStatus } from "@/components/providers/events-provider"
 import { useQueryClient } from "@tanstack/react-query"
@@ -37,6 +37,10 @@ import { LocalNodeBadge } from "@/components/node/local-node-badge"
 import { UpdateAgentDialog } from "@/components/update-agent-dialog"
 import { NodeHeaderActions } from "@/components/node/node-header-actions"
 import { isLiteNode, isLocalNode, nodeAddress } from "@/lib/node-kind"
+import { MtprotoOverview } from "@/components/mtproto/mtproto-overview"
+import { MtprotoLogs } from "@/components/mtproto/mtproto-logs"
+import { MtprotoNodeSettings } from "@/components/mtproto/mtproto-settings"
+import { MtprotoHeaderActions } from "@/components/mtproto/mtproto-header-actions"
 
 const nodeTabs = [
     { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
@@ -48,6 +52,17 @@ const nodeTabs = [
     { value: "logs", label: "Logs", description: "System & Activity", icon: HiOutlineTerminal },
     { value: "terminal", label: "Terminal", description: "Interactive Shell", icon: HiOutlineTerminal },
 ] as const
+
+/** An MTProto node has no Xray and no gRPC agent: it shows only what applies. */
+const liteTabValues: ReadonlySet<string> = new Set(["overview", "tunnels", "settings", "logs"])
+
+// the same tabs, described for what an MTProto node has
+const liteTabDescriptions: Record<string, string> = {
+    overview: "Users & Health",
+    tunnels: "MTProto Tunnel",
+    settings: "Node Configuration",
+    logs: "Agent Log",
+}
 
 export default function NodeDetailPage() {
     const params = useParams()
@@ -74,6 +89,7 @@ export default function NodeDetailPage() {
     // off, the stealth-hidden ones) lands on Overview instead of an error.
     const hiddenTab = (node?.is_stealth && ["access-logs", "terminal"].includes(resolvedTab))
         || (resolvedTab === "starlink" && !!node && !(node.starlink_settings?.enabled && !node.is_stealth))
+        || (isLiteNode(node) && !liteTabValues.has(resolvedTab))
     const activeTab = hiddenTab ? "overview" : resolvedTab
     useEffect(() => {
         if (rawTab !== "users" && rawTab !== "accounts") return
@@ -166,7 +182,8 @@ export default function NodeDetailPage() {
     // The stats sweep's latest reading; SSE patches it, the poll backs it up.
     // Enabled while offline too, so the last reading stays on screen.
     const sseConnected = useEventsStatus() === "connected"
-    const { data: stats, isFetching: isStatsFetching } = useNodeStats(nodeId, !!node, sseConnected)
+    // an MTProto node has no stats sweep; its page reads the link's own numbers
+    const { data: stats, isFetching: isStatsFetching } = useNodeStats(nodeId, !!node && !isLiteNode(node), sseConnected)
 
     const loadData = useCallback(async () => {
         // A late answer for the node we just left must not replace this one.
@@ -247,6 +264,11 @@ export default function NodeDetailPage() {
                         <span className="min-w-0 font-semibold text-foreground flex items-center gap-2" aria-current="page">
                             <h1 className="truncate text-lg font-bold">{node.name}</h1>
                             {local && <LocalNodeBadge />}
+                            {lite && (
+                                <Badge variant="outline" className="shrink-0 gap-1 px-1.5 py-0 text-[12px] font-medium">
+                                    <Send className="size-3" aria-hidden /><span className="sr-only sm:not-sr-only">MTProto node</span>
+                                </Badge>
+                            )}
                             <Badge
                                 variant={node.is_online ? "success" : "danger"}
                                 className="shrink-0 px-1.5 py-0 text-[12px] uppercase font-bold tracking-wider"
@@ -267,6 +289,7 @@ export default function NodeDetailPage() {
                             onUpdateAgent={() => setUpdateAgentOpen(true)}
                         />
                     )}
+                    {lite && <MtprotoHeaderActions node={node} hideButtons={isTerminalWorkspace} />}
                 </div>
             </div>
 
@@ -284,7 +307,7 @@ export default function NodeDetailPage() {
                                 "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
                                 node.is_online ? "bg-emerald-500/10 text-emerald-500" : "bg-red-500/10 text-red-500"
                             )}>
-                                <HiOutlineServer className="w-5 h-5" />
+                                {lite ? <Send className="w-5 h-5" /> : <HiOutlineServer className="w-5 h-5" />}
                             </div>
                             <div className="overflow-hidden">
                                 <h2 className="font-bold truncate">{node.name}</h2>
@@ -303,6 +326,7 @@ export default function NodeDetailPage() {
                         )}
                     >
                         {nodeTabs.filter(tab => {
+                            if (lite) return liteTabValues.has(tab.value)
                             if (tab.value === "starlink") return node.starlink_settings?.enabled && !node.is_stealth
                             if (tab.value === "access-logs" || tab.value === "terminal") return !node.is_stealth
                             return true
@@ -320,7 +344,7 @@ export default function NodeDetailPage() {
                                 <tab.icon className={cn("shrink-0", useNodeSidebar ? "h-5 w-5 mr-1" : "h-4 w-4")} />
                                 <span className="text-left">
                                     <span className={cn("block font-medium", useNodeSidebar && "text-base")}>{tab.label}</span>
-                                    {useNodeSidebar && <span className="block text-xs opacity-70 font-normal mt-0.5">{tab.description}</span>}
+                                    {useNodeSidebar && <span className="block text-xs opacity-70 font-normal mt-0.5">{(lite && liteTabDescriptions[tab.value]) || tab.description}</span>}
                                 </span>
                             </TabsTrigger>
                         ))}
@@ -330,7 +354,8 @@ export default function NodeDetailPage() {
                 {/* Main Content Area — only the active tab's component is mounted */}
                 <main className="min-w-0">
                     <TabsContent value="overview" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        {activeTab === "overview" && (
+                        {activeTab === "overview" && lite && <MtprotoOverview node={node} onNavigateTab={handleTabChange} />}
+                        {activeTab === "overview" && !lite && (
                             <NodeOverview
                                 node={node}
                                 stats={stats}
@@ -361,7 +386,10 @@ export default function NodeDetailPage() {
                     </TabsContent>
 
                     <TabsContent value="settings" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        {activeTab === "settings" && (
+                        {activeTab === "settings" && lite && (
+                            <MtprotoNodeSettings node={node} onSaved={loadData} onDirtyChange={setSettingsDirty} onNavigateTab={handleTabChange} />
+                        )}
+                        {activeTab === "settings" && !lite && (
                             <NodeSettings
                                 node={node}
                                 onRefresh={loadData}
@@ -379,7 +407,8 @@ export default function NodeDetailPage() {
                     )}
 
                     <TabsContent value="logs" className="mt-0 space-y-6 focus-visible:outline-none animate-in fade-in slide-in-from-bottom-2 duration-300">
-                        {activeTab === "logs" && (
+                        {activeTab === "logs" && lite && <MtprotoLogs nodeId={node.id} nodeName={node.name} />}
+                        {activeTab === "logs" && !lite && (
                             <NodeLogs nodeId={node.id} isOnline={node?.is_online || false} />
                         )}
                     </TabsContent>

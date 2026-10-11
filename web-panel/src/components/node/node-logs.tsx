@@ -26,6 +26,8 @@ import {
 } from "react-icons/hi"
 import { cn } from "@/lib/utils"
 import type { LogEntry } from "@/lib/types"
+import { LEVEL_LABELS, formatTimestamp, type LogLevel } from "./log-format"
+import { LogLine } from "./log-view"
 
 interface NodeLogsProps {
     nodeId: number
@@ -33,21 +35,6 @@ interface NodeLogsProps {
 }
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error"
-type LogLevel = "info" | "warning" | "error" | "debug"
-
-const LEVEL_COLORS: Record<LogLevel, string> = {
-    info: "bg-blue-500/15 text-blue-400 border-blue-500/25",
-    warning: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",
-    error: "bg-red-500/15 text-red-400 border-red-500/25",
-    debug: "bg-zinc-500/15 text-zinc-400 border-zinc-500/25",
-}
-
-const LEVEL_LABELS: Record<LogLevel, string> = {
-    info: "Info",
-    warning: "Warn",
-    error: "Error",
-    debug: "Debug",
-}
 
 const LINE_COUNT_OPTIONS = [
     { value: "50", label: "50 lines" },
@@ -66,26 +53,6 @@ const TIME_FILTER_OPTIONS = [
     { value: "1800000", label: "Last 30m" },
     { value: "3600000", label: "Last 1h" },
 ]
-
-function formatTimestamp(ms: number): string {
-    const d = new Date(ms)
-    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
-}
-
-function highlightSearch(text: string, query: string): React.ReactNode {
-    if (!query) return text
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    const parts = text.split(new RegExp(`(${escaped})`, "gi"))
-    return parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase() ? (
-            <mark key={i} className="bg-yellow-500/40 text-yellow-200 rounded-sm px-0.5">
-                {part}
-            </mark>
-        ) : (
-            part
-        )
-    )
-}
 
 export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
     const [logs, setLogs] = useState<LogEntry[]>([])
@@ -439,31 +406,15 @@ export function NodeLogs({ nodeId, isOnline }: NodeLogsProps) {
                         {filteredLogs.length === 0 && status === "disconnected" && (
                             <p className="text-gray-500 italic py-12 text-center">Node offline — logs unavailable.</p>
                         )}
-                        {filteredLogs.map((log, i) => {
-                            const level = log.level as LogLevel
-                            const colorClass = LEVEL_COLORS[level] || LEVEL_COLORS.info
-                            return (
-                                <div
-                                    key={i}
-                                    className="flex items-start gap-2 py-0.5 px-1 -mx-1 rounded hover:bg-white/5 leading-tight"
-                                >
-                                    {showTimestamps && (
-                                        <span className="text-zinc-500 shrink-0 select-none tabular-nums">
-                                            {formatTimestamp(log.timestamp)}
-                                        </span>
-                                    )}
-                                    <Badge
-                                        variant="outline"
-                                        className={cn("text-[11px] px-1.5 py-0 h-4 shrink-0 font-semibold uppercase leading-none", colorClass)}
-                                    >
-                                        {LEVEL_LABELS[level] || log.level}
-                                    </Badge>
-                                    <span className="break-all whitespace-pre-wrap min-w-0">
-                                        {highlightSearch(log.message, searchQuery)}
-                                    </span>
-                                </div>
-                            )
-                        })}
+                        {filteredLogs.map((log, i) => (
+                            <LogLine
+                                key={i}
+                                time={showTimestamps ? log.timestamp : undefined}
+                                level={log.level}
+                                message={log.message}
+                                query={searchQuery}
+                            />
+                        ))}
                         <div ref={logsEndRef} />
                     </div>
                 </ScrollArea>

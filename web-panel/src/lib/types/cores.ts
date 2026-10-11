@@ -8,8 +8,9 @@ import { TerminalSquare, Send } from "lucide-react"
 
 export type CoreProtocol = "ssh" | "mtproto"
 
-/** Tunnels dial out themselves (the foreign uplinks on a router). */
-export type EgressMode = "direct" | "xray"
+/** Tunnels dial out themselves (the foreign uplinks on a router); "hub" is an
+ *  MTProto node's, whose Telegram connections leave through the panel. */
+export type EgressMode = "direct" | "xray" | "hub"
 
 /** Per-node enable state of one core protocol (GET /cores/nodes/:id/protocols). */
 export interface NodeProtocolState {
@@ -229,7 +230,7 @@ export const CORE_PROTOCOLS: CoreProtocolMeta[] = [
         label: "SSH",
         icon: TerminalSquare,
         accent: "teal",
-        family: "Userspace relay",
+        family: "Userspace tunnel",
         oneLiner: "Built-in SSH tunnel — no daemon, no certificate.",
         needsBinary: false,
         settingsKey: "ssh_settings",
@@ -239,7 +240,7 @@ export const CORE_PROTOCOLS: CoreProtocolMeta[] = [
         label: "MTProto",
         icon: Send,
         accent: "blue",
-        family: "Userspace relay",
+        family: "Userspace tunnel",
         oneLiner: "Telegram proxy with FakeTLS camouflage.",
         needsBinary: true,
         settingsKey: "mtproto_settings",

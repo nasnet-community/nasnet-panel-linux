@@ -25,6 +25,7 @@ export function coreSummaryChips(inbound: CoreInbound): string[] {
             push(on.length ? on.join("·") : "all modes")
             push(str("tls_domain") && `SNI ${str("tls_domain")}`)
             push(inbound.egress_mode === "xray" && "Xray egress")
+            push(inbound.egress_mode === "hub" && "Panel egress")
             break
         }
     }

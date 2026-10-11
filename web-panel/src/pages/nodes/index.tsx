@@ -51,7 +51,9 @@ import { cn, formatBytes, formatSpeed } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { MigrationDialog } from "@/components/node/migration-dialog"
 import { Link } from "react-router"
-import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, sparklineFromBulk, useCreateNode, useDeleteNode, useCheckNodeHealth, useNodeAggregateStats } from "@/lib/queries"
+import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, sparklineFromBulk, useCreateNode, useDeleteNode, useCheckNodeHealth, useNodeAggregateStats, useMtprotoNodes } from "@/lib/queries"
+import type { MtprotoNodeSummary } from "@/lib/api/mtproto"
+import { MtprotoCardMetrics } from "@/components/mtproto/mtproto-node-summary"
 import { queryKeys } from "@/lib/queries/keys"
 import type { NodeStats } from "@/lib/types"
 import { useNodesStore } from "@/store/nodes-store"
@@ -64,7 +66,7 @@ import { BulkNodeActionsBar } from "@/components/node/bulk-node-actions-bar"
 import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
 import { wipeNode } from "@/lib/api/nuke"
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
-import { isLocalNode, nodeAddress, outageReasonLabel } from "@/lib/node-kind"
+import { isLiteNode, isLocalNode, nodeAddress, outageReasonLabel } from "@/lib/node-kind"
 import { useChartPalette } from "@/lib/design/palette"
 
 // ─── Compact Node Card ────────────────────────────────────────────
@@ -91,6 +93,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
     stats,
     isStatsLoading,
     sparkline,
+    mtproto,
     onCheckHealth,
     onDelete,
     onWipe,
@@ -103,6 +106,8 @@ const CompactNodeCard = memo(function CompactNodeCard({
     stats?: NodeStats
     isStatsLoading: boolean
     sparkline: { cpu: number[]; memory: number[] }
+    /** an MTProto node's numbers; it has no stats sweep */
+    mtproto?: MtprotoNodeSummary
     onCheckHealth: (nodeId: number) => void
     onDelete: (node: Node) => void
     onWipe: (node: Node) => void
@@ -122,6 +127,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
 
     const isPending = new Date(node.last_check).getFullYear() < 2000
     const local = isLocalNode(node)
+    const lite = isLiteNode(node)
     const palette = useChartPalette()
 
     // While selection mode is active, tapping the card toggles selection
@@ -193,6 +199,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
                         </span>
                     )}
                     {local && <LocalNodeBadge />}
+                    {lite && <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[11px] uppercase tracking-wider">MTProto</Badge>}
                 </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -214,7 +221,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
                                 <HiOutlinePencil className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Edit
                             </Link>
                         </DropdownMenuItem>
-                        {!node.is_online && !local && (
+                        {!node.is_online && !local && !lite && (
                             <DropdownMenuItem className="md:text-[14px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeploy(node.id) }}>
                                 <HiOutlineTerminal className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2 text-blue-500" /> Deploy
                             </DropdownMenuItem>
@@ -222,7 +229,17 @@ const CompactNodeCard = memo(function CompactNodeCard({
                         <DropdownMenuItem className="md:text-[14px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCheckHealth(node.id) }} disabled={isChecking}>
                             <HiOutlineRefresh className={cn("w-3.5 h-3.5 md:w-4 md:h-4 mr-2", isChecking && "animate-spin")} /> Health Check
                         </DropdownMenuItem>
-                        {!local && (
+                        {lite && (
+                            <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild className="text-red-500 focus:text-red-500 md:text-[14px]">
+                                    <Link to={`/nodes/${node.id}`} onClick={(e) => e.stopPropagation()}>
+                                        <HiOutlineTrash className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Remove…
+                                    </Link>
+                                </DropdownMenuItem>
+                            </>
+                        )}
+                        {!local && !lite && (
                             <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWipe(node) }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-500/10 md:text-[14px]">
@@ -266,13 +283,14 @@ const CompactNodeCard = memo(function CompactNodeCard({
             </div>
 
             {/* Metrics (for online agent nodes) */}
-            {node.is_online && stats?.stats_unavailable && (
+            {lite && node.is_online && <MtprotoCardMetrics s={mtproto} />}
+            {!lite && node.is_online && stats?.stats_unavailable && (
                 <p role="status" className="text-xs text-amber-500">Stats unavailable · showing last readings</p>
             )}
-            {node.is_online && !stats && !isStatsLoading && (
+            {!lite && node.is_online && !stats && !isStatsLoading && (
                 <p role="status" className="text-xs text-muted-foreground">Stats unavailable · retrying automatically</p>
             )}
-            {node.is_online && stats ? (
+            {lite && node.is_online ? null : node.is_online && stats ? (
                 <div className="space-y-3 md:space-y-4 lg:space-y-5">
                     {/* Resource bars */}
                     <div className="grid grid-cols-3 gap-3 md:gap-4 lg:gap-5">
@@ -306,7 +324,7 @@ const CompactNodeCard = memo(function CompactNodeCard({
             ) : !node.is_online ? (
                 <div className="flex items-center justify-between pt-1 md:pt-2">
                     <span className="text-[12px] md:text-[14px] text-muted-foreground">{isPending ? "Never connected" : `Last seen: ${new Date(node.last_check).toLocaleString()}`}</span>
-                    {!local && (
+                    {!local && !lite && (
                         <Button
                             variant="ghost"
                             size="sm"
@@ -358,9 +376,13 @@ export default function NodesPage() {
     // the online set — without it, every render would re-alloc the array, and
     // dependent useCallbacks downstream would churn their identity too.
     const onlineIds = useMemo(
-        () => nodes.filter((n) => n.is_online).map((n) => n.id),
+        () => nodes.filter((n) => n.is_online && !isLiteNode(n)).map((n) => n.id),
         [nodes],
     )
+    // MTProto nodes have no stats sweep: one call covers them all
+    const hasLite = nodes.some(isLiteNode)
+    const { data: mtprotoSummaries } = useMtprotoNodes(hasLite)
+    const mtprotoById = useMemo(() => new Map((mtprotoSummaries ?? []).map((r) => [r.node_id, r])), [mtprotoSummaries])
     const { data: bulkStats, isLoading: isBulkStatsLoading } = useNodesStatsBulk(
         onlineIds,
         onlineIds.length > 0,
@@ -662,6 +684,7 @@ export default function NodesPage() {
                                 stats={bulkStats?.[String(node.id)]?.stats}
                                 isStatsLoading={node.is_online && isBulkStatsLoading && !bulkStats?.[String(node.id)]}
                                 sparkline={sparklineFromBulk(bulkHistory, node.id)}
+                                mtproto={mtprotoById.get(node.id)}
                                 onCheckHealth={handleCheckHealth}
                                 onDelete={handleDeleteNode}
                                 onWipe={handleWipeNode}

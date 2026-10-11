@@ -15,11 +15,14 @@ export function GeneralTab({
     form,
     nodeName,
     builtIn,
+    lite = false,
 }: {
     form: UseFormReturn<CoreFormData>
     nodeName: string
     /** the tunnel lives on the panel's built-in node */
     builtIn: boolean
+    /** the tunnel lives on an MTProto node: its only egress is through the panel */
+    lite?: boolean
 }) {
     const egress = form.watch("egress_mode") ?? "direct"
     const egressError = form.formState.errors.egress_mode?.message
@@ -96,6 +99,13 @@ export function GeneralTab({
             {/* Egress */}
             <div className="space-y-1.5">
                 <span className="text-sm font-medium">Egress</span>
+                {lite ? (
+                    <div className="grid grid-cols-1 gap-2">
+                        <EgressOption active onClick={() => form.setValue("egress_mode", "hub", { shouldDirty: true })}
+                            title="Through the panel"
+                            subtitle="Telegram connections are carried back to the panel and leave from its own link" />
+                    </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-2">
                     <EgressOption
                         active={egress === "direct"}
@@ -110,10 +120,13 @@ export function GeneralTab({
                         subtitle="Route via the node's Xray rules and outbounds"
                     />
                 </div>
+                )}
                 <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                     <ArrowRightLeft className="mt-0.5 size-4 shrink-0" />
                     <span>
-                        {egress === "xray"
+                        {lite
+                            ? "The node only accepts Telegram's clients and relays their traffic to the panel, which connects to Telegram. Nothing leaves the node directly."
+                            : egress === "xray"
                             ? "Connections leave through the node's Xray routing rules and outbounds. Addresses on the node and its networks are still refused, and the tunnel still counts its users' traffic."
                             : builtIn
                                 ? "From this box, through the VPN pool when router mode is on. Addresses on the box and its networks are refused."

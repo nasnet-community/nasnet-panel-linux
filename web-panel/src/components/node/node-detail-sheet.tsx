@@ -1,5 +1,6 @@
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
-import { isLocalNode, nodeAddress } from "@/lib/node-kind"
+import { isLiteNode, isLocalNode, nodeAddress } from "@/lib/node-kind"
+import { MtprotoSheetSummary } from "@/components/mtproto/mtproto-node-summary"
 import { useChartPalette } from "@/lib/design/palette"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
@@ -34,9 +35,11 @@ interface NodeDetailSheetProps {
 }
 
 export function NodeDetailSheet({ node, open, onOpenChange, onDeploy }: NodeDetailSheetProps) {
-    const { data: stats, isLoading: statsLoading } = useNodeStats(node?.id ?? 0, !!node?.is_online)
-    const { data: history } = useNodeStatsHistory(node?.id ?? 0, 30, !!node?.is_online)
-    const { data: hostInfo } = useNodeHostInfo(node?.id ?? 0, !!node?.is_online)
+    // an MTProto node has no stats sweep or host info to ask for
+    const agentNode = !!node?.is_online && !isLiteNode(node)
+    const { data: stats, isLoading: statsLoading } = useNodeStats(node?.id ?? 0, agentNode)
+    const { data: history } = useNodeStatsHistory(node?.id ?? 0, 30, agentNode)
+    const { data: hostInfo } = useNodeHostInfo(node?.id ?? 0, agentNode)
 
     const palette = useChartPalette()
     const cpuHistory = (history || []).map((p) => p.cpu)
@@ -58,16 +61,18 @@ export function NodeDetailSheet({ node, open, onOpenChange, onDeploy }: NodeDeta
                             {node.is_online ? "Online" : "Offline"}
                         </Badge>
                         {isLocalNode(node) && <LocalNodeBadge />}
+                        {isLiteNode(node) && <Badge variant="outline" className="px-1.5 py-0 text-[10px] uppercase tracking-wider">MTProto</Badge>}
                     </div>
                     <SheetDescription className={cn("text-xs", !isLocalNode(node) && "font-mono")}>{nodeAddress(node)}</SheetDescription>
                 </SheetHeader>
 
                 <div className="space-y-6 px-4 pb-4">
-                    {node.is_online && (stats?.stats_unavailable || (!stats && !statsLoading)) && (
+                    {isLiteNode(node) && node.is_online && <MtprotoSheetSummary node={node} />}
+                    {!isLiteNode(node) && node.is_online && (stats?.stats_unavailable || (!stats && !statsLoading)) && (
                         <p role="status" className="text-xs text-amber-500">Stats unavailable · {stats ? "showing last readings" : "retrying automatically"}</p>
                     )}
                     {/* Quick Stats */}
-                    {node.is_online && stats ? (
+                    {isLiteNode(node) ? null : node.is_online && stats ? (
                         <>
                             <div className="grid grid-cols-2 gap-4">
                                 <StatItem icon={Users} label="Accounts" value={`${stats.active_accounts ?? 0} / ${stats.total_accounts ?? 0}`} color="text-blue-500" />
