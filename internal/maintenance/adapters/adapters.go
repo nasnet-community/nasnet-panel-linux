@@ -95,17 +95,23 @@ func (a *SubAdapter) SetSubMaintenance(ctx context.Context, id uint, active bool
 }
 
 // GetSubLinkedNodeIDs returns the distinct set of node IDs linked to a
-// subscription via the inbounds of its provisioned accounts.
+// subscription via the inbounds of its provisioned accounts, and via its
+// tunnels, which is how MTProto node users are linked.
 func (a *SubAdapter) GetSubLinkedNodeIDs(ctx context.Context, id uint) ([]uint, error) {
 	var rows []struct {
 		NodeID uint
 	}
 	err := a.DB.WithContext(ctx).Raw(`
-		SELECT DISTINCT i.node_id AS node_id
+		SELECT i.node_id AS node_id
 		FROM accounts a
 		JOIN inbounds i ON i.id = a.inbound_id
 		WHERE a.subscription_id = ? AND a.deleted_at IS NULL
-	`, id).Scan(&rows).Error
+		UNION
+		SELECT ci.node_id AS node_id
+		FROM core_users cu
+		JOIN core_inbounds ci ON ci.id = cu.core_inbound_id
+		WHERE cu.subscription_id = ?
+	`, id, id).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
