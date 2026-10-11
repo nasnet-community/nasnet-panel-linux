@@ -373,11 +373,18 @@ export function useCreateManualSubscription() {
         mutationFn: async (req: CreateManualSubscriptionRequest) => {
             const res = await createManualSubscription(req)
             if (!res.success) throw new Error(res.error || "Failed to create subscription")
-            return res.data
+            return { subscription: res.data, warnings: res.warnings ?? [] }
         },
-        onSuccess: () => {
+        onSuccess: ({ warnings }, req) => {
             toast.success("Manual subscription created")
+            if (warnings.length > 0) {
+                toast.warning(warnings.length === 1 ? "A tunnel was not attached" : "Some tunnels were not attached", {
+                    description: warnings.join("; "),
+                })
+            }
             queryClient.invalidateQueries({ queryKey: queryKeys.subscriptions })
+            // Tunnel lists count their users.
+            if (req.core_inbound_ids?.length) queryClient.invalidateQueries({ queryKey: queryKeys.cores })
         },
         onError: (error: Error) => {
             toast.error(error.message)

@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -1438,7 +1439,8 @@ func (h *Handler) GenerateCustomConfigLink(c *gin.Context) {
 
 type createManualSubscriptionRequest struct {
 	Label          string   `json:"label"`
-	InboundIDs     []uint   `json:"inbound_ids" binding:"required,min=1"`
+	InboundIDs     []uint   `json:"inbound_ids"`
+	CoreInboundIDs []uint   `json:"core_inbound_ids"` // SSH/MTProto tunnels
 	DataLimitGB    *float64 `json:"data_limit_gb"`
 	BandwidthLimit int      `json:"bandwidth_limit"` // Mbps, 0 = unlimited
 	MaxDevices     int      `json:"max_devices"`
@@ -1450,6 +1452,10 @@ func (h *Handler) CreateManualSubscription(c *gin.Context) {
 	var req createManualSubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if len(req.InboundIDs) == 0 && len(req.CoreInboundIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": subUC.ErrNoManualAccess.Error()})
 		return
 	}
 
@@ -1470,9 +1476,10 @@ func (h *Handler) CreateManualSubscription(c *gin.Context) {
 		endDate = &t
 	}
 
-	sub, err := h.adminUsecase.CreateManualSubscription(c.Request.Context(), &subUC.ManualSubscriptionRequest{
+	sub, warnings, err := h.adminUsecase.CreateManualSubscription(c.Request.Context(), &subUC.ManualSubscriptionRequest{
 		Label:          req.Label,
 		InboundIDs:     req.InboundIDs,
+		CoreInboundIDs: req.CoreInboundIDs,
 		DataLimit:      dataLimit,
 		BandwidthLimit: req.BandwidthLimit,
 		MaxDevices:     req.MaxDevices,
@@ -1480,12 +1487,20 @@ func (h *Handler) CreateManualSubscription(c *gin.Context) {
 		UserID:         req.UserID,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, subUC.ErrInvalidInbound) || errors.Is(err, subUC.ErrInvalidTunnel) || errors.Is(err, subUC.ErrNoManualAccess) {
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
 	sub.SubscriptionURL = h.getBaseURL(c) + "/sub/" + sub.GetLinkKey()
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": sub})
+	resp := gin.H{"success": true, "data": sub}
+	if len(warnings) > 0 {
+		resp["warnings"] = warnings
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // ==================== Database Management ====================

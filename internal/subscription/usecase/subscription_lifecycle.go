@@ -252,7 +252,8 @@ func (u *subscriptionUsecase) GetSubscriptionConfig(ctx context.Context, configI
 	}
 
 	if len(inboundDetails) == 0 {
-		return nil, ErrNoNodesAvailable
+		// No Xray configs: a tunnel-only sub serves its tunnel links instead.
+		return u.tunnelOnlyConfig(ctx, sub)
 	}
 
 	// Use account UUID for config generation (may differ from config_id after key regeneration)
@@ -313,7 +314,7 @@ func (u *subscriptionUsecase) deactivateOnNodes(ctx context.Context, sub *domain
 	log := logger.GetLogger()
 
 	subInfo, prepErr := u.prepareManualSubscriptionInfo(ctx, sub)
-	if prepErr != nil {
+	if prepErr != nil && !errors.Is(prepErr, errNoXrayAccounts) {
 		log.WithError(prepErr).WithField("subscription_id", sub.ID).Warn("[deactivateOnNodes] Failed to prepare subscription info")
 	}
 	if subInfo == nil {
@@ -405,7 +406,10 @@ func (u *subscriptionUsecase) reactivateSubscription(ctx context.Context, id uin
 
 	subInfo, err := u.prepareManualSubscriptionInfo(ctx, sub)
 	if err != nil {
-		log.WithError(err).Warn("Failed to prepare subscription info for provider activation")
+		// A tunnel-only sub has nothing on Xray; its tunnels came back above.
+		if !errors.Is(err, errNoXrayAccounts) {
+			log.WithError(err).Warn("Failed to prepare subscription info for provider activation")
+		}
 	} else if subInfo != nil {
 		subInfo.ID = sub.ID // so WG peers re-activate on reactivation
 		subInfo.ConfigID = sub.ConfigID

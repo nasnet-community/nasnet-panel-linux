@@ -44,6 +44,11 @@ var (
 	// admin has disabled. Existing subs keep running until they lapse, but a
 	// disabled plan can't be re-bought into via renew/top-up.
 	ErrPlanInactive = errors.New("plan is inactive")
+
+	// Manual-create input errors; the admin API answers 400 for these (match with errors.Is).
+	ErrNoManualAccess = errors.New("select at least one inbound or tunnel")
+	ErrInvalidInbound = errors.New("invalid inbound")
+	ErrInvalidTunnel  = errors.New("invalid tunnel")
 )
 
 // SubscriptionConfigResult holds the generated config and metadata for subscription headers
@@ -146,8 +151,9 @@ type SubscriptionUsecase interface {
 	SetPanelPassword(ctx context.Context, id uint, mode string, password string) error
 	GetPanelPasswordHash(ctx context.Context, id uint) (hash string, mode string, err error)
 
-	// Manual subscription (no user/plan)
-	CreateManual(ctx context.Context, req *ManualSubscriptionRequest) (*domain.Subscription, error)
+	// Manual subscription (no user/plan). Warnings name tunnels that could not
+	// be attached after the subscription was saved.
+	CreateManual(ctx context.Context, req *ManualSubscriptionRequest) (*domain.Subscription, []string, error)
 
 	// SetTunnelAccess enables/disables EVERY access artifact the subscription
 	// owns — Xray accounts and WireGuard peers alike. Callers outside this
@@ -171,8 +177,9 @@ type SubscriptionUsecase interface {
 type ManualSubscriptionRequest struct {
 	Label          string
 	InboundIDs     []uint
-	DataLimit      int64 // bytes, 0 = unlimited
-	BandwidthLimit int   // Mbps, 0 = unlimited
+	CoreInboundIDs []uint // SSH/MTProto tunnels; may be the only access
+	DataLimit      int64  // bytes, 0 = unlimited
+	BandwidthLimit int    // Mbps, 0 = unlimited
 	MaxDevices     int
 	EndDate        *time.Time // nil = unlimited
 	UserID         *uint      // optional user link

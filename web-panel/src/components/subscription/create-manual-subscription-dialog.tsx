@@ -39,6 +39,9 @@ import {
 } from "lucide-react"
 import { FaTelegram } from "react-icons/fa"
 import { listNodes } from "@/lib/api/nodes"
+import { listAllCoreInbounds } from "@/lib/api/cores"
+import { queryKeys } from "@/lib/queries/keys"
+import { isLiteNode } from "@/lib/node-kind"
 import { createUser as createUserAPI, getUserDetails } from "@/lib/api/users"
 import { useCreateManualSubscription } from "@/lib/queries/use-subscriptions"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
@@ -47,6 +50,7 @@ import { cn } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import type { Node, Inbound, User } from "@/lib/types"
 import { BANDWIDTH_OPTIONS } from "@/lib/types"
+import { ACCENTS, CORE_PROTOCOL_MAP, type CoreInbound, type CoreProtocol } from "@/lib/types/cores"
 
 // ==================== Types ====================
 
@@ -54,6 +58,47 @@ interface InboundSelection {
     inbound: Inbound
     nodeName: string
     nodeCountry: string
+}
+
+interface TunnelSelection {
+    tunnel: CoreInbound
+    nodeName: string
+    nodeCountry: string
+}
+
+// ==================== Tunnels (SSH / MTProto) ====================
+
+function tunnelMeta(protocol: string) {
+    return CORE_PROTOCOL_MAP[protocol as CoreProtocol]
+}
+
+/** "MTProto · port 443" */
+function tunnelLabel(t: CoreInbound): string {
+    return `${tunnelMeta(t.protocol)?.label ?? t.protocol} · port ${t.port}`
+}
+
+/** The tunnel's remark and, for MTProto, its cover site. */
+function tunnelDetail(t: CoreInbound): string {
+    const cover = t.protocol === "mtproto" && typeof t.settings?.tls_domain === "string" ? t.settings.tls_domain : ""
+    return [t.remark, cover].filter(Boolean).join(" · ")
+}
+
+function tunnelMatches(t: CoreInbound, q: string): boolean {
+    return [t.protocol, tunnelMeta(t.protocol)?.label ?? "", String(t.port), tunnelDetail(t)].some((v) =>
+        v.toLowerCase().includes(q)
+    )
+}
+
+function plural(n: number, word: string): string {
+    return `${n} ${word}${n !== 1 ? "s" : ""}`
+}
+
+/** "2 inbounds · 1 tunnel", leaving out a kind the node has none of. */
+function accessCountLabel(inbounds: number, tunnels: number): string {
+    const parts: string[] = []
+    if (inbounds > 0) parts.push(plural(inbounds, "inbound"))
+    if (tunnels > 0) parts.push(plural(tunnels, "tunnel"))
+    return parts.join(" · ")
 }
 
 // ==================== Step Indicator ====================
@@ -127,18 +172,71 @@ function getProtocolStyle(protocol: string) {
     return PROTOCOL_STYLES[protocol.toLowerCase()] || DEFAULT_PROTOCOL_STYLE
 }
 
+function TunnelBadge({ protocol }: { protocol: string }) {
+    const meta = tunnelMeta(protocol)
+    const Icon = meta?.icon
+    return (
+        <span
+            className={cn(
+                "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border shrink-0",
+                meta ? ACCENTS[meta.accent].badge : "bg-muted text-muted-foreground border-border"
+            )}
+        >
+            {Icon && <Icon className="w-3 h-3" aria-hidden />}
+            {meta?.label ?? protocol}
+        </span>
+    )
+}
+
+function TunnelRow({ tunnel, selected, onToggle }: { tunnel: CoreInbound; selected: boolean; onToggle: () => void }) {
+    const detail = tunnelDetail(tunnel)
+    return (
+        <label
+            className={cn(
+                "flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150",
+                "hover:bg-muted/50",
+                selected ? "bg-primary/[0.06] ring-1 ring-primary/15" : "bg-transparent"
+            )}
+        >
+            <Checkbox
+                checked={selected}
+                onCheckedChange={onToggle}
+                aria-label={tunnelLabel(tunnel)}
+                className="transition-all duration-150"
+            />
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+                <TunnelBadge protocol={tunnel.protocol} />
+                <span className="inline-flex items-center rounded-md bg-muted/80 px-1.5 py-0.5 text-[12px] font-mono text-muted-foreground">
+                    port {tunnel.port}
+                </span>
+            </div>
+            {detail && (
+                <span className="text-[11px] text-muted-foreground/70 truncate max-w-[160px] italic hidden sm:inline">
+                    {detail}
+                </span>
+            )}
+        </label>
+    )
+}
+
 function StepSelectServers({
     selectedInboundIds,
     onToggleInbound,
+    selectedTunnelIds,
+    onToggleTunnel,
     onToggleNode,
     nodes,
+    tunnelsByNode,
     isLoading,
     isError,
 }: {
     selectedInboundIds: Set<number>
     onToggleInbound: (id: number) => void
-    onToggleNode: (nodeId: number, inbounds: Inbound[], selectAll: boolean) => void
+    selectedTunnelIds: Set<number>
+    onToggleTunnel: (id: number) => void
+    onToggleNode: (nodeId: number, inbounds: Inbound[], tunnels: CoreInbound[], selectAll: boolean) => void
     nodes: Node[]
+    tunnelsByNode: Map<number, CoreInbound[]>
     isLoading: boolean
     isError: boolean
 }) {
@@ -162,28 +260,31 @@ function StepSelectServers({
     }, [])
 
     const filteredNodes = useMemo(() => {
-        if (!search.trim()) return nodes
-        const q = search.toLowerCase()
+        const q = search.trim() ? search.toLowerCase() : ""
         return nodes
             .map((node) => {
+                const inbounds = node.inbounds || []
+                const tunnels = tunnelsByNode.get(node.id) || []
+                if (!q) return { node, inbounds, tunnels }
                 const nodeMatch = node.name.toLowerCase().includes(q) ||
                     node.country_code.toLowerCase().includes(q)
-                const filteredInbounds = (node.inbounds || []).filter(
+                if (nodeMatch) return { node, inbounds, tunnels }
+                const filteredInbounds = inbounds.filter(
                     (inb) =>
                         inb.protocol.toLowerCase().includes(q) ||
                         inb.tag.toLowerCase().includes(q) ||
                         inb.remark.toLowerCase().includes(q)
                 )
-                if (nodeMatch) return node
-                if (filteredInbounds.length > 0) {
-                    return { ...node, inbounds: filteredInbounds }
+                const filteredTunnels = tunnels.filter((t) => tunnelMatches(t, q))
+                if (filteredInbounds.length + filteredTunnels.length > 0) {
+                    return { node, inbounds: filteredInbounds, tunnels: filteredTunnels }
                 }
                 return null
             })
-            .filter(Boolean) as Node[]
-    }, [nodes, search])
+            .filter((row): row is { node: Node; inbounds: Inbound[]; tunnels: CoreInbound[] } => row !== null)
+    }, [nodes, tunnelsByNode, search])
 
-    const selectedCount = selectedInboundIds.size
+    const selectedCount = selectedInboundIds.size + selectedTunnelIds.size
 
     if (isLoading) {
         return (
@@ -215,7 +316,7 @@ function StepSelectServers({
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                     <Input
-                        placeholder="Search nodes or protocols..."
+                        placeholder="Search nodes, protocols or tunnels..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="pl-9 h-10"
@@ -250,12 +351,14 @@ function StepSelectServers({
                     </div>
                 ) : (
                     <div className="space-y-2.5">
-                        {filteredNodes.map((node) => {
-                            const inbounds = node.inbounds || []
+                        {filteredNodes.map(({ node, inbounds, tunnels }) => {
                             const isExpanded = expandedNodes.has(node.id)
-                            const allSelected = inbounds.length > 0 && inbounds.every((i) => selectedInboundIds.has(i.id))
-                            const someSelected = inbounds.some((i) => selectedInboundIds.has(i.id))
-                            const selectedInNode = inbounds.filter((i) => selectedInboundIds.has(i.id)).length
+                            const total = inbounds.length + tunnels.length
+                            const selectedInNode =
+                                inbounds.filter((i) => selectedInboundIds.has(i.id)).length +
+                                tunnels.filter((t) => selectedTunnelIds.has(t.id)).length
+                            const allSelected = total > 0 && selectedInNode === total
+                            const someSelected = selectedInNode > 0
                             const flag = COUNTRY_FLAGS[node.country_code.toUpperCase()] || "🌐"
 
                             return (
@@ -295,6 +398,11 @@ function StepSelectServers({
                                             <Badge variant="outline" className="text-[11px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex">
                                                 {node.country_code}
                                             </Badge>
+                                            {isLiteNode(node) && (
+                                                <Badge variant="outline" className="text-[11px] px-1.5 py-0 shrink-0 hidden sm:inline-flex">
+                                                    MTProto node
+                                                </Badge>
+                                            )}
                                             <div className={cn(
                                                 "flex items-center gap-1.5 shrink-0",
                                             )}>
@@ -316,15 +424,15 @@ function StepSelectServers({
                                         <div className="flex items-center gap-2 shrink-0">
                                             {someSelected && (
                                                 <span className="text-xs font-medium text-primary tabular-nums">
-                                                    {selectedInNode}/{inbounds.length}
+                                                    {selectedInNode}/{total}
                                                 </span>
                                             )}
-                                            {!someSelected && inbounds.length > 0 && (
+                                            {!someSelected && total > 0 && (
                                                 <span className="text-[12px] text-muted-foreground hidden sm:inline">
-                                                    {inbounds.length} inbound{inbounds.length !== 1 ? "s" : ""}
+                                                    {accessCountLabel(inbounds.length, tunnels.length)}
                                                 </span>
                                             )}
-                                            {inbounds.length > 0 && (
+                                            {total > 0 && (
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -336,7 +444,7 @@ function StepSelectServers({
                                                     )}
                                                     onClick={(e) => {
                                                         e.stopPropagation()
-                                                        onToggleNode(node.id, inbounds, !allSelected)
+                                                        onToggleNode(node.id, inbounds, tunnels, !allSelected)
                                                     }}
                                                 >
                                                     <span className="hidden sm:inline">{allSelected ? "Deselect All" : "Select All"}</span>
@@ -349,7 +457,7 @@ function StepSelectServers({
                                     {/* Inbounds List */}
                                     {isExpanded && (
                                         <div className="border-t border-border/50">
-                                            {inbounds.length === 0 ? (
+                                            {total === 0 ? (
                                                 <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
                                                     <Server className="w-4 h-4 opacity-40" />
                                                     <p className="text-xs">No inbounds configured</p>
@@ -413,6 +521,19 @@ function StepSelectServers({
                                                             </label>
                                                         )
                                                     })}
+                                                    {inbounds.length > 0 && tunnels.length > 0 && (
+                                                        <p className="px-3 pt-2 pb-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+                                                            Tunnels
+                                                        </p>
+                                                    )}
+                                                    {tunnels.map((tunnel) => (
+                                                        <TunnelRow
+                                                            key={`tunnel-${tunnel.id}`}
+                                                            tunnel={tunnel}
+                                                            selected={selectedTunnelIds.has(tunnel.id)}
+                                                            onToggle={() => onToggleTunnel(tunnel.id)}
+                                                        />
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
@@ -811,6 +932,7 @@ function StepConfigure({
 function StepReview({
     label,
     selectedInbounds,
+    selectedTunnels,
     hasDataLimit,
     dataLimitGb,
     bandwidthLimit,
@@ -823,6 +945,7 @@ function StepReview({
 }: {
     label: string
     selectedInbounds: InboundSelection[]
+    selectedTunnels: TunnelSelection[]
     hasDataLimit: boolean
     dataLimitGb: string
     bandwidthLimit: string
@@ -856,7 +979,7 @@ function StepReview({
                                 Servers
                             </p>
                             <p className="text-sm font-medium">
-                                {selectedInbounds.length} inbound{selectedInbounds.length !== 1 ? "s" : ""}
+                                {accessCountLabel(selectedInbounds.length, selectedTunnels.length)}
                             </p>
                         </div>
                         <div className="space-y-1">
@@ -921,39 +1044,63 @@ function StepReview({
                 </Card>
 
                 {/* Selected Inbounds */}
-                <div className="space-y-2">
-                    <h4 className="text-sm font-medium flex items-center gap-2">
-                        <Globe className="w-4 h-4 text-primary" />
-                        Selected Inbounds
-                    </h4>
-                    <Card className="overflow-hidden divide-y divide-border/50">
-                        {selectedInbounds.map(({ inbound, nodeName, nodeCountry }) => (
-                            <div
-                                key={inbound.id}
-                                className="flex items-center gap-3 px-3 py-2 text-sm"
-                            >
-                                <Badge
-                                    variant="outline"
-                                    className="text-[11px] px-1.5 uppercase shrink-0"
+                {selectedInbounds.length > 0 && (
+                    <section aria-label="Selected inbounds" className="space-y-2">
+                        <h4 className="text-sm font-medium flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-primary" />
+                            Selected Inbounds
+                        </h4>
+                        <Card className="overflow-hidden divide-y divide-border/50">
+                            {selectedInbounds.map(({ inbound, nodeName, nodeCountry }) => (
+                                <div
+                                    key={inbound.id}
+                                    className="flex items-center gap-3 px-3 py-2 text-sm"
                                 >
-                                    {nodeCountry}
-                                </Badge>
-                                <span className="text-muted-foreground truncate flex-1">
-                                    {nodeName}
-                                </span>
-                                <Badge
-                                    variant="default"
-                                    className="text-[11px] px-1.5 font-mono uppercase shrink-0"
-                                >
-                                    {inbound.protocol}
-                                </Badge>
-                                <span className="text-xs font-mono text-muted-foreground shrink-0">
-                                    :{inbound.port}
-                                </span>
-                            </div>
-                        ))}
-                    </Card>
-                </div>
+                                    <Badge
+                                        variant="outline"
+                                        className="text-[11px] px-1.5 uppercase shrink-0"
+                                    >
+                                        {nodeCountry}
+                                    </Badge>
+                                    <span className="text-muted-foreground truncate flex-1">
+                                        {nodeName}
+                                    </span>
+                                    <Badge
+                                        variant="default"
+                                        className="text-[11px] px-1.5 font-mono uppercase shrink-0"
+                                    >
+                                        {inbound.protocol}
+                                    </Badge>
+                                    <span className="text-xs font-mono text-muted-foreground shrink-0">
+                                        :{inbound.port}
+                                    </span>
+                                </div>
+                            ))}
+                        </Card>
+                    </section>
+                )}
+
+                {/* Selected Tunnels */}
+                {selectedTunnels.length > 0 && (
+                    <section aria-label="Selected tunnels" className="space-y-2">
+                        <h4 className="text-sm font-medium flex items-center gap-2">
+                            <Wifi className="w-4 h-4 text-primary" />
+                            Selected Tunnels
+                        </h4>
+                        <Card className="overflow-hidden divide-y divide-border/50">
+                            {selectedTunnels.map(({ tunnel, nodeName, nodeCountry }) => (
+                                <div key={tunnel.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                                    <Badge variant="outline" className="text-[11px] px-1.5 uppercase shrink-0">
+                                        {nodeCountry}
+                                    </Badge>
+                                    <span className="text-muted-foreground truncate flex-1">{nodeName}</span>
+                                    <TunnelBadge protocol={tunnel.protocol} />
+                                    <span className="text-xs font-mono text-muted-foreground shrink-0">:{tunnel.port}</span>
+                                </div>
+                            ))}
+                        </Card>
+                    </section>
+                )}
             </div>
         </ScrollArea>
     )
@@ -971,6 +1118,7 @@ export function CreateManualSubscriptionDialog() {
     const [step, setStep] = useState(0)
 
     const [selectedInboundIds, setSelectedInboundIds] = useState<Set<number>>(new Set())
+    const [selectedTunnelIds, setSelectedTunnelIds] = useState<Set<number>>(new Set())
 
     const [userMode, setUserMode] = useState<UserMode>("none")
     const [selectedUser, setSelectedUser] = useState<User | null>(null)
@@ -1023,7 +1171,29 @@ export function CreateManualSubscriptionDialog() {
         enabled: open,
     })
 
-    const nodes = nodesData || []
+    const nodes = useMemo(() => nodesData || [], [nodesData])
+
+    // Same cache as useAllCoreInbounds, fetched only while the dialog is open.
+    const { data: tunnelsData, isLoading: tunnelsLoading } = useQuery({
+        queryKey: queryKeys.coreAllInbounds(),
+        queryFn: async () => {
+            const res = await listAllCoreInbounds()
+            if (!res.success) throw new Error(res.error || "Failed to load tunnels")
+            return res.data?.inbounds ?? []
+        },
+        enabled: open,
+        staleTime: 30 * 1000,
+    })
+
+    // Disabled tunnels can't be handed out.
+    const tunnelsByNode = useMemo(() => {
+        const byNode = new Map<number, CoreInbound[]>()
+        for (const t of tunnelsData || []) {
+            if (t.is_disabled) continue
+            byNode.set(t.node_id, [...(byNode.get(t.node_id) || []), t])
+        }
+        return byNode
+    }, [tunnelsData])
 
     // Build selected inbound details for review step
     const selectedInbounds = useMemo<InboundSelection[]>(() => {
@@ -1042,6 +1212,18 @@ export function CreateManualSubscriptionDialog() {
         return result
     }, [nodes, selectedInboundIds])
 
+    const selectedTunnels = useMemo<TunnelSelection[]>(() => {
+        const result: TunnelSelection[] = []
+        for (const node of nodes) {
+            for (const tunnel of tunnelsByNode.get(node.id) || []) {
+                if (selectedTunnelIds.has(tunnel.id)) {
+                    result.push({ tunnel, nodeName: node.name, nodeCountry: node.country_code })
+                }
+            }
+        }
+        return result
+    }, [nodes, tunnelsByNode, selectedTunnelIds])
+
     // Handlers
     const handleToggleInbound = useCallback((id: number) => {
         setSelectedInboundIds((prev) => {
@@ -1055,19 +1237,33 @@ export function CreateManualSubscriptionDialog() {
         })
     }, [])
 
+    const handleToggleTunnel = useCallback((id: number) => {
+        setSelectedTunnelIds((prev) => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }, [])
+
     const handleToggleNode = useCallback(
-        (_nodeId: number, inbounds: Inbound[], selectAll: boolean) => {
-            setSelectedInboundIds((prev) => {
+        (_nodeId: number, inbounds: Inbound[], tunnels: CoreInbound[], selectAll: boolean) => {
+            const apply = (prev: Set<number>, ids: number[]) => {
                 const next = new Set(prev)
-                for (const inbound of inbounds) {
+                for (const id of ids) {
                     if (selectAll) {
-                        next.add(inbound.id)
+                        next.add(id)
                     } else {
-                        next.delete(inbound.id)
+                        next.delete(id)
                     }
                 }
                 return next
-            })
+            }
+            setSelectedInboundIds((prev) => apply(prev, inbounds.map((i) => i.id)))
+            setSelectedTunnelIds((prev) => apply(prev, tunnels.map((t) => t.id)))
         },
         []
     )
@@ -1078,6 +1274,7 @@ export function CreateManualSubscriptionDialog() {
         setTimeout(() => {
             setStep(0)
             setSelectedInboundIds(new Set())
+            setSelectedTunnelIds(new Set())
             setUserMode("none")
             setSelectedUser(null)
             setNewUserForm({ username: "", firstName: "", lastName: "", telegramId: "" })
@@ -1122,6 +1319,7 @@ export function CreateManualSubscriptionDialog() {
             {
                 label: label.trim(),
                 inbound_ids: Array.from(selectedInboundIds),
+                core_inbound_ids: Array.from(selectedTunnelIds),
                 data_limit_gb: hasDataLimit && dataLimitGb ? parseFloat(dataLimitGb) : null,
                 bandwidth_limit: parseInt(bandwidthLimit) || 0,
                 max_devices: parseInt(maxDevices) || 0,
@@ -1138,6 +1336,7 @@ export function CreateManualSubscriptionDialog() {
         createMutation,
         label,
         selectedInboundIds,
+        selectedTunnelIds,
         hasDataLimit,
         dataLimitGb,
         hasExpiry,
@@ -1150,7 +1349,7 @@ export function CreateManualSubscriptionDialog() {
     ])
 
     // Validation
-    const canProceedStep0 = selectedInboundIds.size > 0
+    const canProceedStep0 = selectedInboundIds.size + selectedTunnelIds.size > 0
     const canProceedStep1 =
         userMode === "none" ||
         (userMode === "existing" && selectedUser !== null) ||
@@ -1183,9 +1382,12 @@ export function CreateManualSubscriptionDialog() {
                         <StepSelectServers
                             selectedInboundIds={selectedInboundIds}
                             onToggleInbound={handleToggleInbound}
+                            selectedTunnelIds={selectedTunnelIds}
+                            onToggleTunnel={handleToggleTunnel}
                             onToggleNode={handleToggleNode}
                             nodes={nodes}
-                            isLoading={nodesLoading}
+                            tunnelsByNode={tunnelsByNode}
+                            isLoading={nodesLoading || tunnelsLoading}
                             isError={nodesError}
                         />
                     )}
@@ -1221,6 +1423,7 @@ export function CreateManualSubscriptionDialog() {
                         <StepReview
                             label={label}
                             selectedInbounds={selectedInbounds}
+                            selectedTunnels={selectedTunnels}
                             hasDataLimit={hasDataLimit}
                             dataLimitGb={dataLimitGb}
                             bandwidthLimit={bandwidthLimit}

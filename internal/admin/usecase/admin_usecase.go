@@ -126,7 +126,8 @@ type AdminUsecase interface {
 	GetSubscriptionUsageHistory(ctx context.Context, id uint, days int) ([]subUC.UsageHistoryPoint, error)
 
 	// Manual Subscription
-	CreateManualSubscription(ctx context.Context, req *subUC.ManualSubscriptionRequest) (*subDomain.Subscription, error)
+	// CreateManualSubscription also returns warnings for tunnels it could not attach.
+	CreateManualSubscription(ctx context.Context, req *subUC.ManualSubscriptionRequest) (*subDomain.Subscription, []string, error)
 
 	// User management (admin)
 	UpdateUserTelegramID(ctx context.Context, userID uint, telegramID int64) error

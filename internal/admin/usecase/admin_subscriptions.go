@@ -221,10 +221,10 @@ func (u *adminUsecase) ListAllFilteredSubscriptions(ctx context.Context, filter 
 	return u.subRepo.ListAllFiltered(ctx, filter)
 }
 
-func (u *adminUsecase) CreateManualSubscription(ctx context.Context, req *subUC.ManualSubscriptionRequest) (*subDomain.Subscription, error) {
-	sub, err := u.subUC.CreateManual(ctx, req)
+func (u *adminUsecase) CreateManualSubscription(ctx context.Context, req *subUC.ManualSubscriptionRequest) (*subDomain.Subscription, []string, error) {
+	sub, warnings, err := u.subUC.CreateManual(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Send notification if user is linked and has valid TelegramID
@@ -245,7 +245,7 @@ func (u *adminUsecase) CreateManualSubscription(ctx context.Context, req *subUC.
 		}
 	}
 
-	return sub, nil
+	return sub, warnings, nil
 }
 
 // Subscription Data/Expiry Management

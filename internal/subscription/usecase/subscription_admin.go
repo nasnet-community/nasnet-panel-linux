@@ -2,11 +2,13 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
 	userDomain "github.com/nasnet-community/nasnet-panel-linux/internal/user/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
@@ -86,7 +88,9 @@ func (u *subscriptionUsecase) RegenerateUUID(ctx context.Context, id uint) (*dom
 	planName := "Manual"
 
 	subInfoOld, prepErr := u.prepareManualSubscriptionInfo(ctx, sub)
-	if prepErr != nil {
+	// Tunnel-only: nothing to swap on Xray, but the credentials and tunnel secrets still rotate.
+	noXray := errors.Is(prepErr, errNoXrayAccounts)
+	if prepErr != nil && !noXray {
 		log.WithError(prepErr).WithField("subscription_id", id).Warn("[RegenerateUUID] Failed to prepare old subscription info")
 	}
 	if subInfoOld != nil {
@@ -97,10 +101,13 @@ func (u *subscriptionUsecase) RegenerateUUID(ctx context.Context, id uint) (*dom
 		}
 	}
 
-	subInfoNew, err := u.prepareManualSubscriptionInfo(ctx, sub)
-	if err != nil {
-		log.WithError(err).Error("[RegenerateUUID] Failed to prepare subscription info from accounts")
-		return nil, err
+	subInfoNew := &product.SubscriptionInfo{UserID: sub.GetUserID(), DataLimit: sub.GetEffectiveDataLimit(), PlanName: planName}
+	if !noXray {
+		subInfoNew, err = u.prepareManualSubscriptionInfo(ctx, sub)
+		if err != nil {
+			log.WithError(err).Error("[RegenerateUUID] Failed to prepare subscription info from accounts")
+			return nil, err
+		}
 	}
 
 	configResult, err := provider.GenerateConfig(ctx, subInfoNew, planName)
@@ -122,8 +129,10 @@ func (u *subscriptionUsecase) RegenerateUUID(ctx context.Context, id uint) (*dom
 
 	subInfoNew.ConfigID = configResult.ConfigID
 	subInfoNew.Email = configResult.ConfigEmail
-	if activateErr := provider.ActivateUser(ctx, subInfoNew); activateErr != nil {
-		log.WithError(activateErr).WithField("subscription_id", id).Warn("[RegenerateUUID] Failed to activate new user on Xray")
+	if !noXray {
+		if activateErr := provider.ActivateUser(ctx, subInfoNew); activateErr != nil {
+			log.WithError(activateErr).WithField("subscription_id", id).Warn("[RegenerateUUID] Failed to activate new user on Xray")
+		}
 	}
 
 	// Recreate account records with new UUID/email
@@ -189,6 +198,9 @@ func (u *subscriptionUsecase) RegenerateSubscriptionKey(ctx context.Context, id 
 	return sub, nil
 }
 
+// errNoXrayAccounts: the sub has no Xray accounts (tunnel-only, or nothing yet).
+var errNoXrayAccounts = errors.New("no accounts found")
+
 // prepareManualSubscriptionInfo builds SubscriptionInfo for manual subscriptions
 // by looking up existing accounts to find which inbounds are in use.
 func (u *subscriptionUsecase) prepareManualSubscriptionInfo(ctx context.Context, sub *domain.Subscription) (*product.SubscriptionInfo, error) {
@@ -201,7 +213,7 @@ func (u *subscriptionUsecase) prepareManualSubscriptionInfo(ctx context.Context,
 		return nil, fmt.Errorf("failed to list accounts: %w", err)
 	}
 	if len(accounts) == 0 {
-		return nil, fmt.Errorf("no accounts found for manual subscription %d", sub.ID)
+		return nil, fmt.Errorf("%w for manual subscription %d", errNoXrayAccounts, sub.ID)
 	}
 
 	var inboundDetails []product.InboundDetail
@@ -239,33 +251,60 @@ func (u *subscriptionUsecase) AssignToUser(ctx context.Context, subID, userID ui
 	return u.subRepo.UpdateUserID(ctx, subID, userID)
 }
 
+// requestError keeps the message as-is but matches its sentinel via errors.Is.
+type requestError struct {
+	kind error
+	msg  string
+}
+
+func (e *requestError) Error() string { return e.msg }
+func (e *requestError) Unwrap() error { return e.kind }
+
+func badRequest(kind error, format string, args ...any) error {
+	return &requestError{kind: kind, msg: fmt.Sprintf(format, args...)}
+}
+
 // CreateManual creates a standalone subscription not linked to any user or plan.
-func (u *subscriptionUsecase) CreateManual(ctx context.Context, req *ManualSubscriptionRequest) (*domain.Subscription, error) {
+func (u *subscriptionUsecase) CreateManual(ctx context.Context, req *ManualSubscriptionRequest) (*domain.Subscription, []string, error) {
 	log := logger.GetLogger()
 	log.WithFields(map[string]interface{}{
-		"label":       req.Label,
-		"inbound_ids": req.InboundIDs,
-		"data_limit":  req.DataLimit,
-		"max_devices": req.MaxDevices,
+		"label":            req.Label,
+		"inbound_ids":      req.InboundIDs,
+		"core_inbound_ids": req.CoreInboundIDs,
+		"data_limit":       req.DataLimit,
+		"max_devices":      req.MaxDevices,
 	}).Info("[CreateManual] Creating manual subscription")
 
-	// Fetch inbounds with nodes preloaded
-	inbounds, err := u.nodeRepo.FindInboundsByIDs(ctx, req.InboundIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch inbounds: %w", err)
+	if len(req.InboundIDs) == 0 && len(req.CoreInboundIDs) == 0 {
+		return nil, nil, ErrNoManualAccess
 	}
-	if len(inbounds) == 0 {
-		return nil, fmt.Errorf("no valid inbounds found for the given IDs")
+
+	// Fetch inbounds with nodes preloaded
+	var inbounds []*nodeDomain.Inbound
+	if len(req.InboundIDs) > 0 {
+		var err error
+		inbounds, err = u.nodeRepo.FindInboundsByIDs(ctx, req.InboundIDs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch inbounds: %w", err)
+		}
+		if len(inbounds) == 0 {
+			return nil, nil, badRequest(ErrInvalidInbound, "no valid inbounds found for the given IDs")
+		}
 	}
 
 	// Validate all inbounds exist and nodes are active
 	for _, in := range inbounds {
 		if in.IsDisabled {
-			return nil, fmt.Errorf("inbound %d is disabled", in.ID)
+			return nil, nil, badRequest(ErrInvalidInbound, "inbound %d is disabled", in.ID)
 		}
 		if in.Node == nil || !in.Node.IsActive {
-			return nil, fmt.Errorf("inbound %d belongs to an inactive or missing node", in.ID)
+			return nil, nil, badRequest(ErrInvalidInbound, "inbound %d belongs to an inactive or missing node", in.ID)
 		}
+	}
+
+	tunnels, err := u.resolveManualTunnels(ctx, req.CoreInboundIDs)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Sync nodes (best effort)
@@ -300,13 +339,13 @@ func (u *subscriptionUsecase) CreateManual(ctx context.Context, req *ManualSubsc
 	// Get xray provider (manual subs are xray-only)
 	provider, err := u.providerFactory.Get("xray")
 	if err != nil {
-		return nil, fmt.Errorf("xray provider not found: %w", err)
+		return nil, nil, fmt.Errorf("xray provider not found: %w", err)
 	}
 
 	// Generate config and provision on nodes
 	configResult, err := provider.GenerateConfig(ctx, subInfo, "Manual")
 	if err != nil {
-		return nil, fmt.Errorf("provisioning failed: %w", err)
+		return nil, nil, fmt.Errorf("provisioning failed: %w", err)
 	}
 
 	now := time.Now()
@@ -348,7 +387,7 @@ func (u *subscriptionUsecase) CreateManual(ctx context.Context, req *ManualSubsc
 		if rollbackErr := provider.DeactivateUser(ctx, rollbackInfo); rollbackErr != nil {
 			log.WithError(rollbackErr).Error("[CreateManual] Rollback also failed")
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Create Account records per inbound
@@ -383,8 +422,10 @@ func (u *subscriptionUsecase) CreateManual(ctx context.Context, req *ManualSubsc
 		}
 	}
 
+	warnings := u.attachManualTunnels(ctx, subscription.ID, tunnels)
+
 	log.WithField("subscription_id", subscription.ID).Info("[CreateManual] Manual subscription created successfully")
-	return subscription, nil
+	return subscription, warnings, nil
 }
 
 // SetPanelPassword sets the panel password mode and optional custom password for a subscription.

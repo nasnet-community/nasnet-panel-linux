@@ -114,6 +114,8 @@ export async function setSubscriptionPanelPassword(
 export interface CreateManualSubscriptionRequest {
     label: string
     inbound_ids: number[]
+    /** SSH/MTProto tunnels; may be the only access. */
+    core_inbound_ids?: number[]
     data_limit_gb: number | null
     bandwidth_limit: number // Mbps, 0 = unlimited
     max_devices: number
@@ -121,7 +123,12 @@ export interface CreateManualSubscriptionRequest {
     user_id?: number | null
 }
 
-export async function createManualSubscription(req: CreateManualSubscriptionRequest): Promise<ApiResponse<Subscription>> {
+/** Warnings name tunnels the hub could not attach after saving. */
+export interface CreateManualSubscriptionResponse extends ApiResponse<Subscription> {
+    warnings?: string[]
+}
+
+export async function createManualSubscription(req: CreateManualSubscriptionRequest): Promise<CreateManualSubscriptionResponse> {
     return api.post<Subscription>("/api/v1/admin/subscriptions/manual", req)
 }
 

@@ -154,8 +154,8 @@ func (s *stubSubscriptionUsecase) GetPanelPasswordHash(_ context.Context, _ uint
 func (s *stubSubscriptionUsecase) HasUserPurchasedPlan(_ context.Context, _, _ uint) (bool, error) {
 	return false, errStub
 }
-func (s *stubSubscriptionUsecase) CreateManual(_ context.Context, _ *usecase.ManualSubscriptionRequest) (*domain.Subscription, error) {
-	return nil, errStub
+func (s *stubSubscriptionUsecase) CreateManual(_ context.Context, _ *usecase.ManualSubscriptionRequest) (*domain.Subscription, []string, error) {
+	return nil, nil, errStub
 }
 func (s *stubSubscriptionUsecase) SetTunnelAccess(_ context.Context, _ uint, _ bool) error {
 	return nil
