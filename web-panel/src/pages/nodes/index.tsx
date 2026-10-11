@@ -50,7 +50,7 @@ import type { Node } from "@/lib/types"
 import { cn, formatBytes, formatSpeed } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { MigrationDialog } from "@/components/node/migration-dialog"
-import { Link } from "react-router"
+import { Link, useNavigate } from "react-router"
 import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, sparklineFromBulk, useCreateNode, useDeleteNode, useCheckNodeHealth, useNodeAggregateStats, useMtprotoNodes } from "@/lib/queries"
 import type { MtprotoNodeSummary } from "@/lib/api/mtproto"
 import { MtprotoCardMetrics } from "@/components/mtproto/mtproto-node-summary"
@@ -67,6 +67,8 @@ import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
 import { wipeNode } from "@/lib/api/nuke"
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
 import { isLiteNode, isLocalNode, nodeAddress, outageReasonLabel } from "@/lib/node-kind"
+import { AddMtprotoNodeDialog } from "@/components/mtproto/add-mtproto-node-dialog"
+import { AddNodeKindPicker } from "@/components/node/add-node-kind-picker"
 import { useChartPalette } from "@/lib/design/palette"
 
 // ─── Compact Node Card ────────────────────────────────────────────
@@ -446,6 +448,19 @@ export default function NodesPage() {
     }, [allSelected, clearSelection, setSelected, nodes])
 
     const confirm = useConfirm()
+    const navigate = useNavigate()
+    const [mtprotoDialogOpen, setMtprotoDialogOpen] = useState(false)
+    // the add dialog opens on a choice of node kind
+    const [addKind, setAddKind] = useState<"choose" | "full">("choose")
+    const startAdd = () => {
+        setAddKind("choose")
+        openAddDialog()
+    }
+    const addMTProtoNode = () => {
+        closeAddDialog()
+        setAddKind("choose")
+        setMtprotoDialogOpen(true)
+    }
     const [migrationNode, setMigrationNode] = useState<Node | null>(null)
     const [deleteConflictNode, setDeleteConflictNode] = useState<Node | null>(null)
     const [selectedNode, setSelectedNode] = useState<Node | null>(null)
@@ -591,7 +606,7 @@ export default function NodesPage() {
                         <HiOutlineRefresh className={cn("w-4.5 h-4.5", isRefetching && "animate-spin")} />
                     </Button>
                     <Button variant="ghost" size="icon" className="h-9 w-9"
-                        onClick={openAddDialog} aria-label="Add node">
+                        onClick={startAdd} aria-label="Add node">
                         <HiOutlinePlus className="w-4.5 h-4.5" />
                     </Button>
                 </div>
@@ -605,7 +620,7 @@ export default function NodesPage() {
                     actions={
                         <>
                             <AutoRefreshControl isRefreshing={isRefetching} dataUpdatedAt={dataUpdatedAt} />
-                            <Button onClick={openAddDialog}>
+                            <Button onClick={startAdd}>
                                 <HiOutlinePlus className="w-4 h-4 mr-2" />
                                 Add node
                             </Button>
@@ -699,7 +714,7 @@ export default function NodesPage() {
                             <CardContent className="flex flex-col items-center justify-center py-12">
                                 <HiOutlineServer className="w-12 h-12 text-muted-foreground/50 mb-4" />
                                 <p className="text-muted-foreground mb-4">No nodes configured</p>
-                                <Button onClick={openAddDialog}>
+                                <Button onClick={startAdd}>
                                     <HiOutlinePlus className="w-4 h-4 mr-2" /> Add Your First Node
                                 </Button>
                             </CardContent>
@@ -716,13 +731,35 @@ export default function NodesPage() {
                 onDeploy={selectedNode ? handleDeployFromSheet : undefined}
             />
 
+            <AddMtprotoNodeDialog
+                open={mtprotoDialogOpen}
+                onOpenChange={setMtprotoDialogOpen}
+                onBack={() => {
+                    setMtprotoDialogOpen(false)
+                    startAdd()
+                }}
+                onInstalled={(id) => {
+                    handleRefresh()
+                    navigate(`/nodes/${id}`)
+                }}
+            />
+
             {/* Add Node Dialog */}
-            <Dialog open={addDialogOpen} onOpenChange={(open) => open ? openAddDialog() : closeAddDialog()}>
+            <Dialog open={addDialogOpen} onOpenChange={(open) => {
+                if (open) return openAddDialog()
+                closeAddDialog()
+                setAddKind("choose")
+            }}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Add node</DialogTitle>
-                        <DialogDescription>A remote machine that runs the NasNet agent.</DialogDescription>
+                        <DialogDescription>
+                            {addKind === "choose" ? "Pick what the node will run." : "A remote machine that runs the NasNet agent."}
+                        </DialogDescription>
                     </DialogHeader>
+                    {addKind === "choose" ? (
+                        <AddNodeKindPicker onPick={(kind) => (kind === "full" ? setAddKind("full") : addMTProtoNode())} />
+                    ) : (
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
                             <Label htmlFor="name">Name</Label>
@@ -765,12 +802,15 @@ export default function NodesPage() {
                             <Input id="agent_port" type="number" className="w-32 font-mono" placeholder="9090" value={newNode.agent_port} onChange={(e) => updateNewNode({ agent_port: e.target.value })} />
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={closeAddDialog}>Cancel</Button>
-                        <Button onClick={handleAddNode} disabled={createNodeMutation.isPending}>
-                            {createNodeMutation.isPending ? "Adding..." : "Add and deploy"}
-                        </Button>
-                    </DialogFooter>
+                    )}
+                    {addKind === "full" && (
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setAddKind("choose")}>Back</Button>
+                            <Button onClick={handleAddNode} disabled={createNodeMutation.isPending}>
+                                {createNodeMutation.isPending ? "Adding..." : "Add and deploy"}
+                            </Button>
+                        </DialogFooter>
+                    )}
                 </DialogContent>
             </Dialog>
 
