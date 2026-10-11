@@ -8,28 +8,19 @@ import { Badge } from "@/components/ui/badge"
 import {
     HiOutlineArrowLeft,
     HiOutlineServer,
-    HiOutlineRefresh,
     HiOutlineChartBar,
     HiOutlineCog,
     HiOutlineTerminal,
     HiOutlineGlobeAlt,
-    HiOutlineDotsVertical,
 } from "react-icons/hi"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { getNode, restartXrayProcess } from "@/lib/api/nodes"
-import { Cable, Loader2, Satellite } from "lucide-react"
+import { getNode } from "@/lib/api/nodes"
+import { Cable, Satellite } from "lucide-react"
 import { useNodeStats, queryKeys } from "@/lib/queries"
 import { useEventsStatus } from "@/components/providers/events-provider"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Node } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "@/lib/toast"
-import { Globe } from "lucide-react"
 
 // Import modular components
 import { NodeOverview } from "@/components/node/node-overview"
@@ -39,14 +30,13 @@ import { NodeSettings } from "@/components/node/node-settings"
 import { NodeLogs } from "@/components/node/node-logs"
 import { NodeAccessLogs } from "@/components/node/node-access-logs"
 import { NodeTerminal } from "@/components/node/node-terminal"
-import { GeofilesDialog } from "@/components/node/geofiles-dialog"
 import { CopyableText } from "@/components/ui/copyable-text"
 import { AccountDetailsSheet } from "@/components/accounts/account-details-sheet"
 import { StarlinkDashboard } from "@/components/node/starlink/starlink-dashboard"
 import { LocalNodeBadge } from "@/components/node/local-node-badge"
 import { UpdateAgentDialog } from "@/components/update-agent-dialog"
-import { Package } from "lucide-react"
-import { isLocalNode, nodeAddress } from "@/lib/node-kind"
+import { NodeHeaderActions } from "@/components/node/node-header-actions"
+import { isLiteNode, isLocalNode, nodeAddress } from "@/lib/node-kind"
 
 const nodeTabs = [
     { value: "overview", label: "Overview", description: "Stats & Health", icon: HiOutlineChartBar },
@@ -165,27 +155,7 @@ export default function NodeDetailPage() {
         }
     }, [isTerminalWorkspace, node?.id, nodeId])
 
-    const [geofilesOpen, setGeofilesOpen] = useState(false)
     const [updateAgentOpen, setUpdateAgentOpen] = useState(false)
-    const [isRestarting, setIsRestarting] = useState(false)
-
-    const handleRestartXray = async () => {
-        if (!node) return
-        try {
-            setIsRestarting(true)
-            const res = await restartXrayProcess(nodeId)
-            if (res.success) {
-                toast.success("Xray service restarted successfully")
-                queryClient.invalidateQueries({ queryKey: queryKeys.nodeStats(nodeId) })
-            } else {
-                toast.error("Failed to restart Xray: " + res.error)
-            }
-        } catch {
-            toast.error("Failed to restart Xray service")
-        } finally {
-            setIsRestarting(false)
-        }
-    }
 
     const handleTabChange = (value: string) => {
         const params = new URLSearchParams(searchParams)
@@ -254,6 +224,7 @@ export default function NodeDetailPage() {
     }
 
     const local = isLocalNode(node)
+    const lite = isLiteNode(node)
 
     return (
         <div ref={workspaceRef} className={cn("min-w-0 animate-in fade-in duration-300", !isTerminalWorkspace && "pb-20")}>
@@ -287,60 +258,15 @@ export default function NodeDetailPage() {
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-auto">
-                    <Button
-                        size="sm"
-                        onClick={handleRestartXray}
-                        disabled={isLoading || isRestarting}
-                        variant="outline"
-                        className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")}
-                    >
-                        {isRestarting ? (
-                            <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                        ) : (
-                            <HiOutlineRefresh className="w-3.5 h-3.5 mr-2" />
-                        )}
-                        Restart Xray
-                    </Button>
-                    <GeofilesDialog
-                        nodeId={nodeId}
-                        isOnline={node.is_online}
-                        onRefresh={handleRefresh}
-                        trigger={
-                            <Button variant="outline" size="sm" className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")} disabled={!node.is_online}>
-                                <Globe className="w-3.5 h-3.5 mr-2" />
-                                Geofiles
-                            </Button>
-                        }
-                    />
-                    {!local && (
-                        <Button variant="outline" size="sm" onClick={() => setUpdateAgentOpen(true)} className={cn("hidden h-8 px-3", !isTerminalWorkspace && "md:inline-flex")}>
-                            <Package className="w-3.5 h-3.5 mr-2" />
-                            Update Agent
-                        </Button>
+                    {!lite && (
+                        <NodeHeaderActions
+                            node={node}
+                            stats={stats}
+                            hideButtons={isTerminalWorkspace}
+                            onRefresh={handleRefresh}
+                            onUpdateAgent={() => setUpdateAgentOpen(true)}
+                        />
                     )}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" aria-label="Node actions" className={cn("h-8 px-2.5", !isTerminalWorkspace && "md:hidden")}>
-                                <HiOutlineDotsVertical className="w-4 h-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={handleRestartXray} disabled={isRestarting}>
-                                <HiOutlineRefresh className={cn("w-4 h-4 mr-2", isRestarting && "animate-spin")} />
-                                Restart Xray
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setGeofilesOpen(true)} disabled={!node.is_online}>
-                                <Globe className="w-4 h-4 mr-2" />
-                                Update Geofiles
-                            </DropdownMenuItem>
-                            {!local && (
-                                <DropdownMenuItem onClick={() => setUpdateAgentOpen(true)}>
-                                    <Package className="w-4 h-4 mr-2" />
-                                    Update Agent
-                                </DropdownMenuItem>
-                            )}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
                 </div>
             </div>
 
@@ -440,7 +366,6 @@ export default function NodeDetailPage() {
                                 node={node}
                                 onRefresh={loadData}
                                 onDirtyChange={setSettingsDirty}
-                                onUpdateAgent={local ? undefined : () => setUpdateAgentOpen(true)}
                             />
                         )}
                     </TabsContent>
@@ -508,14 +433,6 @@ export default function NodeDetailPage() {
                     onSuccess={loadData}
                 />
             )}
-
-            <GeofilesDialog
-                nodeId={nodeId}
-                isOnline={node.is_online}
-                onRefresh={handleRefresh}
-                open={geofilesOpen}
-                onOpenChange={setGeofilesOpen}
-            />
 
             <AccountDetailsSheet />
         </div>

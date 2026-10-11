@@ -34,6 +34,7 @@ type Node struct {
 	IP          string `gorm:"size:50;not null" json:"ip"`             // Public IP or Domain
 	APIPort     int    `gorm:"not null;default:10085" json:"api_port"` // Xray gRPC API Port
 	CountryCode string `gorm:"size:5" json:"country_code"`             // e.g. "DE", "US"
+	NoFlag      bool   `gorm:"default:false" json:"no_flag"`           // chosen on purpose: GeoIP leaves the country blank
 	IsActive    bool   `gorm:"default:true" json:"is_active"`
 
 	// Kind separates full nodes from lite (MTProto) ones. Existing rows read as full.

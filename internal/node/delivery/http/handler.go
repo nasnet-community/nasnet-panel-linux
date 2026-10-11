@@ -371,6 +371,7 @@ type updateNodeRequest struct {
 	APIPort             *int                      `json:"api_port"`
 	AgentPort           *int                      `json:"agent_port"`
 	Country             *string                   `json:"country_code"`
+	NoFlag              *bool                     `json:"no_flag"`
 	IsActive            *bool                     `json:"is_active"`
 	LogLevel            *string                   `json:"log_level"`
 	Datacenter          *string                   `json:"datacenter"`
@@ -432,6 +433,15 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 	}
 	if req.Country != nil {
 		node.CountryCode = *req.Country
+	}
+	if req.NoFlag != nil {
+		node.NoFlag = *req.NoFlag
+	}
+	if req.Country != nil && *req.Country != "" {
+		node.NoFlag = false // a country picked now replaces "no flag"
+	}
+	if node.NoFlag {
+		node.CountryCode = ""
 	}
 	if req.IsActive != nil {
 		node.IsActive = *req.IsActive

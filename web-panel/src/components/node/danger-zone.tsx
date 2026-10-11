@@ -1,18 +1,12 @@
 import { useRef, useState } from "react"
 import { useNavigate } from "react-router"
 import { toast } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { NukeDialog } from "@/components/node/nuke-dialog"
 import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
 import { wipeNode } from "@/lib/api/nuke"
-import {
-  AlertTriangleIcon,
-  ZapIcon,
-  Trash2Icon,
-  ShieldOffIcon,
-  MinusCircleIcon,
-} from "lucide-react"
+import { Eraser, MinusCircle, Zap } from "lucide-react"
+import { DangerCard, DangerRow } from "@/components/settings-page/danger-card"
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -48,13 +42,17 @@ export interface DangerZoneProps {
   deleteLabel?: string
   /** False for the built-in node: its record can't be removed. */
   canRemoveRecord?: boolean
+  /** wipe and nuke run through the agent */
+  online?: boolean
+  /** the card's subtitle */
+  note?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DangerZone
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveRecord = true }: DangerZoneProps) {
+export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveRecord = true, online = true, note }: DangerZoneProps) {
   const navigate = useNavigate()
   const confirm = useConfirm()
 
@@ -114,120 +112,34 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveR
     void confirmed
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const local = !canRemoveRecord
+  const offline = online ? undefined : "Needs the node online"
+
   return (
     <>
-      {/* ── Card shell ──────────────────────────────────────────────────── */}
-      <div className="rounded-lg border border-red-500/25 bg-card overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-2.5 border-b border-red-500/15 bg-red-500/4 px-5 py-3.5">
-          <AlertTriangleIcon className="size-4 text-red-500/80 shrink-0" />
-          <span className="font-mono text-sm font-semibold tracking-tight text-red-500/90">
-            Danger Zone
-          </span>
-          <span className="ml-auto font-mono text-[11px] uppercase tracking-widest text-red-500/40">
-            Irreversible operations
-          </span>
-        </div>
-
-        <div className="divide-y divide-border/40">
-          {/* ── Row 0: Delete from the panel (least destructive) ───────── */}
+      <DangerCard note={note}>
           {onDelete && (
-            <div className="flex flex-col items-start justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-muted-foreground/25 bg-muted/40">
-                  <MinusCircleIcon className="size-4 text-muted-foreground" />
-                </div>
-                <div className="space-y-0.5 min-w-0">
-                  <p className="text-sm font-semibold leading-none text-foreground">
-                    {deleteLabel || "Delete from panel"}
-                  </p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Removes this node from the panel and attempts to uninstall its agent and Xray.
-                    Force deletion also removes linked accounts and configuration.
-                  </p>
-                  <p className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground/60">
-                    Panel record removal · agent and Xray uninstall
-                  </p>
-                </div>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void onDelete()}
-                className="shrink-0 border-muted-foreground/30 bg-muted/30 font-mono text-xs text-muted-foreground hover:border-muted-foreground/50 hover:bg-muted/60 hover:text-foreground"
-              >
-                <Trash2Icon className="mr-1.5 size-3" />
-                {deleteLabel || "Delete"}
-              </Button>
-            </div>
+            <DangerRow
+              icon={MinusCircle} tone="muted" title={deleteLabel || "Delete node"}
+              text="Removes it from the panel and uninstalls the agent and Xray. Force deletion also removes linked accounts and configuration."
+              button={`${deleteLabel?.startsWith("Force") ? "Force delete" : "Delete"}…`} onClick={() => void onDelete()}
+            />
           )}
-
-          {/* ── Row 1: Wipe ─────────────────────────────────────────────── */}
-          <div className="flex flex-col items-start justify-between gap-4 px-5 py-4 sm:flex-row sm:items-center">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/8">
-                <ShieldOffIcon className="size-4 text-amber-500" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <p className="text-sm font-semibold leading-none text-foreground">
-                  Wipe node
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Remove proxy configs, keys, logs and temporary data. The
-                  node OS and agent stay intact.{canRemoveRecord && " Optionally removes the panel record."}
-                </p>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-amber-500/70">
-                  Partially reversible · configs are lost
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleWipe}
-              className="shrink-0 border-amber-500/40 bg-amber-500/6 font-mono text-xs text-amber-500 hover:border-amber-500/60 hover:bg-amber-500/15 hover:text-amber-400"
-            >
-              <Trash2Icon className="mr-1.5 size-3" />
-              Wipe…
-            </Button>
-          </div>
-
-          {/* ── Row 2: Nuke ─────────────────────────────────────────────── */}
-          <div className="flex flex-col items-start justify-between gap-4 bg-red-500/2 px-5 py-4 sm:flex-row sm:items-center">
-            <div className="flex items-start gap-3 min-w-0">
-              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-red-500/30 bg-red-500/8">
-                <ZapIcon className="size-4 text-red-500" />
-              </div>
-              <div className="space-y-0.5 min-w-0">
-                <p className="text-sm font-semibold leading-none text-foreground">
-                  Nuke node
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Full {PLANNED_PHASES.length}-phase deep wipe: shreds SSH
-                  keys, swap, TLS certs, journals and agent state. Streams
-                  live progress. Cannot be undone.
-                </p>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-red-500/70">
-                  Catastrophic · permanent · no recovery
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setNukeOpen(true)}
-              className="shrink-0 border-red-500/40 bg-red-500/6 font-mono text-xs text-red-500 hover:border-red-500/60 hover:bg-red-500/15 hover:text-red-400"
-            >
-              <ZapIcon className="mr-1.5 size-3" />
-              Nuke…
-            </Button>
-          </div>
-        </div>
-      </div>
+          <DangerRow
+            icon={Eraser} tone="warn" title="Wipe node" why={offline} disabled={!online}
+            text={local
+              ? "Flushes this router's firewall and removes WireGuard, x-ui and Xray, then the panel itself."
+              : `Removes proxy configs, keys, logs and temporary files. The system and the agent stay.${canRemoveRecord ? " You can also remove it from the panel." : ""}`}
+            button="Wipe…" onClick={() => void handleWipe()}
+          />
+          <DangerRow
+            icon={Zap} tone="danger" title="Nuke node" why={offline} disabled={!online}
+            text={local
+              ? `Deep-wipes this router in ${PLANNED_PHASES.length} steps, including SSH keys, logs and swap, then removes the panel itself. It can't be undone.`
+              : `Deep-wipes the server in ${PLANNED_PHASES.length} steps: SSH keys, swap, certificates, journals and the agent. It can't be undone.`}
+            button="Nuke…" onClick={() => setNukeOpen(true)}
+          />
+      </DangerCard>
 
       {/* ── NukeDialog (mounted outside card to avoid z-index clipping) ── */}
       <NukeDialog
@@ -240,3 +152,4 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveR
     </>
   )
 }
+

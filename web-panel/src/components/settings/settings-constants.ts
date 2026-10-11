@@ -421,6 +421,7 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
 
 // Helper to get display label for a category
 export function getCategoryLabel(key: string): string {
+    if (key === "danger") return "Danger zone"
     return categoryMeta[key]?.label || key.charAt(0).toUpperCase() + key.slice(1)
 }
 

@@ -69,7 +69,6 @@ import {
 } from "@/lib/queries/use-nodes"
 import { listNodeInbounds } from "@/lib/api/nodes"
 import { NodeXrayConfigEditor } from "./node-xray-config-editor"
-import { NodeSettingsXray } from "./settings/node-settings-xray"
 import { HiOutlineCode, HiOutlineAdjustments, HiOutlineCollection } from "react-icons/hi"
 import { useAccountsByNode } from "@/lib/queries/use-accounts"
 import { type Account as NodeAccount } from "@/lib/api/accounts"
@@ -1471,7 +1470,6 @@ export function NodeNetworkConfig({
                 {/* Settings Content - NEW */}
                 <TabsContent value="settings" className="animate-in fade-in-50 duration-300">
                     <div className="space-y-4">
-                        <NodeSettingsXray nodeId={nodeId} isOnline={true} />
                         <OutboundTestSettingsCard nodeId={nodeId} />
                     </div>
                 </TabsContent>

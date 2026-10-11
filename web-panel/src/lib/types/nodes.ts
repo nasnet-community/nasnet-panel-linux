@@ -10,6 +10,8 @@ export interface Node {
     name: string
     ip: string
     country_code: string
+    /** chosen on purpose; GeoIP leaves the country blank */
+    no_flag?: boolean
     datacenter: string
     api_port: number
     agent_port: number
@@ -34,8 +36,6 @@ export interface Node {
     dns_settings?: DNSSettings
     bandwidth_settings?: BandwidthSettings
     starlink_settings?: StarlinkSettings
-    crash_recovery_settings?: CrashRecoverySettings
-    last_crash_recovery?: LastCrashRecovery
     outbound_test_settings?: OutboundTestSettings
     enable_access_log?: boolean
     last_access_log_synced_at?: string
@@ -307,22 +307,3 @@ export interface StarlinkSettings {
     dish_address?: string
 }
 
-export interface CrashRecoverySettings {
-    enabled: boolean
-    command?: string
-    command_timeout?: number
-    cooldown?: number
-    max_attempts?: number
-}
-
-export interface LastCrashRecovery {
-    timestamp: string
-    exit_code: number
-    stdout?: string
-    stderr?: string
-    success: boolean
-    attempt_num: number
-    max_attempts: number
-    exhausted: boolean
-    error?: string
-}

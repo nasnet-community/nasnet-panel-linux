@@ -5,7 +5,7 @@ export const nodeGeneralSchema = z.object({
     ip: z.union([z.ipv4(), z.ipv6()], { error: "Enter a valid IPv4 or IPv6 address" }),
     country_code: z
         .string()
-        .regex(/^(?:[A-Za-z]{2})?$/, "Use a 2-letter country code, such as DE")
+        .regex(/^(?:[A-Za-z]{2}|-)?$/, "Use a 2-letter country code, such as DE")
         .optional()
         .or(z.literal("")),
     datacenter: z.string().max(255).optional().or(z.literal("")),
@@ -55,16 +55,6 @@ export const nodeStarlinkSchema = z.object({
 
 export type NodeStarlinkFormData = z.infer<typeof nodeStarlinkSchema>
 
-export const nodeCrashRecoverySchema = z.object({
-    crash_recovery_enabled: z.boolean(),
-    crash_recovery_command: z.string().max(1000).optional().or(z.literal("")),
-    crash_recovery_command_timeout: z.number().int(),
-    crash_recovery_cooldown: z.number().int(),
-    crash_recovery_max_attempts: z.number().int(),
-})
-
-export type NodeCrashRecoveryFormData = z.infer<typeof nodeCrashRecoverySchema>
-
 export const nodeSSHSchema = z.object({
     ssh_enabled: z.boolean(),
     ssh_port: z
@@ -86,7 +76,6 @@ export const nodeSettingsSchema = nodeGeneralSchema
     }))
     .merge(nodeBandwidthSchema)
     .merge(nodeStarlinkSchema)
-    .merge(nodeCrashRecoverySchema)
     .merge(nodeSSHSchema)
     .extend({
         maintenance_mode: z.boolean(),
@@ -94,20 +83,12 @@ export const nodeSettingsSchema = nodeGeneralSchema
     })
     .superRefine((values, ctx) => {
         const issue = (field: string, message: string) => ctx.addIssue({ code: "custom", path: [field], message })
-        if (values.crash_recovery_enabled) {
-            if (values.crash_recovery_command_timeout < 5 || values.crash_recovery_command_timeout > 300) issue("crash_recovery_command_timeout", "Use 5 to 300 seconds")
-            if (values.crash_recovery_cooldown < 1 || values.crash_recovery_cooldown > 1440) issue("crash_recovery_cooldown", "Use 1 to 1440 minutes")
-            if (values.crash_recovery_max_attempts < 0 || values.crash_recovery_max_attempts > 100) issue("crash_recovery_max_attempts", "Use 0 to 100 attempts (0 means unlimited)")
-        }
         if (values.starlink_enabled) {
             const address = values.starlink_dish_address || ""
             const match = address.match(/^(?:\[([a-fA-F0-9:]+)\]|([a-zA-Z0-9.-]+)):(\d+)$/)
             if (!match || Number(match[3]) < 1 || Number(match[3]) > 65535) {
                 issue("starlink_dish_address", "Enter a host and port, such as 192.168.100.1:9200")
             }
-        }
-        if (values.crash_recovery_enabled && !values.crash_recovery_command?.trim()) {
-            issue("crash_recovery_command", "Enter the command to run during recovery")
         }
     })
 

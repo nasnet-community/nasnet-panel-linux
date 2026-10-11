@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { getNodeSettingsDefaults, useNodeSettingsForm } from "../use-node-settings-form"
+import { getNodeSettingsDefaults, nodeSettingsPatch, useNodeSettingsForm } from "../use-node-settings-form"
 import { getNodeSSHStatus, getXrayConfig, updateNode, updateNodeSSHConfig, updateXrayConfig } from "@/lib/api/nodes"
 import { setNodeMaintenance } from "@/lib/api/maintenance"
 import { nodeSettingsSchema } from "@/lib/validations/node-settings-schema"
@@ -89,13 +89,27 @@ describe("node settings saving", () => {
         await waitFor(() => expect(getXrayConfig).toHaveBeenCalledTimes(1))
         expect(getNodeSSHStatus).not.toHaveBeenCalled()
     })
-    it("routes validation to the missing recovery command without making writes", async () => {
+    it("routes validation to a bad dish address without making writes", async () => {
         const { result } = await ready()
-        act(() => result.current.form.setValue("crash_recovery_enabled", true, { shouldDirty: true }))
-        let invalid: unknown
-        await act(async () => { invalid = await result.current.save() })
-        expect(invalid).toBe("crash_recovery_command")
+        act(() => {
+            result.current.form.setValue("starlink_enabled", true, { shouldDirty: true })
+            result.current.form.setValue("starlink_dish_address", "no port", { shouldDirty: true })
+        })
+        let res: unknown
+        await act(async () => { res = await result.current.save(["starlink_enabled", "starlink_dish_address"]) })
+        expect(res).toEqual({ ok: false, invalid: "starlink_dish_address" })
         expect(updateNode).not.toHaveBeenCalled()
+    })
+    it("saves one group and leaves another group's edits alone", async () => {
+        const { result } = await ready()
+        act(() => { result.current.form.setValue("name", "New name", { shouldDirty: true }); result.current.form.setValue("datacenter", "Hetzner", { shouldDirty: true }); result.current.form.setValue("ssh_port", 2222, { shouldDirty: true }) })
+        await act(async () => { await result.current.save(["name", "datacenter"], "Identity") })
+        expect(updateNode).toHaveBeenCalledWith(6, { name: "New name", datacenter: "Hetzner" })
+        expect(updateNodeSSHConfig).not.toHaveBeenCalled()
+        expect(result.current.dirtyFields).toEqual(["ssh_port"])
+        act(() => result.current.discard(["ssh_port"]))
+        expect(result.current.form.getValues("ssh_port")).toBe(22)
+        expect(result.current.isDirty).toBe(false)
     })
     it("normalizes whitespace without leaving a phantom unsaved change", async () => {
         const { result } = await ready()
@@ -126,13 +140,21 @@ describe("node settings saving", () => {
     })
 })
 describe("settings validation", () => {
-    it("accepts IPv6 and unlimited recovery attempts, rejects malformed automation", () => {
+    it("accepts IPv6, rejects malformed monitoring", () => {
         const values = getNodeSettingsDefaults({ ...node, ip: "2001:db8::1" })
         expect(nodeSettingsSchema.safeParse(values).success).toBe(true)
-        expect(nodeSettingsSchema.safeParse({ ...values, bandwidth_total_bw: 0, crash_recovery_max_attempts: -1 }).success).toBe(true)
-        expect(nodeSettingsSchema.safeParse({ ...values, crash_recovery_enabled: true, crash_recovery_command: "true", crash_recovery_max_attempts: 0 }).success).toBe(true)
+        expect(nodeSettingsSchema.safeParse({ ...values, bandwidth_total_bw: 0 }).success).toBe(true)
         for (const invalid of [{ country_code: "1" }, { starlink_enabled: true, starlink_dish_address: "dish:99999" }]) {
             expect(nodeSettingsSchema.safeParse({ ...values, ...invalid }).success).toBe(false)
         }
+    })
+
+    it("keeps No flag apart from a blank country", () => {
+        const values = getNodeSettingsDefaults({ ...node, country_code: "", no_flag: true })
+        expect(values.country_code).toBe("-")
+        expect(nodeSettingsSchema.safeParse(values).success).toBe(true)
+        expect(nodeSettingsPatch(values, ["country_code"])).toEqual({ country_code: "", no_flag: true })
+        expect(nodeSettingsPatch({ ...values, country_code: "" }, ["country_code"])).toEqual({ country_code: "", no_flag: false })
+        expect(nodeSettingsPatch({ ...values, country_code: "de" }, ["country_code"])).toEqual({ country_code: "DE", no_flag: false })
     })
 })

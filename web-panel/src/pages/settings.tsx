@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
+import { useSearchParams } from "react-router"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { HiOutlineRefresh, HiOutlineSearch, HiOutlineX, HiOutlineCog } from "react-icons/hi"
+import { HiOutlineRefresh, HiOutlineSearch, HiOutlineX, HiOutlineCog, HiOutlineExclamation } from "react-icons/hi"
 import { Loader2 } from "lucide-react"
 import { useSettings, useUpdateSettings } from "@/lib/queries"
 import { restartServer } from "@/lib/api/backup"
@@ -9,6 +10,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from '@/lib/config'
 import { DangerZone } from "@/components/settings/danger-zone"
+import { RouterDangerZone } from "@/components/settings/router-danger-zone"
 import { categoryMeta } from "@/components/settings/settings-constants"
 import { SettingsSidebar, type SidebarItem } from "@/components/settings/settings-sidebar"
 import { SettingsCategoryContent } from "@/components/settings/settings-category-content"
@@ -19,13 +21,17 @@ import { SettingsHeaderMobileMenu } from "@/components/settings/settings-header-
 import { SettingsSkeleton } from "@/components/settings/settings-skeleton"
 import type { SettingsGrouped } from "@/lib/domain/setting"
 
+// not a settings category: the router's own Wipe and Nuke
+const DANGER = "danger"
+
 export default function SettingsPage() {
     const { data: serverSettings, isLoading, isRefetching } = useSettings()
     const updateSettings = useUpdateSettings()
     const confirmDialog = useConfirm()
 
     const [editedSettings, setEditedSettings] = useState<SettingsGrouped>({})
-    const [activeCategory, setActiveCategory] = useState<string>("")
+    const [params] = useSearchParams()
+    const [activeCategory, setActiveCategory] = useState<string>(() => params.get("category") ?? "")
     const [search, setSearch] = useState("")
     const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
     const [restarting, setRestarting] = useState(false)
@@ -211,16 +217,16 @@ export default function SettingsPage() {
     }, [confirmDialog])
 
     // Sidebar items
-    const sidebarItems: SidebarItem[] = useMemo(() =>
-        categories.map(cat => ({
+    const sidebarItems: SidebarItem[] = useMemo(() => [
+        ...categories.map(cat => ({
             key: cat,
             label: cat,
             icon: categoryMeta[cat]?.icon || HiOutlineCog,
             dirty: isCategoryDirty(cat),
             settingCount: editedSettings[cat]?.length,
         })),
-        [categories, isCategoryDirty, editedSettings]
-    )
+        { key: DANGER, label: "Danger zone", icon: HiOutlineExclamation, dirty: false },
+    ], [categories, isCategoryDirty, editedSettings])
 
     // Search results
     const searchResults = useMemo(() =>
@@ -322,7 +328,9 @@ export default function SettingsPage() {
 
                     {/* Content area */}
                     <div className="flex-1 min-w-0 rounded-xl border bg-card p-4 sm:p-6">
-                        {activeCategory && editedSettings[activeCategory] ? (
+                        {activeCategory === DANGER ? (
+                            <RouterDangerZone />
+                        ) : activeCategory && editedSettings[activeCategory] ? (
                             <SettingsCategoryContent
                                 category={activeCategory}
                                 settings={editedSettings[activeCategory]}

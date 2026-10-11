@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, Link } from "react-router"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import NodeDetailPage from "../nodes/[id]"
 import { LocalNodeRedirect } from "@/components/node/local-node-redirect"
+import { ConfirmDialogProvider } from "@/components/ui/confirm-dialog"
 
 const lifecycle = vi.hoisted(() => ({ mounted: vi.fn(), disposed: vi.fn() }))
 vi.mock("@/lib/api/nodes", () => ({
@@ -37,17 +38,18 @@ vi.mock("@/components/node/node-access-logs", () => ({ NodeAccessLogs: () => nul
 vi.mock("@/components/node/starlink/starlink-dashboard", () => ({ StarlinkDashboard: () => null }))
 vi.mock("@/components/node/geofiles-dialog", () => ({ GeofilesDialog: () => null }))
 vi.mock("@/components/accounts/account-details-sheet", () => ({ AccountDetailsSheet: () => null }))
+vi.mock("@/components/deploy-agent-dialog", () => ({ DeployAgentDialog: () => null }))
 
 function mount(tab = "overview", path = "/nodes/1") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`${path}?tab=${tab}`]}>
+    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`${path}?tab=${tab}`]}><ConfirmDialogProvider>
         <Link to="/dashboard">Leave node</Link>
         <Routes>
             <Route path="/nodes/:id" element={<NodeDetailPage />} />
             <Route path="/server" element={<LocalNodeRedirect />} />
             <Route path="/dashboard" element={<p>Dashboard</p>} />
         </Routes>
-    </MemoryRouter></QueryClientProvider>)
+    </ConfirmDialogProvider></MemoryRouter></QueryClientProvider>)
 }
 beforeEach(() => {
     vi.clearAllMocks()

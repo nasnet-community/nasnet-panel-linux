@@ -572,7 +572,7 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	serviceChanged := existing.IsActive != node.IsActive && !node.IsLite()
 
 	// Detect if we need to lookup
-	shouldLookupLocation := node.IP != "" && (node.IP != existing.IP || node.CountryCode == "" || node.Datacenter == "")
+	shouldLookupLocation := node.IP != "" && (node.IP != existing.IP || (node.CountryCode == "" && !node.NoFlag) || node.Datacenter == "")
 	ipChanged := node.IP != existing.IP
 	portChanged := existing.AgentPort != node.AgentPort
 	accessLogChanged := existing.EnableAccessLog != node.EnableAccessLog
@@ -719,7 +719,7 @@ func (u *nodeUsecase) triggerBackgroundNodeTasks(nodeID uint, ip string, lookupL
 			node, err := u.nodeRepo.GetNode(ctx, nodeID)
 			if err == nil {
 				updated := false
-				if node.CountryCode == "" && loc.CountryCode != "" {
+				if node.CountryCode == "" && !node.NoFlag && loc.CountryCode != "" {
 					node.CountryCode = loc.CountryCode
 					updated = true
 				}

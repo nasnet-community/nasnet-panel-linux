@@ -14,6 +14,13 @@ for (const [path, load] of Object.entries(flagLoaders)) {
     loaderByCode[path.slice(path.lastIndexOf("/") + 1, -4)] = load
 }
 
+/** Every two-letter code there's a flag for, by name. */
+export function countryCodes(): string[] {
+    return Object.keys(loaderByCode)
+        .filter(c => /^[A-Z]{2}$/.test(c) && countryName(c) !== c)
+        .sort((a, b) => countryName(a).localeCompare(countryName(b)))
+}
+
 let regionNames: Intl.DisplayNames | null = null
 /** "IR" → "Iran"; falls back to the code. */
 export function countryName(code: string): string {

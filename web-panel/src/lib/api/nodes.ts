@@ -388,8 +388,26 @@ export async function runStarlinkAction(nodeId: number, action: StarlinkAction, 
 
 // ==================== Remote Nodes: Agent ====================
 
-export async function switchNodeConnectMode(id: number, connectMode: "direct" | "reverse"): Promise<ApiResponse<{ message: string }>> {
-    return api.patch<{ message: string }>(`/api/v1/nodes/${id}/connect-mode`, { connect_mode: connectMode })
+/** How a guarded move of the agent ended; step names where it stopped. */
+export interface AgentMove {
+    moved: boolean
+    step?: "open" | "switch" | "close" | "write" | "connect" | "confirm" | "reach" | "certificate"
+    message: string
+}
+
+// The switch waits for the agent to come back under the new mode.
+export async function switchNodeConnectMode(id: number, connectMode: "direct" | "reverse"): Promise<ApiResponse<AgentMove>> {
+    return api.patch<AgentMove>(`/api/v1/nodes/${id}/connect-mode`, { connect_mode: connectMode }, 200000)
+}
+
+/** Points the panel at a node's new address, once the node answers there. */
+export async function moveNodeAddress(id: number, address: string): Promise<ApiResponse<AgentMove>> {
+    return api.post<AgentMove>(`/api/v1/nodes/${id}/address`, { address }, 90000)
+}
+
+/** Moves a direct node's agent to another port, keeping the old one until the panel is in. */
+export async function moveAgentPort(id: number, port: number): Promise<ApiResponse<AgentMove>> {
+    return api.post<AgentMove>(`/api/v1/nodes/${id}/agent-port`, { port }, 90000)
 }
 
 export async function updateAgent(nodeId: number): Promise<ApiResponse<{ message: string }>> {

@@ -91,3 +91,29 @@ func TestTakingANodeOutOfServiceWarnsWhenUsersAreLeft(t *testing.T) {
 	}
 }
 
+func TestNoFlagSticksUntilACountryIsPicked(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		body    string
+		country string
+		noFlag  bool
+	}{
+		{`{"country_code":"","no_flag":true}`, "", true},
+		{`{"no_flag":true}`, "", true},
+		{`{"country_code":"de","no_flag":false}`, "DE", false},
+		{`{"country_code":""}`, "", false},
+	}
+	for _, tc := range cases {
+		uc := &settingsUpdateUsecase{}
+		router := gin.New()
+		router.PUT("/nodes/:id", (&Handler{nodeUsecase: uc}).UpdateNode)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/nodes/6", strings.NewReader(tc.body)))
+		if rec.Code != http.StatusOK || uc.saved == nil {
+			t.Fatalf("%s: code %d", tc.body, rec.Code)
+		}
+		if uc.saved.CountryCode != tc.country || uc.saved.NoFlag != tc.noFlag {
+			t.Fatalf("%s: country %q no_flag %v", tc.body, uc.saved.CountryCode, uc.saved.NoFlag)
+		}
+	}
+}
