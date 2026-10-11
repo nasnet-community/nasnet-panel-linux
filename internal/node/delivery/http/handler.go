@@ -366,20 +366,19 @@ func (h *Handler) CreateNode(c *gin.Context) {
 }
 
 type updateNodeRequest struct {
-	Name                  *string                       `json:"name"`
-	IP                    *string                       `json:"ip"`
-	APIPort               *int                          `json:"api_port"`
-	AgentPort             *int                          `json:"agent_port"`
-	Country               *string                       `json:"country_code"`
-	IsActive              *bool                         `json:"is_active"`
-	LogLevel              *string                       `json:"log_level"`
-	Datacenter            *string                       `json:"datacenter"`
-	IsStealth             *bool                         `json:"is_stealth"`
-	IsPersistentStealth   *bool                         `json:"is_persistent_stealth"`
-	BandwidthSettings     *domain.BandwidthSettings     `json:"bandwidth_settings"`
-	StarlinkSettings      *domain.StarlinkSettings      `json:"starlink_settings"`
-	CrashRecoverySettings *domain.CrashRecoverySettings `json:"crash_recovery_settings"`
-	EnableAccessLog       *bool                         `json:"enable_access_log"`
+	Name                *string                   `json:"name"`
+	IP                  *string                   `json:"ip"`
+	APIPort             *int                      `json:"api_port"`
+	AgentPort           *int                      `json:"agent_port"`
+	Country             *string                   `json:"country_code"`
+	IsActive            *bool                     `json:"is_active"`
+	LogLevel            *string                   `json:"log_level"`
+	Datacenter          *string                   `json:"datacenter"`
+	IsStealth           *bool                     `json:"is_stealth"`
+	IsPersistentStealth *bool                     `json:"is_persistent_stealth"`
+	BandwidthSettings   *domain.BandwidthSettings `json:"bandwidth_settings"`
+	StarlinkSettings    *domain.StarlinkSettings  `json:"starlink_settings"`
+	EnableAccessLog     *bool                     `json:"enable_access_log"`
 }
 
 func (h *Handler) UpdateNode(c *gin.Context) {
@@ -458,9 +457,6 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 	}
 	if req.StarlinkSettings != nil {
 		node.StarlinkSettings = req.StarlinkSettings
-	}
-	if req.CrashRecoverySettings != nil {
-		node.CrashRecoverySettings = req.CrashRecoverySettings
 	}
 	if req.EnableAccessLog != nil {
 		node.EnableAccessLog = *req.EnableAccessLog

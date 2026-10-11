@@ -95,19 +95,6 @@ func TestNode_GetStarlinkSettingsOrDefault(t *testing.T) {
 	}
 }
 
-func TestNode_GetCrashRecoverySettingsOrDefault(t *testing.T) {
-	def := (&Node{}).GetCrashRecoverySettingsOrDefault()
-	if def.CommandTimeout != 60 || def.Cooldown != 30 || def.MaxAttempts != 3 {
-		t.Errorf("default crash recovery = %+v", def)
-	}
-
-	// Non-positive timeout/cooldown are clamped back to defaults.
-	clamped := (&Node{CrashRecoverySettings: &CrashRecoverySettings{Enabled: true, CommandTimeout: 0, Cooldown: -5}}).GetCrashRecoverySettingsOrDefault()
-	if clamped.CommandTimeout != 60 || clamped.Cooldown != 30 {
-		t.Errorf("expected clamped timeout/cooldown, got %+v", clamped)
-	}
-}
-
 func TestNode_GetRoutingSettingsOrDefault(t *testing.T) {
 	if got := (&Node{}).GetRoutingSettingsOrDefault(); got.DomainStrategy != "IPIfNonMatch" {
 		t.Errorf("default routing strategy = %q", got.DomainStrategy)

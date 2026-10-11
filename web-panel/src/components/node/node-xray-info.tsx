@@ -43,14 +43,12 @@ export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: N
     const [showLogs, setShowLogs] = useState(false)
     const [logsLoading, setLogsLoading] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
-    const [showRecovery, setShowRecovery] = useState(false)
 
     const online = node.is_online
     const known = online && !!stats?.xray_status
     const running = known && stats?.xray_status === "running"
     const stopped = known && !running
     const version = cleanXrayVersion(stats?.xray_version)
-    const recovery = node.last_crash_recovery
     const connected = stats?.online_users ?? 0
 
     // Reads the agent directly so the card shows the result of an action
@@ -158,15 +156,6 @@ export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: N
         : { label: "Checking", tone: "text-muted-foreground", ring: "bg-muted/30 ring-muted-foreground/25 text-muted-foreground" }
 
     const drifted = online && configState === "drifted"
-    const recoveryLabel = !node.crash_recovery_settings?.enabled ? "Off"
-        : !recovery ? "On"
-        : recovery.exhausted ? "Exhausted"
-        : recovery.success ? "Recovered"
-        : "Failed"
-    const recoveryTone = recoveryLabel === "Exhausted" || recoveryLabel === "Failed" ? "text-red-400"
-        : recoveryLabel === "Recovered" ? "text-emerald-400"
-        : "text-muted-foreground"
-
     const ctrl = compact ? "h-11 text-xs" : "h-7 text-[11px]"
     const btnBase = cn("w-full rounded-lg font-bold uppercase tracking-[0.06em]", ctrl)
 
@@ -218,42 +207,7 @@ export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: N
                         )}
                     </span>
                 </div>
-                <div className={rowCls}><span className="text-muted-foreground">Crash recovery</span><span className={recoveryTone}>{recoveryLabel}</span></div>
             </div>
-
-            {/* Recovery details — when stopped and a recovery command ran */}
-            {stopped && recovery && (
-                <div className="border-t border-dashed border-border/70 pt-2.5">
-                    <button
-                        type="button"
-                        className={cn("flex w-full items-center justify-between text-[12px] font-bold uppercase tracking-wider transition-colors", recoveryTone)}
-                        onClick={() => setShowRecovery(v => !v)}
-                        aria-expanded={showRecovery}
-                    >
-                        <span className="flex items-center gap-1.5">
-                            <RotateCcw className="h-3 w-3" />
-                            Recovery {recoveryLabel.toLowerCase()}
-                            <span className="font-normal text-muted-foreground">
-                                ({recovery.attempt_num}/{recovery.max_attempts > 0 ? recovery.max_attempts : "∞"})
-                            </span>
-                        </span>
-                        {showRecovery ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    </button>
-                    {showRecovery && (
-                        <div className="mt-2 space-y-1.5 rounded-lg border border-border/40 bg-black/40 p-2">
-                            <div className="text-[12px] text-muted-foreground">{new Date(recovery.timestamp).toLocaleString()}</div>
-                            {recovery.error && <div className="break-all font-mono text-[12px] text-red-400">RPC error: {recovery.error}</div>}
-                            {!recovery.exhausted && !recovery.error && (
-                                <>
-                                    <div className="font-mono text-[12px] text-muted-foreground">Exit code: {recovery.exit_code}</div>
-                                    {recovery.stdout && <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[12px] text-muted-foreground/80">{recovery.stdout}</div>}
-                                    {recovery.stderr && <div className="max-h-24 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[12px] text-red-400/80">{recovery.stderr}</div>}
-                                </>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
 
             {/* Recent errors — when stopped or an action failed */}
             {stopped && (errorLogs.length > 0 || actionError) && (

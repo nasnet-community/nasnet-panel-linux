@@ -62,12 +62,6 @@ type heartbeatSession struct {
 	lastCrashLoopNotifyTime time.Time // when the last crash loop notification was sent
 	lastStableTime          time.Time // last time xray was seen running (for stability reset)
 
-	// Crash recovery command tracking
-	recoveryCommandCount    int       // times recovery command has been executed (accumulates across crash cycles)
-	lastRecoveryCommandTime time.Time // when the recovery command last ran
-	recoveryExhausted       bool      // true when max_attempts reached
-	pendingRecovery         bool      // true when recovery was skipped due to cooldown; retried on next pong after cooldown expires
-
 	settingsCache     *xrayMonitorSettings
 	settingsCacheTime time.Time
 }
@@ -483,18 +477,6 @@ func (hm *HeartbeatManager) handlePong(ctx context.Context, node *domain.Node, s
 	// --- Xray status tracking (before config hash early returns) ---
 	hm.handleXrayStatus(ctx, node, s, pong.Status.XrayRunning)
 
-	// --- Pending recovery retry: if recovery was deferred due to cooldown, retry once cooldown expires ---
-	if s.pendingRecovery && !s.lastRecoveryCommandTime.IsZero() {
-		settings := node.GetCrashRecoverySettingsOrDefault()
-		cooldown := time.Duration(settings.Cooldown) * time.Minute
-		if time.Since(s.lastRecoveryCommandTime) >= cooldown {
-			s.pendingRecovery = false
-			if freshNode, err := hm.usecase.nodeRepo.GetNode(ctx, node.ID); err == nil && freshNode.XrayStopped {
-				hm.attemptCrashRecovery(ctx, freshNode, s)
-			}
-		}
-	}
-
 	// Config drift detection from heartbeat status
 	newHash := pong.Status.ConfigHash
 	if newHash == "" {
@@ -600,19 +582,6 @@ func (hm *HeartbeatManager) handleXrayStatus(ctx context.Context, node *domain.N
 		if time.Since(s.lastStableTime) >= settings.stabilityPeriod {
 			log.WithField("crash_count", s.crashCount).Info("[HeartbeatManager] Xray stable, resetting crash counter")
 			s.crashCount = 0
-			s.recoveryCommandCount = 0
-			s.recoveryExhausted = false
-			s.pendingRecovery = false
-
-			// Clear persisted recovery state — node is healthy again.
-			// Uses the heartbeat loop's node pointer (not a fresh fetch) since we're
-			// only nulling one JSONB field; acceptable trade-off to avoid an extra DB read.
-			if node.LastCrashRecovery != nil {
-				node.LastCrashRecovery = nil
-				if updateErr := hm.usecase.nodeRepo.UpdateNode(ctx, node); updateErr != nil {
-					log.WithError(updateErr).Error("[HeartbeatManager] Failed to clear last crash recovery")
-				}
-			}
 		}
 	}
 
@@ -665,11 +634,6 @@ func (hm *HeartbeatManager) handleXrayCrash(ctx context.Context, node *domain.No
 		if updateErr := hm.usecase.nodeRepo.UpdateNode(ctx, freshNode); updateErr != nil {
 			log.WithError(updateErr).Error("[HeartbeatManager] Failed to auto-disable xray")
 		}
-		// Attempt crash recovery command before giving up
-		if hm.attemptCrashRecovery(ctx, freshNode, s) {
-			return
-		}
-
 		hm.publishXrayEvent(events.EventXrayCrashLoop, node, s.crashCount, fmt.Sprintf("Xray auto-disabled after %d consecutive failures. Manual intervention required.", s.crashCount))
 		return
 	}
@@ -707,7 +671,6 @@ func (hm *HeartbeatManager) handleXrayRecovery(ctx context.Context, node *domain
 		hm.publishXrayEvent(events.EventXrayUp, node, s.crashCount, "")
 	}
 	s.crashLoopNotified = false
-	s.pendingRecovery = false // xray is back; no need to retry recovery
 	s.lastStableTime = time.Now()
 	// Note: crashCount is NOT reset here — only after sustained stability
 }
@@ -728,188 +691,6 @@ func (hm *HeartbeatManager) publishXrayEvent(eventType events.EventType, node *d
 			Message:    message,
 		},
 	})
-}
-
-// recoveryResult holds the outcome of a recovery command execution.
-type recoveryResult struct {
-	exitCode int
-	stdout   string
-	stderr   string
-	success  bool
-	err      error // non-nil if the RPC itself failed
-}
-
-// publishRecoveryEvent publishes a crash recovery event to the event bus.
-func (hm *HeartbeatManager) publishRecoveryEvent(eventType events.EventType, node *domain.Node, s *heartbeatSession, settings *domain.CrashRecoverySettings, result *recoveryResult) {
-	if hm.usecase.eventBus == nil {
-		return
-	}
-	payload := events.XrayRecoveryPayload{
-		NodeID:      node.ID,
-		NodeName:    node.Name,
-		IP:          node.IP,
-		CrashCount:  s.crashCount,
-		AttemptNum:  s.recoveryCommandCount,
-		MaxAttempts: settings.MaxAttempts,
-		Command:     settings.Command,
-	}
-	if result != nil {
-		payload.ExitCode = result.exitCode
-		payload.Stdout = result.stdout
-		payload.Stderr = result.stderr
-		payload.Success = result.success
-		if result.err != nil {
-			payload.ErrorMessage = result.err.Error()
-		}
-	}
-	hm.usecase.eventBus.Publish(events.Event{
-		Type:      eventType,
-		Timestamp: time.Now(),
-		Payload:   payload,
-	})
-}
-
-// attemptCrashRecovery checks if a crash recovery command is configured and eligible,
-// executes it, and starts xray. Returns true if recovery was attempted (or skipped due
-// to cooldown/exhaustion), meaning the caller should not send the default notification.
-func (hm *HeartbeatManager) attemptCrashRecovery(ctx context.Context, node *domain.Node, s *heartbeatSession) bool {
-	log := logger.GetLogger().WithField("node_id", node.ID).WithField("node_name", node.Name)
-
-	settings := node.GetCrashRecoverySettingsOrDefault()
-	if !settings.Enabled || settings.Command == "" {
-		return false
-	}
-
-	// Check if exhausted from a previous cycle
-	if s.recoveryExhausted {
-		return false
-	}
-
-	// Check max attempts
-	if settings.MaxAttempts > 0 && s.recoveryCommandCount >= settings.MaxAttempts {
-		s.recoveryExhausted = true
-		hm.publishRecoveryEvent(events.EventXrayRecoveryExhausted, node, s, settings, nil)
-
-		// Persist exhaustion for panel display
-		node.LastCrashRecovery = &domain.LastCrashRecovery{
-			Timestamp:   time.Now(),
-			AttemptNum:  s.recoveryCommandCount,
-			MaxAttempts: settings.MaxAttempts,
-			Exhausted:   true,
-		}
-		if updateErr := hm.usecase.nodeRepo.UpdateNode(ctx, node); updateErr != nil {
-			logger.GetLogger().WithError(updateErr).Error("[HeartbeatManager] Failed to persist recovery exhaustion")
-		}
-		return true
-	}
-
-	// Check cooldown
-	if !s.lastRecoveryCommandTime.IsZero() {
-		cooldown := time.Duration(settings.Cooldown) * time.Minute
-		if time.Since(s.lastRecoveryCommandTime) < cooldown {
-			log.Info("[HeartbeatManager] Recovery command on cooldown, will retry after cooldown expires")
-			s.pendingRecovery = true
-			hm.publishXrayEvent(events.EventXrayCrashLoop, node, s.crashCount,
-				fmt.Sprintf("Xray auto-disabled after %d failures. Recovery command on cooldown.", s.crashCount))
-			return true
-		}
-	}
-
-	// Execute recovery synchronously — blocks heartbeat for this node only.
-	// This is acceptable because xray is already stopped (auto-disabled).
-	hm.executeRecoveryCommand(ctx, node.ID, s, settings)
-	return true
-}
-
-// executeRecoveryCommand executes the configured recovery command on the node,
-// publishes a notification with the result, then starts xray one more time.
-func (hm *HeartbeatManager) executeRecoveryCommand(ctx context.Context, nodeID uint, s *heartbeatSession, settings *domain.CrashRecoverySettings) {
-	log := logger.GetLogger().WithField("node_id", nodeID)
-
-	// Fetch a fresh node copy — never share the heartbeat loop's node pointer
-	node, err := hm.usecase.nodeRepo.GetNode(ctx, nodeID)
-	if err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Failed to fetch node for recovery command")
-		return
-	}
-	log = log.WithField("node_name", node.Name)
-
-	// Connect to agent
-	client, err := hm.usecase.getAgentClient(node)
-	if err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Failed to connect for recovery command")
-		// Set cooldown timer even on connection failure to prevent per-pong retry spam
-		// when the agent is persistently unreachable. Don't increment recoveryCommandCount
-		// since no command actually ran.
-		s.lastRecoveryCommandTime = time.Now()
-		hm.publishXrayEvent(events.EventXrayCrashLoop, node, s.crashCount,
-			fmt.Sprintf("Xray auto-disabled. Recovery command failed: %v", err))
-		return
-	}
-	defer client.Close()
-
-	// Execute command
-	log.WithField("command", settings.Command).Info("[HeartbeatManager] Executing crash recovery command")
-	resp, err := client.ExecuteCommand(ctx, settings.Command, settings.CommandTimeout)
-
-	if err != nil {
-		log.WithError(err).Error("[HeartbeatManager] Recovery command RPC failed")
-		hm.publishRecoveryEvent(events.EventXrayRecoveryCommand, node, s, settings, &recoveryResult{
-			err: err,
-		})
-		// Persist RPC failure for panel display (attempt not counted, but error is visible)
-		node.LastCrashRecovery = &domain.LastCrashRecovery{
-			Timestamp:   time.Now(),
-			AttemptNum:  s.recoveryCommandCount,
-			MaxAttempts: settings.MaxAttempts,
-			Error:       err.Error(),
-		}
-		if updateErr := hm.usecase.nodeRepo.UpdateNode(ctx, node); updateErr != nil {
-			log.WithError(updateErr).Error("[HeartbeatManager] Failed to persist recovery RPC failure")
-		}
-		return
-	}
-
-	// Update tracking state — only after the command actually ran on the node.
-	// RPC failures (network timeout, agent unreachable) must not burn an attempt.
-	s.recoveryCommandCount++
-	s.lastRecoveryCommandTime = time.Now()
-
-	// Publish notification with command output
-	hm.publishRecoveryEvent(events.EventXrayRecoveryCommand, node, s, settings, &recoveryResult{
-		exitCode: int(resp.ExitCode),
-		stdout:   resp.Stdout,
-		stderr:   resp.Stderr,
-		success:  resp.Success,
-	})
-
-	// Persist recovery result for panel display
-	node.LastCrashRecovery = &domain.LastCrashRecovery{
-		Timestamp:   time.Now(),
-		ExitCode:    int(resp.ExitCode),
-		Stdout:      resp.Stdout,
-		Stderr:      resp.Stderr,
-		Success:     resp.Success,
-		AttemptNum:  s.recoveryCommandCount,
-		MaxAttempts: settings.MaxAttempts,
-		Exhausted:   false,
-	}
-
-	// Start xray one more time
-	log.Info("[HeartbeatManager] Recovery command done, starting xray")
-	node.XrayStopped = false
-	if updateErr := hm.usecase.nodeRepo.UpdateNode(ctx, node); updateErr != nil {
-		log.WithError(updateErr).Error("[HeartbeatManager] Failed to clear XrayStopped after recovery")
-		return
-	}
-
-	if startErr := hm.usecase.StartXray(ctx, node.ID); startErr != nil {
-		log.WithError(startErr).Error("[HeartbeatManager] Failed to start xray after recovery command")
-	}
-
-	// Reset crash count so the next cycle starts fresh
-	s.crashCount = 0
-	s.crashLoopNotified = false
 }
 
 // fetchAndLogErrors fetches recent error logs from the agent and logs them server-side.

@@ -457,8 +457,6 @@ export const notificationMatrixSections: NotificationMatrixSection[] = [
             { label: "Xray Down", key: "xray_down" },
             { label: "Xray Recovered", key: "xray_up" },
             { label: "Xray Crash Loop", key: "xray_crash_loop" },
-            { label: "Xray Recovery Command", key: "xray_recovery_command" },
-            { label: "Xray Recovery Exhausted", key: "xray_recovery_exhausted" },
         ],
     },
     {

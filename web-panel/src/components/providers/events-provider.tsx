@@ -12,7 +12,6 @@ import type {
     NodeStatsPayload,
     SubscriptionEventPayload,
     SystemAlertPayload,
-    XrayRecoveryPayload,
 } from '@/lib/hooks/use-events'
 import { queryKeys } from '@/lib/queries/keys'
 import type { NodeStats } from '@/lib/types'
@@ -160,7 +159,6 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'node.online', 'node.offline', 'node.stats_updated', 'node.updated',
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
-            'xray.recovery_command', 'xray.recovery_exhausted',
             'user.registered', 'subscription.renewed', 'subscription.cancelled', 'account.data_exhausted',
             // Named events only arrive if we ask for them by name.
             'interface.added', 'interface.removed', 'interface.link_changed',
@@ -433,26 +431,6 @@ function handleEvent(
             const payload = event.payload as SystemAlertPayload
             const toastFn = payload.level === 'error' ? toast.error : payload.level === 'warning' ? toast.warning : toast.info
             toastFn(payload.title, { description: payload.message, duration: 10000 })
-            break
-        }
-        case 'xray.recovery_command': {
-            const payload = event.payload as XrayRecoveryPayload
-            const toastFn = payload.success ? toast.success : toast.error
-            const maxLabel = payload.max_attempts === 0 ? '\u221e' : String(payload.max_attempts)
-            toastFn(`Recovery command ${payload.success ? 'succeeded' : 'failed'} on "${payload.node_name}"`, {
-                id: `recovery-${payload.node_id}`,
-                description: `Exit code: ${payload.exit_code} | Attempt ${payload.attempt_num}/${maxLabel}`,
-            })
-            queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
-            break
-        }
-        case 'xray.recovery_exhausted': {
-            const payload = event.payload as XrayRecoveryPayload
-            toast.error(`Recovery exhausted on "${payload.node_name}"`, {
-                id: `recovery-${payload.node_id}`,
-                description: `${payload.attempt_num} attempt(s) used. Manual intervention required.`,
-            })
-            queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             break
         }
     }

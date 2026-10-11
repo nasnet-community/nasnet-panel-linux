@@ -61,24 +61,5 @@ func (r *updateNodeRequest) validateSettings() error {
 			return fmt.Errorf("Starlink dish port must be between 1 and 65535")
 		}
 	}
-	if settings := r.CrashRecoverySettings; settings != nil {
-		if utf8.RuneCountInString(settings.Command) > 1000 {
-			return fmt.Errorf("recovery command must contain at most 1000 characters")
-		}
-		if settings.Enabled {
-			if strings.TrimSpace(settings.Command) == "" {
-				return fmt.Errorf("recovery command is required when crash recovery is enabled")
-			}
-			if settings.CommandTimeout < 5 || settings.CommandTimeout > 300 {
-				return fmt.Errorf("recovery command_timeout must be between 5 and 300 seconds")
-			}
-			if settings.Cooldown < 1 || settings.Cooldown > 1440 {
-				return fmt.Errorf("recovery cooldown must be between 1 and 1440 minutes")
-			}
-			if settings.MaxAttempts < 0 || settings.MaxAttempts > 100 {
-				return fmt.Errorf("recovery max_attempts must be between 0 and 100 (0 means unlimited)")
-			}
-		}
-	}
 	return nil
 }

@@ -51,10 +51,6 @@ const (
 	EventXrayUp        EventType = "xray.up"
 	EventXrayCrashLoop EventType = "xray.crash_loop"
 
-	// Crash recovery command events
-	EventXrayRecoveryCommand   EventType = "xray.recovery_command"   // Recovery command was executed
-	EventXrayRecoveryExhausted EventType = "xray.recovery_exhausted" // Recovery command max attempts reached
-
 	// Chat events
 	EventChatUserMessage       EventType = "chat.user_message"
 	EventChatAdminMessage      EventType = "chat.admin_message"
@@ -225,22 +221,6 @@ type XrayStatusPayload struct {
 	CrashCount int    `json:"crash_count"`
 	ErrorLog   string `json:"error_log,omitempty"`
 	Message    string `json:"message,omitempty"`
-}
-
-// XrayRecoveryPayload contains data for crash recovery command events.
-type XrayRecoveryPayload struct {
-	NodeID       uint   `json:"node_id"`
-	NodeName     string `json:"node_name"`
-	IP           string `json:"ip"`
-	CrashCount   int    `json:"crash_count"`
-	AttemptNum   int    `json:"attempt_num"`  // Which recovery attempt (1-based)
-	MaxAttempts  int    `json:"max_attempts"` // Configured max (0=unlimited)
-	Command      string `json:"command"`      // The command that was run
-	ExitCode     int    `json:"exit_code"`
-	Stdout       string `json:"stdout,omitempty"`
-	Stderr       string `json:"stderr,omitempty"`
-	Success      bool   `json:"success"`                 // exit code == 0
-	ErrorMessage string `json:"error_message,omitempty"` // RPC error if command failed to execute
 }
 
 // ChatMessagePayload contains data for chat events

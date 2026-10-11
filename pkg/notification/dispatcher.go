@@ -124,8 +124,7 @@ func (d *Dispatcher) defaultEnabled(channelName, eventType string) bool {
 		switch events.EventType(eventType) {
 		case events.EventNodeOnline, events.EventNodeOffline,
 			events.EventSubscriptionCreated, events.EventSystemAlert,
-			events.EventXrayDown, events.EventXrayUp, events.EventXrayCrashLoop,
-			events.EventXrayRecoveryCommand, events.EventXrayRecoveryExhausted:
+			events.EventXrayDown, events.EventXrayUp, events.EventXrayCrashLoop:
 			return true
 		}
 	}

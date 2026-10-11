@@ -38,10 +38,6 @@ var templateRegistry = map[events.EventType]templateFunc{
 	events.EventXrayUp:        templateXrayUp,
 	events.EventXrayCrashLoop: templateXrayCrashLoop,
 
-	// Crash recovery command
-	events.EventXrayRecoveryCommand:   templateXrayRecoveryCommand,
-	events.EventXrayRecoveryExhausted: templateXrayRecoveryExhausted,
-
 	// Chat
 	events.EventChatNewMessage: templateChatNewMessage,
 }
@@ -378,75 +374,6 @@ func templateXrayCrashLoop(e events.Event) *NotificationMessage {
 		Level:     "error",
 	}
 }
-
-func templateXrayRecoveryCommand(e events.Event) *NotificationMessage {
-	p, ok := e.Payload.(events.XrayRecoveryPayload)
-	if !ok {
-		return nil
-	}
-	fields := map[string]string{
-		"Server":  p.NodeName,
-		"IP":      p.IP,
-		"Command": p.Command,
-	}
-	maxStr := fmt.Sprintf("%d", p.MaxAttempts)
-	if p.MaxAttempts == 0 {
-		maxStr = "∞"
-	}
-	body := fmt.Sprintf("🔧 *Xray Recovery Command*\n\nServer: `%s`\nIP: `%s`\nAttempt: %d/%s\nCommand: `%s`", p.NodeName, p.IP, p.AttemptNum, maxStr, p.Command)
-	plain := fmt.Sprintf("Xray Recovery Command: %s (%s) - attempt %d/%s - command: %s", p.NodeName, p.IP, p.AttemptNum, maxStr, p.Command)
-
-	if p.ErrorMessage != "" {
-		body += fmt.Sprintf("\nError: `%s`", p.ErrorMessage)
-		plain += fmt.Sprintf(" - Error: %s", p.ErrorMessage)
-		fields["Error"] = p.ErrorMessage
-	} else {
-		body += fmt.Sprintf("\nExit Code: %d", p.ExitCode)
-		fields["Exit Code"] = fmt.Sprintf("%d", p.ExitCode)
-		if p.Stdout != "" {
-			body += fmt.Sprintf("\nStdout:\n```\n%s\n```", p.Stdout)
-			fields["Stdout"] = p.Stdout
-		}
-		if p.Stderr != "" {
-			body += fmt.Sprintf("\nStderr:\n```\n%s\n```", p.Stderr)
-			fields["Stderr"] = p.Stderr
-		}
-	}
-	body += "\n_Starting xray after recovery command..._"
-
-	return &NotificationMessage{
-		EventType: string(e.Type),
-		Title:     "Xray Recovery Command",
-		Body:      body,
-		PlainBody: plain,
-		Fields:    fields,
-		Level:     "warning",
-	}
-}
-
-func templateXrayRecoveryExhausted(e events.Event) *NotificationMessage {
-	p, ok := e.Payload.(events.XrayRecoveryPayload)
-	if !ok {
-		return nil
-	}
-	fields := map[string]string{
-		"Server":   p.NodeName,
-		"IP":       p.IP,
-		"Attempts": fmt.Sprintf("%d/%d", p.AttemptNum, p.MaxAttempts),
-	}
-	body := fmt.Sprintf("🚫 *Xray Recovery Exhausted*\n\nServer: `%s`\nIP: `%s`\nRecovery command ran %d/%d times without success.\nManual intervention required.", p.NodeName, p.IP, p.AttemptNum, p.MaxAttempts)
-	plain := fmt.Sprintf("Xray Recovery Exhausted: %s (%s) - %d/%d attempts used. Manual intervention required.", p.NodeName, p.IP, p.AttemptNum, p.MaxAttempts)
-	return &NotificationMessage{
-		EventType: string(e.Type),
-		Title:     "Xray Recovery Exhausted",
-		Body:      body,
-		PlainBody: plain,
-		Fields:    fields,
-		Level:     "error",
-	}
-}
-
-// --- Chat templates ---
 
 func templateChatNewMessage(e events.Event) *NotificationMessage {
 	p, ok := e.Payload.(events.ChatMessagePayload)

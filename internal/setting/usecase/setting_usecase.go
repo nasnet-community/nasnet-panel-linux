@@ -353,8 +353,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "notification_telegram_xray_down", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when xray process crashes on a server", Label: "Xray Down"},
 		{Key: "notification_telegram_xray_up", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when xray process recovers after a crash", Label: "Xray Recovered"},
 		{Key: "notification_telegram_xray_crash_loop", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when xray enters a crash loop", Label: "Xray Crash Loop"},
-		{Key: "notification_telegram_xray_recovery_command", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when crash recovery command executes on a server", Label: "Xray Recovery Command"},
-		{Key: "notification_telegram_xray_recovery_exhausted", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when crash recovery attempts are exhausted", Label: "Xray Recovery Exhausted"},
 
 		// Notification — Discord Toggles
 		{Key: "notification_discord_node_online", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when a server comes online", Label: "Server Online"},
@@ -370,8 +368,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "notification_discord_xray_down", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when xray process crashes on a server", Label: "Xray Down"},
 		{Key: "notification_discord_xray_up", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when xray process recovers after a crash", Label: "Xray Recovered"},
 		{Key: "notification_discord_xray_crash_loop", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when xray enters a crash loop", Label: "Xray Crash Loop"},
-		{Key: "notification_discord_xray_recovery_command", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when crash recovery command executes on a server", Label: "Xray Recovery Command"},
-		{Key: "notification_discord_xray_recovery_exhausted", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when crash recovery attempts are exhausted", Label: "Xray Recovery Exhausted"},
 
 		// Notification — Webhook Toggles
 		{Key: "notification_webhook_node_online", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when a server comes online", Label: "Server Online"},
@@ -387,8 +383,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "notification_webhook_xray_down", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when xray process crashes on a server", Label: "Xray Down"},
 		{Key: "notification_webhook_xray_up", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when xray process recovers after a crash", Label: "Xray Recovered"},
 		{Key: "notification_webhook_xray_crash_loop", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when xray enters a crash loop", Label: "Xray Crash Loop"},
-		{Key: "notification_webhook_xray_recovery_command", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when crash recovery command executes on a server", Label: "Xray Recovery Command"},
-		{Key: "notification_webhook_xray_recovery_exhausted", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when crash recovery attempts are exhausted", Label: "Xray Recovery Exhausted"},
 
 		// Notification — Chat toggles
 		{Key: "notification_telegram_chat_new_message", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when a new chat message is received", Label: "New Chat Message"},

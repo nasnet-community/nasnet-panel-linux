@@ -121,12 +121,6 @@ type Node struct {
 	// Per-node Starlink monitoring configuration
 	StarlinkSettings *StarlinkSettings `gorm:"serializer:json;type:jsonb" json:"starlink_settings"`
 
-	// Per-node crash recovery command configuration
-	CrashRecoverySettings *CrashRecoverySettings `gorm:"serializer:json;type:jsonb" json:"crash_recovery_settings"`
-
-	// Last crash recovery attempt result (for panel display)
-	LastCrashRecovery *LastCrashRecovery `gorm:"serializer:json;type:jsonb" json:"last_crash_recovery"`
-
 	// LastHostInfo is the host info the agent last reported, kept so the
 	// Overview still describes the machine while the node is offline.
 	LastHostInfo *HostInfo `gorm:"serializer:json;type:jsonb" json:"-"`
@@ -218,46 +212,6 @@ func (n *Node) GetStarlinkSettingsOrDefault() *StarlinkSettings {
 	s := *n.StarlinkSettings
 	if s.DishAddress == "" {
 		s.DishAddress = "192.168.100.1:9200"
-	}
-	return &s
-}
-
-// LastCrashRecovery stores the result of the most recent crash recovery command execution.
-// Persisted as JSONB on the Node so the panel can display recovery status after the fact.
-type LastCrashRecovery struct {
-	Timestamp   time.Time `json:"timestamp"`
-	ExitCode    int       `json:"exit_code"`
-	Stdout      string    `json:"stdout,omitempty"`
-	Stderr      string    `json:"stderr,omitempty"`
-	Success     bool      `json:"success"`
-	AttemptNum  int       `json:"attempt_num"`
-	MaxAttempts int       `json:"max_attempts"`
-	Exhausted   bool      `json:"exhausted"`
-	Error       string    `json:"error,omitempty"` // RPC error message if command failed to execute
-}
-
-// CrashRecoverySettings holds per-node crash recovery command configuration.
-// When Enabled and auto-disable fires, the hub executes Command on the node
-// via the agent, then starts xray one more time.
-type CrashRecoverySettings struct {
-	Enabled        bool   `json:"enabled"`                   // Master toggle
-	Command        string `json:"command,omitempty"`         // Shell command to execute on the node
-	CommandTimeout int    `json:"command_timeout,omitempty"` // Max seconds for command execution (default: 60)
-	Cooldown       int    `json:"cooldown,omitempty"`        // Min minutes between command executions (default: 30)
-	MaxAttempts    int    `json:"max_attempts"`              // Max times command can run, 0=unlimited (default: 3)
-}
-
-// GetCrashRecoverySettingsOrDefault returns the node's crash recovery settings, or defaults when nil.
-func (n *Node) GetCrashRecoverySettingsOrDefault() *CrashRecoverySettings {
-	if n.CrashRecoverySettings == nil {
-		return &CrashRecoverySettings{Enabled: false, CommandTimeout: 60, Cooldown: 30, MaxAttempts: 3}
-	}
-	s := *n.CrashRecoverySettings
-	if s.CommandTimeout <= 0 {
-		s.CommandTimeout = 60
-	}
-	if s.Cooldown <= 0 {
-		s.Cooldown = 30
 	}
 	return &s
 }

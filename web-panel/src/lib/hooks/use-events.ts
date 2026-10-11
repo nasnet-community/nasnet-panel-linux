@@ -14,8 +14,6 @@ export type EventType =
     | 'subscription.expiring'
     | 'subscription.expired'
     | 'system.alert'
-    | 'xray.recovery_command'
-    | 'xray.recovery_exhausted'
     | 'user.registered'
     | 'subscription.renewed'
     | 'subscription.cancelled'
@@ -123,21 +121,6 @@ export interface SystemAlertPayload {
     message: string
 }
 
-export interface XrayRecoveryPayload {
-    node_id: number
-    node_name: string
-    ip: string
-    crash_count: number
-    attempt_num: number
-    max_attempts: number
-    command: string
-    exit_code: number
-    stdout?: string
-    stderr?: string
-    success: boolean
-    error_message?: string
-}
-
 // Generic event structure
 export interface ServerEvent<T = unknown> {
     type: EventType
@@ -236,8 +219,6 @@ export function useEvents(
             'subscription.expiring',
             'subscription.expired',
             'system.alert',
-            'xray.recovery_command',
-            'xray.recovery_exhausted',
         ]
 
         eventTypes.forEach((eventType) => {
