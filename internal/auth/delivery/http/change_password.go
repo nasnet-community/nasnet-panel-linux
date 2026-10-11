@@ -72,16 +72,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	// Save as setting in the admin category
-	setting := &settingDomain.Setting{
-		Key:         "admin_password_hash",
-		Value:       string(newHash),
-		Type:        "string",
-		Category:    "admin",
-		Description: "Hashed admin password (managed by change-password)",
-		Label:       "Admin Password Hash",
-	}
-
+	setting := settingDomain.AdminPasswordHashSetting(string(newHash))
 	if err := h.settingUsecase.UpdateMany(c.Request.Context(), []*settingDomain.Setting{setting}); err != nil {
 		httputil.Error(c, http.StatusInternalServerError, "failed to save new password")
 		return

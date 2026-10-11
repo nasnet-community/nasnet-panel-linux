@@ -17,6 +17,22 @@ type Setting struct {
 	RequiresRestart bool   `gorm:"default:false" json:"requires_restart,omitempty"`
 }
 
+// Login reads this row on every request, so writing it changes the password without a restart.
+const AdminPasswordHashKey = "admin_password_hash"
+
+// AdminPasswordHashSetting is the row both the panel and the CLI reset write.
+func AdminPasswordHashSetting(hash string) *Setting {
+	return &Setting{
+		Key:         AdminPasswordHashKey,
+		Value:       hash,
+		Type:        "string",
+		Category:    "admin",
+		Description: "Hashed admin password (managed by change-password)",
+		Label:       "Admin Password Hash",
+		Sensitive:   true,
+	}
+}
+
 type SettingRepository interface {
 	GetAll(ctx context.Context) ([]*Setting, error)
 	GetByKey(ctx context.Context, key string) (*Setting, error)
