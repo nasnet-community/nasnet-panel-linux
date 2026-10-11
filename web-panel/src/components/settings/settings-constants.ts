@@ -319,10 +319,6 @@ export const categorySubGroups: Record<string, SubGroup[]> = {
             description: "Mimic browser TLS fingerprints to bypass deep packet inspection",
             keys: ["utls_enabled", "utls_fingerprint", "utls_sni_override"],
         },
-        {
-            label: "Xray Core",
-            keys: ["xray_default_version"],
-        },
     ],
     data: [
         {

@@ -17,7 +17,6 @@ const Subscriptions = lazy(() => import("@/pages/subscriptions"))
 const Accounts = lazy(() => import("@/pages/accounts"))
 const Nodes = lazy(() => import("@/pages/nodes"))
 const NodeDetail = lazy(() => import("@/pages/nodes/[id]"))
-const XrayBinaries = lazy(() => import("@/pages/xray-binaries"))
 const Settings = lazy(() => import("@/pages/settings"))
 const Certificates = lazy(() => import("@/pages/certificates"))
 const Domains = lazy(() => import("@/pages/domains"))
@@ -71,7 +70,6 @@ export const router = createBrowserRouter([
         // The old address; shared trace URLs must keep working.
         { path: "/network", element: <RedirectWithSearch to="/router" /> },
         { path: "/network/flow", element: <RedirectWithSearch to="/router/flow" /> },
-        { path: "/xray-binaries", element: r(<XrayBinaries />) },
         { path: "/subscriptions", element: r(<Subscriptions />) },
         { path: "/accounts", element: r(<Accounts />) },
         // { path: "/chats", element: r(<Chats />) },

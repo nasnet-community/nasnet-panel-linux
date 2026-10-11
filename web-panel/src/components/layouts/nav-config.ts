@@ -1,5 +1,5 @@
 import {
-    Activity, Archive, Bell, Box, Cable, ClipboardList, Globe, History, House, IdCard, KeyRound,
+    Activity, Archive, Bell, Cable, ClipboardList, Globe, History, House, IdCard, KeyRound,
     Link as LinkIcon, Router, Server, Settings, ShieldCheck, Users, Waypoints, type LucideIcon,
 } from "lucide-react"
 
@@ -47,7 +47,6 @@ export const NAV_SECTIONS: NavSection[] = [
                 children: [
                     { label: "Hosts", href: "/hosts", icon: LinkIcon },
                     { label: "Tunnels", href: "/tunnels", icon: Cable },
-                    { label: "Xray Core", href: "/xray-binaries", icon: Box },
                 ],
             },
             {

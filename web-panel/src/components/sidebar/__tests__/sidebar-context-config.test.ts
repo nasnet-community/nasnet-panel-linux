@@ -14,7 +14,6 @@ describe("getContextConfig", () => {
         expect(getContextConfig("/hosts")?.id).toBe("nodes")
         expect(getContextConfig("/access-logs")?.id).toBe("nodes")
         expect(getContextConfig("/domains/new")?.id).toBe("certs")
-        expect(getContextConfig("/xray-binaries")?.id).toBe("nodes")
         expect(getContextConfig("/router")?.id).toBe("router")
         expect(getContextConfig("/router/flow")?.id).toBe("router")
     })

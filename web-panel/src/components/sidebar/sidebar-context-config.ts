@@ -35,7 +35,7 @@ export const CONTEXT_CONFIGS: ContextConfig[] = [
     {
         id: "nodes",
         label: "NODES.STATUS",
-        prefixes: ["/server", "/nodes", "/hosts", "/tunnels", "/xray-binaries", "/access-logs", "/access-history"],
+        prefixes: ["/server", "/nodes", "/hosts", "/tunnels", "/access-logs", "/access-history"],
     },
     {
         id: "certs",
