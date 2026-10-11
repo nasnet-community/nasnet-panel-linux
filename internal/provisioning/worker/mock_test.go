@@ -633,6 +633,7 @@ func (m *mockNodeUsecase) AutoUpdateAgent(context.Context, uint, chan<- nodeUC.U
 func (m *mockNodeUsecase) BulkUpdateAgent(context.Context, []uint) map[uint]*nodeUC.NodeBulkActionResult {
 	return nil
 }
+func (m *mockNodeUsecase) AgentUpdates(context.Context) (map[uint]bool, error) { return nil, nil }
 func (m *mockNodeUsecase) ObserveNodeHealth(context.Context, *nodeDomain.Node, bool, string, string) {
 }
 func (m *mockNodeUsecase) ObserveNodeMaintenance(context.Context, uint, bool) {}

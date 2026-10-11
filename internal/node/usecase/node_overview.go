@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -132,6 +131,9 @@ type NodeOverviewAgent struct {
 	// BundledVersion is the agent this hub ships; empty when unknown.
 	BundledVersion  string `json:"bundled_version"`
 	UpdateAvailable bool   `json:"update_available"`
+	// SHA-256 of the running and the shipped binary: dev builds share a version
+	Build        string `json:"build,omitempty"`
+	BundledBuild string `json:"bundled_build,omitempty"`
 }
 
 type NodeOverviewConfig struct {
@@ -178,7 +180,7 @@ func (u *nodeUsecase) GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOv
 			out.Agent.Version = snap.AgentVersion
 		}
 		out.Agent.BundledVersion = bundledAgentVersion()
-		out.Agent.UpdateAvailable = versionLess(out.Agent.Version, out.Agent.BundledVersion)
+		out.Agent.UpdateAvailable, out.Agent.Build, out.Agent.BundledBuild = u.agentUpdate(node, out.Agent.Version)
 	}
 
 	out.Config.State = "unknown"
@@ -272,44 +274,4 @@ func bundledAgentVersion() string {
 	}
 	bundledVersion.readAt = time.Now()
 	return bundledVersion.value
-}
-
-// versionLess reports a < b for dotted numeric versions ("0.0.69" < "0.0.71").
-// Anything unparsable compares as not-less, so no false "update available".
-func versionLess(a, b string) bool {
-	pa, okA := parseDotted(a)
-	pb, okB := parseDotted(b)
-	if !okA || !okB {
-		return false
-	}
-	for i := 0; i < len(pa) || i < len(pb); i++ {
-		var x, y int
-		if i < len(pa) {
-			x = pa[i]
-		}
-		if i < len(pb) {
-			y = pb[i]
-		}
-		if x != y {
-			return x < y
-		}
-	}
-	return false
-}
-
-func parseDotted(v string) ([]int, bool) {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	if v == "" {
-		return nil, false
-	}
-	parts := strings.Split(v, ".")
-	out := make([]int, len(parts))
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return nil, false
-		}
-		out[i] = n
-	}
-	return out, true
 }

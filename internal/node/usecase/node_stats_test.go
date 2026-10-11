@@ -169,6 +169,10 @@ func (f *fakeStatsAgentClient) GetVersion(_ context.Context) (*agent.VersionInfo
 	return &agent.VersionInfo{}, nil
 }
 
+func (f *fakeStatsAgentClient) GetSelfChecksum(_ context.Context) (*agent.ChecksumResult, error) {
+	return &agent.ChecksumResult{Checksum: "build-1"}, nil
+}
+
 func (f *fakeStatsAgentClient) GetBufferedTraffic(_ context.Context) (*agent.BufferedTrafficStats, error) {
 	return f.buffered, nil
 }

@@ -528,6 +528,7 @@ func (u *nodeUsecase) AutoUpdateAgent(ctx context.Context, nodeID uint, progress
 		return fmt.Errorf("failed to get host info: %w", err)
 	}
 	remoteChecksum, sumErr := client.GetSelfChecksum(ctx)
+	remoteVersion, _ := client.GetVersion(ctx)
 	closeAgentClient(client)
 	// Reverse-agent RPCs may finish after their caller has cancelled.
 	if err := ctx.Err(); err != nil {
@@ -541,7 +542,7 @@ func (u *nodeUsecase) AutoUpdateAgent(ctx context.Context, nodeID uint, progress
 	sendProgress("check_arch", fmt.Sprintf("Target architecture: %s-%s", osName, arch), "success", nil)
 	sendProgress("prep_binary", "Locating binary...", "running", nil)
 
-	binaryPath := filepath.Join(agentBinaryDir, fmt.Sprintf("nasnet-agent-%s-%s", osName, arch))
+	binaryPath := bundledAgentPath(osName, arch)
 	content, err := os.ReadFile(binaryPath)
 	if err != nil {
 		sendProgress("prep_binary", "Binary file not found on server", "error", err)
@@ -584,7 +585,10 @@ func (u *nodeUsecase) AutoUpdateAgent(ctx context.Context, nodeID uint, progress
 		sendProgress("upload", "Agent update cancelled", "error", err)
 		return err
 	}
-	if err := u.UpdateAgentBinary(ctx, nodeID, content, checksum, version, signature); err != nil {
+	// the agent refuses anything not newer by its own reading, which takes two
+	// builds of one tag (v1.1.0-58-g…, v1.1.0-60-g…) for the same release
+	force := remoteVersion != nil && !agentBuildOlder(version, remoteVersion.AgentVersion)
+	if err := u.pushAgentBinary(ctx, nodeID, content, checksum, version, signature, force); err != nil {
 		sendProgress("upload", "Upload failed", "error", err)
 		return err
 	}

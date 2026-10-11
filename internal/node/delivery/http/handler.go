@@ -89,6 +89,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.POST("/bulk/health-check", h.BulkCheckHealth)
 		nodes.POST("/bulk/xray-version", h.BulkUpdateXrayVersion)
 		nodes.POST("/bulk/agent-update", h.BulkUpdateAgent)
+		nodes.GET("/agent/updates", h.GetAgentUpdates)
 
 		// Node CRUD
 		nodes.GET("", h.ListNodes)
@@ -1770,6 +1771,16 @@ func (h *Handler) GetNodeOverview(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": overview})
+}
+
+// GetAgentUpdates says, per remote full node, whether this panel ships an agent it doesn't run.
+func (h *Handler) GetAgentUpdates(c *gin.Context) {
+	due, err := h.nodeUsecase.AgentUpdates(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": due})
 }
 
 func (h *Handler) GetNodeDailyTraffic(c *gin.Context) {

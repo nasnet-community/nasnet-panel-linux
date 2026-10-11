@@ -416,6 +416,7 @@ const agentVersionCacheTTL = 10 * time.Minute
 type agentVersionCacheEntry struct {
 	agentVersion string
 	xrayVersion  string
+	build        string // SHA-256 of the running agent binary; dev builds share a version
 	fetchedAt    time.Time
 }
 
@@ -429,6 +430,24 @@ func (u *nodeUsecase) forgetAgentVersion(nodeID uint) {
 	u.versionCacheMu.Lock()
 	delete(u.versionCache, nodeID)
 	u.versionCacheMu.Unlock()
+}
+
+// notePushedAgent: the node now runs the build just pushed. The next sweep asks
+// it again; until then the panel doesn't offer the same update twice.
+func (u *nodeUsecase) notePushedAgent(nodeID uint, build string) {
+	u.versionCacheMu.Lock()
+	defer u.versionCacheMu.Unlock()
+	if u.versionCache == nil {
+		u.versionCache = make(map[uint]agentVersionCacheEntry)
+	}
+	u.versionCache[nodeID] = agentVersionCacheEntry{build: build} // a zero fetchedAt is stale at once
+}
+
+// agentBuild is the build the node last said it runs ("" when unknown).
+func (u *nodeUsecase) agentBuild(nodeID uint) string {
+	u.versionCacheMu.Lock()
+	defer u.versionCacheMu.Unlock()
+	return u.versionCache[nodeID].build
 }
 
 func (u *nodeUsecase) agentVersions(ctx context.Context, client agent.NodeClient, nodeID uint, forceRefresh bool) (string, string) {
@@ -449,6 +468,9 @@ func (u *nodeUsecase) agentVersions(ctx context.Context, client agent.NodeClient
 		agentVersion: ver.AgentVersion,
 		xrayVersion:  ver.XrayVersion,
 		fetchedAt:    time.Now(),
+	}
+	if sum, err := client.GetSelfChecksum(ctx); err == nil && sum != nil {
+		entry.build = sum.Checksum
 	}
 	u.versionCacheMu.Lock()
 	if u.versionCache == nil {

@@ -72,6 +72,17 @@ const MODE_LABEL: Record<NodeOverview["connection"]["mode"], string> = {
     stealth: "Stealth tunnel",
 }
 
+// dev builds share a version, so a new build of the same one says so
+function agentSub(overview: NodeOverview | undefined, running: string | undefined) {
+    const a = overview?.agent
+    if (!a) return undefined
+    if (a.update_available) {
+        const same = !!running && !!a.bundled_version && running.replace(/^v/, "") === a.bundled_version.replace(/^v/, "")
+        return <span className="text-amber-500">{same || !a.bundled_version ? "New build available" : `${a.bundled_version} available`}</span>
+    }
+    return a.build ? <span className="font-mono">build {a.build.slice(0, 8)}</span> : undefined
+}
+
 export function NodeSystemInfo({ node, overview, compact }: NodeSystemInfoProps) {
     const { data: info, isLoading } = useNodeHostInfo(node.id)
     const stale = !node.is_online || info?.stale
@@ -121,8 +132,8 @@ export function NodeSystemInfo({ node, overview, compact }: NodeSystemInfoProps)
                                 sub="Updates with the panel" />
                         ) : (
                             <Spec compact={compact} label="Agent" icon={<Package className={cn(iconCls, "text-sky-400")} />}
-                                value={<span className="font-mono font-medium">{agentVersion || "—"}</span>}
-                                sub={overview?.agent.update_available ? <span className="text-amber-500">{overview.agent.bundled_version} available</span> : undefined} />
+                                value={<span className="font-mono font-medium" title={overview?.agent.build ? `Build ${overview.agent.build}` : undefined}>{agentVersion || "—"}</span>}
+                                sub={agentSub(overview, agentVersion)} />
                         )}
                         <Spec compact={compact} label="Connection" icon={<ArrowLeftRight className={cn(iconCls, node.is_online ? "text-teal-400" : "text-red-400")} />}
                             value={MODE_LABEL[mode as NodeOverview["connection"]["mode"]] ?? mode}

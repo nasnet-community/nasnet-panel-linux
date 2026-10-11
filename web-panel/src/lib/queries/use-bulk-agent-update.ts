@@ -1,6 +1,20 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { bulkUpdateAgent } from "@/lib/api/nodes"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { bulkUpdateAgent, getAgentUpdates } from "@/lib/api/nodes"
 import { queryKeys } from "./keys"
+
+/** Which remote full nodes run another agent than the panel ships, by node id. */
+export function useAgentUpdates(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.agentUpdates(),
+        queryFn: async () => {
+            const res = await getAgentUpdates()
+            if (!res.success || !res.data) throw new Error(res.error || "Failed to check for agent updates")
+            return res.data
+        },
+        enabled,
+        staleTime: 15_000,
+    })
+}
 
 export function useBulkUpdateAgent() {
     const queryClient = useQueryClient()
@@ -19,7 +33,9 @@ export function useBulkUpdateAgent() {
         onSettled: (_data, _error, ids) => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.nodeList() })
             void queryClient.invalidateQueries({ queryKey: queryKeys.nodeStatsBulkAll() })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.agentUpdates() })
             for (const id of ids) {
+                void queryClient.invalidateQueries({ queryKey: queryKeys.nodeOverview(id) })
                 void queryClient.invalidateQueries({ queryKey: queryKeys.nodeStats(id) })
                 void queryClient.invalidateQueries({ queryKey: queryKeys.nodeDetails(id) })
             }

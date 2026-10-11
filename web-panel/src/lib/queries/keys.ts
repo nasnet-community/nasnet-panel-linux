@@ -25,6 +25,7 @@ export const queryKeys = {
     nodeStats: (id: number) => [...queryKeys.nodes, 'stats', id] as const,
     nodeStatsSeries: (id: number, range: string) => [...queryKeys.nodes, 'stats_series', id, range] as const,
     nodeOverview: (id: number) => [...queryKeys.nodes, 'overview', id] as const,
+    agentUpdates: () => [...queryKeys.nodes, 'agent_updates'] as const,
     nodeStatsBulk: (ids?: number[]) => [...queryKeys.nodes, 'stats_bulk', ids ?? 'all'] as const,
     // Prefix matcher for all bulk-stats variants (different sorted id lists).
     nodeStatsBulkAll: () => [...queryKeys.nodes, 'stats_bulk'] as const,

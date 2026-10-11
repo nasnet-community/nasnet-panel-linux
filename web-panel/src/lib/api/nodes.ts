@@ -159,6 +159,11 @@ export interface NodeBulkActionResponse {
     results: Record<string, NodeBulkActionResult>
 }
 
+/** Per remote full node, whether this panel ships an agent it doesn't run. */
+export function getAgentUpdates() {
+    return api.get<Record<string, boolean>>("/api/v1/nodes/agent/updates")
+}
+
 export async function bulkUpdateAgent(ids: number[]): Promise<ApiResponse<NodeBulkActionResponse>> {
     const uniqueIds = [...new Set(ids)]
     // The server runs eight updates at a time, with six minutes per node.

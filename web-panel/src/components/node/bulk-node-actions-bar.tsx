@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { HiOutlineRefresh } from "react-icons/hi"
@@ -10,10 +10,11 @@ import {
     useBulkCheckNodeHealth,
     useNodes,
 } from "@/lib/queries"
-import { isLocalNode } from "@/lib/node-kind"
+import { isLiteNode, isLocalNode } from "@/lib/node-kind"
 import { useNodesStore } from "@/store/nodes-store"
 import { BulkXrayVersionDialog } from "@/components/node/bulk-xray-version-dialog"
 import { BulkAgentUpdateDialog } from "@/components/node/bulk-agent-update-dialog"
+import { useAgentUpdates } from "@/lib/queries/use-bulk-agent-update"
 
 // BulkNodeActionsBar is a floating bar rendered only while at least one
 // node is selected. It reads selection from the Zustand store directly so
@@ -37,30 +38,42 @@ export function BulkNodeActionsBar() {
     const { data: nodes } = useNodes(count > 0)
     const localId = nodes?.find(isLocalNode)?.id
     const includesLocal = localId !== undefined && selectedIds.has(localId)
-    const agentIds = useCallback(() => Array.from(selectedIds).filter((id) => id !== localId), [selectedIds, localId])
-    const agentDisabled = anyPending || (includesLocal && count === 1)
-    const agentTitle = includesLocal ? "Built in, updates with the panel" : undefined
+    // MTProto nodes run no Xray and no full agent, so those actions skip them
+    const liteIds = useMemo(() => new Set((nodes ?? []).filter(isLiteNode).map((n) => n.id)), [nodes])
+    const xrayIds = useCallback(() => Array.from(selectedIds).filter((id) => !liteIds.has(id)), [selectedIds, liteIds])
+    const xrayCount = Array.from(selectedIds).filter((id) => !liteIds.has(id)).length
+    const xrayDisabled = anyPending || xrayCount === 0
+    const xrayTitle = xrayCount === 0 ? "MTProto nodes run no Xray" : undefined
+    // only nodes the panel ships a different agent for; the rest have nothing to take
+    const { data: agentDue } = useAgentUpdates(count > 0)
+    const remoteIds = useCallback(() => xrayIds().filter((id) => id !== localId), [xrayIds, localId])
+    const agentIds = useCallback(() => remoteIds().filter((id) => agentDue?.[String(id)]), [remoteIds, agentDue])
+    const agentDisabled = anyPending || agentIds().length === 0
+    const agentTitle = xrayCount === 0 ? "MTProto nodes update from their own page"
+        : includesLocal && count === 1 ? "Built in, updates with the panel"
+        : remoteIds().length > 0 && agentIds().length === 0 ? (agentDue ? "Already up to date" : "Checking for updates…")
+        : undefined
 
     const onRestart = useCallback(async () => {
         const ok = await confirm({
             title: "Restart Xray on selected nodes?",
-            description: `This will restart Xray on ${count} node${count === 1 ? "" : "s"}. Active connections may briefly drop.${includesLocal ? " LAN clients drop for a few seconds." : ""}`,
+            description: `This will restart Xray on ${xrayCount} node${xrayCount === 1 ? "" : "s"}. Active connections may briefly drop.${includesLocal ? " LAN clients drop for a few seconds." : ""}`,
             confirmLabel: "Restart",
             variant: "warning",
         })
         if (!ok) return
-        restartMut.mutate(ids(), { onSuccess: () => clearSelection() })
-    }, [confirm, count, restartMut, ids, clearSelection, includesLocal])
+        restartMut.mutate(xrayIds(), { onSuccess: () => clearSelection() })
+    }, [confirm, xrayCount, restartMut, xrayIds, clearSelection, includesLocal])
 
     const onPush = useCallback(async () => {
         const ok = await confirm({
             title: "Push config to selected nodes?",
-            description: `This will regenerate and push the Xray config to ${count} node${count === 1 ? "" : "s"}.`,
+            description: `This will regenerate and push the Xray config to ${xrayCount} node${xrayCount === 1 ? "" : "s"}.`,
             confirmLabel: "Push",
         })
         if (!ok) return
-        pushMut.mutate(ids(), { onSuccess: () => clearSelection() })
-    }, [confirm, count, pushMut, ids, clearSelection])
+        pushMut.mutate(xrayIds(), { onSuccess: () => clearSelection() })
+    }, [confirm, xrayCount, pushMut, xrayIds, clearSelection])
 
     const onHealth = useCallback(() => {
         healthMut.mutate(ids())
@@ -81,7 +94,7 @@ export function BulkNodeActionsBar() {
                         <HiOutlineRefresh className={healthMut.isPending ? "w-3.5 h-3.5 mr-1.5 animate-spin" : "w-3.5 h-3.5 mr-1.5"} />
                         Health Check
                     </Button>
-                    <Button variant="outline" size="sm" onClick={onPush} disabled={anyPending}>
+                    <Button variant="outline" size="sm" onClick={onPush} disabled={xrayDisabled} title={xrayTitle}>
                         <Upload className={pushMut.isPending ? "w-3.5 h-3.5 mr-1.5 animate-pulse" : "w-3.5 h-3.5 mr-1.5"} />
                         Push Config
                     </Button>
@@ -89,7 +102,8 @@ export function BulkNodeActionsBar() {
                         variant="outline"
                         size="sm"
                         onClick={() => setXrayDialogOpen(true)}
-                        disabled={anyPending}
+                        disabled={xrayDisabled}
+                        title={xrayTitle}
                         className="text-indigo-600 hover:text-indigo-700 border-indigo-500/30 hover:border-indigo-500/50"
                     >
                         <Cpu className="w-3.5 h-3.5 mr-1.5" />
@@ -103,7 +117,8 @@ export function BulkNodeActionsBar() {
                         variant="outline"
                         size="sm"
                         onClick={onRestart}
-                        disabled={anyPending}
+                        disabled={xrayDisabled}
+                        title={xrayTitle}
                         className="text-amber-600 hover:text-amber-700 border-amber-500/30 hover:border-amber-500/50"
                     >
                         <RotateCw className={restartMut.isPending ? "w-3.5 h-3.5 mr-1.5 animate-spin" : "w-3.5 h-3.5 mr-1.5"} />
@@ -125,7 +140,7 @@ export function BulkNodeActionsBar() {
                     <Button variant="outline" size="icon" className="h-8 w-8" onClick={onHealth} disabled={anyPending} aria-label="Health check">
                         <HiOutlineRefresh className={healthMut.isPending ? "w-3.5 h-3.5 animate-spin" : "w-3.5 h-3.5"} />
                     </Button>
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={onPush} disabled={anyPending} aria-label="Push config">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={onPush} disabled={xrayDisabled} title={xrayTitle} aria-label="Push config">
                         <Upload className="w-3.5 h-3.5" />
                     </Button>
                     <Button
@@ -133,7 +148,8 @@ export function BulkNodeActionsBar() {
                         size="icon"
                         className="h-8 w-8 text-indigo-600 border-indigo-500/30"
                         onClick={() => setXrayDialogOpen(true)}
-                        disabled={anyPending}
+                        disabled={xrayDisabled}
+                        title={xrayTitle}
                         aria-label="Update Xray version"
                     >
                         <Cpu className="w-3.5 h-3.5" />
@@ -146,7 +162,8 @@ export function BulkNodeActionsBar() {
                         size="icon"
                         className="h-8 w-8 text-amber-600 border-amber-500/30"
                         onClick={onRestart}
-                        disabled={anyPending}
+                        disabled={xrayDisabled}
+                        title={xrayTitle}
                         aria-label="Restart Xray"
                     >
                         <RotateCw className="w-3.5 h-3.5" />
@@ -165,7 +182,7 @@ export function BulkNodeActionsBar() {
             <BulkXrayVersionDialog
                 open={xrayDialogOpen}
                 onOpenChange={setXrayDialogOpen}
-                selectedIds={ids()}
+                selectedIds={xrayIds()}
             />
         </>
     )

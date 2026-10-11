@@ -144,7 +144,11 @@ export interface NodeOverview {
         version: string
         /** The agent this hub ships; empty when unknown. */
         bundled_version: string
+        /** The hub ships a build this node doesn't run (by binary, not by version). */
         update_available: boolean
+        /** SHA-256 of the running and the shipped binary; dev builds share a version. */
+        build?: string
+        bundled_build?: string
     }
     config: {
         state: "in_sync" | "drifted" | "unknown"

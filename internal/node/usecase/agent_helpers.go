@@ -1069,6 +1069,11 @@ func normalizeArch(raw string) string {
 
 // UpdateAgentBinary pushes a new agent binary to a remote node.
 func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error {
+	return u.pushAgentBinary(ctx, nodeID, binaryContent, checksum, version, signature, false)
+}
+
+// pushAgentBinary is UpdateAgentBinary; force skips the agent's downgrade check.
+func (u *nodeUsecase) pushAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte, force bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -1099,7 +1104,7 @@ func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binary
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	result, err := client.SelfUpdate(ctx, binaryContent, checksum, version, true, signature, false)
+	result, err := client.SelfUpdate(ctx, binaryContent, checksum, version, true, signature, force)
 	if err != nil {
 		return fmt.Errorf("failed to update agent: %w", err)
 	}
@@ -1108,7 +1113,7 @@ func (u *nodeUsecase) UpdateAgentBinary(ctx context.Context, nodeID uint, binary
 	}
 	// The restart is too quick to mark the node offline, so without this the
 	// panel keeps showing the old version until the cache expires.
-	u.forgetAgentVersion(nodeID)
+	u.notePushedAgent(nodeID, checksum)
 
 	log.WithFields(map[string]interface{}{
 		"node_id":     nodeID,

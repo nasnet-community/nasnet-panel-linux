@@ -12,6 +12,8 @@ import {
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { getApiBaseUrl } from '@/lib/config'
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/queries/keys"
 
 interface UpdateAgentDialogProps {
     nodeId: number
@@ -43,6 +45,7 @@ export function UpdateAgentDialog({
     const [progress, setProgress] = useState<UpdateProgress[]>([])
     const [error, setError] = useState<string | null>(null)
     const eventSourceRef = useRef<EventSource | null>(null)
+    const queryClient = useQueryClient()
 
     // Cleanup on unmount or close
     useEffect(() => {
@@ -144,6 +147,8 @@ export function UpdateAgentDialog({
 
         if (data.step === "complete") {
             toast.success("Agent update completed successfully")
+            void queryClient.invalidateQueries({ queryKey: queryKeys.nodeOverview(nodeId) })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.agentUpdates() })
             onSuccess?.()
         }
 

@@ -279,6 +279,7 @@ type NodeUsecase interface {
 	UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error
 	AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error
 	BulkUpdateAgent(ctx context.Context, ids []uint) map[uint]*NodeBulkActionResult
+	AgentUpdates(ctx context.Context) (map[uint]bool, error)
 	SetCertWatch(w *certwatch.Watch)
 	EvictAllAgentClients()
 	CertificateOverview(ctx context.Context, refreshDomains bool) (*CertOverview, error)
