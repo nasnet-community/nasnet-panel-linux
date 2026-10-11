@@ -3,9 +3,12 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -401,6 +404,27 @@ func TestPostApply_ReturnsThePlanIDAndDeadline(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "1800000090") {
 		t.Errorf("response has no confirm deadline: %s", w.Body.String())
+	}
+}
+
+// An unprivileged panel can't take the apply lock; the toast must say how to fix it.
+func TestPostApply_PermissionDeniedNamesTheRepair(t *testing.T) {
+	lockErr := &fs.PathError{Op: "mkdir", Path: "/var/lib/nasnet", Err: syscall.EACCES}
+	uc := &stubUsecase{applyErr: lockErr}
+	w := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/apply",
+		`{"interface_id":1,"role":"wan","slot":"domestic"}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "permission denied") || !strings.Contains(body, "run nasnet on the router") {
+		t.Errorf("error does not explain the repair: %s", body)
+	}
+
+	uc.applyErr = errors.New("op failed")
+	if body := do(t, newRouter(t, uc, true), "POST", "/api/v1/network/apply",
+		`{"interface_id":1,"role":"wan","slot":"domestic"}`).Body.String(); strings.Contains(body, "run nasnet") {
+		t.Errorf("an unrelated failure got the repair hint: %s", body)
 	}
 }
 

@@ -3,6 +3,7 @@ package http
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -94,8 +95,15 @@ func (h *Handler) requireRouterMode(c *gin.Context) {
 	c.Next()
 }
 
+// An older router unit ran the panel unprivileged; say how to fix it.
+const permissionHint = "the panel service is not allowed to change the network; run nasnet on the router to repair it"
+
 func fail(c *gin.Context, code int, err error) {
-	c.JSON(code, gin.H{"success": false, "error": err.Error()})
+	msg := err.Error()
+	if errors.Is(err, fs.ErrPermission) {
+		msg += " (" + permissionHint + ")"
+	}
+	c.JSON(code, gin.H{"success": false, "error": msg})
 }
 
 func (h *Handler) ListInterfaces(c *gin.Context) {
