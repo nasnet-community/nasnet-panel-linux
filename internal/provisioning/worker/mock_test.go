@@ -619,9 +619,17 @@ func (m *mockNodeUsecase) RunAgentCertMaintenance(context.Context) error       {
 func (m *mockNodeUsecase) CertificateCounts(context.Context) (int, int, error) { return 0, 0, nil }
 
 // Remote node transports
-func (m *mockNodeUsecase) SetReverseRegistry(*hub.ConnectedAgentRegistry)        {}
-func (m *mockNodeUsecase) SetHubServer(*hub.HubServer)                           {}
-func (m *mockNodeUsecase) SwitchConnectMode(context.Context, uint, string) error { return nil }
+func (m *mockNodeUsecase) SetReverseRegistry(*hub.ConnectedAgentRegistry) {}
+func (m *mockNodeUsecase) SetHubServer(*hub.HubServer)                    {}
+func (m *mockNodeUsecase) SwitchConnectMode(context.Context, uint, string) (*nodeUC.AgentMove, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) MoveAgentPort(context.Context, uint, int) (*nodeUC.AgentMove, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) MoveNodeAddress(context.Context, uint, string) (*nodeUC.AgentMove, error) {
+	return nil, nil
+}
 
 // Agent updates
 func (m *mockNodeUsecase) UpdateAgentBinary(context.Context, uint, []byte, string, string, []byte) error {

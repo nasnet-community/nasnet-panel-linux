@@ -65,6 +65,17 @@ type Server struct {
 	grpcServer   *grpc.Server
 	listener     net.Listener
 
+	// ports holds every open listener by address (two while a port move is
+	// under way); dropped marks the ones a move closed on purpose.
+	portsMu  sync.Mutex
+	ports    map[string]net.Listener
+	dropped  map[net.Listener]bool
+	serveErr chan error
+
+	// modeMu guards a connection-mode switch and its fallback timer.
+	modeMu        sync.Mutex
+	fallbackTimer *time.Timer
+
 	// Cache
 	xrayVersion string
 	mu          sync.RWMutex
@@ -222,6 +233,7 @@ func (s *Server) NftManager() *nft.Manager { return s.nftManager }
 // traffic collector, access log collector, and telemetry samplers). StartLocal
 // starts the same collectors without opening a gRPC listener.
 func (s *Server) StartBackgroundServices(ctx context.Context) {
+	s.armModeFallback()
 	if s.statsCollect != nil {
 		s.statsCollect.Start()
 	}
@@ -298,8 +310,15 @@ func (s *Server) Start() error {
 
 	s.StartBackgroundServices(context.Background())
 
-	// Start serving (blocks)
-	return s.grpcServer.Serve(listener)
+	// serve every port; Start returns when the server stops or a port fails
+	s.serveErr = make(chan error, 1)
+	s.portsMu.Lock()
+	s.ports = map[string]net.Listener{s.cfg.ListenAddr: listener}
+	s.dropped = map[net.Listener]bool{}
+	s.serveLocked(listener)
+	s.reopenPendingPortLocked()
+	s.portsMu.Unlock()
+	return <-s.serveErr
 }
 
 func (s *Server) StartLocal(ctx context.Context) error {

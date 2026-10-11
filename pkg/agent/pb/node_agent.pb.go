@@ -214,7 +214,7 @@ func (x NukeReport_Result) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NukeReport_Result.Descriptor instead.
 func (NukeReport_Result) EnumDescriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{85, 0}
+	return file_node_agent_proto_rawDescGZIP(), []int{87, 0}
 }
 
 type TerminalInput struct {
@@ -3519,6 +3519,150 @@ func (x *HeartbeatPong) GetNodeUuid() string {
 	return ""
 }
 
+type MoveListenPortRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Port          int32                  `protobuf:"varint,1,opt,name=port,proto3" json:"port,omitempty"`     // the port to open beside the current one
+	Finish        bool                   `protobuf:"varint,2,opt,name=finish,proto3" json:"finish,omitempty"` // the hub is in on the new port: drop the old one
+	Abort         bool                   `protobuf:"varint,3,opt,name=abort,proto3" json:"abort,omitempty"`   // the hub couldn't get in: drop the new one
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveListenPortRequest) Reset() {
+	*x = MoveListenPortRequest{}
+	mi := &file_node_agent_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveListenPortRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveListenPortRequest) ProtoMessage() {}
+
+func (x *MoveListenPortRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveListenPortRequest.ProtoReflect.Descriptor instead.
+func (*MoveListenPortRequest) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *MoveListenPortRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *MoveListenPortRequest) GetFinish() bool {
+	if x != nil {
+		return x.Finish
+	}
+	return false
+}
+
+func (x *MoveListenPortRequest) GetAbort() bool {
+	if x != nil {
+		return x.Abort
+	}
+	return false
+}
+
+type SwitchConnectModeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`                                      // "direct" or "reverse"; unused with confirm
+	HubUrl        string                 `protobuf:"bytes,2,opt,name=hub_url,json=hubUrl,proto3" json:"hub_url,omitempty"`                    // reverse: the hub address to dial
+	ListenPort    int32                  `protobuf:"varint,3,opt,name=listen_port,json=listenPort,proto3" json:"listen_port,omitempty"`       // direct: the port to listen on
+	GraceSeconds  int32                  `protobuf:"varint,4,opt,name=grace_seconds,json=graceSeconds,proto3" json:"grace_seconds,omitempty"` // how long the hub has to confirm the new mode
+	NodeUuid      string                 `protobuf:"bytes,5,opt,name=node_uuid,json=nodeUuid,proto3" json:"node_uuid,omitempty"`              // reverse: this node's id, when the config lacks it
+	Confirm       bool                   `protobuf:"varint,6,opt,name=confirm,proto3" json:"confirm,omitempty"`                               // the hub got in under the new mode: keep it
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SwitchConnectModeRequest) Reset() {
+	*x = SwitchConnectModeRequest{}
+	mi := &file_node_agent_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SwitchConnectModeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SwitchConnectModeRequest) ProtoMessage() {}
+
+func (x *SwitchConnectModeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SwitchConnectModeRequest.ProtoReflect.Descriptor instead.
+func (*SwitchConnectModeRequest) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *SwitchConnectModeRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *SwitchConnectModeRequest) GetHubUrl() string {
+	if x != nil {
+		return x.HubUrl
+	}
+	return ""
+}
+
+func (x *SwitchConnectModeRequest) GetListenPort() int32 {
+	if x != nil {
+		return x.ListenPort
+	}
+	return 0
+}
+
+func (x *SwitchConnectModeRequest) GetGraceSeconds() int32 {
+	if x != nil {
+		return x.GraceSeconds
+	}
+	return 0
+}
+
+func (x *SwitchConnectModeRequest) GetNodeUuid() string {
+	if x != nil {
+		return x.NodeUuid
+	}
+	return ""
+}
+
+func (x *SwitchConnectModeRequest) GetConfirm() bool {
+	if x != nil {
+		return x.Confirm
+	}
+	return false
+}
+
 type UpdateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BinaryContent []byte                 `protobuf:"bytes,1,opt,name=binary_content,json=binaryContent,proto3" json:"binary_content,omitempty"` // New agent binary content (gzipped)
@@ -3533,7 +3677,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_node_agent_proto_msgTypes[46]
+	mi := &file_node_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3545,7 +3689,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[46]
+	mi := &file_node_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3558,7 +3702,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{46}
+	return file_node_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *UpdateRequest) GetBinaryContent() []byte {
@@ -3613,7 +3757,7 @@ type CertDenylist struct {
 
 func (x *CertDenylist) Reset() {
 	*x = CertDenylist{}
-	mi := &file_node_agent_proto_msgTypes[47]
+	mi := &file_node_agent_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3625,7 +3769,7 @@ func (x *CertDenylist) String() string {
 func (*CertDenylist) ProtoMessage() {}
 
 func (x *CertDenylist) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[47]
+	mi := &file_node_agent_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3638,7 +3782,7 @@ func (x *CertDenylist) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertDenylist.ProtoReflect.Descriptor instead.
 func (*CertDenylist) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{47}
+	return file_node_agent_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *CertDenylist) GetRevokedSerialNumbers() []string {
@@ -3667,7 +3811,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_node_agent_proto_msgTypes[48]
+	mi := &file_node_agent_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3679,7 +3823,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[48]
+	mi := &file_node_agent_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3692,7 +3836,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{48}
+	return file_node_agent_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *UpdateResponse) GetSuccess() bool {
@@ -3733,7 +3877,7 @@ type ChecksumResponse struct {
 
 func (x *ChecksumResponse) Reset() {
 	*x = ChecksumResponse{}
-	mi := &file_node_agent_proto_msgTypes[49]
+	mi := &file_node_agent_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3745,7 +3889,7 @@ func (x *ChecksumResponse) String() string {
 func (*ChecksumResponse) ProtoMessage() {}
 
 func (x *ChecksumResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[49]
+	mi := &file_node_agent_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3758,7 +3902,7 @@ func (x *ChecksumResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChecksumResponse.ProtoReflect.Descriptor instead.
 func (*ChecksumResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{49}
+	return file_node_agent_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ChecksumResponse) GetChecksum() string {
@@ -3788,7 +3932,7 @@ type UpdateXrayRequest struct {
 
 func (x *UpdateXrayRequest) Reset() {
 	*x = UpdateXrayRequest{}
-	mi := &file_node_agent_proto_msgTypes[50]
+	mi := &file_node_agent_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3800,7 +3944,7 @@ func (x *UpdateXrayRequest) String() string {
 func (*UpdateXrayRequest) ProtoMessage() {}
 
 func (x *UpdateXrayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[50]
+	mi := &file_node_agent_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3813,7 +3957,7 @@ func (x *UpdateXrayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateXrayRequest.ProtoReflect.Descriptor instead.
 func (*UpdateXrayRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{50}
+	return file_node_agent_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *UpdateXrayRequest) GetVersion() string {
@@ -3868,7 +4012,7 @@ type OutboundTestRequest struct {
 
 func (x *OutboundTestRequest) Reset() {
 	*x = OutboundTestRequest{}
-	mi := &file_node_agent_proto_msgTypes[51]
+	mi := &file_node_agent_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3880,7 +4024,7 @@ func (x *OutboundTestRequest) String() string {
 func (*OutboundTestRequest) ProtoMessage() {}
 
 func (x *OutboundTestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[51]
+	mi := &file_node_agent_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3893,7 +4037,7 @@ func (x *OutboundTestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboundTestRequest.ProtoReflect.Descriptor instead.
 func (*OutboundTestRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{51}
+	return file_node_agent_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *OutboundTestRequest) GetConfigLink() string {
@@ -3979,7 +4123,7 @@ type OutboundTestResponse struct {
 
 func (x *OutboundTestResponse) Reset() {
 	*x = OutboundTestResponse{}
-	mi := &file_node_agent_proto_msgTypes[52]
+	mi := &file_node_agent_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3991,7 +4135,7 @@ func (x *OutboundTestResponse) String() string {
 func (*OutboundTestResponse) ProtoMessage() {}
 
 func (x *OutboundTestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[52]
+	mi := &file_node_agent_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4004,7 +4148,7 @@ func (x *OutboundTestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboundTestResponse.ProtoReflect.Descriptor instead.
 func (*OutboundTestResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{52}
+	return file_node_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *OutboundTestResponse) GetSuccess() bool {
@@ -4100,7 +4244,7 @@ type UserEmailRequest struct {
 
 func (x *UserEmailRequest) Reset() {
 	*x = UserEmailRequest{}
-	mi := &file_node_agent_proto_msgTypes[53]
+	mi := &file_node_agent_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4112,7 +4256,7 @@ func (x *UserEmailRequest) String() string {
 func (*UserEmailRequest) ProtoMessage() {}
 
 func (x *UserEmailRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[53]
+	mi := &file_node_agent_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4125,7 +4269,7 @@ func (x *UserEmailRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserEmailRequest.ProtoReflect.Descriptor instead.
 func (*UserEmailRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{53}
+	return file_node_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *UserEmailRequest) GetEmail() string {
@@ -4144,7 +4288,7 @@ type OnlineIPsResponse struct {
 
 func (x *OnlineIPsResponse) Reset() {
 	*x = OnlineIPsResponse{}
-	mi := &file_node_agent_proto_msgTypes[54]
+	mi := &file_node_agent_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4156,7 +4300,7 @@ func (x *OnlineIPsResponse) String() string {
 func (*OnlineIPsResponse) ProtoMessage() {}
 
 func (x *OnlineIPsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[54]
+	mi := &file_node_agent_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4169,7 +4313,7 @@ func (x *OnlineIPsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnlineIPsResponse.ProtoReflect.Descriptor instead.
 func (*OnlineIPsResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{54}
+	return file_node_agent_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *OnlineIPsResponse) GetIps() map[string]int64 {
@@ -4193,7 +4337,7 @@ type AllOnlineIPsResponse struct {
 
 func (x *AllOnlineIPsResponse) Reset() {
 	*x = AllOnlineIPsResponse{}
-	mi := &file_node_agent_proto_msgTypes[55]
+	mi := &file_node_agent_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4205,7 +4349,7 @@ func (x *AllOnlineIPsResponse) String() string {
 func (*AllOnlineIPsResponse) ProtoMessage() {}
 
 func (x *AllOnlineIPsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[55]
+	mi := &file_node_agent_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4218,7 +4362,7 @@ func (x *AllOnlineIPsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllOnlineIPsResponse.ProtoReflect.Descriptor instead.
 func (*AllOnlineIPsResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{55}
+	return file_node_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *AllOnlineIPsResponse) GetUsers() map[string]*OnlineIPMap {
@@ -4244,7 +4388,7 @@ type OnlineIPMap struct {
 
 func (x *OnlineIPMap) Reset() {
 	*x = OnlineIPMap{}
-	mi := &file_node_agent_proto_msgTypes[56]
+	mi := &file_node_agent_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4256,7 +4400,7 @@ func (x *OnlineIPMap) String() string {
 func (*OnlineIPMap) ProtoMessage() {}
 
 func (x *OnlineIPMap) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[56]
+	mi := &file_node_agent_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4269,7 +4413,7 @@ func (x *OnlineIPMap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnlineIPMap.ProtoReflect.Descriptor instead.
 func (*OnlineIPMap) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{56}
+	return file_node_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *OnlineIPMap) GetIps() map[string]int64 {
@@ -4301,7 +4445,7 @@ type TrafficRecord struct {
 
 func (x *TrafficRecord) Reset() {
 	*x = TrafficRecord{}
-	mi := &file_node_agent_proto_msgTypes[57]
+	mi := &file_node_agent_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4313,7 +4457,7 @@ func (x *TrafficRecord) String() string {
 func (*TrafficRecord) ProtoMessage() {}
 
 func (x *TrafficRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[57]
+	mi := &file_node_agent_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4326,7 +4470,7 @@ func (x *TrafficRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrafficRecord.ProtoReflect.Descriptor instead.
 func (*TrafficRecord) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{57}
+	return file_node_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *TrafficRecord) GetTimestamp() int64 {
@@ -4412,7 +4556,7 @@ type CoreUsageRecord struct {
 
 func (x *CoreUsageRecord) Reset() {
 	*x = CoreUsageRecord{}
-	mi := &file_node_agent_proto_msgTypes[58]
+	mi := &file_node_agent_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4424,7 +4568,7 @@ func (x *CoreUsageRecord) String() string {
 func (*CoreUsageRecord) ProtoMessage() {}
 
 func (x *CoreUsageRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[58]
+	mi := &file_node_agent_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4437,7 +4581,7 @@ func (x *CoreUsageRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoreUsageRecord.ProtoReflect.Descriptor instead.
 func (*CoreUsageRecord) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{58}
+	return file_node_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *CoreUsageRecord) GetProtocol() string {
@@ -4479,7 +4623,7 @@ type BufferedTrafficStats struct {
 
 func (x *BufferedTrafficStats) Reset() {
 	*x = BufferedTrafficStats{}
-	mi := &file_node_agent_proto_msgTypes[59]
+	mi := &file_node_agent_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4491,7 +4635,7 @@ func (x *BufferedTrafficStats) String() string {
 func (*BufferedTrafficStats) ProtoMessage() {}
 
 func (x *BufferedTrafficStats) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[59]
+	mi := &file_node_agent_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4504,7 +4648,7 @@ func (x *BufferedTrafficStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BufferedTrafficStats.ProtoReflect.Descriptor instead.
 func (*BufferedTrafficStats) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{59}
+	return file_node_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *BufferedTrafficStats) GetRecords() []*TrafficRecord {
@@ -4537,7 +4681,7 @@ type AckTrafficRequest struct {
 
 func (x *AckTrafficRequest) Reset() {
 	*x = AckTrafficRequest{}
-	mi := &file_node_agent_proto_msgTypes[60]
+	mi := &file_node_agent_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4549,7 +4693,7 @@ func (x *AckTrafficRequest) String() string {
 func (*AckTrafficRequest) ProtoMessage() {}
 
 func (x *AckTrafficRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[60]
+	mi := &file_node_agent_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4562,7 +4706,7 @@ func (x *AckTrafficRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckTrafficRequest.ProtoReflect.Descriptor instead.
 func (*AckTrafficRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{60}
+	return file_node_agent_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *AckTrafficRequest) GetAckedThroughTimestamp() int64 {
@@ -4584,7 +4728,7 @@ type StatsBundleRequest struct {
 
 func (x *StatsBundleRequest) Reset() {
 	*x = StatsBundleRequest{}
-	mi := &file_node_agent_proto_msgTypes[61]
+	mi := &file_node_agent_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4596,7 +4740,7 @@ func (x *StatsBundleRequest) String() string {
 func (*StatsBundleRequest) ProtoMessage() {}
 
 func (x *StatsBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[61]
+	mi := &file_node_agent_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4609,7 +4753,7 @@ func (x *StatsBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsBundleRequest.ProtoReflect.Descriptor instead.
 func (*StatsBundleRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{61}
+	return file_node_agent_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *StatsBundleRequest) GetIncludeOnlineIps() bool {
@@ -4635,7 +4779,7 @@ type StatsBundle struct {
 
 func (x *StatsBundle) Reset() {
 	*x = StatsBundle{}
-	mi := &file_node_agent_proto_msgTypes[62]
+	mi := &file_node_agent_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4647,7 +4791,7 @@ func (x *StatsBundle) String() string {
 func (*StatsBundle) ProtoMessage() {}
 
 func (x *StatsBundle) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[62]
+	mi := &file_node_agent_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4660,7 +4804,7 @@ func (x *StatsBundle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsBundle.ProtoReflect.Descriptor instead.
 func (*StatsBundle) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{62}
+	return file_node_agent_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *StatsBundle) GetSystem() *SystemStats {
@@ -4702,7 +4846,7 @@ type VLESSKeyPair struct {
 
 func (x *VLESSKeyPair) Reset() {
 	*x = VLESSKeyPair{}
-	mi := &file_node_agent_proto_msgTypes[63]
+	mi := &file_node_agent_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4714,7 +4858,7 @@ func (x *VLESSKeyPair) String() string {
 func (*VLESSKeyPair) ProtoMessage() {}
 
 func (x *VLESSKeyPair) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[63]
+	mi := &file_node_agent_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4727,7 +4871,7 @@ func (x *VLESSKeyPair) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VLESSKeyPair.ProtoReflect.Descriptor instead.
 func (*VLESSKeyPair) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{63}
+	return file_node_agent_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *VLESSKeyPair) GetLabel() string {
@@ -4760,7 +4904,7 @@ type VLESSKeysResponse struct {
 
 func (x *VLESSKeysResponse) Reset() {
 	*x = VLESSKeysResponse{}
-	mi := &file_node_agent_proto_msgTypes[64]
+	mi := &file_node_agent_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4772,7 +4916,7 @@ func (x *VLESSKeysResponse) String() string {
 func (*VLESSKeysResponse) ProtoMessage() {}
 
 func (x *VLESSKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[64]
+	mi := &file_node_agent_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4785,7 +4929,7 @@ func (x *VLESSKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VLESSKeysResponse.ProtoReflect.Descriptor instead.
 func (*VLESSKeysResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{64}
+	return file_node_agent_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *VLESSKeysResponse) GetKeys() []*VLESSKeyPair {
@@ -4805,7 +4949,7 @@ type BandwidthRequest struct {
 
 func (x *BandwidthRequest) Reset() {
 	*x = BandwidthRequest{}
-	mi := &file_node_agent_proto_msgTypes[65]
+	mi := &file_node_agent_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4817,7 +4961,7 @@ func (x *BandwidthRequest) String() string {
 func (*BandwidthRequest) ProtoMessage() {}
 
 func (x *BandwidthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[65]
+	mi := &file_node_agent_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4830,7 +4974,7 @@ func (x *BandwidthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BandwidthRequest.ProtoReflect.Descriptor instead.
 func (*BandwidthRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{65}
+	return file_node_agent_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *BandwidthRequest) GetInterfaceName() string {
@@ -4864,7 +5008,7 @@ type AccessLogEntry struct {
 
 func (x *AccessLogEntry) Reset() {
 	*x = AccessLogEntry{}
-	mi := &file_node_agent_proto_msgTypes[66]
+	mi := &file_node_agent_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4876,7 +5020,7 @@ func (x *AccessLogEntry) String() string {
 func (*AccessLogEntry) ProtoMessage() {}
 
 func (x *AccessLogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[66]
+	mi := &file_node_agent_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4889,7 +5033,7 @@ func (x *AccessLogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessLogEntry.ProtoReflect.Descriptor instead.
 func (*AccessLogEntry) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{66}
+	return file_node_agent_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *AccessLogEntry) GetTimestamp() int64 {
@@ -4965,7 +5109,7 @@ type AccessLogRequest struct {
 
 func (x *AccessLogRequest) Reset() {
 	*x = AccessLogRequest{}
-	mi := &file_node_agent_proto_msgTypes[67]
+	mi := &file_node_agent_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4977,7 +5121,7 @@ func (x *AccessLogRequest) String() string {
 func (*AccessLogRequest) ProtoMessage() {}
 
 func (x *AccessLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[67]
+	mi := &file_node_agent_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4990,7 +5134,7 @@ func (x *AccessLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessLogRequest.ProtoReflect.Descriptor instead.
 func (*AccessLogRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{67}
+	return file_node_agent_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *AccessLogRequest) GetEmail() string {
@@ -5016,7 +5160,7 @@ type AccessLogResponse struct {
 
 func (x *AccessLogResponse) Reset() {
 	*x = AccessLogResponse{}
-	mi := &file_node_agent_proto_msgTypes[68]
+	mi := &file_node_agent_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5028,7 +5172,7 @@ func (x *AccessLogResponse) String() string {
 func (*AccessLogResponse) ProtoMessage() {}
 
 func (x *AccessLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[68]
+	mi := &file_node_agent_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5041,7 +5185,7 @@ func (x *AccessLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessLogResponse.ProtoReflect.Descriptor instead.
 func (*AccessLogResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{68}
+	return file_node_agent_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *AccessLogResponse) GetEntries() []*AccessLogEntry {
@@ -5068,7 +5212,7 @@ type AccessLogHourlySummary struct {
 
 func (x *AccessLogHourlySummary) Reset() {
 	*x = AccessLogHourlySummary{}
-	mi := &file_node_agent_proto_msgTypes[69]
+	mi := &file_node_agent_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5080,7 +5224,7 @@ func (x *AccessLogHourlySummary) String() string {
 func (*AccessLogHourlySummary) ProtoMessage() {}
 
 func (x *AccessLogHourlySummary) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[69]
+	mi := &file_node_agent_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5093,7 +5237,7 @@ func (x *AccessLogHourlySummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccessLogHourlySummary.ProtoReflect.Descriptor instead.
 func (*AccessLogHourlySummary) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{69}
+	return file_node_agent_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *AccessLogHourlySummary) GetEmail() string {
@@ -5168,7 +5312,7 @@ type BufferedAccessLogSummary struct {
 
 func (x *BufferedAccessLogSummary) Reset() {
 	*x = BufferedAccessLogSummary{}
-	mi := &file_node_agent_proto_msgTypes[70]
+	mi := &file_node_agent_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5180,7 +5324,7 @@ func (x *BufferedAccessLogSummary) String() string {
 func (*BufferedAccessLogSummary) ProtoMessage() {}
 
 func (x *BufferedAccessLogSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[70]
+	mi := &file_node_agent_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5193,7 +5337,7 @@ func (x *BufferedAccessLogSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BufferedAccessLogSummary.ProtoReflect.Descriptor instead.
 func (*BufferedAccessLogSummary) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{70}
+	return file_node_agent_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *BufferedAccessLogSummary) GetEntries() []*AccessLogHourlySummary {
@@ -5224,7 +5368,7 @@ type AckAccessLogSummaryRequest struct {
 
 func (x *AckAccessLogSummaryRequest) Reset() {
 	*x = AckAccessLogSummaryRequest{}
-	mi := &file_node_agent_proto_msgTypes[71]
+	mi := &file_node_agent_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5236,7 +5380,7 @@ func (x *AckAccessLogSummaryRequest) String() string {
 func (*AckAccessLogSummaryRequest) ProtoMessage() {}
 
 func (x *AckAccessLogSummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[71]
+	mi := &file_node_agent_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5249,7 +5393,7 @@ func (x *AckAccessLogSummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckAccessLogSummaryRequest.ProtoReflect.Descriptor instead.
 func (*AckAccessLogSummaryRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{71}
+	return file_node_agent_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *AckAccessLogSummaryRequest) GetUpToTimestamp() int64 {
@@ -5296,7 +5440,7 @@ type StarlinkRequest struct {
 
 func (x *StarlinkRequest) Reset() {
 	*x = StarlinkRequest{}
-	mi := &file_node_agent_proto_msgTypes[72]
+	mi := &file_node_agent_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5308,7 +5452,7 @@ func (x *StarlinkRequest) String() string {
 func (*StarlinkRequest) ProtoMessage() {}
 
 func (x *StarlinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[72]
+	mi := &file_node_agent_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5321,7 +5465,7 @@ func (x *StarlinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StarlinkRequest.ProtoReflect.Descriptor instead.
 func (*StarlinkRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{72}
+	return file_node_agent_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *StarlinkRequest) GetDishAddress() string {
@@ -5406,7 +5550,7 @@ type StarlinkStatusResponse struct {
 
 func (x *StarlinkStatusResponse) Reset() {
 	*x = StarlinkStatusResponse{}
-	mi := &file_node_agent_proto_msgTypes[73]
+	mi := &file_node_agent_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5418,7 +5562,7 @@ func (x *StarlinkStatusResponse) String() string {
 func (*StarlinkStatusResponse) ProtoMessage() {}
 
 func (x *StarlinkStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[73]
+	mi := &file_node_agent_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5431,7 +5575,7 @@ func (x *StarlinkStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StarlinkStatusResponse.ProtoReflect.Descriptor instead.
 func (*StarlinkStatusResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{73}
+	return file_node_agent_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *StarlinkStatusResponse) GetAvailable() bool {
@@ -5818,7 +5962,7 @@ type StarlinkObstructionMapResponse struct {
 
 func (x *StarlinkObstructionMapResponse) Reset() {
 	*x = StarlinkObstructionMapResponse{}
-	mi := &file_node_agent_proto_msgTypes[74]
+	mi := &file_node_agent_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5830,7 +5974,7 @@ func (x *StarlinkObstructionMapResponse) String() string {
 func (*StarlinkObstructionMapResponse) ProtoMessage() {}
 
 func (x *StarlinkObstructionMapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[74]
+	mi := &file_node_agent_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5843,7 +5987,7 @@ func (x *StarlinkObstructionMapResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StarlinkObstructionMapResponse.ProtoReflect.Descriptor instead.
 func (*StarlinkObstructionMapResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{74}
+	return file_node_agent_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *StarlinkObstructionMapResponse) GetNumRows() uint32 {
@@ -5891,7 +6035,7 @@ type StarlinkHandleRequest struct {
 
 func (x *StarlinkHandleRequest) Reset() {
 	*x = StarlinkHandleRequest{}
-	mi := &file_node_agent_proto_msgTypes[75]
+	mi := &file_node_agent_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5903,7 +6047,7 @@ func (x *StarlinkHandleRequest) String() string {
 func (*StarlinkHandleRequest) ProtoMessage() {}
 
 func (x *StarlinkHandleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[75]
+	mi := &file_node_agent_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5916,7 +6060,7 @@ func (x *StarlinkHandleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StarlinkHandleRequest.ProtoReflect.Descriptor instead.
 func (*StarlinkHandleRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{75}
+	return file_node_agent_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *StarlinkHandleRequest) GetDishAddress() string {
@@ -5944,7 +6088,7 @@ type StarlinkHandleResponse struct {
 
 func (x *StarlinkHandleResponse) Reset() {
 	*x = StarlinkHandleResponse{}
-	mi := &file_node_agent_proto_msgTypes[76]
+	mi := &file_node_agent_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5956,7 +6100,7 @@ func (x *StarlinkHandleResponse) String() string {
 func (*StarlinkHandleResponse) ProtoMessage() {}
 
 func (x *StarlinkHandleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[76]
+	mi := &file_node_agent_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5969,7 +6113,7 @@ func (x *StarlinkHandleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StarlinkHandleResponse.ProtoReflect.Descriptor instead.
 func (*StarlinkHandleResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{76}
+	return file_node_agent_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *StarlinkHandleResponse) GetResponse() []byte {
@@ -6003,7 +6147,7 @@ type InstallCertificateRequest struct {
 
 func (x *InstallCertificateRequest) Reset() {
 	*x = InstallCertificateRequest{}
-	mi := &file_node_agent_proto_msgTypes[77]
+	mi := &file_node_agent_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6015,7 +6159,7 @@ func (x *InstallCertificateRequest) String() string {
 func (*InstallCertificateRequest) ProtoMessage() {}
 
 func (x *InstallCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[77]
+	mi := &file_node_agent_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6028,7 +6172,7 @@ func (x *InstallCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallCertificateRequest.ProtoReflect.Descriptor instead.
 func (*InstallCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{77}
+	return file_node_agent_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *InstallCertificateRequest) GetCertPem() []byte {
@@ -6055,7 +6199,7 @@ type InstallCertificateResponse struct {
 
 func (x *InstallCertificateResponse) Reset() {
 	*x = InstallCertificateResponse{}
-	mi := &file_node_agent_proto_msgTypes[78]
+	mi := &file_node_agent_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6067,7 +6211,7 @@ func (x *InstallCertificateResponse) String() string {
 func (*InstallCertificateResponse) ProtoMessage() {}
 
 func (x *InstallCertificateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[78]
+	mi := &file_node_agent_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6080,7 +6224,7 @@ func (x *InstallCertificateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallCertificateResponse.ProtoReflect.Descriptor instead.
 func (*InstallCertificateResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{78}
+	return file_node_agent_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *InstallCertificateResponse) GetSerial() string {
@@ -6106,7 +6250,7 @@ type InspectCertFileRequest struct {
 
 func (x *InspectCertFileRequest) Reset() {
 	*x = InspectCertFileRequest{}
-	mi := &file_node_agent_proto_msgTypes[79]
+	mi := &file_node_agent_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6118,7 +6262,7 @@ func (x *InspectCertFileRequest) String() string {
 func (*InspectCertFileRequest) ProtoMessage() {}
 
 func (x *InspectCertFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[79]
+	mi := &file_node_agent_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6131,7 +6275,7 @@ func (x *InspectCertFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectCertFileRequest.ProtoReflect.Descriptor instead.
 func (*InspectCertFileRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{79}
+	return file_node_agent_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *InspectCertFileRequest) GetPath() string {
@@ -6155,7 +6299,7 @@ type InspectCertFileResponse struct {
 
 func (x *InspectCertFileResponse) Reset() {
 	*x = InspectCertFileResponse{}
-	mi := &file_node_agent_proto_msgTypes[80]
+	mi := &file_node_agent_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6167,7 +6311,7 @@ func (x *InspectCertFileResponse) String() string {
 func (*InspectCertFileResponse) ProtoMessage() {}
 
 func (x *InspectCertFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[80]
+	mi := &file_node_agent_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6180,7 +6324,7 @@ func (x *InspectCertFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectCertFileResponse.ProtoReflect.Descriptor instead.
 func (*InspectCertFileResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{80}
+	return file_node_agent_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *InspectCertFileResponse) GetSubject() string {
@@ -6235,7 +6379,7 @@ type ExecuteCommandRequest struct {
 
 func (x *ExecuteCommandRequest) Reset() {
 	*x = ExecuteCommandRequest{}
-	mi := &file_node_agent_proto_msgTypes[81]
+	mi := &file_node_agent_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6247,7 +6391,7 @@ func (x *ExecuteCommandRequest) String() string {
 func (*ExecuteCommandRequest) ProtoMessage() {}
 
 func (x *ExecuteCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[81]
+	mi := &file_node_agent_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6260,7 +6404,7 @@ func (x *ExecuteCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteCommandRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteCommandRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{81}
+	return file_node_agent_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ExecuteCommandRequest) GetCommand() string {
@@ -6289,7 +6433,7 @@ type ExecuteCommandResponse struct {
 
 func (x *ExecuteCommandResponse) Reset() {
 	*x = ExecuteCommandResponse{}
-	mi := &file_node_agent_proto_msgTypes[82]
+	mi := &file_node_agent_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6301,7 +6445,7 @@ func (x *ExecuteCommandResponse) String() string {
 func (*ExecuteCommandResponse) ProtoMessage() {}
 
 func (x *ExecuteCommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[82]
+	mi := &file_node_agent_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6314,7 +6458,7 @@ func (x *ExecuteCommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteCommandResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteCommandResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{82}
+	return file_node_agent_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ExecuteCommandResponse) GetSuccess() bool {
@@ -6356,7 +6500,7 @@ type NukeRequest struct {
 
 func (x *NukeRequest) Reset() {
 	*x = NukeRequest{}
-	mi := &file_node_agent_proto_msgTypes[83]
+	mi := &file_node_agent_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6368,7 +6512,7 @@ func (x *NukeRequest) String() string {
 func (*NukeRequest) ProtoMessage() {}
 
 func (x *NukeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[83]
+	mi := &file_node_agent_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6381,7 +6525,7 @@ func (x *NukeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NukeRequest.ProtoReflect.Descriptor instead.
 func (*NukeRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{83}
+	return file_node_agent_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *NukeRequest) GetMode() NukeMode {
@@ -6420,7 +6564,7 @@ type NukePhaseResult struct {
 
 func (x *NukePhaseResult) Reset() {
 	*x = NukePhaseResult{}
-	mi := &file_node_agent_proto_msgTypes[84]
+	mi := &file_node_agent_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6432,7 +6576,7 @@ func (x *NukePhaseResult) String() string {
 func (*NukePhaseResult) ProtoMessage() {}
 
 func (x *NukePhaseResult) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[84]
+	mi := &file_node_agent_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6445,7 +6589,7 @@ func (x *NukePhaseResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NukePhaseResult.ProtoReflect.Descriptor instead.
 func (*NukePhaseResult) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{84}
+	return file_node_agent_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *NukePhaseResult) GetPhase() string {
@@ -6510,7 +6654,7 @@ type NukeReport struct {
 
 func (x *NukeReport) Reset() {
 	*x = NukeReport{}
-	mi := &file_node_agent_proto_msgTypes[85]
+	mi := &file_node_agent_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6522,7 +6666,7 @@ func (x *NukeReport) String() string {
 func (*NukeReport) ProtoMessage() {}
 
 func (x *NukeReport) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[85]
+	mi := &file_node_agent_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6535,7 +6679,7 @@ func (x *NukeReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NukeReport.ProtoReflect.Descriptor instead.
 func (*NukeReport) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{85}
+	return file_node_agent_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *NukeReport) GetMode() string {
@@ -6586,7 +6730,7 @@ type NukeProgress struct {
 
 func (x *NukeProgress) Reset() {
 	*x = NukeProgress{}
-	mi := &file_node_agent_proto_msgTypes[86]
+	mi := &file_node_agent_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6598,7 +6742,7 @@ func (x *NukeProgress) String() string {
 func (*NukeProgress) ProtoMessage() {}
 
 func (x *NukeProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[86]
+	mi := &file_node_agent_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6611,7 +6755,7 @@ func (x *NukeProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NukeProgress.ProtoReflect.Descriptor instead.
 func (*NukeProgress) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{86}
+	return file_node_agent_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *NukeProgress) GetEvent() isNukeProgress_Event {
@@ -6668,7 +6812,7 @@ type PoolSourceRequest struct {
 
 func (x *PoolSourceRequest) Reset() {
 	*x = PoolSourceRequest{}
-	mi := &file_node_agent_proto_msgTypes[87]
+	mi := &file_node_agent_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6680,7 +6824,7 @@ func (x *PoolSourceRequest) String() string {
 func (*PoolSourceRequest) ProtoMessage() {}
 
 func (x *PoolSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[87]
+	mi := &file_node_agent_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6693,7 +6837,7 @@ func (x *PoolSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PoolSourceRequest.ProtoReflect.Descriptor instead.
 func (*PoolSourceRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{87}
+	return file_node_agent_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *PoolSourceRequest) GetUrl() string {
@@ -6743,7 +6887,7 @@ type PoolSourceResponse struct {
 
 func (x *PoolSourceResponse) Reset() {
 	*x = PoolSourceResponse{}
-	mi := &file_node_agent_proto_msgTypes[88]
+	mi := &file_node_agent_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6755,7 +6899,7 @@ func (x *PoolSourceResponse) String() string {
 func (*PoolSourceResponse) ProtoMessage() {}
 
 func (x *PoolSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[88]
+	mi := &file_node_agent_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6768,7 +6912,7 @@ func (x *PoolSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PoolSourceResponse.ProtoReflect.Descriptor instead.
 func (*PoolSourceResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{88}
+	return file_node_agent_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *PoolSourceResponse) GetLinks() []string {
@@ -6811,7 +6955,7 @@ type PoolCandidateRequest struct {
 
 func (x *PoolCandidateRequest) Reset() {
 	*x = PoolCandidateRequest{}
-	mi := &file_node_agent_proto_msgTypes[89]
+	mi := &file_node_agent_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6823,7 +6967,7 @@ func (x *PoolCandidateRequest) String() string {
 func (*PoolCandidateRequest) ProtoMessage() {}
 
 func (x *PoolCandidateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[89]
+	mi := &file_node_agent_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6836,7 +6980,7 @@ func (x *PoolCandidateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PoolCandidateRequest.ProtoReflect.Descriptor instead.
 func (*PoolCandidateRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{89}
+	return file_node_agent_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *PoolCandidateRequest) GetLink() string {
@@ -6880,7 +7024,7 @@ type PoolCandidateResponse struct {
 
 func (x *PoolCandidateResponse) Reset() {
 	*x = PoolCandidateResponse{}
-	mi := &file_node_agent_proto_msgTypes[90]
+	mi := &file_node_agent_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6892,7 +7036,7 @@ func (x *PoolCandidateResponse) String() string {
 func (*PoolCandidateResponse) ProtoMessage() {}
 
 func (x *PoolCandidateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[90]
+	mi := &file_node_agent_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6905,7 +7049,7 @@ func (x *PoolCandidateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PoolCandidateResponse.ProtoReflect.Descriptor instead.
 func (*PoolCandidateResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{90}
+	return file_node_agent_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *PoolCandidateResponse) GetHealthy() bool {
@@ -6956,7 +7100,7 @@ type RealityDestProbeRequest struct {
 
 func (x *RealityDestProbeRequest) Reset() {
 	*x = RealityDestProbeRequest{}
-	mi := &file_node_agent_proto_msgTypes[91]
+	mi := &file_node_agent_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6968,7 +7112,7 @@ func (x *RealityDestProbeRequest) String() string {
 func (*RealityDestProbeRequest) ProtoMessage() {}
 
 func (x *RealityDestProbeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[91]
+	mi := &file_node_agent_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6981,7 +7125,7 @@ func (x *RealityDestProbeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RealityDestProbeRequest.ProtoReflect.Descriptor instead.
 func (*RealityDestProbeRequest) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{91}
+	return file_node_agent_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *RealityDestProbeRequest) GetDest() string {
@@ -7043,7 +7187,7 @@ type RealityDestCheck struct {
 
 func (x *RealityDestCheck) Reset() {
 	*x = RealityDestCheck{}
-	mi := &file_node_agent_proto_msgTypes[92]
+	mi := &file_node_agent_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7055,7 +7199,7 @@ func (x *RealityDestCheck) String() string {
 func (*RealityDestCheck) ProtoMessage() {}
 
 func (x *RealityDestCheck) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[92]
+	mi := &file_node_agent_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7068,7 +7212,7 @@ func (x *RealityDestCheck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RealityDestCheck.ProtoReflect.Descriptor instead.
 func (*RealityDestCheck) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{92}
+	return file_node_agent_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *RealityDestCheck) GetServerName() string {
@@ -7196,7 +7340,7 @@ type RealityDestProbeResponse struct {
 
 func (x *RealityDestProbeResponse) Reset() {
 	*x = RealityDestProbeResponse{}
-	mi := &file_node_agent_proto_msgTypes[93]
+	mi := &file_node_agent_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7208,7 +7352,7 @@ func (x *RealityDestProbeResponse) String() string {
 func (*RealityDestProbeResponse) ProtoMessage() {}
 
 func (x *RealityDestProbeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_agent_proto_msgTypes[93]
+	mi := &file_node_agent_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7221,7 +7365,7 @@ func (x *RealityDestProbeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RealityDestProbeResponse.ProtoReflect.Descriptor instead.
 func (*RealityDestProbeResponse) Descriptor() ([]byte, []int) {
-	return file_node_agent_proto_rawDescGZIP(), []int{93}
+	return file_node_agent_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *RealityDestProbeResponse) GetOk() bool {
@@ -7550,7 +7694,19 @@ const file_node_agent_proto_rawDesc = "" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12\x15\n" +
 	"\x06rtt_ms\x18\x03 \x01(\x03R\x05rttMs\x12-\n" +
 	"\x06status\x18\x04 \x01(\v2\x15.nodeagent.NodeStatusR\x06status\x12\x1b\n" +
-	"\tnode_uuid\x18\x05 \x01(\tR\bnodeUuid\"\xc5\x01\n" +
+	"\tnode_uuid\x18\x05 \x01(\tR\bnodeUuid\"Y\n" +
+	"\x15MoveListenPortRequest\x12\x12\n" +
+	"\x04port\x18\x01 \x01(\x05R\x04port\x12\x16\n" +
+	"\x06finish\x18\x02 \x01(\bR\x06finish\x12\x14\n" +
+	"\x05abort\x18\x03 \x01(\bR\x05abort\"\xc4\x01\n" +
+	"\x18SwitchConnectModeRequest\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x17\n" +
+	"\ahub_url\x18\x02 \x01(\tR\x06hubUrl\x12\x1f\n" +
+	"\vlisten_port\x18\x03 \x01(\x05R\n" +
+	"listenPort\x12#\n" +
+	"\rgrace_seconds\x18\x04 \x01(\x05R\fgraceSeconds\x12\x1b\n" +
+	"\tnode_uuid\x18\x05 \x01(\tR\bnodeUuid\x12\x18\n" +
+	"\aconfirm\x18\x06 \x01(\bR\aconfirm\"\xc5\x01\n" +
 	"\rUpdateRequest\x12%\n" +
 	"\x0ebinary_content\x18\x01 \x01(\fR\rbinaryContent\x12\x1a\n" +
 	"\bchecksum\x18\x02 \x01(\tR\bchecksum\x12\x18\n" +
@@ -7930,7 +8086,7 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x17HEALTH_STATUS_UNHEALTHY\x10\x03*2\n" +
 	"\bNukeMode\x12\x12\n" +
 	"\x0eNUKE_MODE_WIPE\x10\x00\x12\x12\n" +
-	"\x0eNUKE_MODE_NUKE\x10\x012\xd8 \n" +
+	"\x0eNUKE_MODE_NUKE\x10\x012\xfe!\n" +
 	"\tNodeAgent\x124\n" +
 	"\tGetStatus\x12\x10.nodeagent.Empty\x1a\x15.nodeagent.NodeStatus\x129\n" +
 	"\tStartXray\x12\x10.nodeagent.Empty\x1a\x1a.nodeagent.CommandResponse\x12>\n" +
@@ -7956,7 +8112,9 @@ const file_node_agent_proto_rawDesc = "" +
 	"\tHeartbeat\x12\x18.nodeagent.HeartbeatPing\x1a\x18.nodeagent.HeartbeatPong(\x010\x01\x12A\n" +
 	"\n" +
 	"SelfUpdate\x12\x18.nodeagent.UpdateRequest\x1a\x19.nodeagent.UpdateResponse\x12@\n" +
-	"\x0fGetSelfChecksum\x12\x10.nodeagent.Empty\x1a\x1b.nodeagent.ChecksumResponse\x12L\n" +
+	"\x0fGetSelfChecksum\x12\x10.nodeagent.Empty\x1a\x1b.nodeagent.ChecksumResponse\x12N\n" +
+	"\x0eMoveListenPort\x12 .nodeagent.MoveListenPortRequest\x1a\x1a.nodeagent.CommandResponse\x12T\n" +
+	"\x11SwitchConnectMode\x12#.nodeagent.SwitchConnectModeRequest\x1a\x1a.nodeagent.CommandResponse\x12L\n" +
 	"\x10UpdateXrayBinary\x12\x1c.nodeagent.UpdateXrayRequest\x1a\x1a.nodeagent.CommandResponse\x129\n" +
 	"\tUninstall\x12\x10.nodeagent.Empty\x1a\x1a.nodeagent.CommandResponse\x125\n" +
 	"\x04Wipe\x12\x16.nodeagent.NukeRequest\x1a\x15.nodeagent.NukeReport\x129\n" +
@@ -8009,7 +8167,7 @@ func file_node_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 114)
+var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 116)
 var file_node_agent_proto_goTypes = []any{
 	(LogType)(0),                           // 0: nodeagent.LogType
 	(HealthStatus)(0),                      // 1: nodeagent.HealthStatus
@@ -8061,74 +8219,76 @@ var file_node_agent_proto_goTypes = []any{
 	(*VersionInfo)(nil),                    // 47: nodeagent.VersionInfo
 	(*HeartbeatPing)(nil),                  // 48: nodeagent.HeartbeatPing
 	(*HeartbeatPong)(nil),                  // 49: nodeagent.HeartbeatPong
-	(*UpdateRequest)(nil),                  // 50: nodeagent.UpdateRequest
-	(*CertDenylist)(nil),                   // 51: nodeagent.CertDenylist
-	(*UpdateResponse)(nil),                 // 52: nodeagent.UpdateResponse
-	(*ChecksumResponse)(nil),               // 53: nodeagent.ChecksumResponse
-	(*UpdateXrayRequest)(nil),              // 54: nodeagent.UpdateXrayRequest
-	(*OutboundTestRequest)(nil),            // 55: nodeagent.OutboundTestRequest
-	(*OutboundTestResponse)(nil),           // 56: nodeagent.OutboundTestResponse
-	(*UserEmailRequest)(nil),               // 57: nodeagent.UserEmailRequest
-	(*OnlineIPsResponse)(nil),              // 58: nodeagent.OnlineIPsResponse
-	(*AllOnlineIPsResponse)(nil),           // 59: nodeagent.AllOnlineIPsResponse
-	(*OnlineIPMap)(nil),                    // 60: nodeagent.OnlineIPMap
-	(*TrafficRecord)(nil),                  // 61: nodeagent.TrafficRecord
-	(*CoreUsageRecord)(nil),                // 62: nodeagent.CoreUsageRecord
-	(*BufferedTrafficStats)(nil),           // 63: nodeagent.BufferedTrafficStats
-	(*AckTrafficRequest)(nil),              // 64: nodeagent.AckTrafficRequest
-	(*StatsBundleRequest)(nil),             // 65: nodeagent.StatsBundleRequest
-	(*StatsBundle)(nil),                    // 66: nodeagent.StatsBundle
-	(*VLESSKeyPair)(nil),                   // 67: nodeagent.VLESSKeyPair
-	(*VLESSKeysResponse)(nil),              // 68: nodeagent.VLESSKeysResponse
-	(*BandwidthRequest)(nil),               // 69: nodeagent.BandwidthRequest
-	(*AccessLogEntry)(nil),                 // 70: nodeagent.AccessLogEntry
-	(*AccessLogRequest)(nil),               // 71: nodeagent.AccessLogRequest
-	(*AccessLogResponse)(nil),              // 72: nodeagent.AccessLogResponse
-	(*AccessLogHourlySummary)(nil),         // 73: nodeagent.AccessLogHourlySummary
-	(*BufferedAccessLogSummary)(nil),       // 74: nodeagent.BufferedAccessLogSummary
-	(*AckAccessLogSummaryRequest)(nil),     // 75: nodeagent.AckAccessLogSummaryRequest
-	(*StarlinkRequest)(nil),                // 76: nodeagent.StarlinkRequest
-	(*StarlinkStatusResponse)(nil),         // 77: nodeagent.StarlinkStatusResponse
-	(*StarlinkObstructionMapResponse)(nil), // 78: nodeagent.StarlinkObstructionMapResponse
-	(*StarlinkHandleRequest)(nil),          // 79: nodeagent.StarlinkHandleRequest
-	(*StarlinkHandleResponse)(nil),         // 80: nodeagent.StarlinkHandleResponse
-	(*InstallCertificateRequest)(nil),      // 81: nodeagent.InstallCertificateRequest
-	(*InstallCertificateResponse)(nil),     // 82: nodeagent.InstallCertificateResponse
-	(*InspectCertFileRequest)(nil),         // 83: nodeagent.InspectCertFileRequest
-	(*InspectCertFileResponse)(nil),        // 84: nodeagent.InspectCertFileResponse
-	(*ExecuteCommandRequest)(nil),          // 85: nodeagent.ExecuteCommandRequest
-	(*ExecuteCommandResponse)(nil),         // 86: nodeagent.ExecuteCommandResponse
-	(*NukeRequest)(nil),                    // 87: nodeagent.NukeRequest
-	(*NukePhaseResult)(nil),                // 88: nodeagent.NukePhaseResult
-	(*NukeReport)(nil),                     // 89: nodeagent.NukeReport
-	(*NukeProgress)(nil),                   // 90: nodeagent.NukeProgress
-	(*PoolSourceRequest)(nil),              // 91: nodeagent.PoolSourceRequest
-	(*PoolSourceResponse)(nil),             // 92: nodeagent.PoolSourceResponse
-	(*PoolCandidateRequest)(nil),           // 93: nodeagent.PoolCandidateRequest
-	(*PoolCandidateResponse)(nil),          // 94: nodeagent.PoolCandidateResponse
-	(*RealityDestProbeRequest)(nil),        // 95: nodeagent.RealityDestProbeRequest
-	(*RealityDestCheck)(nil),               // 96: nodeagent.RealityDestCheck
-	(*RealityDestProbeResponse)(nil),       // 97: nodeagent.RealityDestProbeResponse
-	nil,                                    // 98: nodeagent.XrayStats.UserUplinkEntry
-	nil,                                    // 99: nodeagent.XrayStats.UserDownlinkEntry
-	nil,                                    // 100: nodeagent.XrayStats.InboundUplinkEntry
-	nil,                                    // 101: nodeagent.XrayStats.InboundDownlinkEntry
-	nil,                                    // 102: nodeagent.XrayStats.OutboundUplinkEntry
-	nil,                                    // 103: nodeagent.XrayStats.OutboundDownlinkEntry
-	nil,                                    // 104: nodeagent.HealthResponse.ComponentsEntry
-	nil,                                    // 105: nodeagent.OnlineIPsResponse.IpsEntry
-	nil,                                    // 106: nodeagent.AllOnlineIPsResponse.UsersEntry
-	nil,                                    // 107: nodeagent.OnlineIPMap.IpsEntry
-	nil,                                    // 108: nodeagent.TrafficRecord.UserUplinkEntry
-	nil,                                    // 109: nodeagent.TrafficRecord.UserDownlinkEntry
-	nil,                                    // 110: nodeagent.TrafficRecord.OutboundUplinkEntry
-	nil,                                    // 111: nodeagent.TrafficRecord.OutboundDownlinkEntry
-	nil,                                    // 112: nodeagent.TrafficRecord.InboundUplinkEntry
-	nil,                                    // 113: nodeagent.TrafficRecord.InboundDownlinkEntry
-	nil,                                    // 114: nodeagent.AccessLogHourlySummary.DomainsEntry
-	nil,                                    // 115: nodeagent.AccessLogHourlySummary.SourceIpsEntry
-	nil,                                    // 116: nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
-	nil,                                    // 117: nodeagent.PoolSourceRequest.HeadersEntry
+	(*MoveListenPortRequest)(nil),          // 50: nodeagent.MoveListenPortRequest
+	(*SwitchConnectModeRequest)(nil),       // 51: nodeagent.SwitchConnectModeRequest
+	(*UpdateRequest)(nil),                  // 52: nodeagent.UpdateRequest
+	(*CertDenylist)(nil),                   // 53: nodeagent.CertDenylist
+	(*UpdateResponse)(nil),                 // 54: nodeagent.UpdateResponse
+	(*ChecksumResponse)(nil),               // 55: nodeagent.ChecksumResponse
+	(*UpdateXrayRequest)(nil),              // 56: nodeagent.UpdateXrayRequest
+	(*OutboundTestRequest)(nil),            // 57: nodeagent.OutboundTestRequest
+	(*OutboundTestResponse)(nil),           // 58: nodeagent.OutboundTestResponse
+	(*UserEmailRequest)(nil),               // 59: nodeagent.UserEmailRequest
+	(*OnlineIPsResponse)(nil),              // 60: nodeagent.OnlineIPsResponse
+	(*AllOnlineIPsResponse)(nil),           // 61: nodeagent.AllOnlineIPsResponse
+	(*OnlineIPMap)(nil),                    // 62: nodeagent.OnlineIPMap
+	(*TrafficRecord)(nil),                  // 63: nodeagent.TrafficRecord
+	(*CoreUsageRecord)(nil),                // 64: nodeagent.CoreUsageRecord
+	(*BufferedTrafficStats)(nil),           // 65: nodeagent.BufferedTrafficStats
+	(*AckTrafficRequest)(nil),              // 66: nodeagent.AckTrafficRequest
+	(*StatsBundleRequest)(nil),             // 67: nodeagent.StatsBundleRequest
+	(*StatsBundle)(nil),                    // 68: nodeagent.StatsBundle
+	(*VLESSKeyPair)(nil),                   // 69: nodeagent.VLESSKeyPair
+	(*VLESSKeysResponse)(nil),              // 70: nodeagent.VLESSKeysResponse
+	(*BandwidthRequest)(nil),               // 71: nodeagent.BandwidthRequest
+	(*AccessLogEntry)(nil),                 // 72: nodeagent.AccessLogEntry
+	(*AccessLogRequest)(nil),               // 73: nodeagent.AccessLogRequest
+	(*AccessLogResponse)(nil),              // 74: nodeagent.AccessLogResponse
+	(*AccessLogHourlySummary)(nil),         // 75: nodeagent.AccessLogHourlySummary
+	(*BufferedAccessLogSummary)(nil),       // 76: nodeagent.BufferedAccessLogSummary
+	(*AckAccessLogSummaryRequest)(nil),     // 77: nodeagent.AckAccessLogSummaryRequest
+	(*StarlinkRequest)(nil),                // 78: nodeagent.StarlinkRequest
+	(*StarlinkStatusResponse)(nil),         // 79: nodeagent.StarlinkStatusResponse
+	(*StarlinkObstructionMapResponse)(nil), // 80: nodeagent.StarlinkObstructionMapResponse
+	(*StarlinkHandleRequest)(nil),          // 81: nodeagent.StarlinkHandleRequest
+	(*StarlinkHandleResponse)(nil),         // 82: nodeagent.StarlinkHandleResponse
+	(*InstallCertificateRequest)(nil),      // 83: nodeagent.InstallCertificateRequest
+	(*InstallCertificateResponse)(nil),     // 84: nodeagent.InstallCertificateResponse
+	(*InspectCertFileRequest)(nil),         // 85: nodeagent.InspectCertFileRequest
+	(*InspectCertFileResponse)(nil),        // 86: nodeagent.InspectCertFileResponse
+	(*ExecuteCommandRequest)(nil),          // 87: nodeagent.ExecuteCommandRequest
+	(*ExecuteCommandResponse)(nil),         // 88: nodeagent.ExecuteCommandResponse
+	(*NukeRequest)(nil),                    // 89: nodeagent.NukeRequest
+	(*NukePhaseResult)(nil),                // 90: nodeagent.NukePhaseResult
+	(*NukeReport)(nil),                     // 91: nodeagent.NukeReport
+	(*NukeProgress)(nil),                   // 92: nodeagent.NukeProgress
+	(*PoolSourceRequest)(nil),              // 93: nodeagent.PoolSourceRequest
+	(*PoolSourceResponse)(nil),             // 94: nodeagent.PoolSourceResponse
+	(*PoolCandidateRequest)(nil),           // 95: nodeagent.PoolCandidateRequest
+	(*PoolCandidateResponse)(nil),          // 96: nodeagent.PoolCandidateResponse
+	(*RealityDestProbeRequest)(nil),        // 97: nodeagent.RealityDestProbeRequest
+	(*RealityDestCheck)(nil),               // 98: nodeagent.RealityDestCheck
+	(*RealityDestProbeResponse)(nil),       // 99: nodeagent.RealityDestProbeResponse
+	nil,                                    // 100: nodeagent.XrayStats.UserUplinkEntry
+	nil,                                    // 101: nodeagent.XrayStats.UserDownlinkEntry
+	nil,                                    // 102: nodeagent.XrayStats.InboundUplinkEntry
+	nil,                                    // 103: nodeagent.XrayStats.InboundDownlinkEntry
+	nil,                                    // 104: nodeagent.XrayStats.OutboundUplinkEntry
+	nil,                                    // 105: nodeagent.XrayStats.OutboundDownlinkEntry
+	nil,                                    // 106: nodeagent.HealthResponse.ComponentsEntry
+	nil,                                    // 107: nodeagent.OnlineIPsResponse.IpsEntry
+	nil,                                    // 108: nodeagent.AllOnlineIPsResponse.UsersEntry
+	nil,                                    // 109: nodeagent.OnlineIPMap.IpsEntry
+	nil,                                    // 110: nodeagent.TrafficRecord.UserUplinkEntry
+	nil,                                    // 111: nodeagent.TrafficRecord.UserDownlinkEntry
+	nil,                                    // 112: nodeagent.TrafficRecord.OutboundUplinkEntry
+	nil,                                    // 113: nodeagent.TrafficRecord.OutboundDownlinkEntry
+	nil,                                    // 114: nodeagent.TrafficRecord.InboundUplinkEntry
+	nil,                                    // 115: nodeagent.TrafficRecord.InboundDownlinkEntry
+	nil,                                    // 116: nodeagent.AccessLogHourlySummary.DomainsEntry
+	nil,                                    // 117: nodeagent.AccessLogHourlySummary.SourceIpsEntry
+	nil,                                    // 118: nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
+	nil,                                    // 119: nodeagent.PoolSourceRequest.HeadersEntry
 }
 var file_node_agent_proto_depIdxs = []int32{
 	5,   // 0: nodeagent.TerminalInput.resize:type_name -> nodeagent.TerminalResize
@@ -8142,48 +8302,48 @@ var file_node_agent_proto_depIdxs = []int32{
 	27,  // 8: nodeagent.StartInstallRequest.proxy:type_name -> nodeagent.ProxyConfig
 	33,  // 9: nodeagent.InstallProgressResponse.steps:type_name -> nodeagent.InstallStep
 	38,  // 10: nodeagent.UserList.users:type_name -> nodeagent.UserInfo
-	98,  // 11: nodeagent.XrayStats.user_uplink:type_name -> nodeagent.XrayStats.UserUplinkEntry
-	99,  // 12: nodeagent.XrayStats.user_downlink:type_name -> nodeagent.XrayStats.UserDownlinkEntry
-	100, // 13: nodeagent.XrayStats.inbound_uplink:type_name -> nodeagent.XrayStats.InboundUplinkEntry
-	101, // 14: nodeagent.XrayStats.inbound_downlink:type_name -> nodeagent.XrayStats.InboundDownlinkEntry
-	102, // 15: nodeagent.XrayStats.outbound_uplink:type_name -> nodeagent.XrayStats.OutboundUplinkEntry
-	103, // 16: nodeagent.XrayStats.outbound_downlink:type_name -> nodeagent.XrayStats.OutboundDownlinkEntry
+	100, // 11: nodeagent.XrayStats.user_uplink:type_name -> nodeagent.XrayStats.UserUplinkEntry
+	101, // 12: nodeagent.XrayStats.user_downlink:type_name -> nodeagent.XrayStats.UserDownlinkEntry
+	102, // 13: nodeagent.XrayStats.inbound_uplink:type_name -> nodeagent.XrayStats.InboundUplinkEntry
+	103, // 14: nodeagent.XrayStats.inbound_downlink:type_name -> nodeagent.XrayStats.InboundDownlinkEntry
+	104, // 15: nodeagent.XrayStats.outbound_uplink:type_name -> nodeagent.XrayStats.OutboundUplinkEntry
+	105, // 16: nodeagent.XrayStats.outbound_downlink:type_name -> nodeagent.XrayStats.OutboundDownlinkEntry
 	0,   // 17: nodeagent.LogRequest.log_type:type_name -> nodeagent.LogType
 	0,   // 18: nodeagent.LogEntry.log_type:type_name -> nodeagent.LogType
 	1,   // 19: nodeagent.HealthResponse.status:type_name -> nodeagent.HealthStatus
-	104, // 20: nodeagent.HealthResponse.components:type_name -> nodeagent.HealthResponse.ComponentsEntry
+	106, // 20: nodeagent.HealthResponse.components:type_name -> nodeagent.HealthResponse.ComponentsEntry
 	1,   // 21: nodeagent.ComponentHealth.status:type_name -> nodeagent.HealthStatus
 	11,  // 22: nodeagent.HeartbeatPong.status:type_name -> nodeagent.NodeStatus
-	105, // 23: nodeagent.OnlineIPsResponse.ips:type_name -> nodeagent.OnlineIPsResponse.IpsEntry
-	106, // 24: nodeagent.AllOnlineIPsResponse.users:type_name -> nodeagent.AllOnlineIPsResponse.UsersEntry
-	107, // 25: nodeagent.OnlineIPMap.ips:type_name -> nodeagent.OnlineIPMap.IpsEntry
-	108, // 26: nodeagent.TrafficRecord.user_uplink:type_name -> nodeagent.TrafficRecord.UserUplinkEntry
-	109, // 27: nodeagent.TrafficRecord.user_downlink:type_name -> nodeagent.TrafficRecord.UserDownlinkEntry
-	110, // 28: nodeagent.TrafficRecord.outbound_uplink:type_name -> nodeagent.TrafficRecord.OutboundUplinkEntry
-	111, // 29: nodeagent.TrafficRecord.outbound_downlink:type_name -> nodeagent.TrafficRecord.OutboundDownlinkEntry
-	112, // 30: nodeagent.TrafficRecord.inbound_uplink:type_name -> nodeagent.TrafficRecord.InboundUplinkEntry
-	113, // 31: nodeagent.TrafficRecord.inbound_downlink:type_name -> nodeagent.TrafficRecord.InboundDownlinkEntry
-	62,  // 32: nodeagent.TrafficRecord.core_usage:type_name -> nodeagent.CoreUsageRecord
-	61,  // 33: nodeagent.BufferedTrafficStats.records:type_name -> nodeagent.TrafficRecord
+	107, // 23: nodeagent.OnlineIPsResponse.ips:type_name -> nodeagent.OnlineIPsResponse.IpsEntry
+	108, // 24: nodeagent.AllOnlineIPsResponse.users:type_name -> nodeagent.AllOnlineIPsResponse.UsersEntry
+	109, // 25: nodeagent.OnlineIPMap.ips:type_name -> nodeagent.OnlineIPMap.IpsEntry
+	110, // 26: nodeagent.TrafficRecord.user_uplink:type_name -> nodeagent.TrafficRecord.UserUplinkEntry
+	111, // 27: nodeagent.TrafficRecord.user_downlink:type_name -> nodeagent.TrafficRecord.UserDownlinkEntry
+	112, // 28: nodeagent.TrafficRecord.outbound_uplink:type_name -> nodeagent.TrafficRecord.OutboundUplinkEntry
+	113, // 29: nodeagent.TrafficRecord.outbound_downlink:type_name -> nodeagent.TrafficRecord.OutboundDownlinkEntry
+	114, // 30: nodeagent.TrafficRecord.inbound_uplink:type_name -> nodeagent.TrafficRecord.InboundUplinkEntry
+	115, // 31: nodeagent.TrafficRecord.inbound_downlink:type_name -> nodeagent.TrafficRecord.InboundDownlinkEntry
+	64,  // 32: nodeagent.TrafficRecord.core_usage:type_name -> nodeagent.CoreUsageRecord
+	63,  // 33: nodeagent.BufferedTrafficStats.records:type_name -> nodeagent.TrafficRecord
 	39,  // 34: nodeagent.StatsBundle.system:type_name -> nodeagent.SystemStats
 	11,  // 35: nodeagent.StatsBundle.status:type_name -> nodeagent.NodeStatus
-	63,  // 36: nodeagent.StatsBundle.buffered_traffic:type_name -> nodeagent.BufferedTrafficStats
-	59,  // 37: nodeagent.StatsBundle.online_ips:type_name -> nodeagent.AllOnlineIPsResponse
-	67,  // 38: nodeagent.VLESSKeysResponse.keys:type_name -> nodeagent.VLESSKeyPair
-	70,  // 39: nodeagent.AccessLogResponse.entries:type_name -> nodeagent.AccessLogEntry
-	114, // 40: nodeagent.AccessLogHourlySummary.domains:type_name -> nodeagent.AccessLogHourlySummary.DomainsEntry
-	115, // 41: nodeagent.AccessLogHourlySummary.source_ips:type_name -> nodeagent.AccessLogHourlySummary.SourceIpsEntry
-	116, // 42: nodeagent.AccessLogHourlySummary.rejected_domains:type_name -> nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
-	73,  // 43: nodeagent.BufferedAccessLogSummary.entries:type_name -> nodeagent.AccessLogHourlySummary
+	65,  // 36: nodeagent.StatsBundle.buffered_traffic:type_name -> nodeagent.BufferedTrafficStats
+	61,  // 37: nodeagent.StatsBundle.online_ips:type_name -> nodeagent.AllOnlineIPsResponse
+	69,  // 38: nodeagent.VLESSKeysResponse.keys:type_name -> nodeagent.VLESSKeyPair
+	72,  // 39: nodeagent.AccessLogResponse.entries:type_name -> nodeagent.AccessLogEntry
+	116, // 40: nodeagent.AccessLogHourlySummary.domains:type_name -> nodeagent.AccessLogHourlySummary.DomainsEntry
+	117, // 41: nodeagent.AccessLogHourlySummary.source_ips:type_name -> nodeagent.AccessLogHourlySummary.SourceIpsEntry
+	118, // 42: nodeagent.AccessLogHourlySummary.rejected_domains:type_name -> nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
+	75,  // 43: nodeagent.BufferedAccessLogSummary.entries:type_name -> nodeagent.AccessLogHourlySummary
 	2,   // 44: nodeagent.NukeRequest.mode:type_name -> nodeagent.NukeMode
-	88,  // 45: nodeagent.NukeReport.phases:type_name -> nodeagent.NukePhaseResult
+	90,  // 45: nodeagent.NukeReport.phases:type_name -> nodeagent.NukePhaseResult
 	3,   // 46: nodeagent.NukeReport.result:type_name -> nodeagent.NukeReport.Result
-	88,  // 47: nodeagent.NukeProgress.phase:type_name -> nodeagent.NukePhaseResult
-	89,  // 48: nodeagent.NukeProgress.done:type_name -> nodeagent.NukeReport
-	117, // 49: nodeagent.PoolSourceRequest.headers:type_name -> nodeagent.PoolSourceRequest.HeadersEntry
-	96,  // 50: nodeagent.RealityDestProbeResponse.checks:type_name -> nodeagent.RealityDestCheck
+	90,  // 47: nodeagent.NukeProgress.phase:type_name -> nodeagent.NukePhaseResult
+	91,  // 48: nodeagent.NukeProgress.done:type_name -> nodeagent.NukeReport
+	119, // 49: nodeagent.PoolSourceRequest.headers:type_name -> nodeagent.PoolSourceRequest.HeadersEntry
+	98,  // 50: nodeagent.RealityDestProbeResponse.checks:type_name -> nodeagent.RealityDestCheck
 	46,  // 51: nodeagent.HealthResponse.ComponentsEntry.value:type_name -> nodeagent.ComponentHealth
-	60,  // 52: nodeagent.AllOnlineIPsResponse.UsersEntry.value:type_name -> nodeagent.OnlineIPMap
+	62,  // 52: nodeagent.AllOnlineIPsResponse.UsersEntry.value:type_name -> nodeagent.OnlineIPMap
 	7,   // 53: nodeagent.NodeAgent.GetStatus:input_type -> nodeagent.Empty
 	7,   // 54: nodeagent.NodeAgent.StartXray:input_type -> nodeagent.Empty
 	12,  // 55: nodeagent.NodeAgent.StopXray:input_type -> nodeagent.StopRequest
@@ -8202,104 +8362,108 @@ var file_node_agent_proto_depIdxs = []int32{
 	7,   // 68: nodeagent.NodeAgent.HealthCheck:input_type -> nodeagent.Empty
 	7,   // 69: nodeagent.NodeAgent.GetVersion:input_type -> nodeagent.Empty
 	48,  // 70: nodeagent.NodeAgent.Heartbeat:input_type -> nodeagent.HeartbeatPing
-	50,  // 71: nodeagent.NodeAgent.SelfUpdate:input_type -> nodeagent.UpdateRequest
+	52,  // 71: nodeagent.NodeAgent.SelfUpdate:input_type -> nodeagent.UpdateRequest
 	7,   // 72: nodeagent.NodeAgent.GetSelfChecksum:input_type -> nodeagent.Empty
-	54,  // 73: nodeagent.NodeAgent.UpdateXrayBinary:input_type -> nodeagent.UpdateXrayRequest
-	7,   // 74: nodeagent.NodeAgent.Uninstall:input_type -> nodeagent.Empty
-	87,  // 75: nodeagent.NodeAgent.Wipe:input_type -> nodeagent.NukeRequest
-	87,  // 76: nodeagent.NodeAgent.Nuke:input_type -> nodeagent.NukeRequest
-	7,   // 77: nodeagent.NodeAgent.GetSSHStatus:input_type -> nodeagent.Empty
-	10,  // 78: nodeagent.NodeAgent.UpdateSSHConfig:input_type -> nodeagent.SSHConfigPayload
-	7,   // 79: nodeagent.NodeAgent.ClearSSHLogs:input_type -> nodeagent.Empty
-	7,   // 80: nodeagent.NodeAgent.RestartSSH:input_type -> nodeagent.Empty
-	4,   // 81: nodeagent.NodeAgent.OpenTerminal:input_type -> nodeagent.TerminalInput
-	51,  // 82: nodeagent.NodeAgent.UpdateCertDenylist:input_type -> nodeagent.CertDenylist
-	15,  // 83: nodeagent.NodeAgent.WriteFile:input_type -> nodeagent.FilePayload
-	55,  // 84: nodeagent.NodeAgent.TestOutbound:input_type -> nodeagent.OutboundTestRequest
-	91,  // 85: nodeagent.NodeAgent.FetchPoolSource:input_type -> nodeagent.PoolSourceRequest
-	93,  // 86: nodeagent.NodeAgent.TestPoolCandidate:input_type -> nodeagent.PoolCandidateRequest
-	95,  // 87: nodeagent.NodeAgent.ProbeRealityDest:input_type -> nodeagent.RealityDestProbeRequest
-	57,  // 88: nodeagent.NodeAgent.GetUserOnlineIPs:input_type -> nodeagent.UserEmailRequest
-	7,   // 89: nodeagent.NodeAgent.GetAllUsersOnlineIPs:input_type -> nodeagent.Empty
-	7,   // 90: nodeagent.NodeAgent.GenerateVLESSKeys:input_type -> nodeagent.Empty
-	69,  // 91: nodeagent.NodeAgent.SetupBandwidth:input_type -> nodeagent.BandwidthRequest
-	7,   // 92: nodeagent.NodeAgent.TeardownBandwidth:input_type -> nodeagent.Empty
-	7,   // 93: nodeagent.NodeAgent.GetBufferedTraffic:input_type -> nodeagent.Empty
-	65,  // 94: nodeagent.NodeAgent.GetStatsBundle:input_type -> nodeagent.StatsBundleRequest
-	64,  // 95: nodeagent.NodeAgent.AckBufferedTraffic:input_type -> nodeagent.AckTrafficRequest
-	71,  // 96: nodeagent.NodeAgent.GetAccessLogs:input_type -> nodeagent.AccessLogRequest
-	7,   // 97: nodeagent.NodeAgent.GetBufferedAccessLogSummary:input_type -> nodeagent.Empty
-	75,  // 98: nodeagent.NodeAgent.AckBufferedAccessLogSummary:input_type -> nodeagent.AckAccessLogSummaryRequest
-	76,  // 99: nodeagent.NodeAgent.GetStarlinkStatus:input_type -> nodeagent.StarlinkRequest
-	76,  // 100: nodeagent.NodeAgent.GetStarlinkObstructionMap:input_type -> nodeagent.StarlinkRequest
-	79,  // 101: nodeagent.NodeAgent.StarlinkHandle:input_type -> nodeagent.StarlinkHandleRequest
-	81,  // 102: nodeagent.NodeAgent.InstallCertificate:input_type -> nodeagent.InstallCertificateRequest
-	83,  // 103: nodeagent.NodeAgent.InspectCertFile:input_type -> nodeagent.InspectCertFileRequest
-	85,  // 104: nodeagent.NodeAgent.ExecuteCommand:input_type -> nodeagent.ExecuteCommandRequest
-	18,  // 105: nodeagent.NodeAgent.ApplyCoreState:input_type -> nodeagent.CoreStatePayload
-	21,  // 106: nodeagent.NodeAgent.GetCoreStatus:input_type -> nodeagent.CoreStatusRequest
-	23,  // 107: nodeagent.NodeAgent.ProbeDependencies:input_type -> nodeagent.ProbeDependenciesRequest
-	30,  // 108: nodeagent.NodeAgent.StartDependencyInstall:input_type -> nodeagent.StartInstallRequest
-	32,  // 109: nodeagent.NodeAgent.GetInstallProgress:input_type -> nodeagent.InstallProgressRequest
-	11,  // 110: nodeagent.NodeAgent.GetStatus:output_type -> nodeagent.NodeStatus
-	8,   // 111: nodeagent.NodeAgent.StartXray:output_type -> nodeagent.CommandResponse
-	8,   // 112: nodeagent.NodeAgent.StopXray:output_type -> nodeagent.CommandResponse
-	8,   // 113: nodeagent.NodeAgent.RestartXray:output_type -> nodeagent.CommandResponse
-	8,   // 114: nodeagent.NodeAgent.PushConfig:output_type -> nodeagent.CommandResponse
-	8,   // 115: nodeagent.NodeAgent.UpdateXrayAPIConfig:output_type -> nodeagent.CommandResponse
-	14,  // 116: nodeagent.NodeAgent.GetCurrentConfig:output_type -> nodeagent.ConfigPayload
-	17,  // 117: nodeagent.NodeAgent.ValidateConfig:output_type -> nodeagent.ValidationResult
-	8,   // 118: nodeagent.NodeAgent.AddUser:output_type -> nodeagent.CommandResponse
-	8,   // 119: nodeagent.NodeAgent.RemoveUser:output_type -> nodeagent.CommandResponse
-	37,  // 120: nodeagent.NodeAgent.ListUsers:output_type -> nodeagent.UserList
-	39,  // 121: nodeagent.NodeAgent.GetSystemStats:output_type -> nodeagent.SystemStats
-	41,  // 122: nodeagent.NodeAgent.GetHostInfo:output_type -> nodeagent.HostInfo
-	42,  // 123: nodeagent.NodeAgent.GetXrayStats:output_type -> nodeagent.XrayStats
-	44,  // 124: nodeagent.NodeAgent.StreamLogs:output_type -> nodeagent.LogEntry
-	45,  // 125: nodeagent.NodeAgent.HealthCheck:output_type -> nodeagent.HealthResponse
-	47,  // 126: nodeagent.NodeAgent.GetVersion:output_type -> nodeagent.VersionInfo
-	49,  // 127: nodeagent.NodeAgent.Heartbeat:output_type -> nodeagent.HeartbeatPong
-	52,  // 128: nodeagent.NodeAgent.SelfUpdate:output_type -> nodeagent.UpdateResponse
-	53,  // 129: nodeagent.NodeAgent.GetSelfChecksum:output_type -> nodeagent.ChecksumResponse
-	8,   // 130: nodeagent.NodeAgent.UpdateXrayBinary:output_type -> nodeagent.CommandResponse
-	8,   // 131: nodeagent.NodeAgent.Uninstall:output_type -> nodeagent.CommandResponse
-	89,  // 132: nodeagent.NodeAgent.Wipe:output_type -> nodeagent.NukeReport
-	90,  // 133: nodeagent.NodeAgent.Nuke:output_type -> nodeagent.NukeProgress
-	9,   // 134: nodeagent.NodeAgent.GetSSHStatus:output_type -> nodeagent.SSHStatus
-	8,   // 135: nodeagent.NodeAgent.UpdateSSHConfig:output_type -> nodeagent.CommandResponse
-	8,   // 136: nodeagent.NodeAgent.ClearSSHLogs:output_type -> nodeagent.CommandResponse
-	8,   // 137: nodeagent.NodeAgent.RestartSSH:output_type -> nodeagent.CommandResponse
-	6,   // 138: nodeagent.NodeAgent.OpenTerminal:output_type -> nodeagent.TerminalOutput
-	8,   // 139: nodeagent.NodeAgent.UpdateCertDenylist:output_type -> nodeagent.CommandResponse
-	8,   // 140: nodeagent.NodeAgent.WriteFile:output_type -> nodeagent.CommandResponse
-	56,  // 141: nodeagent.NodeAgent.TestOutbound:output_type -> nodeagent.OutboundTestResponse
-	92,  // 142: nodeagent.NodeAgent.FetchPoolSource:output_type -> nodeagent.PoolSourceResponse
-	94,  // 143: nodeagent.NodeAgent.TestPoolCandidate:output_type -> nodeagent.PoolCandidateResponse
-	97,  // 144: nodeagent.NodeAgent.ProbeRealityDest:output_type -> nodeagent.RealityDestProbeResponse
-	58,  // 145: nodeagent.NodeAgent.GetUserOnlineIPs:output_type -> nodeagent.OnlineIPsResponse
-	59,  // 146: nodeagent.NodeAgent.GetAllUsersOnlineIPs:output_type -> nodeagent.AllOnlineIPsResponse
-	68,  // 147: nodeagent.NodeAgent.GenerateVLESSKeys:output_type -> nodeagent.VLESSKeysResponse
-	8,   // 148: nodeagent.NodeAgent.SetupBandwidth:output_type -> nodeagent.CommandResponse
-	8,   // 149: nodeagent.NodeAgent.TeardownBandwidth:output_type -> nodeagent.CommandResponse
-	63,  // 150: nodeagent.NodeAgent.GetBufferedTraffic:output_type -> nodeagent.BufferedTrafficStats
-	66,  // 151: nodeagent.NodeAgent.GetStatsBundle:output_type -> nodeagent.StatsBundle
-	8,   // 152: nodeagent.NodeAgent.AckBufferedTraffic:output_type -> nodeagent.CommandResponse
-	72,  // 153: nodeagent.NodeAgent.GetAccessLogs:output_type -> nodeagent.AccessLogResponse
-	74,  // 154: nodeagent.NodeAgent.GetBufferedAccessLogSummary:output_type -> nodeagent.BufferedAccessLogSummary
-	8,   // 155: nodeagent.NodeAgent.AckBufferedAccessLogSummary:output_type -> nodeagent.CommandResponse
-	77,  // 156: nodeagent.NodeAgent.GetStarlinkStatus:output_type -> nodeagent.StarlinkStatusResponse
-	78,  // 157: nodeagent.NodeAgent.GetStarlinkObstructionMap:output_type -> nodeagent.StarlinkObstructionMapResponse
-	80,  // 158: nodeagent.NodeAgent.StarlinkHandle:output_type -> nodeagent.StarlinkHandleResponse
-	82,  // 159: nodeagent.NodeAgent.InstallCertificate:output_type -> nodeagent.InstallCertificateResponse
-	84,  // 160: nodeagent.NodeAgent.InspectCertFile:output_type -> nodeagent.InspectCertFileResponse
-	86,  // 161: nodeagent.NodeAgent.ExecuteCommand:output_type -> nodeagent.ExecuteCommandResponse
-	8,   // 162: nodeagent.NodeAgent.ApplyCoreState:output_type -> nodeagent.CommandResponse
-	22,  // 163: nodeagent.NodeAgent.GetCoreStatus:output_type -> nodeagent.CoreStatusResponse
-	26,  // 164: nodeagent.NodeAgent.ProbeDependencies:output_type -> nodeagent.ProbeDependenciesResponse
-	31,  // 165: nodeagent.NodeAgent.StartDependencyInstall:output_type -> nodeagent.StartInstallResponse
-	34,  // 166: nodeagent.NodeAgent.GetInstallProgress:output_type -> nodeagent.InstallProgressResponse
-	110, // [110:167] is the sub-list for method output_type
-	53,  // [53:110] is the sub-list for method input_type
+	50,  // 73: nodeagent.NodeAgent.MoveListenPort:input_type -> nodeagent.MoveListenPortRequest
+	51,  // 74: nodeagent.NodeAgent.SwitchConnectMode:input_type -> nodeagent.SwitchConnectModeRequest
+	56,  // 75: nodeagent.NodeAgent.UpdateXrayBinary:input_type -> nodeagent.UpdateXrayRequest
+	7,   // 76: nodeagent.NodeAgent.Uninstall:input_type -> nodeagent.Empty
+	89,  // 77: nodeagent.NodeAgent.Wipe:input_type -> nodeagent.NukeRequest
+	89,  // 78: nodeagent.NodeAgent.Nuke:input_type -> nodeagent.NukeRequest
+	7,   // 79: nodeagent.NodeAgent.GetSSHStatus:input_type -> nodeagent.Empty
+	10,  // 80: nodeagent.NodeAgent.UpdateSSHConfig:input_type -> nodeagent.SSHConfigPayload
+	7,   // 81: nodeagent.NodeAgent.ClearSSHLogs:input_type -> nodeagent.Empty
+	7,   // 82: nodeagent.NodeAgent.RestartSSH:input_type -> nodeagent.Empty
+	4,   // 83: nodeagent.NodeAgent.OpenTerminal:input_type -> nodeagent.TerminalInput
+	53,  // 84: nodeagent.NodeAgent.UpdateCertDenylist:input_type -> nodeagent.CertDenylist
+	15,  // 85: nodeagent.NodeAgent.WriteFile:input_type -> nodeagent.FilePayload
+	57,  // 86: nodeagent.NodeAgent.TestOutbound:input_type -> nodeagent.OutboundTestRequest
+	93,  // 87: nodeagent.NodeAgent.FetchPoolSource:input_type -> nodeagent.PoolSourceRequest
+	95,  // 88: nodeagent.NodeAgent.TestPoolCandidate:input_type -> nodeagent.PoolCandidateRequest
+	97,  // 89: nodeagent.NodeAgent.ProbeRealityDest:input_type -> nodeagent.RealityDestProbeRequest
+	59,  // 90: nodeagent.NodeAgent.GetUserOnlineIPs:input_type -> nodeagent.UserEmailRequest
+	7,   // 91: nodeagent.NodeAgent.GetAllUsersOnlineIPs:input_type -> nodeagent.Empty
+	7,   // 92: nodeagent.NodeAgent.GenerateVLESSKeys:input_type -> nodeagent.Empty
+	71,  // 93: nodeagent.NodeAgent.SetupBandwidth:input_type -> nodeagent.BandwidthRequest
+	7,   // 94: nodeagent.NodeAgent.TeardownBandwidth:input_type -> nodeagent.Empty
+	7,   // 95: nodeagent.NodeAgent.GetBufferedTraffic:input_type -> nodeagent.Empty
+	67,  // 96: nodeagent.NodeAgent.GetStatsBundle:input_type -> nodeagent.StatsBundleRequest
+	66,  // 97: nodeagent.NodeAgent.AckBufferedTraffic:input_type -> nodeagent.AckTrafficRequest
+	73,  // 98: nodeagent.NodeAgent.GetAccessLogs:input_type -> nodeagent.AccessLogRequest
+	7,   // 99: nodeagent.NodeAgent.GetBufferedAccessLogSummary:input_type -> nodeagent.Empty
+	77,  // 100: nodeagent.NodeAgent.AckBufferedAccessLogSummary:input_type -> nodeagent.AckAccessLogSummaryRequest
+	78,  // 101: nodeagent.NodeAgent.GetStarlinkStatus:input_type -> nodeagent.StarlinkRequest
+	78,  // 102: nodeagent.NodeAgent.GetStarlinkObstructionMap:input_type -> nodeagent.StarlinkRequest
+	81,  // 103: nodeagent.NodeAgent.StarlinkHandle:input_type -> nodeagent.StarlinkHandleRequest
+	83,  // 104: nodeagent.NodeAgent.InstallCertificate:input_type -> nodeagent.InstallCertificateRequest
+	85,  // 105: nodeagent.NodeAgent.InspectCertFile:input_type -> nodeagent.InspectCertFileRequest
+	87,  // 106: nodeagent.NodeAgent.ExecuteCommand:input_type -> nodeagent.ExecuteCommandRequest
+	18,  // 107: nodeagent.NodeAgent.ApplyCoreState:input_type -> nodeagent.CoreStatePayload
+	21,  // 108: nodeagent.NodeAgent.GetCoreStatus:input_type -> nodeagent.CoreStatusRequest
+	23,  // 109: nodeagent.NodeAgent.ProbeDependencies:input_type -> nodeagent.ProbeDependenciesRequest
+	30,  // 110: nodeagent.NodeAgent.StartDependencyInstall:input_type -> nodeagent.StartInstallRequest
+	32,  // 111: nodeagent.NodeAgent.GetInstallProgress:input_type -> nodeagent.InstallProgressRequest
+	11,  // 112: nodeagent.NodeAgent.GetStatus:output_type -> nodeagent.NodeStatus
+	8,   // 113: nodeagent.NodeAgent.StartXray:output_type -> nodeagent.CommandResponse
+	8,   // 114: nodeagent.NodeAgent.StopXray:output_type -> nodeagent.CommandResponse
+	8,   // 115: nodeagent.NodeAgent.RestartXray:output_type -> nodeagent.CommandResponse
+	8,   // 116: nodeagent.NodeAgent.PushConfig:output_type -> nodeagent.CommandResponse
+	8,   // 117: nodeagent.NodeAgent.UpdateXrayAPIConfig:output_type -> nodeagent.CommandResponse
+	14,  // 118: nodeagent.NodeAgent.GetCurrentConfig:output_type -> nodeagent.ConfigPayload
+	17,  // 119: nodeagent.NodeAgent.ValidateConfig:output_type -> nodeagent.ValidationResult
+	8,   // 120: nodeagent.NodeAgent.AddUser:output_type -> nodeagent.CommandResponse
+	8,   // 121: nodeagent.NodeAgent.RemoveUser:output_type -> nodeagent.CommandResponse
+	37,  // 122: nodeagent.NodeAgent.ListUsers:output_type -> nodeagent.UserList
+	39,  // 123: nodeagent.NodeAgent.GetSystemStats:output_type -> nodeagent.SystemStats
+	41,  // 124: nodeagent.NodeAgent.GetHostInfo:output_type -> nodeagent.HostInfo
+	42,  // 125: nodeagent.NodeAgent.GetXrayStats:output_type -> nodeagent.XrayStats
+	44,  // 126: nodeagent.NodeAgent.StreamLogs:output_type -> nodeagent.LogEntry
+	45,  // 127: nodeagent.NodeAgent.HealthCheck:output_type -> nodeagent.HealthResponse
+	47,  // 128: nodeagent.NodeAgent.GetVersion:output_type -> nodeagent.VersionInfo
+	49,  // 129: nodeagent.NodeAgent.Heartbeat:output_type -> nodeagent.HeartbeatPong
+	54,  // 130: nodeagent.NodeAgent.SelfUpdate:output_type -> nodeagent.UpdateResponse
+	55,  // 131: nodeagent.NodeAgent.GetSelfChecksum:output_type -> nodeagent.ChecksumResponse
+	8,   // 132: nodeagent.NodeAgent.MoveListenPort:output_type -> nodeagent.CommandResponse
+	8,   // 133: nodeagent.NodeAgent.SwitchConnectMode:output_type -> nodeagent.CommandResponse
+	8,   // 134: nodeagent.NodeAgent.UpdateXrayBinary:output_type -> nodeagent.CommandResponse
+	8,   // 135: nodeagent.NodeAgent.Uninstall:output_type -> nodeagent.CommandResponse
+	91,  // 136: nodeagent.NodeAgent.Wipe:output_type -> nodeagent.NukeReport
+	92,  // 137: nodeagent.NodeAgent.Nuke:output_type -> nodeagent.NukeProgress
+	9,   // 138: nodeagent.NodeAgent.GetSSHStatus:output_type -> nodeagent.SSHStatus
+	8,   // 139: nodeagent.NodeAgent.UpdateSSHConfig:output_type -> nodeagent.CommandResponse
+	8,   // 140: nodeagent.NodeAgent.ClearSSHLogs:output_type -> nodeagent.CommandResponse
+	8,   // 141: nodeagent.NodeAgent.RestartSSH:output_type -> nodeagent.CommandResponse
+	6,   // 142: nodeagent.NodeAgent.OpenTerminal:output_type -> nodeagent.TerminalOutput
+	8,   // 143: nodeagent.NodeAgent.UpdateCertDenylist:output_type -> nodeagent.CommandResponse
+	8,   // 144: nodeagent.NodeAgent.WriteFile:output_type -> nodeagent.CommandResponse
+	58,  // 145: nodeagent.NodeAgent.TestOutbound:output_type -> nodeagent.OutboundTestResponse
+	94,  // 146: nodeagent.NodeAgent.FetchPoolSource:output_type -> nodeagent.PoolSourceResponse
+	96,  // 147: nodeagent.NodeAgent.TestPoolCandidate:output_type -> nodeagent.PoolCandidateResponse
+	99,  // 148: nodeagent.NodeAgent.ProbeRealityDest:output_type -> nodeagent.RealityDestProbeResponse
+	60,  // 149: nodeagent.NodeAgent.GetUserOnlineIPs:output_type -> nodeagent.OnlineIPsResponse
+	61,  // 150: nodeagent.NodeAgent.GetAllUsersOnlineIPs:output_type -> nodeagent.AllOnlineIPsResponse
+	70,  // 151: nodeagent.NodeAgent.GenerateVLESSKeys:output_type -> nodeagent.VLESSKeysResponse
+	8,   // 152: nodeagent.NodeAgent.SetupBandwidth:output_type -> nodeagent.CommandResponse
+	8,   // 153: nodeagent.NodeAgent.TeardownBandwidth:output_type -> nodeagent.CommandResponse
+	65,  // 154: nodeagent.NodeAgent.GetBufferedTraffic:output_type -> nodeagent.BufferedTrafficStats
+	68,  // 155: nodeagent.NodeAgent.GetStatsBundle:output_type -> nodeagent.StatsBundle
+	8,   // 156: nodeagent.NodeAgent.AckBufferedTraffic:output_type -> nodeagent.CommandResponse
+	74,  // 157: nodeagent.NodeAgent.GetAccessLogs:output_type -> nodeagent.AccessLogResponse
+	76,  // 158: nodeagent.NodeAgent.GetBufferedAccessLogSummary:output_type -> nodeagent.BufferedAccessLogSummary
+	8,   // 159: nodeagent.NodeAgent.AckBufferedAccessLogSummary:output_type -> nodeagent.CommandResponse
+	79,  // 160: nodeagent.NodeAgent.GetStarlinkStatus:output_type -> nodeagent.StarlinkStatusResponse
+	80,  // 161: nodeagent.NodeAgent.GetStarlinkObstructionMap:output_type -> nodeagent.StarlinkObstructionMapResponse
+	82,  // 162: nodeagent.NodeAgent.StarlinkHandle:output_type -> nodeagent.StarlinkHandleResponse
+	84,  // 163: nodeagent.NodeAgent.InstallCertificate:output_type -> nodeagent.InstallCertificateResponse
+	86,  // 164: nodeagent.NodeAgent.InspectCertFile:output_type -> nodeagent.InspectCertFileResponse
+	88,  // 165: nodeagent.NodeAgent.ExecuteCommand:output_type -> nodeagent.ExecuteCommandResponse
+	8,   // 166: nodeagent.NodeAgent.ApplyCoreState:output_type -> nodeagent.CommandResponse
+	22,  // 167: nodeagent.NodeAgent.GetCoreStatus:output_type -> nodeagent.CoreStatusResponse
+	26,  // 168: nodeagent.NodeAgent.ProbeDependencies:output_type -> nodeagent.ProbeDependenciesResponse
+	31,  // 169: nodeagent.NodeAgent.StartDependencyInstall:output_type -> nodeagent.StartInstallResponse
+	34,  // 170: nodeagent.NodeAgent.GetInstallProgress:output_type -> nodeagent.InstallProgressResponse
+	112, // [112:171] is the sub-list for method output_type
+	53,  // [53:112] is the sub-list for method input_type
 	53,  // [53:53] is the sub-list for extension type_name
 	53,  // [53:53] is the sub-list for extension extendee
 	0,   // [0:53] is the sub-list for field type_name
@@ -8325,7 +8489,7 @@ func file_node_agent_proto_init() {
 		(*ProxyConfig_Manual)(nil),
 		(*ProxyConfig_Fleet)(nil),
 	}
-	file_node_agent_proto_msgTypes[86].OneofWrappers = []any{
+	file_node_agent_proto_msgTypes[88].OneofWrappers = []any{
 		(*NukeProgress_Phase)(nil),
 		(*NukeProgress_Done)(nil),
 	}
@@ -8335,7 +8499,7 @@ func file_node_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_agent_proto_rawDesc), len(file_node_agent_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   114,
+			NumMessages:   116,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

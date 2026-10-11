@@ -275,7 +275,9 @@ type NodeUsecase interface {
 	SetEmbeddedServer(srv *agentserver.Server)
 	SetReverseRegistry(r *hub.ConnectedAgentRegistry)
 	SetHubServer(h *hub.HubServer)
-	SwitchConnectMode(ctx context.Context, nodeID uint, newMode string) error
+	SwitchConnectMode(ctx context.Context, nodeID uint, newMode string) (*AgentMove, error)
+	MoveAgentPort(ctx context.Context, nodeID uint, port int) (*AgentMove, error)
+	MoveNodeAddress(ctx context.Context, nodeID uint, address string) (*AgentMove, error)
 	UpdateAgentBinary(ctx context.Context, nodeID uint, binaryContent []byte, checksum, version string, signature []byte) error
 	AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error
 	BulkUpdateAgent(ctx context.Context, ids []uint) map[uint]*NodeBulkActionResult
@@ -541,6 +543,10 @@ type nodeUsecase struct {
 
 	// nukeAgentClientFactory: test override; nil → getAgentClient.
 	nukeAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)
+	// moveDial: test override for the agent moves; nil → a fresh dial.
+	moveDial func(*domain.Node) (agent.NodeClient, error)
+	// moveInstallCert: test override for an address move's certificate.
+	moveInstallCert func(context.Context, *domain.Node, agent.NodeClient, []string) error
 
 	// statsAgentClientFactory: test override; nil → getAgentClient.
 	statsAgentClientFactory func(context.Context, *domain.Node) (agent.NodeClient, error)

@@ -16,6 +16,9 @@ import (
 type Config struct {
 	// Server settings
 	ListenAddr string `yaml:"listen_addr"`
+	// NextListenAddr is a port move under way: open beside ListenAddr until
+	// the hub finishes or aborts it, and reopened after a restart.
+	NextListenAddr string `yaml:"next_listen_addr,omitempty"`
 
 	// Node identity (set during deployment)
 	NodeUUID string `yaml:"node_uuid"`
@@ -25,6 +28,10 @@ type Config struct {
 
 	// Hub URL for reverse mode (e.g. "master.example.com:9091")
 	HubURL string `yaml:"hub_url"`
+
+	// ModeFallback is the connection mode to go back to unless the hub
+	// confirms the new one before Deadline.
+	ModeFallback *ModeFallback `yaml:"mode_fallback,omitempty"`
 
 	// Xray settings
 	Xray XrayConfig `yaml:"xray"`
@@ -52,6 +59,14 @@ type Config struct {
 
 	// Internal
 	FilePath string `yaml:"-"`
+}
+
+// ModeFallback is how the agent connected before a mode switch.
+type ModeFallback struct {
+	ConnectMode string    `yaml:"connect_mode"`
+	ListenAddr  string    `yaml:"listen_addr"`
+	HubURL      string    `yaml:"hub_url"`
+	Deadline    time.Time `yaml:"deadline"`
 }
 
 // BandwidthConfig holds settings for TC-based bandwidth shaping

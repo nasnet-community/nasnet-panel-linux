@@ -800,6 +800,24 @@ func (rc *ReverseClient) ExecuteCommand(ctx context.Context, command string, tim
 	return &resp, nil
 }
 
+// ===== Moving the agent =====
+
+func (rc *ReverseClient) MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error) {
+	var resp pb.CommandResponse
+	if err := rc.sendUnary(ctx, pb.NodeAgent_MoveListenPort_FullMethodName, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (rc *ReverseClient) SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error) {
+	var resp pb.CommandResponse
+	if err := rc.sendUnary(ctx, pb.NodeAgent_SwitchConnectMode_FullMethodName, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // ===== Cleanup =====
 
 func (rc *ReverseClient) Uninstall(ctx context.Context) error {

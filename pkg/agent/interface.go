@@ -66,6 +66,10 @@ type NodeClient interface {
 	SelfUpdate(ctx context.Context, binaryContent []byte, checksum, version string, restartAfter bool, signature []byte, force bool) (*UpdateResult, error)
 	GetSelfChecksum(ctx context.Context) (*ChecksumResult, error)
 
+	// Moving the agent: a guarded port move and a guarded mode switch
+	MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error)
+	SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error)
+
 	// Certificate denylist
 	UpdateCertDenylist(ctx context.Context, serialNumbers []string, denylistHash string) error
 

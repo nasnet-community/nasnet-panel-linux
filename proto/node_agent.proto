@@ -80,6 +80,18 @@ service NodeAgent {
   // GetSelfChecksum returns the SHA256 checksum of the running binary
   rpc GetSelfChecksum(Empty) returns (ChecksumResponse);
 
+  // ===== Moving the agent =====
+
+  // MoveListenPort moves the direct listener in steps: the new port opens
+  // beside the old one, then finish drops the old port once the hub got in
+  // there, or abort drops the new one.
+  rpc MoveListenPort(MoveListenPortRequest) returns (CommandResponse);
+
+  // SwitchConnectMode moves the agent between direct and reverse. It restarts
+  // under the new mode and goes back to the old one by itself unless the hub
+  // confirms in time.
+  rpc SwitchConnectMode(SwitchConnectModeRequest) returns (CommandResponse);
+
   // ===== Xray Version Management =====
 
   // UpdateXrayBinary downloads and installs a specific xray-core version
@@ -650,6 +662,21 @@ message HeartbeatPong {
 }
 
 // ===== Self-Update Messages =====
+
+message MoveListenPortRequest {
+  int32 port = 1;   // the port to open beside the current one
+  bool finish = 2;  // the hub is in on the new port: drop the old one
+  bool abort = 3;   // the hub couldn't get in: drop the new one
+}
+
+message SwitchConnectModeRequest {
+  string mode = 1;          // "direct" or "reverse"; unused with confirm
+  string hub_url = 2;       // reverse: the hub address to dial
+  int32 listen_port = 3;    // direct: the port to listen on
+  int32 grace_seconds = 4;  // how long the hub has to confirm the new mode
+  string node_uuid = 5;     // reverse: this node's id, when the config lacks it
+  bool confirm = 6;         // the hub got in under the new mode: keep it
+}
 
 message UpdateRequest {
   bytes binary_content = 1;   // New agent binary content (gzipped)

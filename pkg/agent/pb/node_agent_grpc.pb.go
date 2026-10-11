@@ -39,6 +39,8 @@ const (
 	NodeAgent_Heartbeat_FullMethodName                   = "/nodeagent.NodeAgent/Heartbeat"
 	NodeAgent_SelfUpdate_FullMethodName                  = "/nodeagent.NodeAgent/SelfUpdate"
 	NodeAgent_GetSelfChecksum_FullMethodName             = "/nodeagent.NodeAgent/GetSelfChecksum"
+	NodeAgent_MoveListenPort_FullMethodName              = "/nodeagent.NodeAgent/MoveListenPort"
+	NodeAgent_SwitchConnectMode_FullMethodName           = "/nodeagent.NodeAgent/SwitchConnectMode"
 	NodeAgent_UpdateXrayBinary_FullMethodName            = "/nodeagent.NodeAgent/UpdateXrayBinary"
 	NodeAgent_Uninstall_FullMethodName                   = "/nodeagent.NodeAgent/Uninstall"
 	NodeAgent_Wipe_FullMethodName                        = "/nodeagent.NodeAgent/Wipe"
@@ -124,6 +126,14 @@ type NodeAgentClient interface {
 	SelfUpdate(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 	// GetSelfChecksum returns the SHA256 checksum of the running binary
 	GetSelfChecksum(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ChecksumResponse, error)
+	// MoveListenPort moves the direct listener in steps: the new port opens
+	// beside the old one, then finish drops the old port once the hub got in
+	// there, or abort drops the new one.
+	MoveListenPort(ctx context.Context, in *MoveListenPortRequest, opts ...grpc.CallOption) (*CommandResponse, error)
+	// SwitchConnectMode moves the agent between direct and reverse. It restarts
+	// under the new mode and goes back to the old one by itself unless the hub
+	// confirms in time.
+	SwitchConnectMode(ctx context.Context, in *SwitchConnectModeRequest, opts ...grpc.CallOption) (*CommandResponse, error)
 	// UpdateXrayBinary downloads and installs a specific xray-core version
 	UpdateXrayBinary(ctx context.Context, in *UpdateXrayRequest, opts ...grpc.CallOption) (*CommandResponse, error)
 	// Uninstall removes the agent and xray from the system (Destructive)
@@ -437,6 +447,26 @@ func (c *nodeAgentClient) GetSelfChecksum(ctx context.Context, in *Empty, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ChecksumResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetSelfChecksum_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) MoveListenPort(ctx context.Context, in *MoveListenPortRequest, opts ...grpc.CallOption) (*CommandResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommandResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_MoveListenPort_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) SwitchConnectMode(ctx context.Context, in *SwitchConnectModeRequest, opts ...grpc.CallOption) (*CommandResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CommandResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_SwitchConnectMode_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -871,6 +901,14 @@ type NodeAgentServer interface {
 	SelfUpdate(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	// GetSelfChecksum returns the SHA256 checksum of the running binary
 	GetSelfChecksum(context.Context, *Empty) (*ChecksumResponse, error)
+	// MoveListenPort moves the direct listener in steps: the new port opens
+	// beside the old one, then finish drops the old port once the hub got in
+	// there, or abort drops the new one.
+	MoveListenPort(context.Context, *MoveListenPortRequest) (*CommandResponse, error)
+	// SwitchConnectMode moves the agent between direct and reverse. It restarts
+	// under the new mode and goes back to the old one by itself unless the hub
+	// confirms in time.
+	SwitchConnectMode(context.Context, *SwitchConnectModeRequest) (*CommandResponse, error)
 	// UpdateXrayBinary downloads and installs a specific xray-core version
 	UpdateXrayBinary(context.Context, *UpdateXrayRequest) (*CommandResponse, error)
 	// Uninstall removes the agent and xray from the system (Destructive)
@@ -1037,6 +1075,12 @@ func (UnimplementedNodeAgentServer) SelfUpdate(context.Context, *UpdateRequest) 
 }
 func (UnimplementedNodeAgentServer) GetSelfChecksum(context.Context, *Empty) (*ChecksumResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSelfChecksum not implemented")
+}
+func (UnimplementedNodeAgentServer) MoveListenPort(context.Context, *MoveListenPortRequest) (*CommandResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveListenPort not implemented")
+}
+func (UnimplementedNodeAgentServer) SwitchConnectMode(context.Context, *SwitchConnectModeRequest) (*CommandResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SwitchConnectMode not implemented")
 }
 func (UnimplementedNodeAgentServer) UpdateXrayBinary(context.Context, *UpdateXrayRequest) (*CommandResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateXrayBinary not implemented")
@@ -1508,6 +1552,42 @@ func _NodeAgent_GetSelfChecksum_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetSelfChecksum(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_MoveListenPort_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveListenPortRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).MoveListenPort(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_MoveListenPort_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).MoveListenPort(ctx, req.(*MoveListenPortRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_SwitchConnectMode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SwitchConnectModeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).SwitchConnectMode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_SwitchConnectMode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).SwitchConnectMode(ctx, req.(*SwitchConnectModeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2238,6 +2318,14 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSelfChecksum",
 			Handler:    _NodeAgent_GetSelfChecksum_Handler,
+		},
+		{
+			MethodName: "MoveListenPort",
+			Handler:    _NodeAgent_MoveListenPort_Handler,
+		},
+		{
+			MethodName: "SwitchConnectMode",
+			Handler:    _NodeAgent_SwitchConnectMode_Handler,
 		},
 		{
 			MethodName: "UpdateXrayBinary",

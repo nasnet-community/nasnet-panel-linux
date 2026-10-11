@@ -711,6 +711,17 @@ func (c *EmbeddedClient) ExecuteCommand(ctx context.Context, command string, tim
 	})
 }
 
+// ===== Moving the agent =====
+
+// The built-in node runs inside the panel: there is no port or mode to move.
+func (c *EmbeddedClient) MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error) {
+	return nil, errBuiltInNode
+}
+
+func (c *EmbeddedClient) SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error) {
+	return nil, errBuiltInNode
+}
+
 // ===== Cleanup =====
 
 // Uninstall is refused: on the built-in node it would delete the panel binary.

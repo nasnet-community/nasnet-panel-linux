@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,6 +322,12 @@ func (u *nodeUsecase) RotateAgentCert(ctx context.Context, nodeID uint) (*domain
 		return nil, fmt.Errorf("%w: %v", ErrNodeOffline, err)
 	}
 	defer closeAgentClient(client)
+	return u.installAgentCert(ctx, node, client, []string{node.IP})
+}
+
+// installAgentCert issues a certificate for the node's addresses (IPs or
+// names) and installs it through client. Callers hold the node's rotate lock.
+func (u *nodeUsecase) installAgentCert(ctx context.Context, node *domain.Node, client agent.NodeClient, addrs []string) (*domain.AgentCertificate, error) {
 	installer, ok := client.(agent.CertInstallClient)
 	if !ok {
 		return nil, ErrCertAgentOutdated
@@ -330,11 +337,19 @@ func (u *nodeUsecase) RotateAgentCert(ctx context.Context, nodeID uint) (*domain
 	if err != nil {
 		return nil, fmt.Errorf("CA not found: %w", err)
 	}
+	ips, names := []string{}, []string{node.Name}
+	for _, a := range addrs {
+		if net.ParseIP(a) != nil {
+			ips = append(ips, a)
+		} else if a != "" && a != node.Name {
+			names = append(names, a)
+		}
+	}
 	info, err := certs.GenerateAgentCert(&certs.AgentCertConfig{
 		NodeID:      node.ID,
 		NodeName:    node.Name,
-		IPAddresses: []string{node.IP},
-		DNSNames:    []string{node.Name},
+		IPAddresses: ips,
+		DNSNames:    names,
 		ValidMonths: 12,
 	}, ca.Certificate, ca.PrivateKey)
 	if err != nil {

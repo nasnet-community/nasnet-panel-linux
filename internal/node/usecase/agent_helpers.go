@@ -247,6 +247,28 @@ func (u *nodeUsecase) dialDirectAgent(node *domain.Node, target string) (*agent.
 	return client, nil
 }
 
+// dialDirectAgentAs dials target but checks the agent's certificate against
+// name: an address move reaches the agent before its certificate knows it.
+func (u *nodeUsecase) dialDirectAgentAs(node *domain.Node, target, name string) (*agent.Client, error) {
+	tlsCfg, err := u.GetAgentCredentials(context.Background(), node.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mTLS credentials for agent at %s: %w", target, err)
+	}
+	as := *tlsCfg // the cached config is shared
+	as.ServerName = name
+	var opts []grpc.DialOption
+	if u.routerMode {
+		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+			return httpclient.MarkedDialer(httpclient.EgressForeign.Mark(), 10*time.Second).DialContext(ctx, "tcp", addr)
+		}))
+	}
+	client, err := agent.NewClient(target, &as, 10*time.Second, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to agent at %s: %w", target, err)
+	}
+	return client, nil
+}
+
 // getAgentClientUnpooled bypasses the connection pool: direct-mode dials
 // a fresh conn the caller must Close(); local and reverse fall through to
 // getAgentClient. Use for long-lived server-streaming RPCs so the pool's

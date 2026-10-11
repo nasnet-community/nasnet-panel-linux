@@ -97,6 +97,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		nodes.POST("", h.CreateNode)
 		nodes.PUT("/:id", h.UpdateNode)
 		nodes.PATCH("/:id/connect-mode", h.SwitchConnectMode)
+		nodes.POST("/:id/agent-port", h.MoveAgentPort)
+		nodes.POST("/:id/address", h.MoveNodeAddress)
 		nodes.GET("/:id/agent/update/stream", h.UpdateAgentStream)
 		nodes.POST("/:id/agent/update", h.UpdateAgent)
 		nodes.DELETE("/:id", h.DeleteNode)
@@ -2934,29 +2936,66 @@ func (h *Handler) SwitchConnectMode(c *gin.Context) {
 		return
 	}
 
-	if err := h.nodeUsecase.SwitchConnectMode(c.Request.Context(), uint(nodeID), req.ConnectMode); err != nil {
-		if errors.Is(err, usecase.ErrLocalNode) {
-			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "NODE_LOCAL"})
-			return
-		}
-		errMsg := err.Error()
-		statusCode := http.StatusInternalServerError
-		if strings.Contains(errMsg, "already in") ||
-			strings.Contains(errMsg, "not supported") ||
-			strings.Contains(errMsg, "must be") ||
-			strings.Contains(errMsg, "offline") ||
-			strings.Contains(errMsg, "no IP address") ||
-			strings.Contains(errMsg, "stealth") {
-			statusCode = http.StatusBadRequest
-		}
-		c.JSON(statusCode, gin.H{"success": false, "error": errMsg})
+	res, err := h.nodeUsecase.SwitchConnectMode(c.Request.Context(), uint(nodeID), req.ConnectMode)
+	h.agentMoveResponse(c, res, err)
+}
+
+// MoveAgentPort moves a direct node's agent to another port, keeping the old
+// one open until the panel is in on the new one.
+// POST /api/v1/nodes/:id/agent-port
+func (h *Handler) MoveAgentPort(c *gin.Context) {
+	nodeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
 		return
 	}
+	var req struct {
+		Port int `json:"port"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	res, err := h.nodeUsecase.MoveAgentPort(c.Request.Context(), uint(nodeID), req.Port)
+	h.agentMoveResponse(c, res, err)
+}
 
-	c.JSON(http.StatusAccepted, gin.H{
-		"success": true,
-		"message": "Connection mode switch initiated. Agent is restarting.",
-	})
+// MoveNodeAddress points the panel at a node's new address, once the node
+// answers there.
+// POST /api/v1/nodes/:id/address
+func (h *Handler) MoveNodeAddress(c *gin.Context) {
+	nodeID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid node id"})
+		return
+	}
+	var req struct {
+		Address string `json:"address"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	res, err := h.nodeUsecase.MoveNodeAddress(c.Request.Context(), uint(nodeID), req.Address)
+	h.agentMoveResponse(c, res, err)
+}
+
+// agentMoveResponse: a move the node refused or the panel undid is still an
+// answer, so it comes back as data; only bad requests and faults are errors.
+func (h *Handler) agentMoveResponse(c *gin.Context, res *usecase.AgentMove, err error) {
+	var bad *usecase.BadMoveError
+	switch {
+	case errors.Is(err, usecase.ErrLocalNode):
+		c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "NODE_LOCAL"})
+	case errors.Is(err, usecase.ErrLiteNode), errors.Is(err, usecase.ErrNodeStealth):
+		c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error()})
+	case errors.As(err, &bad):
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": bad.Msg})
+	case err != nil:
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+	default:
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+	}
 }
 
 // ==================== Agent Management ====================

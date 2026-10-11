@@ -231,6 +231,14 @@ func (h *CommandHandler) HandleCommand(ctx context.Context, method string, paylo
 		return h.call(ctx, payload, &pb.InspectCertFileRequest{}, func(ctx context.Context, req proto.Message) (proto.Message, error) {
 			return h.srv.InspectCertFile(ctx, req.(*pb.InspectCertFileRequest))
 		})
+	case "MoveListenPort":
+		return h.call(ctx, payload, &pb.MoveListenPortRequest{}, func(ctx context.Context, req proto.Message) (proto.Message, error) {
+			return h.srv.MoveListenPort(ctx, req.(*pb.MoveListenPortRequest))
+		})
+	case "SwitchConnectMode":
+		return h.call(ctx, payload, &pb.SwitchConnectModeRequest{}, func(ctx context.Context, req proto.Message) (proto.Message, error) {
+			return h.srv.SwitchConnectMode(ctx, req.(*pb.SwitchConnectModeRequest))
+		})
 	case "ExecuteCommand":
 		return h.call(ctx, payload, &pb.ExecuteCommandRequest{}, func(ctx context.Context, req proto.Message) (proto.Message, error) {
 			return h.srv.ExecuteCommand(ctx, req.(*pb.ExecuteCommandRequest))

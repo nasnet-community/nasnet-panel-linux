@@ -32,6 +32,9 @@ type TLSConfig struct {
 	// VerifyLeaf, when set, sees the agent's leaf certificate after chain
 	// verification and may refuse it.
 	VerifyLeaf func(leaf *x509.Certificate) error
+	// ServerName is the name the agent's certificate must carry; empty means
+	// the address dialled. An address move dials the new address as the old name.
+	ServerName string
 }
 
 // NewClient creates a new agent client with mandatory mTLS. extra dial
@@ -101,6 +104,7 @@ func loadTLSCredentials(cfg *TLSConfig) (credentials.TransportCredentials, error
 		RootCAs:      certPool,
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"h2"},
+		ServerName:   cfg.ServerName,
 	}
 	if cfg.VerifyLeaf != nil {
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, chains [][]*x509.Certificate) error {
@@ -919,6 +923,16 @@ func (c *Client) ExecuteCommand(ctx context.Context, command string, timeoutSecs
 		Command:        command,
 		TimeoutSeconds: int32(timeoutSecs),
 	})
+}
+
+// ===== Moving the agent =====
+
+func (c *Client) MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error) {
+	return c.client.MoveListenPort(ctx, req)
+}
+
+func (c *Client) SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error) {
+	return c.client.SwitchConnectMode(ctx, req)
 }
 
 // ===== Cleanup Methods =====
