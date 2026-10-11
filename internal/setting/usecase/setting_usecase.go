@@ -162,7 +162,8 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 		for _, s := range filtered {
 			oldVal := oldValues[s.Key]
 			newVal := s.Value
-			if s.Sensitive || canonicalSensitive[s.Key] {
+			// Rows saved before the hash was flagged still say false.
+			if s.Sensitive || canonicalSensitive[s.Key] || s.Key == domain.AdminPasswordHashKey {
 				oldVal = "[redacted]"
 				newVal = "[redacted]"
 			}
@@ -411,7 +412,7 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "outbound_proxy_url", Value: "", Type: "string", Category: "server",
 			Label:           "Outbound proxy URL",
 			Description:     "SOCKS5 proxy URL for selected hub outbound features. Format: socks5h://user:pass@host:1080. Leave empty to disable. socks5h tunnels DNS; socks5 resolves locally.",
-			RequiresRestart: false},
+			RequiresRestart: false, Sensitive: true},
 		{Key: "proxy_use_telegram", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route Telegram via proxy",
 			Description:     "When enabled, Telegram bot API calls use outbound_proxy_url. Falls back to telegram_proxy_* if those are enabled and outbound URL is empty. Bot reconnects on hub restart.",
