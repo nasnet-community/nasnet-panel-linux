@@ -3,10 +3,12 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/alerting/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
 // ----- node_offline -----
@@ -141,6 +143,265 @@ func (e *Engine) resolveCrashLoop(ctx context.Context, p events.XrayStatusPayloa
 		msg := fmt.Sprintf("Xray on %s is up again.", displayName(p.NodeName, p.NodeID))
 		e.resolveIfFiring(ctx, rule, entity, title, msg)
 	}
+}
+
+// ----- MTProto nodes -----
+
+// mtprotoWindowCap bounds a window: a misbehaving agent can send thousands a second.
+const mtprotoWindowCap = 4096
+
+type mtprotoFire struct {
+	ruleID   uint
+	nodeID   uint
+	until    time.Time // end of the cooldown: events before it skip the database
+	restored bool      // firing before a restart: quiet is measured from the engine's start
+}
+
+// mtprotoHit is n occurrences at one moment.
+type mtprotoHit struct {
+	at time.Time
+	n  int
+}
+
+// rehydrateMTProto lets the tick resolve counting alerts left firing by the last run.
+func (e *Engine) rehydrateMTProto(ctx context.Context, firing []*domain.State) {
+	rules, err := e.repo.ListEnabledRules(ctx)
+	if err != nil {
+		return
+	}
+	byID := make(map[uint]*domain.Rule, len(rules))
+	for _, r := range rules {
+		byID[r.ID] = r
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, s := range firing {
+		r := byID[s.RuleID]
+		if r == nil || (r.RuleType != domain.RuleTypeMTProtoAllowlistViolation && r.RuleType != domain.RuleTypeMTProtoEgressDown) {
+			continue
+		}
+		var nodeID uint
+		if _, err := fmt.Sscanf(s.EntityKey, "node:%d", &nodeID); err != nil {
+			continue
+		}
+		until := time.Now()
+		if s.LastNotifiedAt != nil {
+			until = s.LastNotifiedAt.Add(time.Duration(r.CooldownSec) * time.Second)
+		}
+		e.mtprotoFiring[uintToKey(r.ID)+":"+s.EntityKey] = mtprotoFire{ruleID: r.ID, nodeID: nodeID, until: until, restored: true}
+	}
+}
+
+func (e *Engine) handleMTProto(ctx context.Context, t events.EventType, p events.MTProtoPayload) {
+	switch t {
+	case events.EventMTProtoTelemtCrashLoop:
+		e.evalMTProtoCrashLoop(ctx, p)
+	case events.EventMTProtoTelemtUp:
+		e.resolveMTProtoCrashLoop(ctx, p)
+	case events.EventMTProtoViolation:
+		e.evalMTProtoViolation(ctx, p)
+	case events.EventMTProtoEgressFailed:
+		e.evalMTProtoEgress(ctx, p)
+	case events.EventMTProtoDisguiseDown:
+		e.evalMTProtoDisguise(ctx, p, true)
+	case events.EventMTProtoDisguiseUp:
+		e.evalMTProtoDisguise(ctx, p, false)
+	}
+}
+
+// evalMTProtoCrashLoop fires at once: the agent already counted the exits.
+func (e *Engine) evalMTProtoCrashLoop(ctx context.Context, p events.MTProtoPayload) {
+	name := displayName(p.NodeName, p.NodeID)
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeNodeCrashLoop) {
+		if !e.ruleAppliesToNode(rule, p.NodeID) {
+			continue
+		}
+		msg := fmt.Sprintf("The proxy on %s keeps crashing.", name)
+		if p.Detail != "" {
+			msg += "\nLast exit: " + p.Detail
+		}
+		e.fireOrSkip(ctx, rule, nodeEntityKey(p.NodeID), "Proxy crash loop: "+name, msg, valueAsJSON(p))
+	}
+}
+
+// resolveMTProtoCrashLoop: Detail says why the proxy is stopped, when the loop ended with it stopped.
+func (e *Engine) resolveMTProtoCrashLoop(ctx context.Context, p events.MTProtoPayload) {
+	name := displayName(p.NodeName, p.NodeID)
+	title, msg := "Proxy recovered: "+name, fmt.Sprintf("The proxy on %s is running again.", name)
+	if p.Detail != "" {
+		title, msg = "Proxy no longer crash-looping: "+name, fmt.Sprintf("The proxy on %s stopped crash-looping. It is not running: %s", name, p.Detail)
+	}
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeNodeCrashLoop) {
+		if e.ruleAppliesToNode(rule, p.NodeID) {
+			e.resolveIfFiring(ctx, rule, nodeEntityKey(p.NodeID), title, msg)
+		}
+	}
+}
+
+func (e *Engine) evalMTProtoViolation(ctx context.Context, p events.MTProtoPayload) {
+	e.evalMTProtoCount(ctx, domain.RuleTypeMTProtoAllowlistViolation, p, func(name string, n int, rule *domain.Rule) (string, string) {
+		return "Refused destinations: " + name, fmt.Sprintf("%s asked for %d destinations outside the Telegram address list in the last %ds (threshold %d). Last: %s",
+			name, n, rule.Threshold.WindowSec, rule.Threshold.Count, p.Detail)
+	})
+}
+
+func (e *Engine) evalMTProtoEgress(ctx context.Context, p events.MTProtoPayload) {
+	e.evalMTProtoCount(ctx, domain.RuleTypeMTProtoEgressDown, p, func(name string, n int, rule *domain.Rule) (string, string) {
+		msg := fmt.Sprintf("The panel failed to reach Telegram for %s %d times in the last %ds (threshold %d).", name, n, rule.Threshold.WindowSec, rule.Threshold.Count)
+		if p.Error != "" {
+			msg += "\nLast error: " + p.Error
+		}
+		return "Telegram unreachable for " + name, msg
+	})
+}
+
+// evalMTProtoCount stays in memory during a cooldown, so a flood is not a query per event.
+func (e *Engine) evalMTProtoCount(ctx context.Context, t domain.RuleType, p events.MTProtoPayload, text func(name string, n int, rule *domain.Rule) (string, string)) {
+	e.recordMTProto(t, p.NodeID, max(p.Count, 1))
+	entity := nodeEntityKey(p.NodeID)
+	now := time.Now()
+	for _, rule := range e.cachedRulesOfType(ctx, t) {
+		if !e.ruleAppliesToNode(rule, p.NodeID) {
+			continue
+		}
+		key := uintToKey(rule.ID) + ":" + entity
+		e.mu.Lock()
+		f, firing := e.mtprotoFiring[key]
+		e.mu.Unlock()
+		if firing && now.Before(f.until) {
+			continue
+		}
+		threshold := rule.Threshold.Count
+		if threshold <= 0 {
+			threshold = 1
+		}
+		n := e.mtprotoCountWithin(t, p.NodeID, rule.Threshold.WindowSec)
+		if n < threshold {
+			continue
+		}
+		title, msg := text(displayName(p.NodeName, p.NodeID), n, rule)
+		// not sent means the stored state is still cooling down (say, from before a restart)
+		until := now.Add(30 * time.Second)
+		if e.fireOrSkip(ctx, rule, entity, title, msg, valueAsJSON(p)) {
+			until = now.Add(time.Duration(rule.CooldownSec) * time.Second)
+		}
+		e.mu.Lock()
+		e.mtprotoFiring[key] = mtprotoFire{ruleID: rule.ID, nodeID: p.NodeID, until: until}
+		e.mu.Unlock()
+	}
+}
+
+// resolveQuietMTProto clears a counting alert once its node has a quiet window.
+func (e *Engine) resolveQuietMTProto(ctx context.Context, rule *domain.Rule) {
+	type quiet struct {
+		key    string
+		nodeID uint
+	}
+	window := time.Duration(max(rule.Threshold.WindowSec, 0)) * time.Second
+	if window == 0 {
+		window = 300 * time.Second
+	}
+	var done []quiet
+	e.mu.Lock()
+	watched := time.Since(e.startTime) >= window
+	for key, f := range e.mtprotoFiring {
+		// a restored alert's events died with the old process: wait a whole window
+		if f.ruleID == rule.ID && (!f.restored || watched) {
+			done = append(done, quiet{key, f.nodeID})
+		}
+	}
+	e.mu.Unlock()
+	for _, q := range done {
+		if e.mtprotoCountWithin(rule.RuleType, q.nodeID, rule.Threshold.WindowSec) > 0 {
+			continue
+		}
+		e.mu.Lock()
+		delete(e.mtprotoFiring, q.key)
+		name := displayName(e.nodeMeta[q.nodeID].Name, q.nodeID)
+		e.mu.Unlock()
+		title, msg := "Recovered: Telegram reachable for "+name, fmt.Sprintf("No failed Telegram connections for %s in the last %ds.", name, rule.Threshold.WindowSec)
+		if rule.RuleType == domain.RuleTypeMTProtoAllowlistViolation {
+			title, msg = "Recovered: no refused destinations on "+name, fmt.Sprintf("%s asked for nothing outside the Telegram address list in the last %ds.", name, rule.Threshold.WindowSec)
+		}
+		e.resolveIfFiring(ctx, rule, nodeEntityKey(q.nodeID), title, msg)
+	}
+}
+
+func (e *Engine) evalMTProtoDisguise(ctx context.Context, p events.MTProtoPayload, down bool) {
+	name := displayName(p.NodeName, p.NodeID)
+	entity := nodeEntityKey(p.NodeID)
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeMTProtoDisguiseDown) {
+		if !e.ruleAppliesToNode(rule, p.NodeID) {
+			continue
+		}
+		if !down {
+			e.resolveIfFiring(ctx, rule, entity, "Recovered: cover site on "+name, fmt.Sprintf("The cover site %s works from %s again.", p.Detail, name))
+			continue
+		}
+		msg := fmt.Sprintf("The cover site %s no longer works from %s.", p.Detail, name)
+		if p.Error != "" {
+			msg += "\n" + p.Error
+		}
+		e.fireOrSkip(ctx, rule, entity, "Cover site down: "+name, msg, valueAsJSON(p))
+	}
+}
+
+func mtprotoWindowKey(t domain.RuleType, nodeID uint) string {
+	return string(t) + ":" + uintToKey(nodeID)
+}
+
+// recordMTProto prunes to the crash window's 30 min floor.
+func (e *Engine) recordMTProto(t domain.RuleType, nodeID uint, n int) {
+	now := time.Now()
+	cutoff := now.Add(-30 * time.Minute)
+	k := mtprotoWindowKey(t, nodeID)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	w := e.mtprotoWindows[k]
+	w = append(w[sort.Search(len(w), func(i int) bool { return w[i].at.After(cutoff) }):], mtprotoHit{at: now, n: n})
+	if len(w) > mtprotoWindowCap {
+		w = w[len(w)-mtprotoWindowCap:]
+	}
+	e.mtprotoWindows[k] = w
+}
+
+func (e *Engine) mtprotoCountWithin(t domain.RuleType, nodeID uint, windowSec int) int {
+	if windowSec <= 0 {
+		windowSec = 300
+	}
+	cutoff := time.Now().Add(-time.Duration(windowSec) * time.Second)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	w := e.mtprotoWindows[mtprotoWindowKey(t, nodeID)]
+	n := 0
+	for _, h := range w[sort.Search(len(w), func(i int) bool { return w[i].at.After(cutoff) }):] {
+		n += h.n
+	}
+	return n
+}
+
+// cachedRulesOfType is rulesOfType behind a one-second cache.
+func (e *Engine) cachedRulesOfType(ctx context.Context, t domain.RuleType) []*domain.Rule {
+	e.mu.Lock()
+	all, at := e.ruleCache, e.ruleCacheAt
+	e.mu.Unlock()
+	if at.IsZero() || time.Since(at) > time.Second {
+		var err error
+		if all, err = e.repo.ListEnabledRules(ctx); err != nil {
+			logger.GetLogger().WithError(err).Warn("AlertEngine: list enabled rules failed")
+			return nil
+		}
+		e.mu.Lock()
+		e.ruleCache, e.ruleCacheAt = all, time.Now()
+		e.mu.Unlock()
+	}
+	var out []*domain.Rule
+	for _, r := range all {
+		if r.RuleType == t {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // ----- high_cpu / high_disk -----

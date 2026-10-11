@@ -37,7 +37,7 @@ const RULE_TYPE_META: Record<string, { label: string; summary: (t: AlertThreshol
         fields: [],
     },
     node_crash_loop: {
-        label: "Xray Crash Loop",
+        label: "Crash Loop",
         summary: (t) => `${t.count ?? 5} crashes in ${t.window_sec ?? 300}s`,
         fields: ["count", "window_sec"],
     },
@@ -50,6 +50,21 @@ const RULE_TYPE_META: Record<string, { label: string; summary: (t: AlertThreshol
         label: "High Disk",
         summary: (t) => `Disk > ${t.value ?? 90}%`,
         fields: ["value", "duration_sec"],
+    },
+    relay_allowlist_violation: {
+        label: "Refused Destinations",
+        summary: (t) => `${t.count ?? 20} refused in ${t.window_sec ?? 300}s`,
+        fields: ["count", "window_sec"],
+    },
+    relay_egress_down: {
+        label: "Telegram Unreachable",
+        summary: (t) => `${t.count ?? 5} failed connections in ${t.window_sec ?? 120}s`,
+        fields: ["count", "window_sec"],
+    },
+    relay_disguise_down: {
+        label: "Cover Site Down",
+        summary: () => "Fires when an MTProto node's cover site stops working.",
+        fields: [],
     },
 }
 

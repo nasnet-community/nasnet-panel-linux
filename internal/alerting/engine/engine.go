@@ -52,6 +52,13 @@ type Engine struct {
 	latestOffline map[uint]events.NodeStatusPayload
 	// cache of last known node_name/ip for richer alert messages
 	nodeMeta map[uint]nodeMetaEntry
+	// MTProto counting rules: "type:nodeID" → occurrences, oldest first
+	mtprotoWindows map[string][]mtprotoHit
+	// MTProto counting rules we fired: "ruleID:entity" → state the tick resolves from
+	mtprotoFiring map[string]mtprotoFire
+	// enabled rules, cached briefly for the MTProto node events that come in floods
+	ruleCache   []*domain.Rule
+	ruleCacheAt time.Time
 }
 
 type nodeMetaEntry struct {
@@ -71,6 +78,8 @@ func NewEngine(bus *events.EventBus, repo repository.AlertRepository) *Engine {
 		offlineSinceAt: make(map[uint]time.Time),
 		latestOffline:  make(map[uint]events.NodeStatusPayload),
 		nodeMeta:       make(map[uint]nodeMetaEntry),
+		mtprotoWindows: make(map[string][]mtprotoHit),
+		mtprotoFiring:  make(map[string]mtprotoFire),
 	}
 }
 
@@ -83,6 +92,7 @@ func (e *Engine) Start(parent context.Context) {
 
 	// Rehydrate firing state. No re-fire — resolves only.
 	if firing, err := e.repo.ListFiringStates(ctx); err == nil {
+		e.rehydrateMTProto(ctx, firing)
 		logger.GetLogger().Infof("AlertEngine: rehydrated %d firing state rows", len(firing))
 	}
 
@@ -159,6 +169,13 @@ func (e *Engine) handleEvent(ctx context.Context, ev events.Event) {
 			e.rememberMeta(p.NodeID, p.NodeName, p.IP)
 			e.resolveCrashLoop(ctx, p)
 		}
+	case events.EventMTProtoTelemtCrashLoop, events.EventMTProtoTelemtUp,
+		events.EventMTProtoViolation, events.EventMTProtoEgressFailed,
+		events.EventMTProtoDisguiseDown, events.EventMTProtoDisguiseUp:
+		if p, ok := ev.Payload.(events.MTProtoPayload); ok {
+			e.rememberMeta(p.NodeID, p.NodeName, "")
+			e.handleMTProto(ctx, ev.Type, p)
+		}
 	case events.EventNodeDeleted, events.EventNodeUpdated:
 		// A node that is gone or taken out of service on purpose is not an
 		// outage: stop re-alerting on the tick.
@@ -209,6 +226,8 @@ func (e *Engine) tick(ctx context.Context) {
 			for _, p := range pending {
 				e.evalNodeOfflineForRule(ctx, rule, p)
 			}
+		case domain.RuleTypeMTProtoAllowlistViolation, domain.RuleTypeMTProtoEgressDown:
+			e.resolveQuietMTProto(ctx, rule)
 		}
 	}
 }
@@ -358,9 +377,8 @@ func (e *Engine) fireOrSkip(ctx context.Context, rule *domain.Rule, entityKey, t
 		UpdatedAt:        now,
 	})
 
-	// Update rule.last_fired_at — best-effort, swallowed on error.
-	rule.LastFiredAt = &now
-	_ = e.repo.UpdateRule(ctx, rule)
+	// best-effort; only the one column, since rule may be a cached copy
+	_ = e.repo.MarkRuleFired(ctx, rule.ID, now)
 
 	// Publish SystemAlert so the existing notification dispatcher routes
 	// to Telegram/webhook per the user's settings.
@@ -418,7 +436,9 @@ func levelFor(t domain.RuleType) string {
 	switch t {
 	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop:
 		return "error"
-	case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk:
+	case domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown:
+		return "error"
+	case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk, domain.RuleTypeMTProtoAllowlistViolation:
 		return "warning"
 	}
 	return "info"

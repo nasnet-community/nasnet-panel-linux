@@ -18,6 +18,10 @@ type AlertRepository interface {
 	GetRuleByType(ctx context.Context, t domain.RuleType) (*domain.Rule, error)
 	CreateRule(ctx context.Context, r *domain.Rule) error
 	UpdateRule(ctx context.Context, r *domain.Rule) error
+	// MarkRuleFired writes only last_fired_at, so a rule read earlier can't undo an edit or a delete.
+	MarkRuleFired(ctx context.Context, id uint, at time.Time) error
+	// RenameRule renames a rule only while it still has the name from.
+	RenameRule(ctx context.Context, id uint, from, to string) error
 	DeleteRule(ctx context.Context, id uint) error
 
 	// State (upsert semantics — one row per (rule, entity))
@@ -77,6 +81,14 @@ func (r *alertRepository) CreateRule(ctx context.Context, rule *domain.Rule) err
 
 func (r *alertRepository) UpdateRule(ctx context.Context, rule *domain.Rule) error {
 	return r.db.WithContext(ctx).Save(rule).Error
+}
+
+func (r *alertRepository) MarkRuleFired(ctx context.Context, id uint, at time.Time) error {
+	return r.db.WithContext(ctx).Model(&domain.Rule{}).Where("id = ?", id).UpdateColumn("last_fired_at", at).Error
+}
+
+func (r *alertRepository) RenameRule(ctx context.Context, id uint, from, to string) error {
+	return r.db.WithContext(ctx).Model(&domain.Rule{}).Where("id = ? AND name = ?", id, from).Update("name", to).Error
 }
 
 func (r *alertRepository) DeleteRule(ctx context.Context, id uint) error {

@@ -282,3 +282,14 @@ func TestScopeNodeIDsFilters(t *testing.T) {
 		t.Fatalf("scope match should fire; got %d events", len(repo.events))
 	}
 }
+
+func (f *fakeRepo) MarkRuleFired(ctx context.Context, id uint, at time.Time) error {
+	for _, r := range f.rules {
+		if r.ID == id {
+			r.LastFiredAt = &at
+		}
+	}
+	return nil
+}
+
+func (f *fakeRepo) RenameRule(ctx context.Context, id uint, from, to string) error { return nil }
