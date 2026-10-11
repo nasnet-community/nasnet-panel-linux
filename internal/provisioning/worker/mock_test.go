@@ -404,11 +404,12 @@ func (m *mockNodeUsecase) BulkPushConfig(context.Context, []uint) map[uint]*node
 func (m *mockNodeUsecase) BulkCheckHealth(context.Context, []uint) map[uint]*nodeUC.NodeBulkActionResult {
 	return map[uint]*nodeUC.NodeBulkActionResult{}
 }
+
+// Xray Version Management
 func (m *mockNodeUsecase) BulkUpdateXrayVersion(context.Context, []uint, string) map[uint]*nodeUC.NodeBulkActionResult {
 	return map[uint]*nodeUC.NodeBulkActionResult{}
 }
 
-// Xray Version Management
 func (m *mockNodeUsecase) UpdateXrayVersion(context.Context, uint, string) error { return nil }
 func (m *mockNodeUsecase) SetXrayDeps(interface {
 	EnsureCached(version, arch string) error
@@ -430,6 +431,10 @@ func (m *mockNodeUsecase) SetTunnelSocksLister(func(context.Context, uint) ([]xr
 func (m *mockNodeUsecase) SetCoreReconcileFn(func(context.Context, agent.NodeClient, uint) error) {}
 func (m *mockNodeUsecase) SetCoreUsageProvider(nodeUC.CoreUsageProvider)                          {}
 func (m *mockNodeUsecase) SetEmbeddedServer(*agentserver.Server)                                  {}
+func (m *mockNodeUsecase) IngestTraffic(context.Context, uint, []*agent.TrafficRecord, func(context.Context) error) (int64, error) {
+	return 0, nil
+}
+func (m *mockNodeUsecase) RecordNodeStat(context.Context, *nodeDomain.NodeStat) error { return nil }
 
 // Geofile Management
 func (m *mockNodeUsecase) UpdateGeoFiles(context.Context, uint, string, string, string) error {

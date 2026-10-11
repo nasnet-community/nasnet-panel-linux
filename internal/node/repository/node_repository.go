@@ -26,6 +26,10 @@ type NodeRepository interface {
 	ListActiveNodes(ctx context.Context) ([]*domain.Node, error)
 	UpdateNodeStatus(ctx context.Context, id uint, isOnline bool, lastCheck time.Time) error
 	SetNodeConnectMode(ctx context.Context, id uint, mode string, active bool) error
+	// SetNodeAgentPort and SetNodeIP change one column, so a move can't
+	// overwrite an edit made meanwhile.
+	SetNodeAgentPort(ctx context.Context, id uint, port int) error
+	SetNodeIP(ctx context.Context, id uint, ip string) error
 	UpdateNodeDNSSettings(ctx context.Context, nodeID uint, settings *domain.DNSSettings) error
 	UpdateNodeFakeDNSSettings(ctx context.Context, nodeID uint, pools []domain.FakeDNSPool) error
 
@@ -321,6 +325,14 @@ func (r *nodeRepository) SetNodeConnectMode(ctx context.Context, id uint, mode s
 		"connect_mode": mode,
 		"is_active":    active,
 	}).Error
+}
+
+func (r *nodeRepository) SetNodeAgentPort(ctx context.Context, id uint, port int) error {
+	return r.db.WithContext(ctx).Model(&domain.Node{}).Where("id = ?", id).Update("agent_port", port).Error
+}
+
+func (r *nodeRepository) SetNodeIP(ctx context.Context, id uint, ip string) error {
+	return r.db.WithContext(ctx).Model(&domain.Node{}).Where("id = ?", id).Update("ip", ip).Error
 }
 
 func (r *nodeRepository) UpdateNodeStatus(ctx context.Context, id uint, isOnline bool, lastCheck time.Time) error {

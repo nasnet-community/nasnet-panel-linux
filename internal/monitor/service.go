@@ -98,6 +98,10 @@ func (s *MonitorService) checkNodes(ctx context.Context) {
 		if !node.IsActive {
 			continue
 		}
+		// An MTProto node reports its own health through the MTProto node manager.
+		if node.IsLite() {
+			continue
+		}
 		// A live heartbeat stream is already reporting this node — polling it
 		// would only add a second, slower opinion.
 		if hasProbe && probe.HasLiveHeartbeatSession(node.ID) {

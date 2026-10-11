@@ -44,10 +44,12 @@ const (
 	// EgressXray: the core dials out through a loopback SOCKS inbound in the
 	// node's Xray config, so Xray's routing rules and outbounds apply.
 	EgressXray EgressMode = "xray"
+	// EgressHub: an MTProto node's Telegram traffic leaves through the panel; MTProto nodes use nothing else.
+	EgressHub EgressMode = "hub"
 )
 
 // IsValid reports whether e is a known egress mode.
-func (e EgressMode) IsValid() bool { return e == EgressDirect || e == EgressXray }
+func (e EgressMode) IsValid() bool { return e == EgressDirect || e == EgressXray || e == EgressHub }
 
 // CoreInbound is one protocol listener on one node.
 type CoreInbound struct {

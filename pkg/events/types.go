@@ -36,6 +36,16 @@ const (
 	// System events
 	EventSystemAlert EventType = "system.alert"
 
+	// MTProto (lite) node events
+	EventMTProtoTelemtDown      EventType = "relay.telemt_down"
+	EventMTProtoTelemtUp        EventType = "relay.telemt_up"
+	EventMTProtoTelemtCrashLoop EventType = "relay.telemt_crash_loop"
+	EventMTProtoEgressFailed    EventType = "relay.egress_failed"
+	EventMTProtoViolation       EventType = "relay.violation"
+	EventMTProtoPushFailed      EventType = "relay.push_failed"
+	EventMTProtoDisguiseDown    EventType = "relay.disguise_down"
+	EventMTProtoDisguiseUp      EventType = "relay.disguise_up"
+
 	// Xray process events
 	EventXrayDown      EventType = "xray.down"
 	EventXrayUp        EventType = "xray.up"
@@ -106,6 +116,15 @@ type Event struct {
 	Type      EventType   `json:"type"`
 	Timestamp time.Time   `json:"timestamp"`
 	Payload   interface{} `json:"payload"`
+}
+
+// MTProtoPayload carries an MTProto (lite) node event.
+type MTProtoPayload struct {
+	NodeID   uint   `json:"node_id"`
+	NodeName string `json:"node_name"`
+	Detail   string `json:"detail,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Count    int    `json:"count,omitempty"` // occurrences this event stands for; 0 means one
 }
 
 // NodeStatusPayload contains data for node online/offline events

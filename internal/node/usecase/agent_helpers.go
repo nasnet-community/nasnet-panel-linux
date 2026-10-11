@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -176,6 +177,9 @@ func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) [
 	return out
 }
 
+// ErrLiteNode is returned for any agent call on an MTProto (lite) node.
+var ErrLiteNode = errors.New("this is an MTProto node: it has no agent to call")
+
 // getAgentClient routes a node to its transport: the built-in node to the
 // in-process EmbeddedClient, reverse-mode nodes to a ReverseClient over the
 // hub command channel, direct-mode nodes to a pooled mTLS gRPC client.
@@ -183,6 +187,10 @@ func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) [
 func (u *nodeUsecase) getAgentClient(node *domain.Node) (agent.NodeClient, error) {
 	if node == nil {
 		return nil, nil
+	}
+	// an MTProto node has no gRPC agent: one clear error beats a doomed dial
+	if node.IsLite() {
+		return nil, ErrLiteNode
 	}
 
 	switch node.ConnectMode {
@@ -355,6 +363,10 @@ func (u *nodeUsecase) CheckAgentHealth(ctx context.Context, id uint) (*domain.No
 	node, err := u.nodeRepo.GetNode(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	// the MTProto node manager owns its health: probing for a gRPC agent records a false outage
+	if node.IsLite() {
+		return &domain.NodeHealth{Healthy: node.IsOnline, Message: "MTProto node: the link reports its health"}, nil
 	}
 
 	client, err := u.getAgentClient(node)
@@ -1315,6 +1327,9 @@ func (u *nodeUsecase) PushCertDenylistToAllNodes(ctx context.Context) error {
 
 	var errs []string
 	for _, node := range nodes {
+		if node.IsLite() {
+			continue
+		}
 		if err := u.PushCertDenylistToNode(ctx, node.ID); err != nil {
 			log.WithError(err).Warnf("[PushCertDenylist] Failed for node %d", node.ID)
 			errs = append(errs, fmt.Sprintf("node %d: %v", node.ID, err))

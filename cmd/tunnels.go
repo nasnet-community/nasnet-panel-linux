@@ -10,6 +10,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/core/nodebridge"
 	coreRepository "github.com/nasnet-community/nasnet-panel-linux/internal/core/repository"
 	coreUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/mtprotonode"
 	nodeDomain "github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	nodeUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	subDomain "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
@@ -30,7 +31,15 @@ type tunnelSubs interface {
 	FindByID(ctx context.Context, id uint) (*subDomain.Subscription, error)
 }
 
+// mtprotoRouter is the MTProto node manager as the tunnel code sees it.
+type mtprotoRouter interface {
+	Pusher(nodeID uint) *mtprotonode.Pusher
+	ReservedPorts(ctx context.Context, nodeID uint) []int
+	CheckCover(ctx context.Context, nodeID uint, domain string) error
+}
+
 type tunnelDeps struct {
+	MTProto  mtprotoRouter // nil when MTProto nodes are not wired
 	Repo     coreRepository.CoreRepository
 	Subs     tunnelSubs
 	Nodes    tunnelNodes
@@ -49,6 +58,15 @@ type tunnelDeps struct {
 	Log        *logrus.Logger
 }
 
+// isLite reports whether the node is an MTProto node served by the MTProto node manager.
+func (d tunnelDeps) isLite(ctx context.Context, nodeID uint) bool {
+	if d.MTProto == nil || (nodeID != 0 && nodeID == d.NodeUC.LocalNodeID()) {
+		return false
+	}
+	n, err := d.Nodes.GetNode(ctx, nodeID)
+	return err == nil && n.IsLite()
+}
+
 // newTunnelUsecase builds the SSH/MTProto tunnel usecase. The built-in node is
 // reached through the in-process agent without a database read, so a
 // reconcile inside a transaction cannot block on SQLite's single connection.
@@ -56,10 +74,29 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 	client := tunnelClient(d)
 	return coreUsecase.NewCoreUsecase(d.Repo,
 		coreUsecase.WithNodeClientResolver(func(ctx context.Context, nodeID uint) (coreUsecase.CoreStatePusher, error) {
+			if d.isLite(ctx, nodeID) {
+				return d.MTProto.Pusher(nodeID), nil
+			}
 			return client(ctx, nodeID)
 		}),
 		coreUsecase.WithNodeStatusResolver(func(ctx context.Context, nodeID uint) (coreUsecase.CoreStatusReader, error) {
+			if d.isLite(ctx, nodeID) {
+				return d.MTProto.Pusher(nodeID), nil
+			}
 			return client(ctx, nodeID)
+		}),
+		coreUsecase.WithCoverSiteCheck(func(ctx context.Context, nodeID uint, domain string) error {
+			if d.MTProto == nil {
+				return nil
+			}
+			return d.MTProto.CheckCover(ctx, nodeID, domain)
+		}),
+		coreUsecase.WithNodeKindResolver(func(ctx context.Context, nodeID uint) (string, error) {
+			n, err := d.Nodes.GetNode(ctx, nodeID)
+			if err != nil {
+				return "", err
+			}
+			return n.Kind, nil
 		}),
 		coreUsecase.WithNodeHostResolver(func(ctx context.Context, nodeID uint) (string, error) {
 			n, err := d.Nodes.GetNode(ctx, nodeID)
@@ -175,9 +212,13 @@ func tunnelPortTaken(ctx context.Context, d tunnelDeps, nodeID uint, port int) (
 		return false, err
 	}
 	reserved := []int{sshdPort, n.APIPort}
-	if n.IsLocal() {
+	switch {
+	case n.IsLocal():
 		reserved = append(reserved, d.PanelPort, d.HubPort)
-	} else {
+	case n.IsLite() && d.MTProto != nil:
+		// no gRPC agent here: the node's own services hold the ports
+		reserved = d.MTProto.ReservedPorts(ctx, nodeID)
+	default:
 		reserved = append(reserved, n.AgentPort)
 	}
 	for _, p := range reserved {

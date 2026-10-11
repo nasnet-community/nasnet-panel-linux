@@ -181,6 +181,10 @@ func (h *DeployHandler) deployableNode(c *gin.Context) (*domain.Node, bool) {
 		c.JSON(http.StatusConflict, gin.H{"error": "The built-in node runs inside the panel and needs no agent", "code": "NODE_LOCAL"})
 		return nil, false
 	}
+	if node.IsLite() {
+		c.JSON(http.StatusConflict, gin.H{"error": "An MTProto node is installed from its own page, not with an agent script", "code": "NODE_LITE"})
+		return nil, false
+	}
 	return node, true
 }
 

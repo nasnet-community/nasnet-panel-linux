@@ -419,6 +419,10 @@ func (m *mockNodeRepo) ListNodes(_ context.Context) ([]*nodeDomain.Node, error) 
 func (m *mockNodeRepo) ListActiveNodes(_ context.Context) ([]*nodeDomain.Node, error) {
 	return nil, nil
 }
+func (m *mockNodeRepo) SetNodeAgentPort(_ context.Context, _ uint, _ int) error { return nil }
+
+func (m *mockNodeRepo) SetNodeIP(_ context.Context, _ uint, _ string) error { return nil }
+
 func (m *mockNodeRepo) SetNodeConnectMode(_ context.Context, _ uint, _ string, _ bool) error {
 	return nil
 }

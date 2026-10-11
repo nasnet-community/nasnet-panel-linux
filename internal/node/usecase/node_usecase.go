@@ -40,6 +40,9 @@ var (
 	// ErrLocalNode refuses changes the built-in node can't take: delete,
 	// uninstall, self-update, a connect-mode switch or deactivation.
 	ErrLocalNode = errors.New("the built-in node can't be removed or changed this way")
+	// an MTProto node's agent is driven by the MTProto node service; these paths would orphan it
+	ErrMTProtoNode        = errors.New("MTProto nodes are removed from their own page (Remove node), which also uninstalls the agent")
+	ErrMTProtoNodeAddress = errors.New("an MTProto node's address and kind are fixed at install; if it stopped connecting, use Repair on its page")
 )
 
 // SyncResult holds the result of a sync operation
@@ -294,6 +297,10 @@ type NodeUsecase interface {
 	SetTunnelSocksLister(fn func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error))
 	SetCoreReconcileFn(fn func(ctx context.Context, client agent.NodeClient, nodeID uint) error)
 	SetCoreUsageProvider(s CoreUsageProvider)
+	// IngestTraffic books MTProto node usage; inTx commits or rolls back with it.
+	IngestTraffic(ctx context.Context, nodeID uint, records []*agent.TrafficRecord, inTx func(ctx context.Context) error) (int64, error)
+	// RecordNodeStat saves an MTProto node's sample, which the stats sweep never takes.
+	RecordNodeStat(ctx context.Context, stat *domain.NodeStat) error
 
 	// Node Nuke / Wipe
 	Nuke(ctx context.Context, nodeID uint, opts NukeOptions, emit NukeEmitter) (*pb.NukeReport, error)

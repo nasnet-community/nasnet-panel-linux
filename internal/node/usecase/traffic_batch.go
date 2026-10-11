@@ -80,6 +80,11 @@ type trafficAccountKey struct{ sub, inbound uint }
 // A timestamp may be reused after a drain, so it is NOT an ingestion identity.
 // This function deliberately does not persist a timestamp-only dedup watermark.
 func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.Node, records []*agent.TrafficRecord) (int64, error) {
+	return u.persistBufferedTrafficThen(ctx, node, records, nil)
+}
+
+// persistBufferedTrafficThen also runs inTx inside the booking transaction.
+func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *domain.Node, records []*agent.TrafficRecord, inTx func(ctx context.Context) error) (int64, error) {
 	if len(records) == 0 {
 		return 0, nil
 	}
@@ -368,6 +373,9 @@ func (u *nodeUsecase) persistBufferedTraffic(ctx context.Context, node *domain.N
 			if err := u.wgPeerSource.AddPeerUsageBatch(txCtx, peerDeltas); err != nil {
 				return fmt.Errorf("WireGuard peer traffic: %w", err)
 			}
+		}
+		if inTx != nil {
+			return inTx(txCtx)
 		}
 		return nil
 	})

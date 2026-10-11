@@ -238,12 +238,11 @@ func (u *nodeUsecase) autoRotateSettings(ctx context.Context) AutoRotateState {
 	return st
 }
 
-// remoteNodes drops the built-in node: it runs inside the panel's process
-// and has no agent certificate to show, rotate or gate on.
+// remoteNodes drops the built-in node and MTProto nodes: neither has an agent certificate.
 func remoteNodes(nodes []*domain.Node) []*domain.Node {
 	out := make([]*domain.Node, 0, len(nodes))
 	for _, n := range nodes {
-		if !n.IsLocal() {
+		if !n.IsLocal() && !n.IsLite() {
 			out = append(out, n)
 		}
 	}

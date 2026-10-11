@@ -232,6 +232,9 @@ func (hm *HeartbeatManager) syncSessions(ctx context.Context) {
 	// Build set of active agent node IDs
 	activeIDs := make(map[uint]bool)
 	for _, node := range nodes {
+		if node.IsLite() {
+			continue // an MTProto node has no heartbeat stream; the MTProto node manager reports it
+		}
 		activeIDs[node.ID] = true
 	}
 
@@ -240,6 +243,9 @@ func (hm *HeartbeatManager) syncSessions(ctx context.Context) {
 
 	// Start sessions for new nodes; the hub callbacks drive reverse nodes.
 	for _, node := range nodes {
+		if node.IsLite() {
+			continue
+		}
 		if _, exists := hm.sessions[node.ID]; !exists && node.ConnectMode != domain.ConnectModeReverse {
 			hm.startSession(ctx, node)
 		}

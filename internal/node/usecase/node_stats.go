@@ -561,6 +561,7 @@ func (u *nodeUsecase) SyncNodeStats(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	nodes = withoutLite(nodes) // MTProto nodes book their own usage (IngestTraffic)
 
 	// Pre-fetch per-node account counts once so each goroutine's SSE
 	// publish doesn't re-issue two Count queries. Soft error — worst

@@ -468,6 +468,10 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
 			return
 		}
+		if errors.Is(err, usecase.ErrMTProtoNodeAddress) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "MTPROTO_NODE"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -500,6 +504,10 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 		}
 		if errors.Is(err, usecase.ErrLocalNode) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
+			return
+		}
+		if errors.Is(err, usecase.ErrMTProtoNode) {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "MTPROTO_NODE"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})

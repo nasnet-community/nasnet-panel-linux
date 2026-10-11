@@ -17,13 +17,19 @@ import (
 
 // Validation errors, comparable via errors.Is.
 var (
-	ErrInvalidProtocol  = errors.New("core: invalid protocol")
-	ErrInvalidEgress    = errors.New("core: invalid egress mode")
-	ErrInvalidPort      = errors.New("core: invalid port")
-	ErrPortInUse        = errors.New("core: port already in use on node")
-	ErrProtocolDisabled = errors.New("core: protocol disabled on node")
-	ErrInvalidSecret    = errors.New("core: invalid secret")
-	ErrDuplicateUser    = errors.New("core: user already exists on this inbound")
+	ErrInvalidProtocol     = errors.New("core: invalid protocol")
+	ErrInvalidEgress       = errors.New("core: invalid egress mode")
+	ErrHubEgressNotHere    = errors.New("core: panel egress is only for MTProto nodes")
+	ErrMTProtoNodeEgress   = errors.New("core: an MTProto node's tunnel must use panel egress")
+	ErrMTProtoNodeProtocol = errors.New("core: an MTProto node runs only MTProto tunnels")
+	ErrMTProtoNodeSingle   = errors.New("core: an MTProto node runs exactly one tunnel")
+	ErrMTProtoNodeDomain   = errors.New("core: an MTProto node's tunnel needs a cover site (tls_domain)")
+	ErrMTProtoNodeNoMiddle = errors.New("core: an MTProto node's tunnel cannot use the middle proxy or an ad tag")
+	ErrInvalidPort         = errors.New("core: invalid port")
+	ErrPortInUse           = errors.New("core: port already in use on node")
+	ErrProtocolDisabled    = errors.New("core: protocol disabled on node")
+	ErrInvalidSecret       = errors.New("core: invalid secret")
+	ErrDuplicateUser       = errors.New("core: user already exists on this inbound")
 )
 
 // ensureUniqueUser rejects a second user with the same email or username on
@@ -66,6 +72,18 @@ type CoreUsecase struct {
 	inboundsChanged func(ctx context.Context, nodeID uint)
 	relayed         func(nodeID uint) bool
 	pushXray        func(ctx context.Context, nodeID uint) error
+	nodeKind        func(ctx context.Context, nodeID uint) (string, error)
+	coverCheck      func(ctx context.Context, nodeID uint, domain string) error
+}
+
+// WithCoverSiteCheck vets an MTProto node tunnel's cover site from its node before saving.
+func WithCoverSiteCheck(fn func(ctx context.Context, nodeID uint, domain string) error) Option {
+	return func(u *CoreUsecase) { u.coverCheck = fn }
+}
+
+// WithNodeKindResolver: MTProto nodes have their own rules for what a tunnel may be.
+func WithNodeKindResolver(fn func(ctx context.Context, nodeID uint) (string, error)) Option {
+	return func(u *CoreUsecase) { u.nodeKind = fn }
 }
 
 // WithXrayConfigPusher wires the Xray config push that follows a change to
@@ -180,6 +198,9 @@ func (u *CoreUsecase) CreateInbound(ctx context.Context, in *domain.CoreInbound)
 	if err := u.validate(in); err != nil {
 		return err
 	}
+	if err := u.validateForNode(ctx, in); err != nil {
+		return err
+	}
 	disabled, err := u.repo.DisabledProtocolsForNode(ctx, in.NodeID)
 	if err != nil {
 		return err
@@ -241,6 +262,9 @@ func (u *CoreUsecase) UpdateInbound(ctx context.Context, in *domain.CoreInbound)
 		in.EgressMode = domain.EgressDirect
 	}
 	if err := u.validate(in); err != nil {
+		return err
+	}
+	if err := u.validateForNode(ctx, in); err != nil {
 		return err
 	}
 	if err := u.checkPortFree(ctx, in.NodeID, in.Port, in.ID); err != nil {

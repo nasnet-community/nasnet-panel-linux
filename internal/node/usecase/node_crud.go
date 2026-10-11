@@ -163,6 +163,9 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 	if node.IsLocal() {
 		return ErrLocalNode
 	}
+	if node.IsLite() && !fromMTProtoService(ctx) {
+		return ErrMTProtoNode
+	}
 
 	// 1. Check for active children (Inbounds -> Accounts)
 	inbounds, err := u.nodeRepo.ListInboundsByNode(ctx, id)
@@ -187,8 +190,8 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 		return ErrNodeHasChildren
 	}
 
-	// 2. Agent Cleanup (best effort, runs for all deletions)
-	if node != nil {
+	// 2. Agent Cleanup (best effort); the MTProto node service has already removed the node's agent.
+	if node != nil && !node.IsLite() {
 		log.Info("[DeleteNode] Attempting to uninstall agent on remote node")
 		client, err := u.getAgentClient(node)
 		if err != nil {
@@ -556,6 +559,9 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	}
 	if node.IsLocal() && (!node.IsActive || node.IsStealth || node.IsPersistentStealth) {
 		return ErrLocalNode
+	}
+	if (existing.IsLite() || node.IsLite()) && (existing.Kind != node.Kind || existing.IP != node.IP) {
+		return ErrMTProtoNodeAddress
 	}
 
 	// Taking a node out of service is a transition worth recording: without it

@@ -249,6 +249,7 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 	defaults := []*domain.Setting{
 		// General
 		{Key: "site_name", Value: "NasNet Panel", Type: "string", Category: "general", Description: "The name of your site", Label: "Site Name"},
+		{Key: "relay_cidr_url", Value: "", Type: "string", Category: "general", Description: "Where MTProto nodes refresh Telegram's address list from, daily. Empty uses Telegram's own list (core.telegram.org/resources/cidr.txt); \"off\" keeps only the built-in one. A refresh only adds ranges.", Label: "Telegram address list URL"},
 		{Key: "registration_enabled", Value: "true", Type: "bool", Category: "general", Description: "Allow new users to register via Telegram", Label: "Registration Enabled"},
 
 		// Support links (merged into general)
@@ -420,7 +421,7 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 			RequiresRestart: false},
 		{Key: "proxy_use_core_binaries", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route tunnel binary downloads via proxy",
-			Description:     "When enabled, the MTProto relay (telemt) download from GitHub uses outbound_proxy_url.",
+			Description:     "When enabled, the MTProto proxy (telemt) download from GitHub uses outbound_proxy_url.",
 			RequiresRestart: false},
 		{Key: "proxy_use_github_api", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route GitHub API via proxy",

@@ -357,6 +357,9 @@ func uplinkIndexFor(slot domain.UplinkSlot) uint32 {
 	return 0
 }
 
+// UplinkIndex is a slot's netmark pin, for callers binding a socket to one line.
+func UplinkIndex(slot domain.UplinkSlot) uint32 { return uplinkIndexFor(slot) }
+
 func groupIndexFor(slot domain.UplinkSlot) uint32 {
 	if slot.IsDomestic() {
 		return netmark.GroupDomestic

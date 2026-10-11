@@ -5,6 +5,11 @@ export function isLocalNode(n: Pick<Node, "connect_mode"> | null | undefined): b
     return n?.connect_mode === "local"
 }
 
+/** An MTProto node: a VPS running only mtproto-agent, driven over a link. */
+export function isLiteNode(n: Pick<Node, "kind"> | null | undefined): boolean {
+    return n?.kind === "lite"
+}
+
 const LOOPBACK = /^(127\.|::1$|localhost$)/
 
 export function nodeAddress(n: Pick<Node, "ip" | "connect_mode">): string {

@@ -16,7 +16,7 @@ func (s *Scheduler) reconcileNodes(ctx context.Context) {
 	}
 
 	for _, node := range nodes {
-		if !node.IsActive {
+		if !node.IsActive || node.IsLite() {
 			continue
 		}
 
@@ -46,7 +46,7 @@ func (s *Scheduler) syncAgentNodes(ctx context.Context) {
 	}
 
 	for _, node := range nodes {
-		if !node.IsActive {
+		if !node.IsActive || node.IsLite() {
 			continue
 		}
 
