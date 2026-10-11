@@ -68,25 +68,23 @@ RUN apk --no-cache add ca-certificates tzdata postgresql16-client wget su-exec s
 
 # Install xray-core. The single binary runs xray as a local child.
 # Pinned to the version the panel expects and verified against the
-# release's published .dgst — never "latest", never unchecked.
+# pinned zip hash — never "latest", never unchecked.
 ARG TARGETARCH
-ARG XRAY_VERSION=26.7.28
+# The hashes are the ones pinned in internal/xray/pin; bump them together.
+ARG XRAY_VERSION=26.9.30
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
-      amd64) asset="Xray-linux-64.zip" ;; \
-      arm64) asset="Xray-linux-arm64-v8a.zip" ;; \
+      amd64) asset="Xray-linux-64.zip"; want="f851110beaff16e78d643f0ccfd9524b4a44dfd59bae3e34bb52bba378f7690e" ;; \
+      arm64) asset="Xray-linux-arm64-v8a.zip"; want="9886f077f9fd8e6713b84c377c1c7db4e53b9bfa8c276a5bd12561139522b473" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${asset}"; \
     wget -q -O /tmp/xray.zip "$url"; \
-    wget -q -O /tmp/xray.zip.dgst "${url}.dgst"; \
-    want=$(grep -iE 'sha2?-?256' /tmp/xray.zip.dgst | grep -oE '[0-9a-f]{64}' | head -1); \
-    test -n "$want"; \
     echo "${want}  /tmp/xray.zip" | sha256sum -c -; \
     mkdir -p /usr/local/bin /usr/local/etc/xray; \
     unzip -o /tmp/xray.zip xray -d /usr/local/bin/; \
     chmod +x /usr/local/bin/xray; \
-    rm /tmp/xray.zip /tmp/xray.zip.dgst
+    rm /tmp/xray.zip
 
 # Create non-root user with a stable UID/GID so host bind mounts
 # (e.g. ./data/backups) can be chowned to match.

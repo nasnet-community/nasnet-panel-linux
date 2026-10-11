@@ -3,12 +3,11 @@ package usecase
 import (
 	"archive/zip"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -198,208 +197,156 @@ func TestGetBinaryPath(t *testing.T) {
 	}
 }
 
-func TestListVersions(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
+// pinnedFake is a manager pinned to a fake release served by a test server,
+// which also publishes a .dgst for it the way XTLS does.
+func pinnedFake(t *testing.T, version string, zipData, bin []byte) (*BinaryManager, *int) {
+	t.Helper()
+	hits := 0
+	dgst := "SHA2-256= " + sha256Hex(zipData) + "\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".dgst") {
+			w.Write([]byte(dgst))
+			return
+		}
+		hits++
+		w.Header().Set("Content-Type", "application/zip")
+		w.Write(zipData)
+	}))
+	t.Cleanup(srv.Close)
+	bm := NewPinnedBinaryManager(t.TempDir(), nil, version,
+		map[string]string{"amd64": sha256Hex(zipData)}, map[string]string{"amd64": sha256Hex(bin)})
+	bm.releaseURL = func(string, string) string { return srv.URL + "/xray.zip" }
+	return bm, &hits
+}
 
-	// Empty dir returns empty list
-	versions := bm.ListVersions()
-	if len(versions) != 0 {
-		t.Errorf("expected empty list, got %d items", len(versions))
-	}
-
-	// Add a version with amd64
+func TestThePinnedReleaseIsDownloadedVerifiedAndCached(t *testing.T) {
 	elf := validELF()
-	if err := bm.StoreBinary("1.8.4", "amd64", elf); err != nil {
-		t.Fatal(err)
+	bm, hits := pinnedFake(t, "26.9.30", createTestZip(t, "xray", elf), elf)
+	for i := 0; i < 2; i++ {
+		data, sum, err := bm.EnsureAndLoad("26.9.30", "amd64")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(data, elf) || sum != sha256Hex(elf) {
+			t.Fatalf("got %d bytes, sum %s", len(data), sum)
+		}
 	}
-
-	versions = bm.ListVersions()
-	if len(versions) != 1 {
-		t.Fatalf("expected 1 version, got %d", len(versions))
-	}
-	if versions[0].Version != "1.8.4" {
-		t.Errorf("expected version 1.8.4, got %s", versions[0].Version)
-	}
-
-	pi, ok := versions[0].Platforms["amd64"]
-	if !ok {
-		t.Fatal("expected amd64 platform")
-	}
-	if !pi.Cached {
-		t.Error("expected amd64 to be cached")
-	}
-	if pi.Size != int64(len(elf)) {
-		t.Errorf("expected size %d, got %d", len(elf), pi.Size)
-	}
-	if pi.Checksum == "" {
-		t.Error("expected non-empty checksum")
+	if *hits != 1 {
+		t.Fatalf("downloaded %d times, want once then the cache", *hits)
 	}
 }
 
-func TestStoreBinary(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
+func TestAnInvalidVersionOrArchIsNeverFetched(t *testing.T) {
 	elf := validELF()
-	err := bm.StoreBinary("1.8.4", "amd64", elf)
-	if err != nil {
-		t.Fatalf("StoreBinary() error: %v", err)
+	bm, hits := pinnedFake(t, "26.9.30", createTestZip(t, "xray", elf), elf)
+	for _, v := range []string{"../etc/passwd", "", "v26.9.30"} {
+		if _, _, err := bm.EnsureAndLoad(v, "amd64"); err == nil {
+			t.Errorf("version %q was served", v)
+		}
 	}
-
-	// Verify cached
-	if !bm.IsCached("1.8.4", "amd64") {
-		t.Error("expected cached after store")
+	if _, _, err := bm.EnsureAndLoad("26.9.30", "riscv64"); err == nil {
+		t.Error("an unknown arch was served")
 	}
-
-	// Verify checksum
-	h := sha256.Sum256(elf)
-	expectedChecksum := hex.EncodeToString(h[:])
-	gotChecksum, err := bm.GetChecksum("1.8.4", "amd64")
-	if err != nil {
-		t.Fatalf("GetChecksum() error: %v", err)
-	}
-	if gotChecksum != expectedChecksum {
-		t.Errorf("checksum mismatch: got %q, want %q", gotChecksum, expectedChecksum)
-	}
-
-	// Verify binary content
-	binPath := bm.binaryPath("1.8.4", "amd64")
-	data, err := os.ReadFile(binPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error: %v", err)
-	}
-	if !bytes.Equal(data, elf) {
-		t.Error("binary content mismatch")
+	if *hits != 0 {
+		t.Fatalf("bad requests downloaded %d times", *hits)
 	}
 }
 
-func TestStoreBinary_InvalidELF(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	err := bm.StoreBinary("1.8.4", "amd64", []byte("not an elf binary"))
-	if err == nil {
-		t.Error("expected error for non-ELF data")
-	}
-
-	// Verify NOT cached
-	if bm.IsCached("1.8.4", "amd64") {
-		t.Error("expected not cached after invalid store")
-	}
-}
-
-func TestStoreBinary_InvalidVersion(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	err := bm.StoreBinary("../etc/passwd", "amd64", validELF())
-	if err == nil {
-		t.Error("expected error for path traversal version")
-	}
-}
-
-func TestDownloadAndStore(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
+func TestAnotherReleaseIsCheckedAgainstItsPublishedDigest(t *testing.T) {
 	elf := validELF()
 	zipData := createTestZip(t, "xray", elf)
+	bm, _ := pinnedFake(t, "26.9.30", zipData, elf)
+	data, sum, err := bm.EnsureAndLoad("26.7.28", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, elf) || sum != sha256Hex(elf) {
+		t.Fatalf("got %d bytes, sum %s", len(data), sum)
+	}
 
-	// Start a test HTTP server
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/zip")
+	// a digest that disagrees with the zip refuses it
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".dgst") {
+			w.Write([]byte("SHA2-256= " + sha256Hex([]byte("other")) + "\n"))
+			return
+		}
 		w.Write(zipData)
 	}))
-	defer srv.Close()
-
-	// Use the internal downloadAndStore with test URL
-	err := bm.downloadAndStore("1.8.4", "amd64", srv.URL+"/test.zip")
-	if err != nil {
-		t.Fatalf("downloadAndStore() error: %v", err)
+	defer bad.Close()
+	bm2 := NewPinnedBinaryManager(t.TempDir(), nil, "26.9.30", map[string]string{"amd64": "x"}, map[string]string{"amd64": "y"})
+	bm2.releaseURL = func(string, string) string { return bad.URL + "/xray.zip" }
+	if _, _, err := bm2.EnsureAndLoad("26.7.28", "amd64"); err == nil {
+		t.Fatal("a zip that fails its published digest was accepted")
 	}
-
-	// Verify cached
-	if !bm.IsCached("1.8.4", "amd64") {
-		t.Error("expected cached after download")
-	}
-
-	// Verify the stored content is the ELF from inside the zip
-	binPath := bm.binaryPath("1.8.4", "amd64")
-	data, err := os.ReadFile(binPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error: %v", err)
-	}
-	if !bytes.Equal(data, elf) {
-		t.Error("binary content mismatch")
+	if bm2.IsCached("26.7.28", "amd64") {
+		t.Fatal("a refused download was cached")
 	}
 }
 
-func TestDownloadAndStore_NotELF(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	zipData := createTestZip(t, "xray", []byte("not an ELF"))
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/zip")
-		w.Write(zipData)
-	}))
-	defer srv.Close()
-
-	err := bm.downloadAndStore("1.8.4", "amd64", srv.URL+"/test.zip")
-	if err == nil {
-		t.Error("expected error for non-ELF content in zip")
+func TestAReleaseThatIsNotThePinnedOneIsRefused(t *testing.T) {
+	elf := validELF()
+	// the zip on the wire differs from the pinned one
+	bm, _ := pinnedFake(t, "26.9.30", createTestZip(t, "xray", elf), elf)
+	bm.pin.Zip["amd64"] = sha256Hex([]byte("another zip"))
+	if _, _, err := bm.EnsureAndLoad("26.9.30", "amd64"); err == nil {
+		t.Fatal("a zip that is not the pinned release was accepted")
+	}
+	if bm.IsCached("26.9.30", "amd64") {
+		t.Fatal("a refused download was cached")
 	}
 
-	if bm.IsCached("1.8.4", "amd64") {
-		t.Error("expected not cached after failed download")
+	// the zip matches but the binary inside is not the pinned build
+	bm2, _ := pinnedFake(t, "26.9.30", createTestZip(t, "xray", elf), []byte("pinned build"))
+	if _, _, err := bm2.EnsureAndLoad("26.9.30", "amd64"); err == nil {
+		t.Fatal("a binary that is not the pinned build was accepted")
+	}
+}
+
+func TestAStaleCacheIsReplacedByTheVerifiedRelease(t *testing.T) {
+	elf := validELF()
+	bm, hits := pinnedFake(t, "26.9.30", createTestZip(t, "xray", elf), elf)
+	// an old upload sits where the pinned build belongs, with a matching sidecar
+	stale := append(validELF(), []byte("uploaded")...)
+	if err := bm.storeRaw("26.9.30", "amd64", stale); err != nil {
+		t.Fatal(err)
+	}
+	data, sum, err := bm.EnsureAndLoad("26.9.30", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, elf) || sum != sha256Hex(elf) || *hits != 1 {
+		t.Fatalf("served %d bytes (sum %s) after %d downloads", len(data), sum, *hits)
+	}
+	if cs, _ := bm.GetChecksum("26.9.30", "amd64"); cs != sha256Hex(elf) {
+		t.Fatalf("sidecar = %s", cs)
+	}
+}
+
+func TestDownloadRefusesAZipWithoutAnELF(t *testing.T) {
+	zipData := createTestZip(t, "xray", []byte("not an ELF"))
+	bm, _ := pinnedFake(t, "26.9.30", zipData, []byte("not an ELF"))
+	if _, _, err := bm.EnsureAndLoad("26.9.30", "amd64"); err == nil {
+		t.Fatal("a non-ELF binary was accepted")
 	}
 }
 
 func TestDownloadAndStore_ServerDown(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	// Use an unreachable URL
-	err := bm.downloadAndStore("1.8.4", "amd64", "http://127.0.0.1:1/nonexistent.zip")
-	if err == nil {
+	bm := NewPinnedBinaryManager(t.TempDir(), nil, "26.9.30", map[string]string{"amd64": "x"}, map[string]string{"amd64": "y"})
+	if err := bm.downloadAndStore("26.9.30", "amd64", "http://127.0.0.1:1/nonexistent.zip"); err == nil {
 		t.Error("expected error when server is unreachable")
 	}
 }
 
-func TestDeleteVersion(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	// Store a binary first
-	if err := bm.StoreBinary("1.8.4", "amd64", validELF()); err != nil {
-		t.Fatal(err)
+func TestTheShippedPinIsWellFormed(t *testing.T) {
+	bm := NewBinaryManager(t.TempDir(), nil)
+	if !IsValidVersion(bm.Pinned()) {
+		t.Fatalf("pinned version %q", bm.Pinned())
 	}
-
-	// Verify cached
-	if !bm.IsCached("1.8.4", "amd64") {
-		t.Fatal("expected cached before delete")
-	}
-
-	// Delete
-	err := bm.DeleteVersion("1.8.4")
-	if err != nil {
-		t.Fatalf("DeleteVersion() error: %v", err)
-	}
-
-	// Verify uncached
-	if bm.IsCached("1.8.4", "amd64") {
-		t.Error("expected not cached after delete")
-	}
-}
-
-func TestDeleteVersion_NonExistent(t *testing.T) {
-	dir := t.TempDir()
-	bm := NewBinaryManager(dir, nil)
-
-	err := bm.DeleteVersion("9.9.9")
-	if err == nil {
-		t.Error("expected error for non-existent version")
+	for _, arch := range []string{"amd64", "arm64"} {
+		for name, m := range map[string]map[string]string{"zip": bm.pin.Zip, "binary": bm.pin.Bin} {
+			if h := m[arch]; len(h) != 64 || strings.Trim(h, "0123456789abcdef") != "" {
+				t.Errorf("%s %s hash %q", arch, name, h)
+			}
+		}
 	}
 }

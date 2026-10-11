@@ -32,7 +32,11 @@ XRAY_CONFIG_DIR="/usr/local/etc/xray"
 XRAY_LOG_DIR="/var/log/xray"
 XRAY_STATE_DIR="/var/lib/nasnet-agent"
 # Must match the panel default and bin/xray/, or we ship a core it never expects.
-XRAY_VERSION="${XRAY_VERSION:-26.7.28}"
+# The panel pins xray-core (internal/xray/pin); these are that release's zip hashes.
+XRAY_VERSION="${XRAY_VERSION:-26.9.30}"
+XRAY_PINNED_VERSION="26.9.30"
+XRAY_PINNED_ZIP_SHA256_amd64="f851110beaff16e78d643f0ccfd9524b4a44dfd59bae3e34bb52bba378f7690e"
+XRAY_PINNED_ZIP_SHA256_arm64="9886f077f9fd8e6713b84c377c1c7db4e53b9bfa8c276a5bd12561139522b473"
 
 # GitHub release auto-update settings
 GITHUB_REPO="${GITHUB_REPO:-nasnet-community/nasnet-panel-linux}"
@@ -1719,6 +1723,14 @@ wizard_prepare_xray_dirs() {
 # or XRAY_SHA256 to pin. Neither available means no install.
 _verify_xray_zip() {
     local zip="$1" url="$2" want="${XRAY_SHA256:-}" have dgst
+
+    # the pinned release is checked against its pinned hash, not a digest fetched alongside it
+    if [[ -z "$want" && "$XRAY_VERSION" == "$XRAY_PINNED_VERSION" ]]; then
+        case "$url" in
+            *arm64-v8a.zip) want="$XRAY_PINNED_ZIP_SHA256_arm64" ;;
+            *64.zip)        want="$XRAY_PINNED_ZIP_SHA256_amd64" ;;
+        esac
+    fi
 
     if [[ -z "$want" ]]; then
         dgst=$(curl -fsSL "${url}.dgst" 2>/dev/null || true)

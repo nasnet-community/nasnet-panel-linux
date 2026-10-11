@@ -45,7 +45,6 @@ type SettingUsecase interface {
 	UpdateMany(ctx context.Context, settings []*Setting) error
 	GetByKey(ctx context.Context, key string) (string, error) // Helper to get value directly
 	SeedDefaults(ctx context.Context) error                   // Seed default settings
-	SetOnXrayVersionChange(fn func(string))
 	SetOnMaintenanceChange(fn func())
 	SetOnOutboundProxyChange(fn func(proxyURL string, enabled map[string]bool))
 	SetOnRouterHealthChange(fn func())

@@ -453,9 +453,8 @@ func NewServer(deps ServerDeps) *Server {
 
 		// Xray Binary Distribution
 		xrayBM := xrayUsecase.NewBinaryManager("bin/xray", deps.Infra.HTTPClientFactory)
-		xrayH := xrayHandler.NewXrayHandler(xrayBM, deps.Admin.SettingUsecase, deps.Infra.TokenManager, deps.Admin.AuditUsecase)
+		xrayH := xrayHandler.NewXrayHandler(xrayBM, deps.Infra.TokenManager)
 		xrayH.RegisterPublicRoutes(publicAPI.Group("/deploy/xray"))
-		xrayH.RegisterAdminRoutes(adminAPI)
 
 		// Remote node deployment: pull install and self-contained script
 		if deps.Admin.CertificateUsecase != nil && deps.Repos.NodeRepository != nil {
@@ -471,27 +470,8 @@ func NewServer(deps ServerDeps) *Server {
 			deps.Admin.NodeUsecase.SetHTTPClientFactory(deps.Infra.HTTPClientFactory)
 		}
 
-		// Wire up xray version-change hook for auto-download
-		if deps.Admin.SettingUsecase != nil {
-			deps.Admin.SettingUsecase.SetOnXrayVersionChange(xrayBM.PrefetchVersion)
-		}
-
-		// Startup check: ensure default xray version is cached
-		go func() {
-			defaultVersion := "26.7.28"
-			if deps.Admin.SettingUsecase != nil {
-				if v, err := deps.Admin.SettingUsecase.GetByKey(context.Background(), "xray_default_version"); err == nil && v != "" {
-					defaultVersion = v
-				}
-				autoDownload := "true"
-				if v, err := deps.Admin.SettingUsecase.GetByKey(context.Background(), "xray_auto_download"); err == nil {
-					autoDownload = v
-				}
-				if autoDownload == "true" && !xrayBM.IsCached(defaultVersion, "amd64") {
-					xrayBM.PrefetchVersion(defaultVersion)
-				}
-			}
-		}()
+		// every node runs the pinned build, so have it ready before the first one asks
+		xrayBM.PrefetchVersion(xrayBM.Pinned())
 
 		// Real-time Events (SSE streaming)
 		if deps.Infra.EventBus != nil {

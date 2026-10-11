@@ -3,7 +3,6 @@ package handler
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,46 +19,41 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// setupTestHandler creates a BinaryManager with a temp directory and an
-// XrayHandler. Returns the handler, the cache dir, and a valid deployment
-// token (since the public routes now require one).
+// fakeELF is the test's "pinned build": an ELF header plus a payload.
+var fakeELF = append([]byte{0x7f, 'E', 'L', 'F'}, []byte("testpayload")...)
+
+func fakeSum() string { h := sha256.Sum256(fakeELF); return hex.EncodeToString(h[:]) }
+
+// setupTestHandler pins 26.2.6 to fakeELF and returns a deployment token for the routes.
 func setupTestHandler(t *testing.T) (*XrayHandler, string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	bm := usecase.NewBinaryManager(dir, nil)
+	bm := usecase.NewPinnedBinaryManager(dir, nil, "26.2.6",
+		map[string]string{"amd64": "unused-when-cached", "arm64": "unused-when-cached"},
+		map[string]string{"amd64": fakeSum(), "arm64": fakeSum()})
 	tm := auth.NewTokenManager("test-secret")
 	tok, err := tm.GenerateDeploymentToken(1, 5*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewXrayHandler(bm, nil, tm, nil)
-	return h, dir, tok
+	return NewXrayHandler(bm, tm), dir, tok
 }
 
-// cacheTestBinary writes a fake ELF binary and its checksum into the cache dir.
+// cacheTestBinary writes the pinned fake binary and its checksum into the cache dir.
 func cacheTestBinary(t *testing.T, dir, version, arch string) []byte {
 	t.Helper()
-	// ELF magic bytes + some payload
-	data := append([]byte{0x7f, 'E', 'L', 'F'}, []byte("testpayload")...)
-
 	versionDir := filepath.Join(dir, "v"+version)
 	if err := os.MkdirAll(versionDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-
 	binPath := filepath.Join(versionDir, "xray-linux-"+arch)
-	if err := os.WriteFile(binPath, data, 0755); err != nil {
+	if err := os.WriteFile(binPath, fakeELF, 0755); err != nil {
 		t.Fatal(err)
 	}
-
-	h := sha256.Sum256(data)
-	checksum := hex.EncodeToString(h[:])
-	csPath := binPath + ".sha256"
-	if err := os.WriteFile(csPath, []byte(checksum), 0644); err != nil {
+	if err := os.WriteFile(binPath+".sha256", []byte(fakeSum()), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	return data
+	return fakeELF
 }
 
 func TestGetXrayBinary(t *testing.T) {
@@ -81,25 +75,19 @@ func TestGetXrayBinary(t *testing.T) {
 	}
 }
 
-func TestGetXrayBinary_NotCached(t *testing.T) {
-	h, _, tok := setupTestHandler(t)
+func TestGetXrayBinary_AnotherVersionFromItsVerifiedCache(t *testing.T) {
+	h, dir, tok := setupTestHandler(t)
+	// an earlier update verified 26.1.1 and left it with its sidecar
+	data := cacheTestBinary(t, dir, "26.1.1", "amd64")
 
 	w := httptest.NewRecorder()
 	c, r := gin.CreateTestContext(w)
 	r.GET("/binary", h.GetXrayBinary)
-	c.Request = httptest.NewRequest(http.MethodGet, "/binary?version=99.99.99&arch=amd64&token="+tok, nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/binary?version=26.1.1&arch=amd64&token="+tok, nil)
 	r.ServeHTTP(w, c.Request)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := resp["error"]; !ok {
-		t.Fatal("expected error field in response")
+	if w.Code != http.StatusOK || w.Body.Len() != len(data) {
+		t.Fatalf("expected the cached 26.1.1, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -151,5 +139,20 @@ func TestGetXrayBinary_MissingToken(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetXrayBinary_NoVersionMeansThePin(t *testing.T) {
+	h, dir, tok := setupTestHandler(t)
+	cacheTestBinary(t, dir, "26.2.6", "arm64")
+
+	w := httptest.NewRecorder()
+	c, r := gin.CreateTestContext(w)
+	r.GET("/binary", h.GetXrayBinary)
+	c.Request = httptest.NewRequest(http.MethodGet, "/binary?arch=arm64&token="+tok, nil)
+	r.ServeHTTP(w, c.Request)
+
+	if w.Code != http.StatusOK || w.Header().Get("X-Binary-SHA256") != fakeSum() {
+		t.Fatalf("got %d, sha %q: %s", w.Code, w.Header().Get("X-Binary-SHA256"), w.Body.String())
 	}
 }

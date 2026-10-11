@@ -1,83 +1,42 @@
 package handler
 
 import (
-	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nasnet-community/nasnet-panel-linux/internal/audit"
-	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
-	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
-// XrayHandler handles xray binary distribution endpoints.
+// XrayHandler serves verified xray-core builds to nodes being deployed or updated.
 type XrayHandler struct {
 	bm           *usecase.BinaryManager
-	settingUC    settingDomain.SettingUsecase
 	tokenManager *auth.TokenManager
-	auditUC      auditDomain.AuditLogUsecase
 }
 
 // NewXrayHandler creates a new XrayHandler.
-func NewXrayHandler(bm *usecase.BinaryManager, settingUC settingDomain.SettingUsecase, tokenManager *auth.TokenManager, auditUC auditDomain.AuditLogUsecase) *XrayHandler {
-	return &XrayHandler{
-		bm:           bm,
-		settingUC:    settingUC,
-		tokenManager: tokenManager,
-		auditUC:      auditUC,
-	}
+func NewXrayHandler(bm *usecase.BinaryManager, tokenManager *auth.TokenManager) *XrayHandler {
+	return &XrayHandler{bm: bm, tokenManager: tokenManager}
 }
 
-// logAudit records an admin action; mirrors BackupHandler.logAudit.
-func (h *XrayHandler) logAudit(c *gin.Context, action auditDomain.AuditAction, detail string) {
-	if h.auditUC == nil {
-		return
-	}
-	ac := audit.FromGinContext(c)
-	h.auditUC.Log(c.Request.Context(), &auditDomain.AuditLog{
-		Action:     string(action),
-		ActorID:    ac.ActorID,
-		ActorName:  ac.ActorName,
-		EntityType: "xray_binary",
-		NewValues:  detail,
-		IPAddress:  ac.IPAddress,
-		RequestID:  ac.RequestID,
-		Source:     "http",
-	})
-}
-
-// RegisterPublicRoutes registers public routes for xray binary distribution.
+// RegisterPublicRoutes registers the deployment-token routes nodes download xray from.
 func (h *XrayHandler) RegisterPublicRoutes(g *gin.RouterGroup) {
 	g.GET("/binary", h.GetXrayBinary)
 	g.GET("/checksum", h.GetXrayChecksum)
 }
 
-// RegisterAdminRoutes registers admin routes for xray binary management.
-func (h *XrayHandler) RegisterAdminRoutes(g *gin.RouterGroup) {
-	xray := g.Group("/xray")
-	{
-		xray.GET("/versions", h.ListVersions)
-		xray.PUT("/binary", h.UploadBinary)
-		xray.DELETE("/binary", h.DeleteVersion)
-		xray.POST("/download", h.TriggerDownload)
+// resolveVersion takes the requested release, or the pinned one when none is named.
+func (h *XrayHandler) resolveVersion(c *gin.Context) (string, bool) {
+	v := c.Query("version")
+	if v == "" {
+		return h.bm.Pinned(), true
 	}
-}
-
-// resolveVersion returns the version from query param, or the default setting, or fallback.
-func (h *XrayHandler) resolveVersion(c *gin.Context) string {
-	if v := c.Query("version"); v != "" {
-		return v
+	if !usecase.IsValidVersion(v) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
+		return "", false
 	}
-	if h.settingUC != nil {
-		if v, err := h.settingUC.GetByKey(c.Request.Context(), "xray_default_version"); err == nil && v != "" {
-			return v
-		}
-	}
-	return "26.7.28"
+	return v, true
 }
 
 // resolveArch returns the arch from query param, defaulting to amd64.
@@ -114,155 +73,40 @@ func (h *XrayHandler) requireDeploymentToken(c *gin.Context) bool {
 	return true
 }
 
-// GetXrayBinary serves a cached xray binary file. Requires a valid
+// GetXrayBinary serves a verified xray binary with its hash. Requires a valid
 // deployment token.
 func (h *XrayHandler) GetXrayBinary(c *gin.Context) {
 	if !h.requireDeploymentToken(c) {
 		return
 	}
-	log := logger.GetLogger()
-	version := h.resolveVersion(c)
-	arch := h.resolveArch(c)
-
-	if !usecase.IsValidVersion(version) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
+	version, ok := h.resolveVersion(c)
+	if !ok {
 		return
 	}
-
-	// Single call returns bytes + checksum atomically so a concurrent
-	// DeleteVersion cannot race between EnsureCached and ReadFile.
+	arch := h.resolveArch(c)
 	data, checksum, err := h.bm.EnsureAndLoad(version, arch)
 	if err != nil {
-		log.WithField("version", version).WithField("arch", arch).WithError(err).Warn("xray binary not available")
-		c.JSON(http.StatusNotFound, gin.H{"error": "Xray binary not cached. Upload it manually or ensure the hub has internet access."})
+		logger.GetLogger().WithField("version", version).WithField("arch", arch).WithError(err).Warn("xray binary not available")
+		c.JSON(http.StatusNotFound, gin.H{"error": "Xray binary not available; the panel needs internet access to fetch it"})
 		return
 	}
 	c.Header("X-Binary-SHA256", checksum)
 	c.Data(http.StatusOK, "application/octet-stream", data)
 }
 
-// GetXrayChecksum returns the SHA256 checksum for a cached xray binary.
+// GetXrayChecksum returns a verified binary's SHA256, fetching it first so the hash is never missing.
 func (h *XrayHandler) GetXrayChecksum(c *gin.Context) {
 	if !h.requireDeploymentToken(c) {
 		return
 	}
-	version := h.resolveVersion(c)
+	version, ok := h.resolveVersion(c)
+	if !ok {
+		return
+	}
 	arch := h.resolveArch(c)
-
-	if !usecase.IsValidVersion(version) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
+	if _, checksum, err := h.bm.EnsureAndLoad(version, arch); err == nil {
+		c.String(http.StatusOK, checksum)
 		return
 	}
-
-	// Fill the cache like the binary route does, or a checksum asked before
-	// the first download is always missing.
-	if err := h.bm.EnsureCached(version, arch); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Checksum not available"})
-		return
-	}
-	checksum, err := h.bm.GetChecksum(version, arch)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Checksum not available"})
-		return
-	}
-
-	c.String(http.StatusOK, checksum)
-}
-
-// ListVersions returns all cached xray versions with platform info.
-func (h *XrayHandler) ListVersions(c *gin.Context) {
-	versions := h.bm.ListVersions()
-	if versions == nil {
-		versions = []usecase.VersionInfo{}
-	}
-
-	// Mark default version
-	defaultVersion := h.resolveVersion(c)
-	for i := range versions {
-		if versions[i].Version == defaultVersion {
-			versions[i].IsDefault = true
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"versions": versions})
-}
-
-// UploadBinary handles admin binary upload (raw body, max 100MB). Arch is
-// detected from the ELF header, never trusted from the client — a mislabeled
-// binary would otherwise only fail later at the agent's arch check.
-func (h *XrayHandler) UploadBinary(c *gin.Context) {
-	version := c.Query("version")
-	if !usecase.IsValidVersion(version) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
-		return
-	}
-
-	// Limit request body to 100MB
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 100<<20)
-
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body or body too large"})
-		return
-	}
-
-	arch, err := usecase.DetectELFArch(data)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
-		return
-	}
-	if q := c.Query("arch"); q != "" && q != arch {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("binary is %s but arch=%s was supplied", arch, q)})
-		return
-	}
-
-	if err := h.bm.StoreBinary(version, arch, data); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	h.logAudit(c, auditDomain.AuditXrayBinaryUpload, fmt.Sprintf("%s/%s", version, arch))
-	c.JSON(http.StatusOK, gin.H{"message": "Binary stored successfully", "version": version, "arch": arch})
-}
-
-// DeleteVersion removes a cached xray version.
-func (h *XrayHandler) DeleteVersion(c *gin.Context) {
-	version := c.Query("version")
-
-	if !usecase.IsValidVersion(version) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
-		return
-	}
-
-	// Prevent deleting the default version
-	defaultVersion := h.resolveVersion(c)
-	if version == defaultVersion {
-		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete the default xray version. Change the default version first."})
-		return
-	}
-
-	if err := h.bm.DeleteVersion(version); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	h.logAudit(c, auditDomain.AuditXrayBinaryDelete, version)
-	c.JSON(http.StatusOK, gin.H{"message": "Version deleted", "version": version})
-}
-
-// TriggerDownload triggers a background download of an xray version from GitHub.
-func (h *XrayHandler) TriggerDownload(c *gin.Context) {
-	version := c.Query("version")
-	if version == "" {
-		version = h.resolveVersion(c)
-	}
-
-	if !usecase.IsValidVersion(version) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid version format"})
-		return
-	}
-
-	go h.bm.PrefetchVersion(version)
-
-	c.JSON(http.StatusAccepted, gin.H{"message": "Download started in background", "version": version})
+	c.JSON(http.StatusNotFound, gin.H{"error": "Checksum not available"})
 }

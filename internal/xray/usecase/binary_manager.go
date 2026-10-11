@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
-	"debug/elf"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
@@ -36,20 +36,52 @@ type VersionInfo struct {
 	Platforms map[string]PlatformInfo `json:"platforms"`
 }
 
-// BinaryManager manages xray-core binary downloads and caching.
+// BinaryManager fetches, verifies and caches xray-core releases; the pinned one is the default.
 type BinaryManager struct {
 	baseDir     string
 	mutexes     sync.Map // map[string]*sync.Mutex keyed by "version:arch"
 	httpFactory *httpclient.Factory
+	pin         pinned
+	releaseURL  func(version, arch string) string // github by default; tests point it at a fake
+}
+
+// pinned is the default release, checked against hashes in code (tests swap it).
+type pinned struct {
+	Version  string
+	Zip, Bin map[string]string // per arch: release zip hash, extracted binary hash
 }
 
 // NewBinaryManager creates a new BinaryManager with the given base directory
 // and outbound HTTP factory (nil → direct internet).
 func NewBinaryManager(baseDir string, f *httpclient.Factory) *BinaryManager {
-	return &BinaryManager{
+	return NewPinnedBinaryManager(baseDir, f, pin.Version, pin.ZipSHA256, pin.BinarySHA256)
+}
+
+// NewPinnedBinaryManager pins another release; production uses NewBinaryManager.
+func NewPinnedBinaryManager(baseDir string, f *httpclient.Factory, version string, zipSHA, binSHA map[string]string) *BinaryManager {
+	bm := &BinaryManager{
 		baseDir:     baseDir,
 		httpFactory: f,
+		pin:         pinned{Version: version, Zip: zipSHA, Bin: binSHA},
 	}
+	bm.releaseURL = bm.githubURL
+	return bm
+}
+
+// Pinned is the xray-core version new nodes get.
+func (bm *BinaryManager) Pinned() string { return bm.pin.Version }
+
+func (bm *BinaryManager) checkVersion(version, arch string) error {
+	if !IsValidVersion(version) {
+		return fmt.Errorf("invalid version: %s", version)
+	}
+	if arch != "amd64" && arch != "arm64" {
+		return fmt.Errorf("xray: no %s build", arch)
+	}
+	if version == bm.pin.Version && (bm.pin.Zip[arch] == "" || bm.pin.Bin[arch] == "") {
+		return fmt.Errorf("xray: no pinned %s build", arch)
+	}
+	return nil
 }
 
 // IsValidVersion validates a version string.
@@ -114,85 +146,12 @@ func (bm *BinaryManager) GetChecksum(version, arch string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// ListVersions scans the cache directory and returns all cached versions with platform info.
-func (bm *BinaryManager) ListVersions() []VersionInfo {
-	entries, err := os.ReadDir(bm.baseDir)
-	if err != nil {
-		return nil
-	}
-
-	var versions []VersionInfo
-	supportedArchs := []string{"amd64", "arm64"}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasPrefix(name, "v") {
-			continue
-		}
-		version := strings.TrimPrefix(name, "v")
-		if !IsValidVersion(version) {
-			continue
-		}
-
-		vi := VersionInfo{
-			Version:   version,
-			Platforms: make(map[string]PlatformInfo),
-		}
-
-		for _, arch := range supportedArchs {
-			binPath := bm.binaryPath(version, arch)
-			info, err := os.Stat(binPath)
-			if err != nil {
-				continue
-			}
-
-			pi := PlatformInfo{
-				Cached: true,
-				Size:   info.Size(),
-			}
-
-			if cs, err := bm.GetChecksum(version, arch); err == nil {
-				pi.Checksum = cs
-			}
-
-			vi.Platforms[arch] = pi
-		}
-
-		if len(vi.Platforms) > 0 {
-			versions = append(versions, vi)
-		}
-	}
-
-	return versions
-}
-
-// StoreBinary validates and stores a binary uploaded by an admin.
-// It validates the version string and ELF magic bytes, then acquires a per-{version,arch}
-// mutex before writing the binary and its SHA256 checksum to disk.
-func (bm *BinaryManager) StoreBinary(version, arch string, data []byte) error {
-	if !IsValidVersion(version) {
-		return fmt.Errorf("invalid version: %s", version)
-	}
-	if !isELF(data) {
-		return fmt.Errorf("invalid binary: not an ELF file")
-	}
-
-	mu := bm.getMutex(version, arch)
-	mu.Lock()
-	defer mu.Unlock()
-
-	return bm.storeRaw(version, arch, data)
-}
-
 // DownloadFromGitHub downloads the xray binary for the given version and arch from GitHub.
 // It acquires a per-{version,arch} mutex, double-checks the cache, downloads the zip,
 // extracts the binary, validates ELF, and stores it.
 func (bm *BinaryManager) DownloadFromGitHub(version, arch string) error {
-	if !IsValidVersion(version) {
-		return fmt.Errorf("invalid version: %s", version)
+	if err := bm.checkVersion(version, arch); err != nil {
+		return err
 	}
 
 	mu := bm.getMutex(version, arch)
@@ -204,16 +163,13 @@ func (bm *BinaryManager) DownloadFromGitHub(version, arch string) error {
 		return nil
 	}
 
-	url := bm.githubURL(version, arch)
-	return bm.downloadAndStore(version, arch, url)
+	return bm.downloadAndStore(version, arch, bm.releaseURL(version, arch))
 }
 
 // EnsureCached checks if a binary is cached and downloads it if not.
 func (bm *BinaryManager) EnsureCached(version, arch string) error {
-	if bm.IsCached(version, arch) {
-		return nil
-	}
-	return bm.DownloadFromGitHub(version, arch)
+	_, _, err := bm.EnsureAndLoad(version, arch)
+	return err
 }
 
 // EnsureAndLoad ensures the binary is cached, then reads its bytes + sidecar
@@ -221,28 +177,46 @@ func (bm *BinaryManager) EnsureCached(version, arch string) error {
 // DeleteVersion or re-download cannot race between the cache check and the
 // read. Returns the raw binary bytes and the SHA256 hex string.
 func (bm *BinaryManager) EnsureAndLoad(version, arch string) ([]byte, string, error) {
-	if !IsValidVersion(version) {
-		return nil, "", fmt.Errorf("invalid version: %s", version)
+	if err := bm.checkVersion(version, arch); err != nil {
+		return nil, "", err
 	}
 
 	mu := bm.getMutex(version, arch)
 	mu.Lock()
 	defer mu.Unlock()
 
-	if !bm.IsCached(version, arch) {
-		if err := bm.downloadAndStore(version, arch, bm.githubURL(version, arch)); err != nil {
-			return nil, "", err
-		}
+	// a cached copy is served only if it is still what was verified: the pin, or its own sidecar
+	if data, err := os.ReadFile(bm.binaryPath(version, arch)); err == nil && sha256Hex(data) == bm.expectedBinary(version, arch) {
+		return data, sha256Hex(data), nil
+	}
+	if err := bm.downloadAndStore(version, arch, bm.releaseURL(version, arch)); err != nil {
+		return nil, "", err
 	}
 	data, err := os.ReadFile(bm.binaryPath(version, arch))
 	if err != nil {
 		return nil, "", fmt.Errorf("read binary: %w", err)
 	}
-	cs, err := os.ReadFile(bm.checksumPath(version, arch))
-	if err != nil {
-		return nil, "", fmt.Errorf("read checksum: %w", err)
+	if sum := sha256Hex(data); sum != bm.expectedBinary(version, arch) {
+		return nil, "", fmt.Errorf("xray: the cached %s %s build does not match its checksum", version, arch)
 	}
-	return data, strings.TrimSpace(string(cs)), nil
+	return data, sha256Hex(data), nil
+}
+
+// expectedBinary is the pinned hash for the pinned release, else the sidecar written when it was verified.
+func (bm *BinaryManager) expectedBinary(version, arch string) string {
+	if version == bm.pin.Version {
+		return bm.pin.Bin[arch]
+	}
+	cs, err := bm.GetChecksum(version, arch)
+	if err != nil {
+		return ""
+	}
+	return cs
+}
+
+func sha256Hex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
 }
 
 // PrefetchVersion spawns goroutines to download both amd64 and arm64 binaries.
@@ -258,20 +232,6 @@ func (bm *BinaryManager) PrefetchVersion(version string) {
 			}
 		}(arch)
 	}
-}
-
-// DeleteVersion removes the version directory from the cache.
-func (bm *BinaryManager) DeleteVersion(version string) error {
-	if !IsValidVersion(version) {
-		return fmt.Errorf("invalid version: %s", version)
-	}
-
-	versionDir := filepath.Join(bm.baseDir, "v"+version)
-	if _, err := os.Stat(versionDir); os.IsNotExist(err) {
-		return fmt.Errorf("version not cached: %s", version)
-	}
-
-	return os.RemoveAll(versionDir)
 }
 
 // storeRaw writes the binary and its SHA256 checksum to disk atomically via
@@ -364,6 +324,16 @@ func (bm *BinaryManager) downloadAndStore(version, arch, url string) error {
 	if err != nil {
 		return fmt.Errorf("read response body: %w", err)
 	}
+	want := bm.pin.Zip[arch]
+	if version != bm.pin.Version {
+		// no pin for this release: check XTLS's published digest instead
+		if want, err = fetchDigest(client, url+".dgst"); err != nil {
+			return err
+		}
+	}
+	if got := sha256Hex(body); got != want {
+		return fmt.Errorf("xray: %s failed its checksum (sha256 %s)", url, got)
+	}
 
 	xrayBin, err := extractXrayFromZip(body)
 	if err != nil {
@@ -373,8 +343,34 @@ func (bm *BinaryManager) downloadAndStore(version, arch, url string) error {
 	if !isELF(xrayBin) {
 		return fmt.Errorf("extracted binary is not a valid ELF file")
 	}
+	if version == bm.pin.Version && sha256Hex(xrayBin) != bm.pin.Bin[arch] {
+		return fmt.Errorf("xray: the binary in %s is not the pinned build", url)
+	}
 
 	return bm.storeRaw(version, arch, xrayBin)
+}
+
+var digestRe = regexp.MustCompile(`(?i)sha2?-?256\s*=\s*([0-9a-f]{64})`)
+
+// fetchDigest reads the SHA2-256 line of a release's .dgst file.
+func fetchDigest(client *http.Client, url string) (string, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("xray: fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("xray: fetch %s: HTTP %d", url, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return "", err
+	}
+	m := digestRe.FindSubmatch(body)
+	if m == nil {
+		return "", fmt.Errorf("xray: %s has no SHA2-256 line", url)
+	}
+	return strings.ToLower(string(m[1])), nil
 }
 
 // extractXrayFromZip extracts the "xray" file from a zip archive.
@@ -409,24 +405,6 @@ func isELF(data []byte) bool {
 		return false
 	}
 	return data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F'
-}
-
-// DetectELFArch reads the ELF header and maps the machine type to our arch
-// label. Lets an uploaded binary be tagged by what it is, not a client hint.
-func DetectELFArch(data []byte) (string, error) {
-	f, err := elf.NewFile(bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("not a valid ELF binary: %w", err)
-	}
-	defer f.Close()
-	switch f.Machine {
-	case elf.EM_X86_64:
-		return "amd64", nil
-	case elf.EM_AARCH64:
-		return "arm64", nil
-	default:
-		return "", fmt.Errorf("unsupported architecture: %s", f.Machine)
-	}
 }
 
 // getMutex returns a per-{version,arch} mutex from the sync.Map.

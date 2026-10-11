@@ -24,6 +24,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
@@ -149,12 +150,8 @@ func (h *DeployHandler) hubDialAddr(c *gin.Context) string {
 	return fmt.Sprintf("%s:%d", host, port)
 }
 
-func (h *DeployHandler) xrayVersion(c *gin.Context) string {
-	if v := h.setting(c, "xray_default_version"); v != "" {
-		return v
-	}
-	return "26.7.28"
-}
+// xrayVersion is the pinned release; nodes never get another one.
+func (h *DeployHandler) xrayVersion(*gin.Context) string { return pin.Version }
 
 // ensureCA creates the hub CA on first deploy; agents need it for mTLS.
 func (h *DeployHandler) ensureCA(c *gin.Context) error {
@@ -366,17 +363,10 @@ func (h *DeployHandler) GetPasteScript(c *gin.Context) {
 		return
 	}
 
-	xrayVersion := h.xrayVersion(c)
+	// the script checks the binary it fetched against the pin, not against whatever was cached
 	xraySHA := map[string]string{}
-	if h.xray != nil {
-		for _, arch := range deployArches {
-			// Best effort: without a cached copy the script checks XTLS's digest.
-			if err := h.xray.EnsureCached(xrayVersion, arch); err == nil {
-				if sum, err := h.xray.GetChecksum(xrayVersion, arch); err == nil {
-					xraySHA[arch] = sum
-				}
-			}
-		}
+	for _, arch := range deployArches {
+		xraySHA[arch] = pin.BinarySHA256[arch]
 	}
 
 	bundle, err := h.certUC.GetCertificateBundle(c.Request.Context(), node.ID)
@@ -391,7 +381,7 @@ func (h *DeployHandler) GetPasteScript(c *gin.Context) {
 		ConnectMode:  connectMode(node),
 		NodeUUID:     node.UUID,
 		HubURL:       hubURL,
-		XrayVersion:  xrayVersion,
+		XrayVersion:  h.xrayVersion(c),
 		Paste:        true,
 		CACert:       strings.TrimSpace(string(bundle.CACert)),
 		AgentCert:    strings.TrimSpace(string(bundle.AgentCert)),

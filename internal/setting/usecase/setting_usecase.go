@@ -40,7 +40,6 @@ type InitialConfig struct {
 type settingUsecase struct {
 	repo                  domain.SettingRepository
 	initialCfg            *InitialConfig
-	onXrayVersionChange   func(version string)
 	onMaintenanceChange   func()
 	onOutboundProxyChange func(proxyURL string, enabled map[string]bool)
 	onRouterHealthChange  func()
@@ -51,8 +50,10 @@ func NewSettingUsecase(repo domain.SettingRepository, cfg *InitialConfig) domain
 	return &settingUsecase{repo: repo, initialCfg: cfg}
 }
 
-func (u *settingUsecase) SetOnXrayVersionChange(fn func(string)) {
-	u.onXrayVersionChange = fn
+// retiredKeys are settings nothing reads any more; old rows stay hidden and read-only.
+var retiredKeys = map[string]bool{
+	"xray_default_version": true, // xray-core is pinned in code (internal/xray/pin)
+	"xray_auto_download":   true,
 }
 
 func (u *settingUsecase) SetOnMaintenanceChange(fn func()) {
@@ -86,6 +87,9 @@ func (u *settingUsecase) GetAll(ctx context.Context) (map[string][]*domain.Setti
 
 	grouped := make(map[string][]*domain.Setting)
 	for _, s := range settings {
+		if retiredKeys[s.Key] {
+			continue
+		}
 		grouped[s.Category] = append(grouped[s.Category], s)
 	}
 
@@ -116,7 +120,7 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 	// Filter out unchanged sensitive fields (value contains masking asterisks)
 	filtered := make([]*domain.Setting, 0, len(settings))
 	for _, s := range settings {
-		if isMaskedValue(s.Value) {
+		if isMaskedValue(s.Value) || retiredKeys[s.Key] {
 			continue
 		}
 		if domain.IsProtectedKey(s.Key) && !domain.ProtectedWriteAllowed(ctx) {
@@ -185,15 +189,6 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 				logger.GetLogger().WithError(err).Warn("Failed to apply log_level setting")
 			} else {
 				logger.GetLogger().WithField("level", s.Value).Info("Log level changed via settings")
-			}
-		}
-		if s.Key == "xray_default_version" && u.onXrayVersionChange != nil {
-			autoDownload := "true"
-			if v, err := u.GetByKey(ctx, "xray_auto_download"); err == nil {
-				autoDownload = v
-			}
-			if autoDownload == "true" {
-				go u.onXrayVersionChange(s.Value)
 			}
 		}
 		switch s.Key {
@@ -280,8 +275,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "utls_sni_override", Value: "meet.google.com", Type: "string", Category: "agent", Description: "Camouflage SNI domain for agent connections (e.g. www.google.com). Leave empty to use actual server address.", Label: "SNI Camouflage Domain"},
 
 		// Agent Xray Version
-		{Key: "xray_default_version", Value: "26.7.28", Type: "string", Category: "agent", Description: "Default xray-core version installed on new nodes (without v prefix)", Label: "Default Xray Version"},
-		{Key: "xray_auto_download", Value: "true", Type: "bool", Category: "agent", Description: "Auto-download xray binaries from GitHub when version changes", Label: "Auto Download Xray"},
 
 		// Node certificates
 		{Key: "agent_cert_auto_rotate", Value: "true", Type: "bool", Category: "agent", Description: "Rotate a node's agent certificate automatically when it gets close to expiry. Needs an updated agent.", Label: "Auto-rotate Node Certificates"},
