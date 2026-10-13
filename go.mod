@@ -16,6 +16,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/lilendian0x00/xray-knife/v11 v11.2.0
+	github.com/nasnet-community/mtproto-remote-plugin v0.0.0-20261012120624-f8ae2c986a1c
 	github.com/oschwald/geoip2-golang/v2 v2.4.0
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/prometheus/client_golang v1.24.1
