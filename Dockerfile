@@ -25,13 +25,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Copy source code
 COPY . .
 
-# Pin geodata for reproducible builds (override with --build-arg).
-ARG GEOFILE_RELEASE=202609080903
+# Upstream keeps only recent releases, so a pinned one 404s within weeks.
+# Pin with --build-arg GEOFILE_RELEASE=download/<tag> when needed.
+ARG GEOFILE_RELEASE=latest/download
 RUN mkdir -p pkg/geofiles/embedded && \
     wget -q -O pkg/geofiles/embedded/geoip.dat \
-      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/download/${GEOFILE_RELEASE}/geoip.dat" && \
+      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/${GEOFILE_RELEASE}/geoip.dat" && \
     wget -q -O pkg/geofiles/embedded/geosite.dat \
-      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/download/${GEOFILE_RELEASE}/geosite.dat"
+      "https://github.com/chocolate4u/Iran-v2ray-rules/releases/${GEOFILE_RELEASE}/geosite.dat"
 
 # Copy built frontend from web-builder stage
 COPY --from=web-builder /web/dist ./web-panel/dist
