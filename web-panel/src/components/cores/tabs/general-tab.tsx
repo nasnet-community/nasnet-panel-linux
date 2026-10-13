@@ -50,8 +50,9 @@ export function GeneralTab({
                                     type="number"
                                     min={1}
                                     max={65535}
-                                    value={field.value ?? 0}
-                                    onChange={(e) => field.onChange(Number(e.target.value))}
+                                    // an emptied box is NaN, so it stays empty and the schema flags it
+                                    value={Number.isFinite(field.value) ? field.value : ""}
+                                    onChange={(e) => field.onChange(e.target.valueAsNumber)}
                                 />
                             </FormControl>
                             <FormMessage />

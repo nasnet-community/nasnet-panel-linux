@@ -18,7 +18,7 @@ export const coreFormSchema = z
         node_id: z.number().int().positive(),
         protocol: coreProtocolEnum,
         listen: z.string().optional(),
-        port: z.number().int().min(1, "Port must be 1–65535").max(65535, "Port must be 1–65535"),
+        port: z.number({ error: "Port must be 1–65535" }).int().min(1, "Port must be 1–65535").max(65535, "Port must be 1–65535"),
         egress_mode: z.enum(["direct", "xray", "hub"]).optional(),
         remark: z.string().max(100, "Remark is too long").optional(),
         is_disabled: z.boolean().optional(),

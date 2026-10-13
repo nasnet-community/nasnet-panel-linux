@@ -88,6 +88,7 @@ export function NumberSetting({
     min,
     max,
     placeholder,
+    zeroLabel,
     description,
     error,
 }: {
@@ -98,9 +99,12 @@ export function NumberSetting({
     min?: number
     max?: number
     placeholder?: string
+    /** 0 shows as an empty box with this placeholder, and an empty box saves 0 */
+    zeroLabel?: string
     description?: string
     error?: string
 }) {
+    const blank = !Number.isFinite(value) || (zeroLabel !== undefined && value === 0)
     return (
         <SettingRow label={label} htmlFor={id} description={description} error={error}>
             <Input
@@ -108,9 +112,9 @@ export function NumberSetting({
                 type="number"
                 min={min}
                 max={max}
-                value={Number.isFinite(value) ? value : 0}
-                placeholder={placeholder}
-                onChange={(e) => onChange(Number(e.target.value))}
+                value={blank ? "" : value}
+                placeholder={zeroLabel ?? placeholder}
+                onChange={(e) => onChange(e.target.value === "" ? 0 : e.target.valueAsNumber)}
             />
         </SettingRow>
     )

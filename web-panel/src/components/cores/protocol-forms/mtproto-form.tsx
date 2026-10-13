@@ -249,7 +249,7 @@ export function MtprotoForm({
                 />
                 <SettingRow
                     label="Loopback ports"
-                    description="0 auto-assigns (metrics 14300+, egress 12300+). The egress port is only used on a router's built-in node; with Xray egress, Xray's SOCKS inbound takes that port."
+                    description="Leave empty to auto-assign (metrics 14300+, egress 12300+). The egress port is only used on a router's built-in node; with Xray egress, Xray's SOCKS inbound takes that port."
                 >
                     <div className="grid grid-cols-2 gap-3">
                         <NumberSetting
@@ -257,12 +257,14 @@ export function MtprotoForm({
                             value={value.metrics_port ?? 0}
                             onChange={(v) => set({ metrics_port: v })}
                             min={0}
+                            zeroLabel="Auto"
                         />
                         <NumberSetting
                             label="Egress port"
                             value={value.socks_port ?? 0}
                             onChange={(v) => set({ socks_port: v })}
                             min={0}
+                            zeroLabel="Auto"
                         />
                     </div>
                 </SettingRow>
