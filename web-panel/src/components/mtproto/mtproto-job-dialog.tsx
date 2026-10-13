@@ -23,7 +23,7 @@ export interface MtprotoJobDialogProps {
     onFinished?: (job: MtprotoJob) => void
 }
 
-function StepIcon({ state }: { state: MtprotoStep["state"] | "pending" }) {
+function StepIcon({ state }: { state: MtprotoStep["state"] }) {
     switch (state) {
         case "running":
             return <Loader2 className="size-4 animate-spin text-blue-500" aria-label="Running" />
@@ -124,7 +124,7 @@ export function MtprotoJobDialog({ open, onOpenChange, title, description, job: 
                         <li key={s.name} className="flex items-start gap-2 text-sm">
                             <span className="mt-0.5"><StepIcon state={s.state} /></span>
                             <span className="min-w-0">
-                                <span className={s.state === "failed" ? "text-red-500" : undefined}>{stepLabel(s.name, job?.kind)}</span>
+                                <span className={s.state === "failed" ? "text-red-500" : s.state === "pending" ? "text-muted-foreground" : undefined}>{stepLabel(s.name, job?.kind)}</span>
                                 {s.state === "failed" && s.detail && (
                                     <span className="mt-0.5 block break-words text-xs text-muted-foreground">{s.detail}</span>
                                 )}

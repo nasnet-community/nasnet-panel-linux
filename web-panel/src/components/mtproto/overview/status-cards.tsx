@@ -9,7 +9,7 @@ import { avgRtt } from "./use-mtproto-live"
 import { newAgentVersion, shortBuild } from "./mtproto-health"
 
 // the agent's GOMEMLIMIT: past it the Go runtime collects hard, so show the headroom
-const AGENT_MEMORY_LIMIT = 80 * 1024 * 1024
+const AGENT_MEMORY_LIMIT = 256 * 1024 * 1024
 
 function since(iso?: string): string {
     if (!iso) return ""

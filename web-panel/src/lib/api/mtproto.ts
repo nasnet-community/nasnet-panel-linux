@@ -6,7 +6,8 @@ const BASE = "/api/v1/mtproto"
 // ---- Types (mirror internal/mtprotonode/handler.go) ----
 
 export type MtprotoJobState = "running" | "ok" | "failed"
-export type MtprotoStepState = "running" | "ok" | "failed"
+// pending: planned, not reached yet (jobs list their steps up front)
+export type MtprotoStepState = "pending" | "running" | "ok" | "failed"
 
 export interface MtprotoStep {
     name: string
