@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Builds the remote node agent for the architectures the panel can deploy.
-set -euo pipefail
+set -eu
 cd "$(dirname "$0")/.."
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 mkdir -p bin/agent
