@@ -70,11 +70,11 @@ RUN apk --no-cache add ca-certificates tzdata postgresql16-client wget su-exec s
 # pinned zip hash — never "latest", never unchecked.
 ARG TARGETARCH
 # The hashes are the ones pinned in internal/xray/pin; bump them together.
-ARG XRAY_VERSION=26.9.30
+ARG XRAY_VERSION=26.10.10
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
-      amd64) asset="Xray-linux-64.zip"; want="f851110beaff16e78d643f0ccfd9524b4a44dfd59bae3e34bb52bba378f7690e" ;; \
-      arm64) asset="Xray-linux-arm64-v8a.zip"; want="9886f077f9fd8e6713b84c377c1c7db4e53b9bfa8c276a5bd12561139522b473" ;; \
+      amd64) asset="Xray-linux-64.zip"; want="72a5fde819713a103c6fc26a87aa025c1518c918a34eba4bc38d64dc0728e5d9" ;; \
+      arm64) asset="Xray-linux-arm64-v8a.zip"; want="58e339e67827220175b3a1c6f66f48ccd086b79209f30ba1c0bcb47885d4c22a" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     url="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/${asset}"; \

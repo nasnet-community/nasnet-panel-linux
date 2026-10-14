@@ -33,10 +33,10 @@ XRAY_LOG_DIR="/var/log/xray"
 XRAY_STATE_DIR="/var/lib/nasnet-agent"
 # Must match the panel default and bin/xray/, or we ship a core it never expects.
 # The panel pins xray-core (internal/xray/pin); these are that release's zip hashes.
-XRAY_VERSION="${XRAY_VERSION:-26.9.30}"
-XRAY_PINNED_VERSION="26.9.30"
-XRAY_PINNED_ZIP_SHA256_amd64="f851110beaff16e78d643f0ccfd9524b4a44dfd59bae3e34bb52bba378f7690e"
-XRAY_PINNED_ZIP_SHA256_arm64="9886f077f9fd8e6713b84c377c1c7db4e53b9bfa8c276a5bd12561139522b473"
+XRAY_VERSION="${XRAY_VERSION:-26.10.10}"
+XRAY_PINNED_VERSION="26.10.10"
+XRAY_PINNED_ZIP_SHA256_amd64="72a5fde819713a103c6fc26a87aa025c1518c918a34eba4bc38d64dc0728e5d9"
+XRAY_PINNED_ZIP_SHA256_arm64="58e339e67827220175b3a1c6f66f48ccd086b79209f30ba1c0bcb47885d4c22a"
 
 # GitHub release auto-update settings
 GITHUB_REPO="${GITHUB_REPO:-nasnet-community/nasnet-panel-linux}"
