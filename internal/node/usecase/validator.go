@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/sharelink"
 	"github.com/xtls/xray-core/common/uuid"
 )
 
@@ -76,6 +78,16 @@ func ValidateOutbound(out *domain.Outbound) error {
 		for i, p := range wg.Peers {
 			if p.PublicKey == "" {
 				return fmt.Errorf("peer[%d]: public key is required", i)
+			}
+		}
+		if wg.DomainStrategy != "" && xray.WireGuardTargetStrategy(wg.DomainStrategy) == "" {
+			return fmt.Errorf("unsupported wireguard domain strategy %q", wg.DomainStrategy)
+		}
+		// xray-core parses these with netip.MustParseAddr: anything else
+		// crashes it at startup.
+		for _, ip := range wg.RemoteDNS {
+			if _, err := netip.ParseAddr(ip); err != nil {
+				return fmt.Errorf("wireguard remote DNS %q must be an IP address", ip)
 			}
 		}
 		return nil
@@ -176,6 +188,20 @@ func ValidateOutbound(out *domain.Outbound) error {
 		}
 	}
 
+	// Since 26.9.9 xray-core refuses the whole config for VLESS without TLS,
+	// REALITY or VLESS encryption, or Trojan without TLS, to a public address.
+	if protocol == "vless" || protocol == "trojan" {
+		enc := strings.TrimSpace(out.GetVLESSSettingsOrDefault().Encryption)
+		encrypted := protocol == "vless" && enc != "" && enc != "none"
+		if !encrypted && !outboundStreamSecure(out) && sharelink.IsPublicAddress(out.Address) {
+			name := "VLESS"
+			if protocol == "trojan" {
+				name = "Trojan"
+			}
+			return fmt.Errorf("%s without TLS can only reach a private address (Xray 26.9.9+ refuses the config)", name)
+		}
+	}
+
 	// unknown TLS fingerprint kills xray at load; xray lowercases, so match case-insensitively
 	if out.TLSSettings != nil && out.TLSSettings.Fingerprint != "" {
 		if !validTLSFingerprints[strings.ToLower(out.TLSSettings.Fingerprint)] {
@@ -205,8 +231,26 @@ func validateSendThrough(st string) error {
 	return nil
 }
 
+// outboundStreamSecure mirrors buildOutboundStreamSettings: REALITY on a
+// network it doesn't support goes out as no security at all.
+func outboundStreamSecure(out *domain.Outbound) bool {
+	switch strings.ToLower(out.Security) {
+	case "tls":
+		return true
+	case "reality":
+		switch out.Network {
+		case "tcp", "raw", "xhttp", "splithttp", "grpc":
+			return true
+		}
+	}
+	return false
+}
+
 // validateFreedomOutbound checks freedom's fragment (needs length+interval) and noise (type+packet).
 func validateFreedomOutbound(out *domain.Outbound) error {
+	if out.SockoptSettings != nil && out.SockoptSettings.AddressPortStrategy != "" {
+		return errors.New("freedom outbounds can't use sockopt addressPortStrategy (Xray 26.9.8+ refuses the config)")
+	}
 	fs := out.FreedomSettings
 	if fs == nil {
 		return nil

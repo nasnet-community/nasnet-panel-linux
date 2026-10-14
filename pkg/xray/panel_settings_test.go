@@ -135,7 +135,7 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 		if bal["tag"] == balTag {
 			for _, outTag := range bal["selector"].([]string) {
 				assertPanelMark(t, c, outTag, 10)
-				chain := panelOutbound(t, c, outTag)["proxySettings"].(map[string]interface{})["tag"].(string)
+				chain := panelOutbound(t, c, outTag)["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{})["dialerProxy"].(string)
 				assertPanelMark(t, c, chain, 10)
 			}
 			assertPanelMark(t, c, bal["fallbackTag"].(string), 10)

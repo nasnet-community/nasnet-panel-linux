@@ -352,6 +352,7 @@ type TLSSettings struct {
 	MaxVersion              string          `json:"maxVersion,omitempty"`
 	AllowInsecure           bool            `json:"allowInsecure,omitempty"`
 	DisableSystemRoot       bool            `json:"disableSystemRoot,omitempty"`
+	UseSystemCA             bool            `json:"useSystemCA,omitempty"` // OS trust store; xray 26.10.10+ defaults to its own root bundle
 	RejectUnknownSNI        bool            `json:"rejectUnknownSni,omitempty"`
 	EnableSessionResumption bool            `json:"enableSessionResumption,omitempty"`
 	PinnedPeerCertSha256    string          `json:"pinnedPeerCertSha256,omitempty"`
@@ -512,7 +513,8 @@ type WireGuardSettings struct {
 	MTU            int             `json:"mtu,omitempty"`            // Default 1420
 	Endpoint       []string        `json:"endpoint,omitempty"`       // Local addresses (CIDR)
 	Reserved       []int           `json:"reserved,omitempty"`       // Reserved bytes (3 bytes)
-	DomainStrategy string          `json:"domainStrategy,omitempty"` // FORCE_IP, FORCE_IP4, etc.
+	DomainStrategy string          `json:"domainStrategy,omitempty"` // outbound: forceip* resolve before the tunnel (targetStrategy); empty resolves in it
+	RemoteDNS      []string        `json:"remoteDNS,omitempty"`      // outbound: DNS IPs used inside the tunnel; xray defaults to Cloudflare
 	NoKernelTun    bool            `json:"noKernelTun,omitempty"`
 	Peers          []WireGuardPeer `json:"peers,omitempty"`
 
@@ -1112,6 +1114,35 @@ func (o *Outbound) GetProxySettingsOrDefault() *ProxySettings {
 		return &ProxySettings{}
 	}
 	return o.ProxySettings
+}
+
+// DialerProxyTag is the outbound this one dials through: sockopt.dialerProxy,
+// or a chain saved before xray-core dropped proxySettings.
+func (o *Outbound) DialerProxyTag() string {
+	if o.SockoptSettings != nil && o.SockoptSettings.DialerProxy != "" {
+		return o.SockoptSettings.DialerProxy
+	}
+	if o.ProxySettings != nil {
+		return o.ProxySettings.Tag
+	}
+	return ""
+}
+
+// MoveChainToSockopt rewrites a legacy proxySettings chain as
+// sockopt.dialerProxy, the only form xray-core still accepts.
+func (o *Outbound) MoveChainToSockopt() {
+	if o.ProxySettings == nil {
+		return
+	}
+	if tag := o.ProxySettings.Tag; tag != "" {
+		if o.SockoptSettings == nil {
+			o.SockoptSettings = &SockoptSettings{}
+		}
+		if o.SockoptSettings.DialerProxy == "" {
+			o.SockoptSettings.DialerProxy = tag
+		}
+	}
+	o.ProxySettings = nil
 }
 
 func (Node) TableName() string {

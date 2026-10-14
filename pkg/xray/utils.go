@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"io"
+	"strings"
 
 	"golang.org/x/crypto/curve25519"
 )
@@ -43,4 +44,28 @@ func GenerateShortID(length int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// realityFingerprints are the uTLS presets whose Client Hello offers
+// X25519MLKEM768 ahead of X25519. REALITY servers on Xray 26.9.8 and later
+// hand every other Client Hello to the dest site, so the client never gets in.
+var realityFingerprints = map[string]bool{
+	"": true, "chrome": true, "firefox": true, "safari": true,
+	"hellochrome_auto": true, "hellochrome_131": true, "hellochrome_133": true,
+	"hellofirefox_auto": true, "hellofirefox_148": true,
+	"hellosafari_auto": true, "hellosafari_26_3": true,
+}
+
+// RealityFingerprintOK reports whether a REALITY client using fp gets past
+// current servers. Empty means chrome.
+func RealityFingerprintOK(fp string) bool {
+	return realityFingerprints[strings.ToLower(strings.TrimSpace(fp))]
+}
+
+// RealityFingerprint returns fp, or chrome when fp would be turned away.
+func RealityFingerprint(fp string) string {
+	if RealityFingerprintOK(fp) {
+		return fp
+	}
+	return "chrome"
 }

@@ -8,6 +8,7 @@ import (
 	knife "github.com/lilendian0x00/xray-knife/v11/pkg/core/xray"
 	"github.com/lilendian0x00/xray-knife/v11/utils"
 	"github.com/xtls/xray-core/common/geodata"
+	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/infra/conf"
 	"net/url"
 	"strings"
@@ -133,6 +134,11 @@ func RequireTransportSecurity(out *conf.OutboundDetourConfig) error {
 		}
 	}
 	return nil
+}
+
+// IsPublicAddress applies the same rule to a bare host.
+func IsPublicAddress(host string) bool {
+	return isPublic(&conf.Address{Address: xnet.ParseAddress(host)})
 }
 
 func isPublic(address *conf.Address) bool {

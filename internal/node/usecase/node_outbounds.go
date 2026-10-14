@@ -15,22 +15,26 @@ import (
 
 // === Outbound Management ===
 
-// validateProxyChaining validates proxy_settings on an outbound:
-// - prevents self-reference (tag == proxy_settings.tag)
+// validateProxyChaining validates the outbound this one dials through
+// (sockopt.dialerProxy, or a legacy proxy_settings chain):
+// - prevents self-reference
 // - verifies the target tag exists on the same node
 // - detects circular chains (A→B→...→A)
 func (u *nodeUsecase) validateProxyChaining(ctx context.Context, outbound *domain.Outbound) error {
-	if (outbound.ProxySettings != nil && strings.HasPrefix(outbound.ProxySettings.Tag, "pool-")) || (outbound.SockoptSettings != nil && strings.HasPrefix(outbound.SockoptSettings.DialerProxy, "pool-")) {
-		return fmt.Errorf("route through the pool balancer instead of chaining to a managed member")
+	if ps, so := outbound.ProxySettings, outbound.SockoptSettings; ps != nil && ps.Tag != "" && so != nil && so.DialerProxy != "" && so.DialerProxy != ps.Tag {
+		return fmt.Errorf("proxy chaining: proxy settings and sockopt dialerProxy name different outbounds")
 	}
 
-	ps := outbound.ProxySettings
-	if ps == nil || ps.Tag == "" {
+	target := outbound.DialerProxyTag()
+	if strings.HasPrefix(target, "pool-") {
+		return fmt.Errorf("route through the pool balancer instead of chaining to a managed member")
+	}
+	if target == "" {
 		return nil
 	}
 
 	// Self-reference check
-	if ps.Tag == outbound.Tag {
+	if target == outbound.Tag {
 		return fmt.Errorf("proxy chaining: outbound '%s' cannot chain to itself", outbound.Tag)
 	}
 
@@ -40,28 +44,29 @@ func (u *nodeUsecase) validateProxyChaining(ctx context.Context, outbound *domai
 		return fmt.Errorf("proxy chaining: failed to list outbounds: %w", err)
 	}
 
-	// Build a tag→proxy_settings.tag map (using the about-to-be-saved outbound's value)
+	// Build a tag→dialer tag map (using the about-to-be-saved outbound's value).
+	// The config builder adds direct and blocked when no outbound has them.
 	chainMap := make(map[string]string, len(allOutbounds))
-	targetExists := false
+	targetExists := target == "direct" || target == "blocked"
 	for _, o := range allOutbounds {
 		if o.Tag == outbound.Tag {
 			// Use the new value being saved, not the DB value
 			continue
 		}
-		if o.Tag == ps.Tag {
+		if o.Tag == target {
 			targetExists = true
 		}
-		if o.ProxySettings != nil && o.ProxySettings.Tag != "" {
-			chainMap[o.Tag] = o.ProxySettings.Tag
+		if next := o.DialerProxyTag(); next != "" {
+			chainMap[o.Tag] = next
 		}
 	}
 
 	if !targetExists {
-		return fmt.Errorf("proxy chaining: target outbound '%s' does not exist on this node", ps.Tag)
+		return fmt.Errorf("proxy chaining: target outbound '%s' does not exist on this node", target)
 	}
 
 	// Insert the current outbound's chain into the map
-	chainMap[outbound.Tag] = ps.Tag
+	chainMap[outbound.Tag] = target
 
 	// Walk the chain from this outbound to detect cycles (max depth = number of outbounds)
 	visited := make(map[string]bool, len(chainMap))
@@ -107,7 +112,7 @@ func (u *nodeUsecase) findOutboundsChainingTo(ctx context.Context, nodeID uint, 
 	}
 	var refs []string
 	for _, o := range allOutbounds {
-		if (o.ProxySettings != nil && o.ProxySettings.Tag == targetTag) || (o.SockoptSettings != nil && o.SockoptSettings.DialerProxy == targetTag) {
+		if o.DialerProxyTag() == targetTag {
 			refs = append(refs, o.Tag)
 		}
 	}
@@ -143,6 +148,7 @@ func (u *nodeUsecase) AddOutbound(ctx context.Context, outbound *domain.Outbound
 	if err := u.validateProxyChaining(ctx, outbound); err != nil {
 		return err
 	}
+	outbound.MoveChainToSockopt()
 
 	if err := u.nodeRepo.CreateOutbound(ctx, outbound); err != nil {
 		return err
@@ -341,6 +347,7 @@ func (u *nodeUsecase) UpdateOutbound(ctx context.Context, outbound *domain.Outbo
 	if err := u.validateProxyChaining(ctx, outbound); err != nil {
 		return err
 	}
+	outbound.MoveChainToSockopt()
 
 	if err := u.nodeRepo.UpdateOutbound(ctx, outbound); err != nil {
 		return err

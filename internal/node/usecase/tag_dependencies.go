@@ -75,7 +75,7 @@ func (u *nodeUsecase) rejectReferencedTagRename(ctx context.Context, nodeID uint
 			if out.LoopbackSettings != nil && out.LoopbackSettings.InboundTag == tag {
 				return referenced(fmt.Sprintf("loopback outbound %q", out.Tag))
 			}
-		} else if (out.ProxySettings != nil && out.ProxySettings.Tag == tag) || (out.SockoptSettings != nil && out.SockoptSettings.DialerProxy == tag) {
+		} else if out.DialerProxyTag() == tag {
 			return referenced(fmt.Sprintf("outbound %q", out.Tag))
 		}
 	}

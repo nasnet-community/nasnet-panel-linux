@@ -680,7 +680,10 @@ func (p *Provider) enrichLinkWithInboundInfo(link string, info *xray.InboundInfo
 				changed = true
 			}
 			if info.RealityConfig.Fingerprint != "" && q.Get("fp") == "" {
-				q.Set("fp", info.RealityConfig.Fingerprint)
+				q.Set("fp", xray.RealityFingerprint(info.RealityConfig.Fingerprint))
+				changed = true
+			} else if fp := q.Get("fp"); fp != "" && !xray.RealityFingerprintOK(fp) {
+				q.Set("fp", "chrome")
 				changed = true
 			}
 			if info.RealityConfig.SpiderX != "" && q.Get("spx") == "" {

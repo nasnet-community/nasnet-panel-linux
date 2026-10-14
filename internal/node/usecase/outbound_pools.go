@@ -340,13 +340,8 @@ func poolFallback(tx *gorm.DB, nodeID uint, tag string) error {
 		}
 		visiting[current] = true
 		defer delete(visiting, current)
-		if out.ProxySettings != nil && out.ProxySettings.Tag != "" {
-			if err := visit(out.ProxySettings.Tag); err != nil {
-				return err
-			}
-		}
-		if out.SockoptSettings != nil && out.SockoptSettings.DialerProxy != "" {
-			if err := visit(out.SockoptSettings.DialerProxy); err != nil {
+		if next := out.DialerProxyTag(); next != "" {
+			if err := visit(next); err != nil {
 				return err
 			}
 		}

@@ -625,8 +625,8 @@ func (b *FullConfigBuilder) buildInboundStreamSettings(inb *nodeDomain.Inbound) 
 		if realitySettings.PrivateKey == "" {
 			security = "none"
 		}
-		// REALITY only supports tcp, splithttp/xhttp, grpc
-		if security == "reality" && network != "tcp" && network != "xhttp" && network != "splithttp" && network != "grpc" {
+		// REALITY only supports raw/tcp, splithttp/xhttp, grpc
+		if security == "reality" && network != "tcp" && network != "raw" && network != "xhttp" && network != "splithttp" && network != "grpc" {
 			security = "none"
 		}
 	}
@@ -945,6 +945,9 @@ func (b *FullConfigBuilder) buildTLSSettings(tls *nodeDomain.TLSSettings) map[st
 	if tls.DisableSystemRoot {
 		settings["disableSystemRoot"] = true
 	}
+	if tls.UseSystemCA {
+		settings["useSystemCA"] = true
+	}
 	if tls.MinVersion != "" {
 		settings["minVersion"] = tls.MinVersion
 	}
@@ -1158,7 +1161,9 @@ func (b *FullConfigBuilder) buildRealityOutboundSettings(reality *nodeDomain.Rea
 		settings["spiderX"] = reality.SpiderX
 	}
 	if reality.Fingerprint != "" {
-		settings["fingerprint"] = reality.Fingerprint
+		// A fingerprint without X25519MLKEM768 gets the dest site from 26.9.8+
+		// servers; chrome works with old and new ones alike.
+		settings["fingerprint"] = RealityFingerprint(reality.Fingerprint)
 	}
 	if len(reality.ALPN) > 0 {
 		settings["alpn"] = reality.ALPN
@@ -1234,8 +1239,9 @@ func (b *FullConfigBuilder) buildOutbounds() []map[string]interface{} {
 		outbounds = append(outbounds, map[string]interface{}{
 			"tag":      "IPv4",
 			"protocol": "freedom",
-			"settings": map[string]interface{}{
-				"domainStrategy": "UseIPv4",
+			"settings": map[string]interface{}{},
+			"streamSettings": map[string]interface{}{
+				"sockopt": map[string]interface{}{"domainStrategy": "UseIPv4"},
 			},
 		})
 	}
@@ -1349,18 +1355,52 @@ func (b *FullConfigBuilder) convertOutbound(out *nodeDomain.Outbound) map[string
 		cfg["mux"] = mux
 	}
 
-	// ProxySettings
-	if out.ProxySettings != nil && out.ProxySettings.Tag != "" {
-		ps := map[string]interface{}{
-			"tag": out.ProxySettings.Tag,
+	// xray-core 26.9.8 refuses outbound proxySettings, so a chain saved that
+	// way goes out as sockopt.dialerProxy, which older cores read too.
+	if tag := out.DialerProxyTag(); tag != "" {
+		outboundSockopt(cfg)["dialerProxy"] = tag
+	}
+
+	switch out.Protocol {
+	case "freedom":
+		// freedom's own domainStrategy is deprecated since 26.9.8 and the core
+		// moves it to sockopt, overriding sockopt's; do the same here. The
+		// sockopt form resolves alike on older cores.
+		if ds := out.GetFreedomSettingsOrDefault().DomainStrategy; ds != "" && !strings.EqualFold(ds, "AsIs") {
+			outboundSockopt(cfg)["domainStrategy"] = ds
 		}
-		if out.ProxySettings.TransportLayer {
-			ps["transportLayer"] = true
+		// freedom with addressPortStrategy fails the whole config since 26.9.8.
+		if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok {
+			if sock, ok := ss["sockopt"].(map[string]interface{}); ok {
+				delete(sock, "addressPortStrategy")
+			}
 		}
-		cfg["proxySettings"] = ps
+	case "wireguard":
+		// 26.9.30 split WireGuard's domainStrategy: destinations follow the
+		// outbound targetStrategy, the peer endpoint sockopt.domainStrategy.
+		if ts := WireGuardTargetStrategy(out.GetWireGuardSettingsOrDefault().DomainStrategy); ts != "" {
+			cfg["targetStrategy"] = ts
+			outboundSockopt(cfg)["domainStrategy"] = ts
+		}
 	}
 
 	return cfg
+}
+
+// outboundSockopt returns the outbound's streamSettings.sockopt, creating both
+// when missing.
+func outboundSockopt(cfg map[string]interface{}) map[string]interface{} {
+	stream, _ := cfg["streamSettings"].(map[string]interface{})
+	if stream == nil {
+		stream = map[string]interface{}{}
+		cfg["streamSettings"] = stream
+	}
+	sock, _ := stream["sockopt"].(map[string]interface{})
+	if sock == nil {
+		sock = map[string]interface{}{}
+		stream["sockopt"] = sock
+	}
+	return sock
 }
 
 // WireGuardTargetStrategy maps a stored WireGuard domainStrategy to the
@@ -1419,9 +1459,7 @@ func (b *FullConfigBuilder) buildFreedomSettings(out *nodeDomain.Outbound) map[s
 	settings := map[string]interface{}{}
 	fs := out.GetFreedomSettingsOrDefault()
 
-	if fs.DomainStrategy != "" {
-		settings["domainStrategy"] = fs.DomainStrategy
-	}
+	// domainStrategy is emitted as sockopt.domainStrategy (convertOutbound).
 	if fs.Redirect != "" {
 		settings["redirect"] = fs.Redirect
 	}
@@ -1613,8 +1651,9 @@ func (b *FullConfigBuilder) buildWireGuardOutboundSettings(out *nodeDomain.Outbo
 	if len(wg.Reserved) > 0 {
 		settings["reserved"] = wg.Reserved
 	}
-	if wg.DomainStrategy != "" {
-		settings["domainStrategy"] = wg.DomainStrategy
+	// domainStrategy became the outbound's targetStrategy (convertOutbound).
+	if len(wg.RemoteDNS) > 0 {
+		settings["remoteDNS"] = wg.RemoteDNS
 	}
 	if wg.NoKernelTun {
 		settings["noKernelTun"] = true
@@ -1830,8 +1869,8 @@ func (b *FullConfigBuilder) buildOutboundStreamSettings(out *nodeDomain.Outbound
 	security := out.Security
 	network := out.Network
 
-	// REALITY only supports tcp, splithttp/xhttp, grpc
-	if security == "reality" && network != "tcp" && network != "xhttp" && network != "splithttp" && network != "grpc" {
+	// REALITY only supports raw/tcp, splithttp/xhttp, grpc
+	if security == "reality" && network != "tcp" && network != "raw" && network != "xhttp" && network != "splithttp" && network != "grpc" {
 		security = "none"
 	}
 
@@ -2477,9 +2516,6 @@ func (b *FullConfigBuilder) buildWireGuardSettings(inb *nodeDomain.Inbound) map[
 	// xray-core dropped the WireGuard `workers` knob; nothing to emit.
 	if len(wg.Reserved) > 0 {
 		settings["reserved"] = wg.Reserved
-	}
-	if wg.DomainStrategy != "" {
-		settings["domainStrategy"] = wg.DomainStrategy
 	}
 	if wg.NoKernelTun {
 		settings["noKernelTun"] = true
