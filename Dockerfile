@@ -17,8 +17,6 @@ RUN apk add --no-cache git
 
 # Copy go mod files
 COPY go.mod go.sum ./
-# Preserve the initialization fix in the pinned Xray library.
-COPY third_party/xray-core/ ./third_party/xray-core/
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 

@@ -285,8 +285,16 @@ func BuildOutboundHandlerConfig(cfg *OutboundConfig) (*core.OutboundHandlerConfi
 func buildSenderSettings(cfg *OutboundConfig) (*proxyman.SenderConfig, error) {
 	sc := &proxyman.SenderConfig{}
 
-	// WireGuard doesn't use stream settings
+	// WireGuard doesn't use stream settings. Its domainStrategy moved to the
+	// outbound's targetStrategy in xray-core 26.9.30.
 	if strings.ToLower(cfg.Protocol) == "wireguard" {
+		if cfg.WireGuard != nil {
+			if ds := wireGuardTargetStrategies[WireGuardTargetStrategy(cfg.WireGuard.DomainStrategy)]; ds != internet.DomainStrategy_AS_IS {
+				// The peer endpoint is looked up with sockopt's strategy.
+				sc.TargetStrategy = ds
+				sc.StreamSettings = &internet.StreamConfig{SocketSettings: &internet.SocketConfig{DomainStrategy: ds}}
+			}
+		}
 		return sc, nil
 	}
 
@@ -575,24 +583,18 @@ func buildHTTPOutbound(cfg *OutboundConfig) (*serial.TypedMessage, error) {
 	}), nil
 }
 
+var wireGuardTargetStrategies = map[string]internet.DomainStrategy{
+	"ForceIP":     internet.DomainStrategy_FORCE_IP,
+	"ForceIPv4":   internet.DomainStrategy_FORCE_IP4,
+	"ForceIPv6":   internet.DomainStrategy_FORCE_IP6,
+	"ForceIPv4v6": internet.DomainStrategy_FORCE_IP46,
+	"ForceIPv6v4": internet.DomainStrategy_FORCE_IP64,
+}
+
 func buildWireGuardOutbound(cfg *OutboundConfig) (*serial.TypedMessage, error) {
 	wg := cfg.WireGuard
 	if wg == nil {
 		return serial.ToTypedMessage(&wireguard.DeviceConfig{IsClient: true}), nil
-	}
-
-	var ds wireguard.DeviceConfig_DomainStrategy
-	switch wg.DomainStrategy {
-	case "ForceIP4":
-		ds = wireguard.DeviceConfig_FORCE_IP4
-	case "ForceIP6":
-		ds = wireguard.DeviceConfig_FORCE_IP6
-	case "ForceIP46":
-		ds = wireguard.DeviceConfig_FORCE_IP46
-	case "ForceIP64":
-		ds = wireguard.DeviceConfig_FORCE_IP64
-	default:
-		ds = wireguard.DeviceConfig_FORCE_IP
 	}
 
 	peers := make([]*wireguard.PeerConfig, 0, len(wg.Peers))
@@ -615,14 +617,13 @@ func buildWireGuardOutbound(cfg *OutboundConfig) (*serial.TypedMessage, error) {
 	}
 
 	return serial.ToTypedMessage(&wireguard.DeviceConfig{
-		SecretKey:      wg.SecretKey,
-		Endpoint:       wg.Endpoint,
-		Peers:          peers,
-		Mtu:            int32(wg.MTU),
-		Reserved:       wg.Reserved,
-		DomainStrategy: ds,
-		IsClient:       true,
-		NoKernelTun:    wg.NoKernelTun,
+		SecretKey:   wg.SecretKey,
+		Endpoint:    wg.Endpoint,
+		Peers:       peers,
+		Mtu:         int32(wg.MTU),
+		Reserved:    wg.Reserved,
+		IsClient:    true,
+		NoKernelTun: wg.NoKernelTun,
 	}), nil
 }
 

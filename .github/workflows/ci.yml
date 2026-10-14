@@ -64,6 +64,10 @@ jobs:
         # packages.
         run: go test -race -count=1 ./internal/... ./pkg/... ./transport/... ./cmd/... ./config/...
 
+      - name: go test (VLESS reverse tunnel, no race)
+        # Skipped under -race: xray-core itself races in VLESS reverse setup.
+        run: go test -count=1 -run TestPanelSettingsVLESSReverseTunnel ./pkg/xray/
+
       - name: go build (sub-packages)
         run: go build ./internal/... ./pkg/... ./transport/... ./cmd/...
 

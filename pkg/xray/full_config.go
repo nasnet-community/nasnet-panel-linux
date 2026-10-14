@@ -1363,6 +1363,25 @@ func (b *FullConfigBuilder) convertOutbound(out *nodeDomain.Outbound) map[string
 	return cfg
 }
 
+// WireGuardTargetStrategy maps a stored WireGuard domainStrategy to the
+// outbound targetStrategy that replaced it in xray-core 26.9.30. Empty means
+// the core resolves domains inside the tunnel.
+func WireGuardTargetStrategy(s string) string {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "_", "") {
+	case "forceip":
+		return "ForceIP"
+	case "forceipv4", "forceip4":
+		return "ForceIPv4"
+	case "forceipv6", "forceip6":
+		return "ForceIPv6"
+	case "forceipv4v6", "forceip46":
+		return "ForceIPv4v6"
+	case "forceipv6v4", "forceip64":
+		return "ForceIPv6v4"
+	}
+	return ""
+}
+
 // buildOutboundSettings creates protocol-specific settings for outbounds
 func (b *FullConfigBuilder) buildOutboundSettings(out *nodeDomain.Outbound) map[string]interface{} {
 	switch out.Protocol {
