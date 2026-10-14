@@ -329,6 +329,20 @@ function AdvancedTLSSection({ data, onChange, isOutbound }: { data: TLSSettings;
                             onCheckedChange={(checked) => onChange({ ...data, disableSystemRoot: checked })}
                         />
                     </div>
+                    {isOutbound && !data.disableSystemRoot && (
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="space-y-0.5">
+                                <Label>Use the OS trust store</Label>
+                                <p className="text-xs text-muted-foreground">
+                                    Xray 26.10.10+ checks servers against its own root bundle. Turn on for servers signed by a private CA.
+                                </p>
+                            </div>
+                            <Switch
+                                checked={data.useSystemCA ?? false}
+                                onCheckedChange={(checked) => onChange({ ...data, useSystemCA: checked })}
+                            />
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>Min TLS Version</Label>

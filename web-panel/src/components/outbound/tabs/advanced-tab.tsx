@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { FinalMaskEditor } from "@/components/shared/finalmask-editor"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Disclosure, FormSection, SwitchRow } from "@/components/connection-dialog/section"
-import type { MuxSettings, ProxySettingsConfig, FinalMask, Outbound } from "@/lib/types"
+import type { MuxSettings, SockoptSettings, FinalMask, Outbound } from "@/lib/types"
 
 interface AdvancedTabProps {
     form: UseFormReturn<OutboundFormData>
@@ -16,9 +16,13 @@ interface AdvancedTabProps {
 }
 
 export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTabProps) {
-    const sockopt = form.watch("sockopt_settings")
+    const sockopt = form.watch("sockopt_settings") as SockoptSettings | null | undefined
     const mux = (form.watch("mux_settings") || {}) as MuxSettings
-    const proxy = (form.watch("proxy_settings") || {}) as ProxySettingsConfig
+    const dialerProxy = sockopt?.dialerProxy || ""
+    // dialerProxy is edited as proxy chaining; the socket options card shows
+    // the rest and is "on" only when something else is set.
+    const { dialerProxy: _chain, ...otherSockopt } = sockopt || {}
+    const socketOptions = sockopt && Object.keys(otherSockopt).length > 0 ? (otherSockopt as SockoptSettings) : undefined
     const finalmask = (form.watch("finalmask") || {}) as FinalMask
     const sendThrough = form.watch("send_through") || ""
     const [showFinalMask, setShowFinalMask] = useState(!!finalmask.tcp || !!finalmask.udp || !!finalmask.quicParams)
@@ -32,9 +36,12 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
         form.setValue("mux_settings", { ...mux, ...updates }, { shouldDirty: true })
     }
 
-    const updateProxy = (updates: Partial<ProxySettingsConfig>) => {
-        form.setValue("proxy_settings", { ...proxy, ...updates }, { shouldDirty: true })
+    // null (not undefined) clears the backend pointer, as the socket options form does
+    const setSockopt = (next: SockoptSettings) => {
+        const empty = Object.values(next).every((v) => v === undefined)
+        form.setValue("sockopt_settings", empty ? null : next, { shouldDirty: true })
     }
+    const setDialerProxy = (tag: string) => setSockopt({ ...otherSockopt, dialerProxy: tag || undefined })
 
     return (
         <div className="space-y-7">
@@ -89,16 +96,16 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
             <FormSection title="Routing">
                 <Disclosure
                     title="Proxy chaining"
-                    summary={proxy.tag ? `via ${proxy.tag}` : "off"}
-                    defaultOpen={!!proxy.tag}
-                    onOpenChange={(open) => { if (!open && proxy.tag) updateProxy({ tag: "", transportLayer: false }) }}
+                    summary={dialerProxy ? `via ${dialerProxy}` : "off"}
+                    defaultOpen={!!dialerProxy}
+                    onOpenChange={(open) => { if (!open && dialerProxy) setDialerProxy("") }}
                 >
                     <div className="space-y-2">
                         <Label>Outbound tag</Label>
                         {chainableOutbounds.length > 0 ? (
                             <Select
-                                value={proxy.tag || ""}
-                                onValueChange={(v) => updateProxy({ tag: v })}
+                                value={dialerProxy}
+                                onValueChange={setDialerProxy}
                             >
                                 <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Select an outbound" />
@@ -114,15 +121,8 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
                         ) : (
                             <p className="text-xs italic text-muted-foreground">No other outbounds available to chain to</p>
                         )}
-                        <p className="text-xs text-muted-foreground">Forward this outbound's traffic through another outbound. Collapsing clears it.</p>
+                        <p className="text-xs text-muted-foreground">Dial this outbound's server through another outbound (sockopt dialerProxy). It keeps its own transport and TLS. Collapsing clears it.</p>
                     </div>
-                    <SwitchRow
-                        id="transportLayer"
-                        label="Transport layer"
-                        help="Proxy raw TCP through the target outbound's transport instead of the proxy protocol layer."
-                        checked={proxy.transportLayer ?? false}
-                        onCheckedChange={(c) => updateProxy({ transportLayer: c })}
-                    />
                 </Disclosure>
 
                 <div className="space-y-2">
@@ -139,8 +139,9 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
 
             <FormSection title="Socket options">
                 <SockoptForm
-                    data={sockopt}
-                    onChange={(s) => form.setValue("sockopt_settings", s, { shouldDirty: true })}
+                    hideDialerProxy
+                    data={socketOptions}
+                    onChange={(s) => setSockopt({ ...(s || {}), dialerProxy: dialerProxy || undefined })}
                 />
             </FormSection>
 

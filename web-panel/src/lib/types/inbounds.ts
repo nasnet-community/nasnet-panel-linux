@@ -47,6 +47,7 @@ export interface TLSSettings {
     maxVersion?: string
     allowInsecure?: boolean
     disableSystemRoot?: boolean
+    useSystemCA?: boolean
     rejectUnknownSni?: boolean
     enableSessionResumption?: boolean
     pinnedPeerCertSha256?: string
@@ -199,7 +200,10 @@ export interface WireGuardSettings {
     mtu?: number
     endpoint: string[]
     reserved?: number[]
+    // Outbound: resolve with Xray's DNS before the tunnel (targetStrategy);
+    // unset resolves inside it through remoteDNS.
     domainStrategy?: 'forceip' | 'forceipv4' | 'forceipv6' | 'forceipv4v6' | 'forceipv6v4'
+    remoteDNS?: string[]
     noKernelTun?: boolean
     peerPoolCidr?: string
     clientDns?: string
@@ -289,6 +293,22 @@ export const TLS_FINGERPRINTS = [
     { value: 'randomized', label: 'Randomized' },
 ] as const
 
+// REALITY servers on Xray 26.9.8+ only let in a Client Hello that offers
+// X25519MLKEM768; these are the presets that do.
+export const REALITY_FINGERPRINTS = [
+    { value: 'chrome', label: 'Chrome' },
+    { value: 'firefox', label: 'Firefox' },
+    { value: 'safari', label: 'Safari' },
+] as const
+
+// Every uTLS name that offers X25519MLKEM768, as pkg/xray RealityFingerprintOK.
+export const REALITY_OK_FINGERPRINTS = new Set<string>([
+    'chrome', 'firefox', 'safari',
+    'hellochrome_auto', 'hellochrome_131', 'hellochrome_133',
+    'hellofirefox_auto', 'hellofirefox_148',
+    'hellosafari_auto', 'hellosafari_26_3',
+])
+
 // VMess Settings
 export interface VMessSettings {
     uuid?: string
@@ -358,8 +378,8 @@ export interface SockoptSettings {
 
 // FinalMask for packet masking. Each section is a JSON object (or unset).
 // Values match xray-core's finalmask shape; the FE accepts free-form objects
-// because xray-core keeps adding fields under quicParams (udpHop, congestion,
-// bbrProfile, …) and we don't want to ship a typed schema that lags upstream.
+// because xray-core keeps adding masks and quicParams fields (udphop became a
+// udp mask in 26.9.9) and we don't want to ship a typed schema that lags upstream.
 // tcp/udp are arrays of Mask objects in xray-core; quicParams is an object.
 export type FinalMaskSection = Record<string, unknown> | unknown[]
 export interface FinalMask {
@@ -376,7 +396,7 @@ export interface MuxSettings {
     xudpProxyUDP443?: string
 }
 
-// Proxy Settings (outbound proxy chaining)
+// Proxy Settings (legacy outbound chaining; edited as sockopt.dialerProxy now)
 export interface ProxySettingsConfig {
     tag?: string
     transportLayer?: boolean

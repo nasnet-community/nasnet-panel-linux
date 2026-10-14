@@ -14,19 +14,19 @@ const SECTIONS: { key: SectionKey; label: string; help: string; placeholder: str
     {
         key: "tcp",
         label: "TCP",
-        help: 'Array of masks, e.g. [{"type":"salamander","settings":{"password":"…"}}]',
-        placeholder: '[{"type":"salamander","settings":{"password":"…"}}]',
+        help: "Array of masks: fragment, header-custom, sudoku, xmc",
+        placeholder: '[{"type":"fragment","settings":{…}}]',
     },
     {
         key: "udp",
         label: "UDP",
-        help: 'Array of masks (e.g. salamander for Hysteria2 UDP obfuscation)',
+        help: "Array of masks: salamander (Hysteria2 obfs), udphop (port hopping), noise, header-custom, …",
         placeholder: '[{"type":"salamander","settings":{"password":"…"}}]',
     },
     {
         key: "quicParams",
         label: "QUIC Params",
-        help: "QUIC tuning object (congestion, udpHop, up/down, …)",
+        help: "QUIC tuning object (congestion, brutalUp/brutalDown, bbrProfile, …). Port hopping is the udphop UDP mask now.",
         placeholder: '{"congestion":"bbr"}',
     },
 ]

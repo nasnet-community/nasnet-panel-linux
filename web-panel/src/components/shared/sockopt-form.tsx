@@ -12,9 +12,11 @@ import { Disclosure } from "@/components/connection-dialog/section"
 interface SockoptFormProps {
     data?: SockoptSettings
     onChange: (data: SockoptSettings | null) => void
+    /** The outbound form edits dialerProxy as proxy chaining. */
+    hideDialerProxy?: boolean
 }
 
-export function SockoptForm({ data, onChange }: SockoptFormProps) {
+export function SockoptForm({ data, onChange, hideDialerProxy = false }: SockoptFormProps) {
     // If data is null/undefined, treat as disabled
     const enabled = !!data
 
@@ -112,14 +114,16 @@ export function SockoptForm({ data, onChange }: SockoptFormProps) {
                         placeholder="0"
                     />
                 </div>
-                <div className="space-y-2">
-                    <Label>Dialer Proxy</Label>
-                    <Input
-                        value={data.dialerProxy || ""}
-                        onChange={(e) => update("dialerProxy", e.target.value)}
-                        placeholder="tag"
-                    />
-                </div>
+                {!hideDialerProxy && (
+                    <div className="space-y-2">
+                        <Label>Dialer Proxy</Label>
+                        <Input
+                            value={data.dialerProxy || ""}
+                            onChange={(e) => update("dialerProxy", e.target.value)}
+                            placeholder="tag"
+                        />
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">

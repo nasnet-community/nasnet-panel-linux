@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Disclosure } from "@/components/connection-dialog/section"
-import { RealitySettings, TLS_FINGERPRINTS } from "@/lib/types"
+import { RealitySettings, REALITY_FINGERPRINTS, REALITY_OK_FINGERPRINTS } from "@/lib/types"
 import { generateX25519Keys } from "@/lib/api/nodes"
 import { copyToClipboard } from "@/lib/utils"
 import { toast } from "@/lib/toast"
@@ -47,6 +47,10 @@ export function RealityForm({
 }: RealityFormProps) {
     const data = settings || {}
     const [generating, setGenerating] = useState(false)
+    const storedFingerprint = data.fingerprint || "chrome"
+    const fingerprintOK = REALITY_OK_FINGERPRINTS.has(storedFingerprint.toLowerCase())
+    const listed = REALITY_FINGERPRINTS.find((f) => f.value === storedFingerprint.toLowerCase())
+    const fingerprint = listed ? listed.value : storedFingerprint
 
     // Local text state for ALPN to prevent comma from being eaten during typing
     const [alpnText, setAlpnText] = React.useState(() => (data.alpn || []).join(", "))
@@ -108,18 +112,29 @@ export function RealityForm({
                 <div className="space-y-2">
                     <Label>Fingerprint</Label>
                     <Select
-                        value={data.fingerprint || "chrome"}
+                        value={fingerprint}
                         onValueChange={(v) => onChange({ ...data, fingerprint: v })}
                     >
                         <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                            {TLS_FINGERPRINTS.map((f) => (
+                            {REALITY_FINGERPRINTS.map((f) => (
                                 <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
                             ))}
+                            {!listed && (
+                                <SelectItem value={fingerprint} disabled={!fingerprintOK}>
+                                    {fingerprintOK ? fingerprint : `${fingerprint} (turned away)`}
+                                </SelectItem>
+                            )}
                         </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">
-                        Client-side hint for generated links; ignored by the server.
+                    <p className={fingerprintOK ? "text-xs text-muted-foreground" : "text-xs text-destructive"}>
+                        {fingerprintOK
+                            ? isInbound
+                                ? "Goes into generated links. Xray 26.9.8+ REALITY servers only let these three in."
+                                : "The Client Hello this outbound sends. Current REALITY servers only let these three in."
+                            : isInbound
+                                ? `REALITY servers on Xray 26.9.8+ turn "${fingerprint}" away; links use chrome instead. Pick one of the others.`
+                                : `REALITY servers on Xray 26.9.8+ turn "${fingerprint}" away; the node sends chrome instead. Pick one of the others.`}
                     </p>
                 </div>
             </div>
@@ -289,9 +304,10 @@ function AdvancedRealitySection({ data, onChange }: { data: RealitySettings; onC
                                 onChange={(e) => onChange({ ...data, minClientVer: e.target.value })}
                             />
                             <p className="text-xs text-muted-foreground">
-                                Left empty, xray-core enforces its own floor of <strong>26.3.27</strong> and
-                                refuses older clients. Set <code>0.0.0</code> to accept any client — upstream
-                                warns this raises the odds of the server IP being blocked.
+                                Left empty, any client version gets in: Xray 26.9.8 dropped the old
+                                default floor of 26.3.27 and checks the Client Hello for X25519MLKEM768
+                                instead. Upstream warns that a floor raises the odds of the server IP
+                                being blocked.
                             </p>
                         </div>
                         <div className="space-y-2">

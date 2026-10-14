@@ -79,6 +79,7 @@ export function ProtocolTab({ form }: ProtocolTabProps) {
             )}
             {protocol === "wireguard" && (
                 <WireGuardForm
+                    outbound
                     settings={form.watch("wireguard_settings")}
                     onChange={(s) => form.setValue("wireguard_settings", s, { shouldDirty: true })}
                 />

@@ -11,10 +11,21 @@ import { useState, useRef, useEffect } from "react"
 interface WireGuardFormProps {
     settings?: WireGuardSettings
     onChange: (settings: WireGuardSettings) => void
+    outbound?: boolean
 }
 
-export function WireGuardForm({ settings, onChange }: WireGuardFormProps) {
+export function WireGuardForm({ settings, onChange, outbound = false }: WireGuardFormProps) {
     const data = settings || { secretKey: "", endpoint: [], mtu: 1420, peers: [] }
+
+    // Local text state for Remote DNS, like Reserved below
+    const [remoteDnsText, setRemoteDnsText] = useState(() => (data.remoteDNS || []).join(", "))
+    const remoteDnsFocused = useRef(false)
+    const remoteDnsKey = JSON.stringify(data.remoteDNS || [])
+    useEffect(() => {
+        if (!remoteDnsFocused.current) {
+            setRemoteDnsText((data.remoteDNS || []).join(", "))
+        }
+    }, [remoteDnsKey])
 
     // Local text state for Reserved to prevent comma from being eaten during typing
     const [reservedText, setReservedText] = useState(() => (data.reserved || []).join(", "))
@@ -158,32 +169,61 @@ export function WireGuardForm({ settings, onChange }: WireGuardFormProps) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label>Domain Strategy</Label>
-                    <Select
-                        value={data.domainStrategy || "forceip"}
-                        onValueChange={(value) =>
-                            onChange({
-                                ...data,
-                                domainStrategy: value as WireGuardSettings["domainStrategy"],
-                            })
-                        }
-                    >
-                        <SelectTrigger className="w-full">
-                            <SelectValue />
-                        </SelectTrigger>
-                        {/* must match xray-core's set; old ForceIP4/46/64 forms break the config */}
-                        <SelectContent>
-                            <SelectItem value="forceip">Force IP</SelectItem>
-                            <SelectItem value="forceipv4">Force IPv4</SelectItem>
-                            <SelectItem value="forceipv6">Force IPv6</SelectItem>
-                            <SelectItem value="forceipv4v6">Force IPv4 then IPv6</SelectItem>
-                            <SelectItem value="forceipv6v4">Force IPv6 then IPv4</SelectItem>
-                        </SelectContent>
-                    </Select>
+            {outbound && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Resolve domains</Label>
+                        <Select
+                            value={data.domainStrategy || "tunnel"}
+                            onValueChange={(value) =>
+                                onChange({
+                                    ...data,
+                                    domainStrategy: value === "tunnel" ? undefined : value as WireGuardSettings["domainStrategy"],
+                                })
+                            }
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue />
+                            </SelectTrigger>
+                            {/* Anything but "tunnel" goes out as the outbound's
+                                targetStrategy; xray-core 26.9.30 removed the
+                                WireGuard domainStrategy. */}
+                            <SelectContent>
+                                <SelectItem value="tunnel">Inside the tunnel</SelectItem>
+                                <SelectItem value="forceip">Xray DNS, any IP</SelectItem>
+                                <SelectItem value="forceipv4">Xray DNS, IPv4</SelectItem>
+                                <SelectItem value="forceipv6">Xray DNS, IPv6</SelectItem>
+                                <SelectItem value="forceipv4v6">Xray DNS, IPv4 then IPv6</SelectItem>
+                                <SelectItem value="forceipv6v4">Xray DNS, IPv6 then IPv4</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">How destinations are looked up. An Xray DNS choice also picks the address family for the peer endpoint.</p>
+                    </div>
+                    {!data.domainStrategy && (
+                        <div className="space-y-2">
+                            <Label>Remote DNS</Label>
+                            <Input
+                                placeholder="1.1.1.1, 1.0.0.1"
+                                value={remoteDnsText}
+                                onFocus={() => { remoteDnsFocused.current = true }}
+                                onChange={(e) => {
+                                    setRemoteDnsText(e.target.value)
+                                    const ips = e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                                    onChange({ ...data, remoteDNS: ips.length > 0 ? ips : undefined })
+                                }}
+                                onBlur={() => {
+                                    remoteDnsFocused.current = false
+                                    setRemoteDnsText((data.remoteDNS || []).join(", "))
+                                }}
+                            />
+                            <p className="text-xs text-muted-foreground">DNS servers asked through the tunnel. Empty uses Cloudflare.</p>
+                        </div>
+                    )}
                 </div>
-                <div className="flex items-center justify-between pt-6">
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between">
                     <Label>No Kernel TUN</Label>
                     <Switch
                         checked={data.noKernelTun ?? false}

@@ -118,7 +118,10 @@ export function useOutboundForm(
                 tls_settings: outbound.tls_settings,
                 reality_settings: outbound.reality_settings,
                 transport_settings: outbound.transport_settings,
-                sockopt_settings: outbound.sockopt_settings,
+                // xray-core dropped proxySettings: an old chain is edited as sockopt.dialerProxy.
+                sockopt_settings: outbound.proxy_settings?.tag && !outbound.sockopt_settings?.dialerProxy
+                    ? { ...outbound.sockopt_settings, dialerProxy: outbound.proxy_settings.tag }
+                    : outbound.sockopt_settings,
                 freedom_settings: outbound.freedom_settings,
                 blackhole_settings: outbound.blackhole_settings,
                 vmess_settings: outbound.vmess_settings,
@@ -132,7 +135,7 @@ export function useOutboundForm(
                 loopback_settings: outbound.loopback_settings,
                 hysteria_settings: outbound.hysteria_settings,
                 mux_settings: outbound.mux_settings,
-                proxy_settings: outbound.proxy_settings,
+                proxy_settings: undefined,
                 send_through: outbound.send_through,
                 finalmask: outbound.finalmask,
             })
@@ -214,7 +217,6 @@ export function useOutboundForm(
     const wireguardSettings = watch("wireguard_settings")
     const sockoptSettings = watch("sockopt_settings")
     const muxSettings = watch("mux_settings")
-    const proxySettings = watch("proxy_settings")
     const sendThrough = watch("send_through")
     const finalmask = watch("finalmask")
 
@@ -273,8 +275,8 @@ export function useOutboundForm(
         }
 
         const advParts = [muxSettings?.enabled ? "Mux on" : "Mux off"]
-        if (proxySettings?.tag) advParts.push(`via ${proxySettings.tag}`)
-        if (sockoptSettings) advParts.push("sockopt")
+        if (sockoptSettings?.dialerProxy) advParts.push(`via ${sockoptSettings.dialerProxy}`)
+        if (sockoptSettings && Object.keys(sockoptSettings).some((k) => k !== "dialerProxy")) advParts.push("sockopt")
         if (sendThrough) advParts.push(`from ${sendThrough}`)
         if (finalmask && (finalmask.tcp || finalmask.udp || finalmask.quicParams)) advParts.push("FinalMask")
 
@@ -286,7 +288,7 @@ export function useOutboundForm(
         ]
     }, [tag, address, port, needsAddress, protocol, protocolLabel, usesStream, network, security, transportSettings,
         tlsSettings, realitySettings, freedomSettings, blackholeSettings, vlessSettings, vmessSettings,
-        shadowsocksSettings, loopbackSettings, wireguardSettings, sockoptSettings, muxSettings, proxySettings,
+        shadowsocksSettings, loopbackSettings, wireguardSettings, sockoptSettings, muxSettings,
         sendThrough, finalmask, errorCounts])
 
     const stack = useMemo<StackToken[]>(() => {
@@ -307,9 +309,9 @@ export function useOutboundForm(
             tokens.push({ label: vlessSettings.flow.replace("xtls-rprx-", ""), tab: "protocol", dim: true })
         }
         if (needsAddress && address) tokens.push({ label: `${address}:${port || "—"}`, tab: "general", dim: true })
-        if (proxySettings?.tag) tokens.push({ label: `via ${proxySettings.tag}`, tab: "advanced", dim: true })
+        if (sockoptSettings?.dialerProxy) tokens.push({ label: `via ${sockoptSettings.dialerProxy}`, tab: "advanced", dim: true })
         return tokens
-    }, [protocol, usesStream, network, security, freedomSettings, blackholeSettings, loopbackSettings, vlessSettings, needsAddress, address, port, proxySettings])
+    }, [protocol, usesStream, network, security, freedomSettings, blackholeSettings, loopbackSettings, vlessSettings, needsAddress, address, port, sockoptSettings])
 
     // Apply preset: reset to the preset's defaults, keeping tag/remark.
     const applyPreset = useCallback((presetId: string) => {
