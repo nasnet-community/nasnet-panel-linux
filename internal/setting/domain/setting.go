@@ -33,6 +33,14 @@ func AdminPasswordHashSetting(hash string) *Setting {
 	}
 }
 
+// ImportResult says what an import changed and what it left out.
+type ImportResult struct {
+	Applied []string `json:"applied"`
+	Unknown []string `json:"unknown"` // keys this panel doesn't have
+	Refused []string `json:"refused"` // admin-only and protected keys
+	Masked  int      `json:"masked"`  // secrets, masked in the export
+}
+
 type SettingRepository interface {
 	GetAll(ctx context.Context) ([]*Setting, error)
 	GetByKey(ctx context.Context, key string) (*Setting, error)
@@ -43,8 +51,13 @@ type SettingRepository interface {
 type SettingUsecase interface {
 	GetAll(ctx context.Context) (map[string][]*Setting, error) // Grouped by category
 	UpdateMany(ctx context.Context, settings []*Setting) error
+	// Import applies an export file's settings, skipping unknown, admin-only
+	// and masked ones.
+	Import(ctx context.Context, settings []*Setting) (*ImportResult, error)
 	GetByKey(ctx context.Context, key string) (string, error) // Helper to get value directly
-	SeedDefaults(ctx context.Context) error                   // Seed default settings
+	// RawValues returns every stored value, unmasked; never send it to a client.
+	RawValues(ctx context.Context) (map[string]string, error)
+	SeedDefaults(ctx context.Context) error // Seed default settings
 	SetOnMaintenanceChange(fn func())
 	SetOnOutboundProxyChange(fn func(proxyURL string, enabled map[string]bool))
 	SetOnRouterHealthChange(fn func())

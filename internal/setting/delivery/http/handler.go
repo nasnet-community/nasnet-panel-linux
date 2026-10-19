@@ -102,7 +102,7 @@ func (h *SettingHandler) Export(c *gin.Context) {
 
 // Import godoc
 // @Summary      Import settings
-// @Description  Import a list of settings (merges with existing, skips masked values)
+// @Description  Import a list of settings (merges with existing; skips masked, unknown and admin-only keys)
 // @Tags         settings
 // @Accept       json
 // @Produce      json
@@ -118,12 +118,13 @@ func (h *SettingHandler) Import(c *gin.Context) {
 		return
 	}
 
-	if err := h.usecase.UpdateMany(c.Request.Context(), settings); err != nil {
+	res, err := h.usecase.Import(c.Request.Context(), settings)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to import settings"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Settings imported successfully", "count": len(settings)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res, "count": len(res.Applied)})
 }
 
 // TestTLS validates that TLS certificate files can be loaded and returns certificate details.

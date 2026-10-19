@@ -7,6 +7,7 @@ import (
 
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -66,13 +67,6 @@ func (u *settingUsecase) SetOnOutboundProxyChange(fn func(proxyURL string, enabl
 
 func (u *settingUsecase) SetOnRouterHealthChange(fn func()) {
 	u.onRouterHealthChange = fn
-}
-
-// outboundProxyFeatureKeys lists the suffix names for the proxy_use_* setting
-// family. Keep in sync with httpclient.AllFeatures().
-var outboundProxyFeatureKeys = []string{
-	"telegram", "geofiles", "xray_binary", "github_api",
-	"webhooks", "geoip", "acme", "wizard", "core_binaries",
 }
 
 func (u *settingUsecase) SetAuditUsecase(auc auditDomain.AuditLogUsecase) {
@@ -143,18 +137,26 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 		}
 	}
 
-	// Capture old values + canonical Sensitive flags for audit. Trusting
-	// the request's Sensitive flag would let a malicious or buggy client
-	// suppress redaction by omitting it; read from storage instead.
+	// Old values + canonical flags come from storage: trusting the request's
+	// Sensitive flag would let a client suppress redaction by omitting it.
+	// Unchanged keys are dropped so a save writes, audits and fires hooks
+	// only for what actually moved.
 	oldValues := make(map[string]string, len(filtered))
 	canonicalSensitive := make(map[string]bool, len(filtered))
-	if u.auditUC != nil {
-		for _, s := range filtered {
-			if old, err := u.repo.GetByKey(ctx, s.Key); err == nil {
-				oldValues[s.Key] = old.Value
-				canonicalSensitive[s.Key] = old.Sensitive
+	changed := filtered[:0]
+	for _, s := range filtered {
+		if old, err := u.repo.GetByKey(ctx, s.Key); err == nil {
+			if old.Value == s.Value {
+				continue
 			}
+			oldValues[s.Key] = old.Value
+			canonicalSensitive[s.Key] = old.Sensitive || old.Category == "admin"
 		}
+		changed = append(changed, s)
+	}
+	filtered = changed
+	if len(filtered) == 0 {
+		return nil
 	}
 
 	if err := u.repo.UpdateMany(ctx, filtered); err != nil {
@@ -167,7 +169,7 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 			oldVal := oldValues[s.Key]
 			newVal := s.Value
 			// Rows saved before the hash was flagged still say false.
-			if s.Sensitive || canonicalSensitive[s.Key] || s.Key == domain.AdminPasswordHashKey {
+			if s.Sensitive || canonicalSensitive[s.Key] || s.Category == "admin" || s.Key == domain.AdminPasswordHashKey {
 				oldVal = "[redacted]"
 				newVal = "[redacted]"
 			}
@@ -211,10 +213,10 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 	}
 	if proxyTouched && u.onOutboundProxyChange != nil {
 		url, _ := u.GetByKey(ctx, "outbound_proxy_url")
-		enabled := make(map[string]bool, len(outboundProxyFeatureKeys))
-		for _, feat := range outboundProxyFeatureKeys {
-			v, _ := u.GetByKey(ctx, "proxy_use_"+feat)
-			enabled[feat] = v == "true"
+		enabled := make(map[string]bool, len(httpclient.AllFeatures()))
+		for _, feat := range httpclient.AllFeatures() {
+			v, _ := u.GetByKey(ctx, "proxy_use_"+string(feat))
+			enabled[string(feat)] = v == "true"
 		}
 		u.onOutboundProxyChange(url, enabled)
 	}
@@ -230,6 +232,68 @@ func (u *settingUsecase) UpdateMany(ctx context.Context, settings []*domain.Sett
 	}
 
 	return nil
+}
+
+// hubManagedKeys are written by the panel itself (maintenance state, the last
+// backup run, the bot's name); another panel's copy would only mislead this one.
+var hubManagedKeys = map[string]bool{
+	"maintenance_mode_enabled": true,
+	"maintenance_mode_since":   true,
+	"backup_last_run_at":       true,
+	"telegram_bot_username":    true,
+}
+
+// RawValues returns every setting's stored value, unmasked. Internal use only.
+func (u *settingUsecase) RawValues(ctx context.Context) (map[string]string, error) {
+	all, err := u.repo.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(all))
+	for _, s := range all {
+		out[s.Key] = s.Value
+	}
+	return out, nil
+}
+
+// Import applies settings from an export file. Unlike UpdateMany it refuses
+// keys this panel doesn't have and keys the settings page can't edit (the
+// admin category and protected keys), and reports what it left out.
+func (u *settingUsecase) Import(ctx context.Context, settings []*domain.Setting) (*domain.ImportResult, error) {
+	res := &domain.ImportResult{Applied: []string{}, Unknown: []string{}, Refused: []string{}}
+	apply := make([]*domain.Setting, 0, len(settings))
+	for _, s := range settings {
+		if s == nil || s.Key == "" {
+			continue
+		}
+		if isMaskedValue(s.Value) {
+			res.Masked++
+			continue
+		}
+		existing, err := u.repo.GetByKey(ctx, s.Key)
+		if err != nil {
+			res.Unknown = append(res.Unknown, s.Key)
+			continue
+		}
+		if existing.Category == "admin" || domain.IsProtectedKey(s.Key) || hubManagedKeys[s.Key] {
+			res.Refused = append(res.Refused, s.Key)
+			continue
+		}
+		// an export leaves unset secrets empty; that must not blank ours
+		if existing.Sensitive && s.Value == "" {
+			res.Masked++
+			continue
+		}
+		if existing.Value == s.Value {
+			continue
+		}
+		apply = append(apply, &domain.Setting{Key: s.Key, Value: s.Value, Category: existing.Category})
+		res.Applied = append(res.Applied, s.Key)
+	}
+	if err := u.UpdateMany(ctx, apply); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // isMaskedValue returns true if the string looks like a masked value (starts with asterisks).
