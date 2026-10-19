@@ -501,8 +501,10 @@ stored_self_signed() {
 # A reinstall over an existing database keeps the HTTPS choice stored there,
 # which the panel reads over .env. Bring it in line and restart once.
 wizard_apply_https_choice() {
-    local want="${WIZ_SELF_SIGNED:-false}" served=false i
-    [[ -n "$(panel_tls_fingerprint "$WIZ_APP_PORT")" ]] && served=true
+    local want="${WIZ_SELF_SIGNED:-false}" served=false health i
+    # Nothing to compare with while the panel isn't answering.
+    health=$(curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:${WIZ_APP_PORT}/health" 2>/dev/null) || return 0
+    [[ "$health" == *'"tls_fingerprint"'* ]] && served=true
     [[ "$served" == "$want" ]] && return 0
     step_info "Applying the HTTPS choice to the existing database..."
     sync_https_settings "$want" "${WIZ_AGENT_HUB_URL:-}"
@@ -3084,7 +3086,8 @@ wizard_collect_install_settings() {
                     if [[ $setup_status -eq 0 ]]; then
                         if [[ $setup_choice -eq 0 ]]; then WIZ_SELF_SIGNED=true; else WIZ_SELF_SIGNED=false; fi
                         if wizard_prepare_router_access; then
-                            setup_step=review; continue
+                            # Back from review returns to this question.
+                            setup_history+=("$setup_step"); setup_step=review; continue
                         fi
                         setup_status=2
                     fi

@@ -348,7 +348,7 @@ INPUT
 test_navigation_install_after_review() {
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|1' 'Database|0' 'Install method|0'
-        'How will users access this server?|1' 'Public URLs|0'
+        'How will users access this server?|1' 'Panel HTTPS|0' 'Public URLs|0'
         'Review installation|0'
     )
     arrow_menu() { scripted_menu "$@"; }
@@ -361,14 +361,20 @@ test_navigation_install_after_review() {
         echo applied >> "$EVENT_LOG"
     }
     _sync_env_to_install_dir() { :; }
-    wizard_install <<'INPUT' || return 1
+    curl() { printf '{"status":"ok","tls_fingerprint":"AB:CD:EF"}'; }
+    wizard_install <<'INPUT' > "$PROJECT_DIR/ip-output" || return 1
 
 /secret
 secret123
 secret123
 INPUT
     contains applied "$EVENT_LOG" || return 1
-    contains 'INSTALL_STATUS=complete' "$ENV_FILE"
+    contains 'INSTALL_STATUS=complete' "$ENV_FILE" || return 1
+    # Subscription links stay on http; the panel and nodes use https.
+    contains 'SUB_PANEL_URL=http://192.0.2.1:12345/secret' "$ENV_FILE" || return 1
+    contains 'TLS_SELF_SIGNED=true' "$ENV_FILE" || return 1
+    contains 'AGENT_HUB_URL=https://192.0.2.1:12345' "$ENV_FILE" || return 1
+    contains 'Web panel: https://192.0.2.1:12345/secret' "$PROJECT_DIR/ip-output"
 }
 test_password_masking() {
     local WIZ_NAVIGATION=true value='' status=0
@@ -442,7 +448,8 @@ test_router_review_back() {
     answers; WIZ_NAVIGATION=true; WIZ_ROUTER_MODE=true; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=''
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
-        'Review installation|1' 'Install method|0' 'Review installation|-2'
+        'Panel HTTPS|0' 'Review installation|1' 'Panel HTTPS|-1' 'Install method|0'
+        'Panel HTTPS|1' 'Review installation|-2'
     )
     arrow_menu() { scripted_menu "$@"; }
     wizard_detect_router_ip() { echo 192.168.4.1; }
@@ -450,16 +457,19 @@ test_router_review_back() {
     wizard_read_answer() { fail 'Router requested credentials'; exit 1; }
     wizard_gen_password() { echo premature-secret-generation >> "$EVENT_LOG"; return 1; }
     if wizard_collect_install_settings < /dev/null; then return 1; fi
-    [[ $menu_index -eq ${#menu_script[@]} && ! -s "$EVENT_LOG" && ! -f "$ENV_FILE" ]]
+    [[ $menu_index -eq ${#menu_script[@]} && "$WIZ_SELF_SIGNED" == false ]] || return 1
+    [[ ! -s "$EVENT_LOG" && ! -f "$ENV_FILE" ]]
 }
 test_router_defaults_and_credentials() {
     local menu_index=0 menu_script=(
         'Deployment|0' 'How will you use this device?|0' 'Database|0' 'Install method|0'
-        'Review installation|0'
+        'Panel HTTPS|0' 'Review installation|0'
     )
     arrow_menu() {
         if [[ "$1" == 'How will you use this device?' ]]; then
             [[ "$3" == Router && "$ARROW_MENU_DEFAULT" == 0 ]] || exit 1
+        elif [[ "$1" == 'Panel HTTPS' ]]; then
+            [[ "$3" == 'HTTPS with a self-signed certificate (recommended)' && "$ARROW_MENU_DEFAULT" == 0 ]] || exit 1
         elif [[ "$1" == Database ]]; then
             [[ "$3" == 'SQLite (recommended)' && "$ARROW_MENU_DEFAULT" == 0 ]] || exit 1
         fi
@@ -475,6 +485,7 @@ test_router_defaults_and_credentials() {
     wizard_open_firewall() { :; }
     wizard_build_start_systemd() { WIZ_PROVISIONED=true; return 0; }
     _sync_env_to_install_dir() { :; }
+    curl() { printf '{"status":"ok","tls_fingerprint":"AB:CD:EF"}'; }
     sudo() {
         case "$1" in
             -v) return 0 ;;
@@ -487,6 +498,11 @@ test_router_defaults_and_credentials() {
     contains 'APP_BASE_URL=http://192.168.4.1:9761' "$ENV_FILE" || return 1
     contains 'SUB_PANEL_URL=http://192.168.4.1:9761' "$ENV_FILE" || return 1
     contains 'ROUTER_MODE=true' "$ENV_FILE" || return 1
+    contains 'TLS_SELF_SIGNED=true' "$ENV_FILE" || return 1
+    contains 'AGENT_HUB_URL=' "$ENV_FILE" || return 1
+    absent 'AGENT_HUB_URL=https' "$ENV_FILE" || return 1
+    contains 'Web panel: https://192.168.4.1:9761' "$PROJECT_DIR/router-output" || return 1
+    contains 'AB:CD:EF' "$PROJECT_DIR/router-output" || return 1
     contains 'DB_DRIVER=sqlite' "$ENV_FILE" || return 1
     contains 'TELEGRAM_ENABLED=false' "$ENV_FILE" || return 1
     absent fixture-generated-password "$ENV_FILE" || return 1
