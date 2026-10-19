@@ -648,10 +648,11 @@ func (u *nodeUsecase) RepushForSNI(ctx context.Context, sniID uint) {
 	}
 }
 
-// shapingAgentVersion is the first agent that shapes by socket priority and
-// keeps its shaping across restarts: the first release after 1.0.0. Older
-// agents shape by fwmark, which the tier outbounds no longer set, so limits
-// only work once they're updated.
+// shapingAgentVersion is the first version whose every agent shapes by socket
+// priority and keeps its shaping across restarts. Older agents shape by
+// fwmark, which the tier outbounds no longer set, so limits only work once
+// they're updated. 1.0.0 was released both ways; its rebuilt agent is told
+// apart by its build (see runsBundledAgent).
 const shapingAgentVersion = "1.0.1"
 
 // applyBandwidth brings the agent's TC shaping in line with the node's
@@ -681,9 +682,10 @@ func (u *nodeUsecase) applyBandwidth(ctx context.Context, client agent.NodeClien
 		totalBW = 1000
 	}
 	agentVersion, _ := u.agentVersions(ctx, client, nodeID, false)
+	build := u.agentBuild(nodeID)
 	// the built-in node runs this panel's own agent
-	current := node.IsLocal() || versionAtLeast(agentVersion, shapingAgentVersion)
-	key := fmt.Sprintf("%t|%s|%d|%s", bw.Enabled, iface, totalBW, agentVersion)
+	current := node.IsLocal() || versionAtLeast(agentVersion, shapingAgentVersion) || runsBundledAgent(node, build)
+	key := fmt.Sprintf("%t|%s|%d|%s|%s", bw.Enabled, iface, totalBW, agentVersion, build)
 	u.bwMu.Lock()
 	sent := u.bwApplied[nodeID] == key
 	u.bwMu.Unlock()
@@ -714,6 +716,15 @@ func (u *nodeUsecase) applyBandwidth(ctx context.Context, client agent.NodeClien
 	if bw.Enabled && !sent {
 		log.WithFields(map[string]interface{}{"interface": iface, "total_bw": totalBW}).Info("[pushConfigToAgent] Bandwidth shaping in place")
 	}
+}
+
+// runsBundledAgent reports whether a remote node runs the very agent build
+// this panel ships, which is as new as the panel whatever version it reports.
+func runsBundledAgent(node *domain.Node, build string) bool {
+	if build == "" || node.LastHostInfo == nil {
+		return false
+	}
+	return strings.EqualFold(build, bundledAgentSum(bundledAgentPath(node.LastHostInfo.OS, node.LastHostInfo.Arch)))
 }
 
 // versionAtLeast compares dotted numeric versions ("1.0.1"); anything it
