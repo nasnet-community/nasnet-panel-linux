@@ -73,6 +73,7 @@ type panelData struct {
 	IsOnline             bool          `json:"is_online"`
 	OnlineCount          int           `json:"online_count"`
 	OnlineIPs            []string      `json:"online_ips,omitempty"`
+	OnlineDevices        []panelDevice `json:"online_devices,omitempty"` // WireGuard devices counted in IsOnline
 	LastActiveAt         *time.Time    `json:"last_active_at"`
 	Servers              []panelServer `json:"servers"`
 	ChatEnabled          bool          `json:"chat_enabled"`
@@ -80,6 +81,11 @@ type panelData struct {
 	// CoreTunnels is every SSH/MTProto tunnel assigned to this subscription,
 	// rendered as client links, alongside the xray server list.
 	CoreTunnels []panelCoreTunnel `json:"core_tunnels,omitempty"`
+}
+
+type panelDevice struct {
+	ID    uint   `json:"id"`
+	Label string `json:"label"`
 }
 
 type panelCoreTunnel struct {
@@ -266,6 +272,23 @@ func (h *Handler) buildFullPanelData(ctx context.Context, sub *domain.Subscripti
 	// Build server list with online status
 	servers, isOnline, onlineCount := h.buildPanelServersWithStatus(ctx, sub)
 
+	// WireGuard peers never reach the Xray online cache; a device that moved
+	// traffic within the bot's online window counts as connected. They stay
+	// out of onlineCount, which counts server entries, not devices.
+	var onlineDevices []panelDevice
+	if h.deviceUC != nil {
+		if devs, err := h.deviceUC.ListDevices(ctx, sub.ID); err == nil {
+			for _, d := range devs {
+				if d.LastSeen != nil && time.Since(*d.LastSeen) < wgOnlineWindow {
+					onlineDevices = append(onlineDevices, panelDevice{ID: d.ID, Label: d.Label})
+				}
+			}
+		}
+	}
+	if len(onlineDevices) > 0 {
+		isOnline = true
+	}
+
 	// Collect online IPs from cache for this subscription's config email
 	var onlineIPs []string
 	if sub.ConfigEmail != "" {
@@ -303,6 +326,7 @@ func (h *Handler) buildFullPanelData(ctx context.Context, sub *domain.Subscripti
 		IsOnline:             isOnline,
 		OnlineCount:          onlineCount,
 		OnlineIPs:            onlineIPs,
+		OnlineDevices:        onlineDevices,
 		LastActiveAt:         sub.LastActiveAt,
 		Servers:              servers,
 	}
@@ -328,6 +352,9 @@ func (h *Handler) buildFullPanelData(ctx context.Context, sub *domain.Subscripti
 
 	return data
 }
+
+// wgOnlineWindow matches the bot's "online" test on LastActiveAt.
+const wgOnlineWindow = 3 * time.Minute
 
 // telegramReachable reports whether the subscription can receive Telegram
 // notifications — either via an explicit per-sub chat ID or by falling back to
