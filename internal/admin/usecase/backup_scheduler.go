@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -154,6 +155,9 @@ func (r *ScheduledBackupRunner) MaybeRun(ctx context.Context) {
 		defer cancel()
 
 		res, err := r.RunNow(runCtx)
+		if !errors.Is(err, ErrBackupBusy) {
+			r.writeLastResult(context.WithoutCancel(ctx), now, res, err)
+		}
 		switch {
 		case errors.Is(err, ErrBackupBusy):
 			// Not a real attempt: hand the interval back so the next tick retries.
@@ -431,6 +435,44 @@ func (r *ScheduledBackupRunner) writeLastRun(ctx context.Context, value string) 
 		return err
 	}
 	return nil
+}
+
+// writeLastResult keeps the outcome of the last scheduled run for the
+// settings page. It lives in the admin category: not editable, not exported.
+func (r *ScheduledBackupRunner) writeLastResult(ctx context.Context, at time.Time, res BackupResult, runErr error) {
+	out := struct {
+		At        time.Time `json:"at"`
+		OK        bool      `json:"ok"`
+		Sent      bool      `json:"sent"`
+		SizeBytes int64     `json:"size_bytes,omitempty"`
+		Reason    string    `json:"reason,omitempty"`
+	}{At: at.UTC(), OK: runErr == nil && res.Skipped == "", Sent: len(res.Delivered) > 0, SizeBytes: res.SizeBytes}
+	switch {
+	case runErr != nil:
+		out.Reason = runErr.Error()
+	case res.SizeBytes > maxTelegramUploadBytes:
+		out.Reason = "too_big"
+	case res.Skipped != "":
+		out.Reason = "bot_off"
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return
+	}
+	s, err := r.settings.GetByKey(ctx, "backup_last_result")
+	if err != nil || s == nil {
+		s = &settingDomain.Setting{
+			Key:         "backup_last_result",
+			Type:        "json",
+			Category:    "admin",
+			Description: "Outcome of the last scheduled backup. Set automatically.",
+			Label:       "Last Scheduled Backup Result",
+		}
+	}
+	s.Value = string(raw)
+	if err := r.settings.Update(ctx, s); err != nil {
+		logger.GetLogger().WithError(err).Warn("Failed to persist backup result")
+	}
 }
 
 // alert notifies the admins. NotifyAdmin sends with Markdown parse mode and

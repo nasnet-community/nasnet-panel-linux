@@ -52,6 +52,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 	notifPkg "github.com/nasnet-community/nasnet-panel-linux/pkg/notification"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/runtimestatus"
 
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
 	userProfileUC "github.com/nasnet-community/nasnet-panel-linux/internal/userprofile/usecase"
@@ -574,6 +575,22 @@ func runServe(cmd *cobra.Command, args []string) {
 		log.Info("[httpclient] outbound proxy settings reloaded")
 	})
 
+	// What the settings page reports as in effect (GET /settings/status).
+	runtimeStatus := runtimestatus.New(Version, cfg.App.Port)
+	runtimeStatus.SetProxyConfigured(httpFactory.IsProxyConfigured)
+	runtimeStatus.SetMetricsEndpoint(cfg.Metrics.Enabled)
+	runtimeStatus.SetBot(func(b *runtimestatus.Bot) { b.TokenSet = cfg.Telegram.BotToken != "" })
+	if all, err := repos.Setting.GetAll(context.Background()); err == nil {
+		boot := make(map[string]string)
+		for _, s := range all {
+			// app_port and the bot token come from .env; nothing reads their rows
+			if s.RequiresRestart && s.Key != "app_port" && s.Key != "telegram_bot_token" {
+				boot[s.Key] = s.Value
+			}
+		}
+		runtimeStatus.SetBootValues(boot)
+	}
+
 	// Settings drive the health prober; reload without a restart.
 	if networkUC != nil {
 		loadHealthCfg := func() {
@@ -614,6 +631,9 @@ func runServe(cmd *cobra.Command, args []string) {
 	backupRunner := adminUC.NewScheduledBackupRunner(backupSvc, repos.Setting, nil, cfg.Admin.InitialAdminIDs)
 
 	if cfg.Telegram.Enabled {
+		runtimeStatus.SetBot(func(b *runtimestatus.Bot) {
+			b.State = runtimestatus.BotStarting
+		})
 		stateManager := conversation.NewStateManager(db)
 
 		// Prefer proxy settings from database (panel-editable) over environment config.
@@ -668,6 +688,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		go func() {
 			delay := botInitRetryBase
 			for attempt := 1; ; attempt++ {
+				viaFactory := httpFactory.IsProxyConfigured()
 				bot, err := telegramTransport.NewBot(
 					cfg.Telegram,
 					cfg.Admin.InitialAdminIDs,
@@ -687,10 +708,26 @@ func runServe(cmd *cobra.Command, args []string) {
 					if attempt > 1 {
 						log.WithField("attempts", attempt).Info("Telegram bot initialized after retries")
 					}
+					runtimeStatus.SetBot(func(b *runtimestatus.Bot) {
+						b.State, b.Since, b.Error, b.ViaFactory, b.Legacy = runtimestatus.BotRunning, time.Now(), "", viaFactory, ""
+						if me := bot.GetBot().Me; me != nil {
+							b.Username = me.Username
+						}
+						if !viaFactory && cfg.Telegram.Proxy.Enabled {
+							b.Legacy = fmt.Sprintf("%s:%d", cfg.Telegram.Proxy.Host, cfg.Telegram.Proxy.Port)
+						}
+					})
 					wireBot(bot)
 					return
 				}
+				// telebot errors quote the request URL, and the token is part of it
+				msg := err.Error()
+				if t := cfg.Telegram.BotToken; t != "" {
+					msg = strings.ReplaceAll(msg, t, "<token>")
+				}
+				runtimeStatus.SetBot(func(b *runtimestatus.Bot) { b.Error = msg })
 				if errors.Is(err, telebot.ErrUnauthorized) {
+					runtimeStatus.SetBot(func(b *runtimestatus.Bot) { b.State = runtimestatus.BotRejected })
 					log.WithError(err).Error("Telegram bot token rejected (401 Unauthorized); giving up until the token is fixed and the panel restarted")
 					return
 				}
@@ -728,6 +765,9 @@ func runServe(cmd *cobra.Command, args []string) {
 			}
 		}
 	}
+
+	// alerts and backups go to ADMIN_IDS only (Bot.NotifyAdmin)
+	runtimeStatus.SetAdmin(cfg.Admin.Username, len(cfg.Admin.InitialAdminIDs))
 
 	// Metrics auth from DB settings (panel-editable, requires restart)
 	if val, err := uc.Setting.GetByKey(context.Background(), "metrics_username"); err == nil && val != "" {
@@ -855,13 +895,16 @@ func runServe(cmd *cobra.Command, args []string) {
 	if hubEnabled {
 		hubListenAddr := fmt.Sprintf(":%d", hubPort)
 		hubCreds := &hubTLS{certUC: uc.Certificate, settings: uc.Setting, watch: uc.CertWatch, baseURL: cfg.App.BaseURL, log: log}
+		runtimeStatus.SetReverseHub(true, hubPort, reverseRegistry.ConnectedCount)
 		go func() {
 			if err := hubServer.ListenAndServe(hubListenAddr, hubCreds.Config()); err != nil {
+				runtimeStatus.SetReverseHub(false, hubPort, nil)
 				log.WithError(err).Error("Hub server failed")
 			}
 		}()
 		log.WithField("address", hubListenAddr).Info("Reverse-mode node hub started")
 	} else {
+		runtimeStatus.SetReverseHub(false, hubPort, nil)
 		log.Info("Reverse-mode node hub is off")
 	}
 
@@ -936,6 +979,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			ACMEManager:       certManager,
 			ShutdownCtx:       bgCtx,
 			HTTPClientFactory: httpFactory,
+			RuntimeStatus:     runtimeStatus,
 		},
 		Config: httpTransport.ConfigDeps{
 			AdminConfig:      cfg.Admin,
@@ -964,6 +1008,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.WithError(err).Fatal("Cannot initialize requested TLS; refusing to start plain HTTP")
 	}
+	runtimeStatus.SetHTTPS(serverTLSStatus(cfg, tlsCfg))
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.App.Port)
 		if tlsCfg != nil {

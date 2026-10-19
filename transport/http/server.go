@@ -40,6 +40,7 @@ import (
 	nodeUCPkg "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	settingHttp "github.com/nasnet-community/nasnet-panel-linux/internal/setting/delivery/http"
 	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
+	settingRepo "github.com/nasnet-community/nasnet-panel-linux/internal/setting/repository"
 	sniHttp "github.com/nasnet-community/nasnet-panel-linux/internal/sni/delivery/http"
 	sniUC "github.com/nasnet-community/nasnet-panel-linux/internal/sni/usecase"
 	subHttp "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/delivery/http"
@@ -61,6 +62,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/maintenance"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/metrics"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/runtimestatus"
 	httpMiddleware "github.com/nasnet-community/nasnet-panel-linux/transport/http/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
@@ -115,6 +117,8 @@ type InfraDeps struct {
 	ACMEManager       *acme.CertManager
 	ShutdownCtx       context.Context
 	HTTPClientFactory *httpclient.Factory
+	// RuntimeStatus is what the running panel knows about itself (settings page).
+	RuntimeStatus *runtimestatus.Registry
 }
 
 // ConfigDeps holds configuration values
@@ -429,6 +433,12 @@ func NewServer(deps ServerDeps) *Server {
 		// System Settings
 		if deps.Admin.SettingUsecase != nil {
 			settingHandler := settingHttp.NewSettingHandler(deps.Admin.SettingUsecase)
+			statusDeps := settingHttp.StatusDeps{Runtime: deps.Infra.RuntimeStatus}
+			if deps.Infra.DB != nil {
+				q := settingRepo.NewStatusQueries(deps.Infra.DB)
+				statusDeps.ActiveReach, statusDeps.DBSize = q.ActiveReach, q.DBSize
+			}
+			settingHandler.SetStatusDeps(statusDeps)
 			settingHandler.RegisterRoutes(adminAPI)
 		}
 

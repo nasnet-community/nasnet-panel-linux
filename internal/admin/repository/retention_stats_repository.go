@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	adminDomain "github.com/nasnet-community/nasnet-panel-linux/internal/admin/domain"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 	"gorm.io/gorm"
 )
@@ -100,6 +101,13 @@ func (r *retentionStatsRepository) GetAll(ctx context.Context) ([]adminDomain.Re
 				// Copy so the pointer survives the closure scope.
 				t := oldest.Time
 				stat.OldestAt = &t
+			}
+			if database.DriverName == "postgres" {
+				var size sql.NullInt64
+				if err := r.db.WithContext(ctx).Raw("SELECT pg_total_relation_size(?::regclass)", t.table).Row().Scan(&size); err == nil && size.Valid {
+					n := size.Int64
+					stat.SizeBytes = &n
+				}
 			}
 			results[idx] = stat
 		}(i, t)

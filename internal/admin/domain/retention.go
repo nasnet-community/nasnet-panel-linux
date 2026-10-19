@@ -14,6 +14,8 @@ type RetentionStat struct {
 	Table string `json:"table"`
 	// Rows is the current row count.
 	Rows int64 `json:"rows"`
+	// SizeBytes is the table's size on disk, indexes included. Postgres only.
+	SizeBytes *int64 `json:"size_bytes,omitempty"`
 	// OldestAt is the timestamp of the oldest row (by the table's age
 	// field). Nil when the table is empty.
 	OldestAt *time.Time `json:"oldest_at,omitempty"`

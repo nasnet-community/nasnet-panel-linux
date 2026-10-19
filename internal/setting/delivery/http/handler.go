@@ -14,6 +14,7 @@ import (
 
 type SettingHandler struct {
 	usecase domain.SettingUsecase
+	status  StatusDeps
 }
 
 func NewSettingHandler(usecase domain.SettingUsecase) *SettingHandler {
@@ -25,6 +26,7 @@ func (h *SettingHandler) RegisterRoutes(router *gin.RouterGroup) {
 	{
 		settings.GET("", h.GetAll)
 		settings.PUT("", h.UpdateMany)
+		settings.GET("/status", h.Status)
 		settings.GET("/export", h.Export)
 		settings.POST("/import", h.Import)
 		settings.POST("/test-tls", h.TestTLS)

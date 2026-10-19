@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/config"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/acme"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/runtimestatus"
 	"gorm.io/gorm"
 )
 
@@ -138,4 +140,31 @@ func prepareServerTLS(ctx context.Context, cfg *config.Config, manager serverCer
 	}
 	manager.StartServerCertRenewal(ctx, domain)
 	return tlsConfig, nil
+}
+
+// serverTLSStatus describes the listener prepareServerTLS set up, for the
+// settings page.
+func serverTLSStatus(cfg *config.Config, tlsCfg *tls.Config) runtimestatus.HTTPS {
+	switch {
+	case tlsCfg == nil:
+		return runtimestatus.HTTPS{Mode: "plain"}
+	case len(tlsCfg.Certificates) > 0:
+		var leaf *x509.Certificate
+		if c := tlsCfg.Certificates[0]; len(c.Certificate) > 0 {
+			leaf, _ = x509.ParseCertificate(c.Certificate[0])
+		}
+		return runtimestatus.HTTPS{Mode: "files", CertFile: cfg.App.TLSCertFile, Cert: func() *x509.Certificate { return leaf }}
+	default:
+		return runtimestatus.HTTPS{Mode: "acme", Cert: func() *x509.Certificate {
+			c, err := tlsCfg.GetCertificate(&tls.ClientHelloInfo{})
+			if err != nil || c == nil || len(c.Certificate) == 0 {
+				return nil
+			}
+			leaf, err := x509.ParseCertificate(c.Certificate[0])
+			if err != nil {
+				return nil
+			}
+			return leaf
+		}}
+	}
 }
