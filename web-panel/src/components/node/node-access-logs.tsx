@@ -15,7 +15,7 @@ import {
 import { HiOutlineRefresh, HiOutlineExclamationCircle } from "react-icons/hi"
 import { Search, Copy, Settings } from "lucide-react"
 import { useAccessLogs } from "@/lib/queries"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 
 interface NodeAccessLogsProps {
@@ -58,9 +58,8 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
         return entries.filter(e => e.domain.toLowerCase().includes(lower))
     }, [entries, domainSearch])
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text)
-        toast.success(`Copied: ${text}`)
+    const copy = (text: string) => {
+        void copyToClipboard(text).then((ok) => (ok ? toast.success(`Copied: ${text}`) : toast.error("Couldn't copy")))
     }
 
     if (!isOnline) {
@@ -198,7 +197,7 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-1 group cursor-pointer bg-transparent border-none p-0 text-left"
-                                                onClick={() => copyToClipboard(entry.domain)}
+                                                onClick={() => copy(entry.domain)}
                                             >
                                                 <span className="font-mono text-sm truncate max-w-[300px]">{entry.domain}</span>
                                                 <Copy className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />
@@ -211,7 +210,7 @@ export function NodeAccessLogs({ nodeId, isOnline }: NodeAccessLogsProps) {
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-1 group cursor-pointer bg-transparent border-none p-0 text-left"
-                                                onClick={() => copyToClipboard(entry.email)}
+                                                onClick={() => copy(entry.email)}
                                             >
                                                 <span className="font-mono text-xs text-muted-foreground truncate max-w-[180px]">{entry.email}</span>
                                                 <Copy className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />

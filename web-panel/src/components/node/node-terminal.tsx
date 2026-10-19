@@ -5,7 +5,7 @@ import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/providers/theme-provider"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { useTerminal } from "./terminal/use-terminal"
 import { needsPasteReview, readTerminalPreferences, saveTerminalPreferences, terminalCommands, terminalOutput } from "./terminal/terminal-utils"
 import "./terminal/terminal.css"
@@ -121,7 +121,7 @@ export function NodeTerminal({ nodeId, nodeName, nodeAddress, isOnline, isActive
         const selection = terminal.terminalRef.current?.getSelection()
         if (!selection) return
         try {
-            await navigator.clipboard.writeText(selection)
+            if (!(await copyToClipboard(selection))) throw new Error("copy failed")
             setCopied(true)
             if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
             copyTimerRef.current = setTimeout(() => setCopied(false), 1800)

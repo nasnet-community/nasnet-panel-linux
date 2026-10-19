@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Copy, Pencil, Trash2, Reply, Smile } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { useEditSubChatMessage, useDeleteSubChatMessage } from "@/lib/queries/use-chat"
 import { EditMessageDialog } from "@/components/chats/edit-message-dialog"
@@ -37,8 +37,7 @@ export function WidgetMessageToolbar({ uuid, message, isMine, onQuote, onReact, 
             label: "Copy",
             icon: <Copy className="h-4 w-4" />,
             onSelect: () => {
-                navigator.clipboard.writeText(message.content)
-                toast.success("Copied")
+                void copyToClipboard(message.content).then((ok) => (ok ? toast.success("Copied") : toast.error("Couldn't copy")))
             },
         },
         ...(onQuote && persisted
@@ -87,8 +86,7 @@ export function WidgetMessageToolbar({ uuid, message, isMine, onQuote, onReact, 
                     <button
                         className="p-1 hover:bg-muted rounded"
                         onClick={() => {
-                            navigator.clipboard.writeText(message.content)
-                            toast.success("Copied")
+                            void copyToClipboard(message.content).then((ok) => (ok ? toast.success("Copied") : toast.error("Couldn't copy")))
                         }}
                         title="Copy"
                         aria-label="Copy"

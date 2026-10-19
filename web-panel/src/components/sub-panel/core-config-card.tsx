@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/lib/toast"
+import { copyToClipboard } from "@/lib/utils"
 import { QRDialog } from "./qr-dialog"
 
 interface CoreConfigCardProps {
@@ -52,7 +53,7 @@ export function CoreConfigCard({ protocol, content, nodeName, dataUsedDisplay }:
 
     const copy = async (text: string, key: string, msg = "Copied") => {
         try {
-            await navigator.clipboard.writeText(text)
+            if (!(await copyToClipboard(text))) throw new Error("copy failed")
         } catch {
             toast.error("Couldn’t copy — select and copy manually")
             return

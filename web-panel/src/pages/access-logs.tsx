@@ -44,7 +44,7 @@ import {
 import { Search, Copy, Download, Columns3, ArrowUpDown, ArrowUp, ArrowDown, Pause, Play, X, Globe } from "lucide-react"
 import { useAggregatedAccessLogs, useNodes } from "@/lib/queries"
 import { PageHeader } from "@/components/shared/page-header"
-import { cn } from "@/lib/utils"
+import { cn, copyToClipboard } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { formatDistanceToNowStrict } from "date-fns"
 import { SubscriptionAutocomplete } from "@/components/ui/subscription-autocomplete"
@@ -710,8 +710,7 @@ function ClickToCopy({ value, children }: { value: string; children: React.React
             type="button"
             className="flex items-center gap-1 group cursor-pointer bg-transparent border-none p-0 text-left"
             onClick={() => {
-                navigator.clipboard.writeText(value)
-                toast.success(`Copied: ${value}`)
+                void copyToClipboard(value).then((ok) => (ok ? toast.success(`Copied: ${value}`) : toast.error("Couldn't copy")))
             }}
         >
             {children}

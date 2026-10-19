@@ -11,6 +11,7 @@ import {
     SheetTitle,
 } from "@/components/ui/sheet"
 import type { FlowMismatch, FlowNode, FlowNodeStatus } from "@/lib/types/flow"
+import { copyToClipboard } from "@/lib/utils"
 
 function statusVariant(s: FlowNodeStatus) {
     switch (s) {
@@ -94,9 +95,11 @@ function DetailSection({ title, lines }: { title: string; lines: string[] }) {
     const [copied, setCopied] = useState(false)
 
     function copy() {
-        void navigator.clipboard?.writeText(lines.join("\n"))
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
+        void copyToClipboard(lines.join("\n")).then((ok) => {
+            if (!ok) return
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+        })
     }
 
     return (
