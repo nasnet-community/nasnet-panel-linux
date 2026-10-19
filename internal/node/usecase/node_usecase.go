@@ -310,6 +310,8 @@ type NodeUsecase interface {
 	SetRouterMode(enabled bool)
 	SetRouterWANSource(fn func(context.Context) []xray.RouterWAN)
 	SetIngressUplinkSource(fn func() string)
+	// SetPanelHTTPS tells the usecase how the panel's own port serves.
+	SetPanelHTTPS(p PanelHTTPS)
 	SetInboundsChangedHook(fn func(context.Context) error)
 	SetCorePortLister(fn func(ctx context.Context, nodeID uint) ([]int, error))
 	SetTunnelSocksLister(fn func(ctx context.Context, nodeID uint) ([]xray.TunnelSocks, error))
@@ -551,6 +553,7 @@ type nodeUsecase struct {
 
 	// Resolves the shaped interface
 	ingressUplinkFn func() string
+	panelHTTPS      PanelHTTPS
 
 	// Re-derives filter_in and re-checks port mappings after an inbound edit.
 	onInboundsChanged func(context.Context) error

@@ -74,6 +74,24 @@ func (r *Registry) SetHTTPS(h HTTPS) {
 	r.https = h
 }
 
+// Port is the panel's own listening port.
+func (r *Registry) Port() int { return r.port }
+
+// ServesTLS reports whether the panel's port speaks TLS; true until boot has
+// said otherwise.
+func (r *Registry) ServesTLS() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.https.Mode != "plain"
+}
+
+// SelfSigned reports whether the panel serves its own self-signed certificate.
+func (r *Registry) SelfSigned() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.https.Mode == "self-signed"
+}
+
 func (r *Registry) SetReverseHub(listening bool, port int, connected func() int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

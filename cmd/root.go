@@ -941,6 +941,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	// The panel's own certificate, served when self-signed HTTPS is chosen
 	// and neither certificate files nor Let's Encrypt are set.
 	selfSigned := newSelfSignedManager(repos.Setting, uc.Setting, uc.Audit)
+	uc.Node.SetPanelHTTPS(runtimeStatus)
 
 	// HTTP server
 	server := httpTransport.NewServer(httpTransport.ServerDeps{

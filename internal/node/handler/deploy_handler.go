@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -27,6 +29,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/auth"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/selfsigned"
 )
 
 // validOSArchPattern validates OS and arch query parameters to prevent path traversal.
@@ -63,7 +66,22 @@ type DeployHandler struct {
 	baseURL       string
 	version       string
 	caInitMu      sync.Mutex // Protects concurrent CA initialization
+	selfSigned    PanelCert
+	panelHTTPS    usecase.PanelHTTPS
 }
+
+// PanelCert is the panel's own HTTPS certificate.
+type PanelCert interface {
+	// Active reports whether the panel is serving it.
+	Active() bool
+	Leaf() *x509.Certificate
+}
+
+// SetSelfSigned lets pull installs pin the panel's self-signed certificate.
+func (h *DeployHandler) SetSelfSigned(c PanelCert) { h.selfSigned = c }
+
+// SetPanelHTTPS tells the handler how the panel's own port serves.
+func (h *DeployHandler) SetPanelHTTPS(p usecase.PanelHTTPS) { h.panelHTTPS = p }
 
 // NewDeployHandler creates a new deploy handler
 func NewDeployHandler(nodeRepo repository.NodeRepository, nodeUC usecase.NodeUsecase, tokenManager *auth.TokenManager, certUC usecase.CertificateUsecase, usedTokenRepo repository.UsedTokenRepository, baseURL string, settingUC settingDomain.SettingUsecase, xray XrayChecksums, version string) *DeployHandler {
@@ -113,7 +131,7 @@ func (h *DeployHandler) setting(c *gin.Context, key string) string {
 // node key would cross the internet in clear.
 func (h *DeployHandler) pullBaseURL(c *gin.Context) string {
 	u, err := url.Parse(h.setting(c, "agent_hub_url"))
-	if err != nil || u.Scheme != "https" || u.Host == "" {
+	if err != nil || u.Scheme != "https" || u.Host == "" || usecase.PlainOwnPort(h.panelHTTPS, u) {
 		return ""
 	}
 	base := strings.TrimRight(u.Scheme+"://"+u.Host+u.Path, "/")
@@ -209,6 +227,38 @@ func connectMode(n *domain.Node) string {
 	return n.ConnectMode
 }
 
+// pinnedKey is the key pull installs pin when the panel serves a self-signed
+// certificate, which curl can't check any other way. The panel looks at what
+// base answers with first: a reverse proxy with a real certificate in front
+// gets the plain command. When base can't be reached from here (no hairpin
+// NAT, say) the key is pinned anyway, since a self-signed panel is meant to
+// be reached directly. "" when the panel isn't self-signed.
+func (h *DeployHandler) pinnedKey(base string) string {
+	if h.selfSigned == nil || !h.selfSigned.Active() {
+		return ""
+	}
+	leaf := h.selfSigned.Leaf()
+	u, err := url.Parse(base)
+	if err != nil || leaf == nil {
+		return ""
+	}
+	addr := u.Host
+	if u.Port() == "" {
+		addr = net.JoinHostPort(u.Hostname(), "443")
+	}
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	// Only reads which certificate answers; nothing is sent over it.
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{InsecureSkipVerify: true, ServerName: u.Hostname()})
+	if err != nil {
+		return selfsigned.SPKIPin(leaf)
+	}
+	defer conn.Close()
+	if peers := conn.ConnectionState().PeerCertificates; len(peers) > 0 && bytes.Equal(peers[0].RawSubjectPublicKeyInfo, leaf.RawSubjectPublicKeyInfo) {
+		return selfsigned.SPKIPin(leaf)
+	}
+	return ""
+}
+
 // GetInstallCommand says how to install a node's agent: a one-time pull
 // command when the panel has an https agent hub address, else the
 // self-contained paste script.
@@ -250,8 +300,12 @@ func (h *DeployHandler) GetInstallCommand(c *gin.Context) {
 		return
 	}
 	scriptURL := fmt.Sprintf("%s/api/v1/deploy/script/%d", base, node.ID)
+	curl := "curl -fsSL"
+	if pin := h.pinnedKey(base); pin != "" {
+		curl += " -k --pinnedpubkey " + pin
+	}
 	data["mode"] = "pull"
-	data["command"] = fmt.Sprintf(`curl -fsSL -H "Authorization: Bearer %s" "%s" | bash`, token, scriptURL)
+	data["command"] = fmt.Sprintf(`%s -H "Authorization: Bearer %s" "%s" | bash`, curl, token, scriptURL)
 	data["script_url"] = scriptURL
 	data["expires_at"] = time.Now().Add(time.Hour).Unix()
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
@@ -295,6 +349,7 @@ func (h *DeployHandler) GetInstallScript(c *gin.Context) {
 		XrayVersion: h.xrayVersion(c),
 		MasterURL:   base,
 		Token:       token,
+		PinnedKey:   h.pinnedKey(base),
 	})
 	if err != nil {
 		logger.GetLogger().WithError(err).Error("[GetInstallScript] Failed to render the installer")
@@ -523,6 +578,7 @@ type installScript struct {
 	// Pull install
 	MasterURL string
 	Token     string
+	PinnedKey string // curl --pinnedpubkey value for a self-signed panel
 
 	// Paste install
 	Paste        bool

@@ -89,6 +89,29 @@ func (u *nodeUsecase) ingressUplinkIfName() string {
 // SetIngressUplinkSource wires the router-mode uplink lookup.
 func (u *nodeUsecase) SetIngressUplinkSource(fn func() string) { u.ingressUplinkFn = fn }
 
+func (u *nodeUsecase) SetPanelHTTPS(p PanelHTTPS) { u.panelHTTPS = p }
+
+// PanelHTTPS is how the panel's own port serves, at the moment.
+type PanelHTTPS interface {
+	Port() int
+	ServesTLS() bool
+	SelfSigned() bool
+}
+
+// PlainOwnPort reports whether u is an https address on the panel's own port
+// while the panel serves plain HTTP there (HTTPS turned off, or its
+// self-signed certificate failed): nothing answers it.
+func PlainOwnPort(p PanelHTTPS, u *url.URL) bool {
+	if p == nil || p.ServesTLS() {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	return port == strconv.Itoa(p.Port())
+}
+
 // SetInboundsChangedHook wires the router-mode consumers of the inbound rows.
 func (u *nodeUsecase) SetInboundsChangedHook(fn func(context.Context) error) {
 	u.onInboundsChanged = fn
@@ -1171,7 +1194,7 @@ func (u *nodeUsecase) agentHubPullBase(ctx context.Context) string {
 	}
 	raw, _ := u.settingUC.GetByKey(ctx, "agent_hub_url")
 	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || PlainOwnPort(u.panelHTTPS, parsed) {
 		return ""
 	}
 	base := strings.TrimRight(parsed.Scheme+"://"+parsed.Host+parsed.Path, "/")
@@ -1221,7 +1244,10 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 
 	// The built-in node fetches through the panel's own base URL; a remote
 	// node only from an https agent hub address, else from GitHub itself.
+	// An agent can't check a self-signed panel certificate, so remote nodes
+	// of a self-signed panel use GitHub too.
 	hubBase := ""
+	selfSigned := u.panelHTTPS != nil && u.panelHTTPS.SelfSigned()
 	if node.IsLocal() && u.baseURL != "" {
 		hubBase = u.baseURL
 		if u.settingUC != nil {
@@ -1229,7 +1255,7 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 				hubBase += v
 			}
 		}
-	} else if !node.IsLocal() {
+	} else if !node.IsLocal() && !selfSigned {
 		hubBase = u.agentHubPullBase(ctx)
 	}
 	if u.xrayBM != nil && u.tokenManager != nil && hubBase != "" {

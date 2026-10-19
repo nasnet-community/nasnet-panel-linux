@@ -442,6 +442,7 @@ func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
 func (m *mockNodeUsecase) SetRouterWANSource(func(context.Context) []xray.RouterWAN) {
 }
 func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)                         {}
+func (m *mockNodeUsecase) SetPanelHTTPS(nodeUC.PanelHTTPS)                              {}
 func (m *mockNodeUsecase) SetInboundsChangedHook(func(context.Context) error)           {}
 func (m *mockNodeUsecase) SetCorePortLister(func(context.Context, uint) ([]int, error)) {}
 func (m *mockNodeUsecase) SetTunnelSocksLister(func(context.Context, uint) ([]xray.TunnelSocks, error)) {

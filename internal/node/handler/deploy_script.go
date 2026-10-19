@@ -120,7 +120,7 @@ install_packages() {
     fi
 }
 
-CURL="curl --retry 3 --retry-delay 3 --retry-connrefused -fsSL"
+CURL="curl --retry 3 --retry-delay 3 --retry-connrefused -fsSL{{if .PinnedKey}} -k --pinnedpubkey {{.PinnedKey}}{{end}}"
 
 log_info "Installing the NasNet agent for node ${NODE_ID} (${CONNECT_MODE} mode)..."
 

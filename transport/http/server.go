@@ -494,6 +494,12 @@ func NewServer(deps ServerDeps) *Server {
 		if deps.Admin.CertificateUsecase != nil && deps.Repos.NodeRepository != nil {
 			deployHandler := nodeHandler.NewDeployHandler(deps.Repos.NodeRepository, deps.Admin.NodeUsecase, deps.Infra.TokenManager,
 				deps.Admin.CertificateUsecase, deps.Repos.UsedTokenRepository, deps.Config.AppConfig.BaseURL, deps.Admin.SettingUsecase, xrayBM, deps.Config.Version)
+			if deps.Infra.SelfSigned != nil {
+				deployHandler.SetSelfSigned(deps.Infra.SelfSigned)
+			}
+			if deps.Infra.RuntimeStatus != nil {
+				deployHandler.SetPanelHTTPS(deps.Infra.RuntimeStatus)
+			}
 			deployHandler.RegisterAdminRoutes(adminAPI)
 			deployHandler.RegisterPublicRoutes(publicAPI)
 		}
