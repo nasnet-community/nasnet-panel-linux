@@ -34,7 +34,7 @@ const ENTITY_TYPES = [
     { value: "subscription", label: "Subscription" },
     { value: "payment", label: "Payment" },
     { value: "node", label: "Node" },
-    { value: "settings", label: "Settings" },
+    { value: "setting", label: "Settings" },
 ]
 
 const PER_PAGE = 20
