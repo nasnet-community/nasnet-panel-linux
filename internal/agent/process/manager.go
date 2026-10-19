@@ -31,6 +31,9 @@ type XrayManager struct {
 	pid       int
 	startTime time.Time
 	mu        sync.RWMutex
+	// exited closes once cmd has been waited for. Only watch waits on a
+	// process; a second Wait races it and one of them gets ECHILD.
+	exited chan struct{}
 
 	// Watchdog settings
 	watchdogEnabled bool
@@ -254,10 +257,8 @@ func (m *XrayManager) startLocked() error {
 		"config": m.configPath,
 	}).Info("Xray process started")
 
-	// Start watchdog
-	if m.watchdogEnabled {
-		go m.watchdog()
-	}
+	m.exited = make(chan struct{})
+	go m.watch(m.cmd, m.exited)
 
 	return nil
 }
@@ -357,75 +358,45 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-// watchdog: process-mode only. In service mode, systemd Restart=on-failure
-// owns the policy; watchdog is suppressed to avoid racing systemctl.
-func (m *XrayManager) watchdog() {
-	for {
-		m.mu.RLock()
-		stopped := m.stopped
-		serviceMode := m.serviceMode
-		m.mu.RUnlock()
+// watch waits for one process to exit and, with the watchdog on, restarts it
+// after a crash. Process mode only: in service mode systemd Restart=on-failure
+// owns the policy. Each start gets its own watch, so one that finds its
+// process stopped or replaced by a restart just returns.
+func (m *XrayManager) watch(cmd *exec.Cmd, exited chan struct{}) {
+	err := cmd.Wait()
+	close(exited)
 
-		if stopped {
-			return
-		}
-
-		if serviceMode {
-			// Safety net: should not reach here because Start suppresses
-			// watchdog in service mode. Exit so we never double-drive
-			// systemd.
-			logrus.Warn("Watchdog running in service mode; exiting to defer to systemd")
-			return
-		}
-
-		// Process Mode
-		m.mu.RLock()
-		cmd := m.cmd
-		m.mu.RUnlock()
-
-		if cmd == nil {
-			return
-		}
-
-		// Wait for process to exit
-		err := cmd.Wait()
-
-		m.mu.Lock()
-		if m.stopped {
-			m.mu.Unlock()
-			return
-		}
-
-		// Process crashed
-		logrus.WithError(err).Warn("Xray process exited unexpectedly")
-
-		// release m.mu before canRestart() — it re-acquires the same lock
+	m.mu.Lock()
+	if m.stopped || m.cmd != cmd || !m.watchdogEnabled {
 		m.mu.Unlock()
+		return
+	}
+	logrus.WithError(err).Warn("Xray process exited unexpectedly")
+	stopChan := m.stopChan
+	// release m.mu before canRestart() — it re-acquires the same lock
+	m.mu.Unlock()
 
-		// Check restart limit
-		if !m.canRestart() {
-			logrus.Error("Too many restarts within window, giving up")
-			return
-		}
+	// Check restart limit
+	if !m.canRestart() {
+		logrus.Error("Too many restarts within window, giving up")
+		return
+	}
 
-		// Wait before restarting — use select so stopChan can interrupt
-		select {
-		case <-time.After(m.restartDelay):
-		case <-m.stopChan:
-			return
-		}
+	// Wait before restarting — use select so stopChan can interrupt
+	select {
+	case <-time.After(m.restartDelay):
+	case <-stopChan:
+		return
+	}
 
-		m.mu.Lock()
-		if m.stopped {
-			m.mu.Unlock()
-			return
-		}
-
-		logrus.Info("Attempting to restart xray...")
-		if err := m.startLocked(); err != nil {
-			logrus.WithError(err).Error("Failed to restart xray")
-		}
-		m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopped || m.cmd != cmd {
+		return
+	}
+	logrus.Info("Attempting to restart xray...")
+	if err := m.startLocked(); err != nil {
+		logrus.WithError(err).Error("Failed to restart xray")
 	}
 }
 
@@ -515,14 +486,10 @@ func (m *XrayManager) Stop(timeout time.Duration) error {
 			return m.cmd.Process.Kill()
 		}
 
-		// Wait for graceful shutdown with timeout
-		done := make(chan error, 1)
-		go func() {
-			done <- m.cmd.Wait()
-		}()
-
+		// Wait for graceful shutdown with timeout. watch is the one waiting
+		// on the process; it closes exited.
 		select {
-		case <-done:
+		case <-m.exited:
 			logrus.Info("Xray process stopped gracefully")
 			return nil
 		case <-time.After(timeout):
@@ -559,14 +526,20 @@ func (m *XrayManager) Restart(ctx context.Context, validateFirst bool, timeout t
 	}
 
 	// Install new stopChan before clearing stopOnce: concurrent Stop()
-	// must see the new channel, never the old closed one.
+	// must see the new channel, never the old closed one. The start happens
+	// under the same lock: the old process's watch must find it either still
+	// stopped or already replaced, or it takes the stop for a crash.
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.stopChan = make(chan struct{})
 	m.stopOnce = sync.Once{}
 	m.stopped = false
-	m.mu.Unlock()
 
-	return m.Start()
+	if m.isRunningLocked() {
+		m.ensureLogCaptureLocked()
+		return nil
+	}
+	return m.startLocked()
 }
 
 // xrayCmd runs the xray binary the way Xray itself runs: from the config
