@@ -350,6 +350,7 @@ func (h *Handler) RunRetentionCleanup(c *gin.Context) {
 	for _, n := range deleted {
 		total += n
 	}
+	h.logAuditWithValues(c, auditDomain.AuditRetentionCleanup, "retention", 0, "", fmt.Sprintf(`{"total_rows":%d,"tables":%d}`, total, len(deleted)))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{

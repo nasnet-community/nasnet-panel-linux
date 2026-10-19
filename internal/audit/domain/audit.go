@@ -68,7 +68,8 @@ const (
 	AuditRestoreFailed   AuditAction = "restore.failed"
 
 	// Database management
-	AuditDatabaseCleanup AuditAction = "database.cleanup"
+	AuditDatabaseCleanup  AuditAction = "database.cleanup"
+	AuditRetentionCleanup AuditAction = "retention.cleanup"
 
 	// Server management
 	AuditServerRestart AuditAction = "server.restart"
