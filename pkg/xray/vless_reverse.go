@@ -24,8 +24,14 @@ func (b *FullConfigBuilder) applyVLESSReverse(c *OrderedConfig) {
 				if in["protocol"] != "vless" || !slices.Contains(rp.InterconnectionTags, tag) {
 					continue
 				}
-				portals[tag] = rp.Tag
 				settings := in["settings"].(map[string]interface{})
+				if rp.UUID != "" {
+					// Only the entry's own credential may open the tunnel.
+					clients, _ := settings["clients"].([]interface{})
+					settings["clients"] = append(clients, b.reverseClient(tag, rp.UUID, rp.Email(), rp.Tag))
+					continue
+				}
+				portals[tag] = rp.Tag
 				for _, client := range settings["clients"].([]interface{}) {
 					client.(map[string]interface{})["reverse"] = map[string]interface{}{"tag": rp.Tag}
 				}

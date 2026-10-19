@@ -36,7 +36,8 @@ func ValidateVLESSReverse(inbounds []*Inbound, outbounds []*Outbound, proxies []
 			}
 			outOwners[out.Tag] = rp.Tag
 			target := outs[rp.OutboundTag]
-			if (target == nil && rp.OutboundTag != "direct" && rp.OutboundTag != "blocked") || (target != nil && target.IsDisabled) {
+			known := rp.OutboundTag == "direct" || rp.OutboundTag == "blocked" || rp.OutboundTag == ReverseExitTag
+			if (target == nil && !known) || (target != nil && target.IsDisabled) {
 				return fmt.Errorf("reverse bridge %q requires an enabled traffic outbound", rp.Tag)
 			}
 			// Current Xray blocks all VLESS Reverse traffic at Freedom unless

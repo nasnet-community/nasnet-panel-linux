@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
@@ -22,6 +23,10 @@ func (u *nodeUsecase) GetReverseProxy(ctx context.Context, id uint) (*domain.Rev
 func (u *nodeUsecase) AddReverseProxy(ctx context.Context, rp *domain.ReverseProxy) error {
 	log := logger.GetLogger()
 
+	rp.UUID = ""
+	if rp.Type == "portal" {
+		rp.UUID = uuid.NewString()
+	}
 	if err := u.validateReverseProxy(ctx, rp); err != nil {
 		return err
 	}
@@ -62,6 +67,13 @@ func (u *nodeUsecase) UpdateReverseProxy(ctx context.Context, rp *domain.Reverse
 		return fmt.Errorf("reverse proxy not found: %w", err)
 	}
 	rp.NodeID = existing.NodeID // Ensure node ID cannot change
+	// The credential outlives edits; a portal saved before it existed gets one.
+	rp.UUID = existing.UUID
+	if rp.Type != "portal" {
+		rp.UUID = ""
+	} else if rp.UUID == "" {
+		rp.UUID = uuid.NewString()
+	}
 	if rp.Tag != existing.Tag {
 		kind := "outbound"
 		if existing.Type == "bridge" {

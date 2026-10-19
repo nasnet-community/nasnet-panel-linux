@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/jsontype"
@@ -24,6 +25,10 @@ type ReverseProxy struct {
 	InterconnectionTags jsontype.StringSlice `gorm:"serializer:json;type:jsonb" json:"interconnection_tags"`
 	InboundTags         jsontype.StringSlice `gorm:"serializer:json;type:jsonb" json:"inbound_tags"`
 
+	// UUID is the one credential allowed to open a portal's tunnel. Portals
+	// saved before it existed have none and still admit every client.
+	UUID string `gorm:"size:64" json:"uuid"`
+
 	// Rule2ID references the managed VLESS Reverse traffic rule (not a GORM FK).
 	Rule2ID *uint `json:"rule2_id"`
 
@@ -33,3 +38,6 @@ type ReverseProxy struct {
 }
 
 func (ReverseProxy) TableName() string { return "reverse_proxies" }
+
+// Email is the hidden client a portal's credential is added as.
+func (rp *ReverseProxy) Email() string { return fmt.Sprintf("%sp%d@reverse", ReverseTagPrefix, rp.ID) }
