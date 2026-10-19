@@ -55,6 +55,8 @@ type AppConfig struct {
 	SubPanelURL      string   // URL of the subscription panel (e.g. https://panel.example.com). When set, browser requests to /sub/:uuid are redirected here.
 	TLSCertFile      string   // Path to TLS certificate PEM file
 	TLSKeyFile       string   // Path to TLS private key PEM file
+	TLSSelfSigned    bool     // Serve HTTPS on a certificate the panel makes itself, when no other TLS is set
+	AgentHubURL      string   // Address remote nodes reach the panel at; seeds agent_hub_url once
 	PanelBasePath    string   // URL path prefix for admin panel (e.g., /x7k2m9)
 	CORSOrigins      []string // CORS_ORIGINS (comma-separated)
 }
@@ -134,6 +136,8 @@ func Load() *Config {
 			SubPanelURL:      getEnv("SUB_PANEL_URL", ""),
 			TLSCertFile:      getEnv("TLS_CERT_FILE", ""),
 			TLSKeyFile:       getEnv("TLS_KEY_FILE", ""),
+			TLSSelfSigned:    getEnvAsBool("TLS_SELF_SIGNED", false),
+			AgentHubURL:      getEnv("AGENT_HUB_URL", ""),
 			PanelBasePath:    CleanBasePath(getEnv("APP_PANEL_BASE_PATH", "")),
 			CORSOrigins:      getEnvAsStringSlice("CORS_ORIGINS"),
 		},

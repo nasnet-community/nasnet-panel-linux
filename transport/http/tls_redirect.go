@@ -2,8 +2,11 @@ package http
 
 import (
 	"crypto/tls"
+	"io/fs"
 	"net"
 	"net/http"
+	"path"
+	"strings"
 	"sync"
 	"time"
 )
@@ -109,11 +112,56 @@ func redirectPlainHTTP(next http.Handler, plainOK func(*http.Request) bool) http
 	})
 }
 
+// SelfSignedPlainHTTP is what a panel on a self-signed certificate still
+// serves over plain HTTP: what VPN apps, the sub page, the built-in node's
+// downloads and monitoring fetch, none of which can get past a certificate
+// nobody vouches for. The panel, its login and its API move to HTTPS.
+func (s *Server) SelfSignedPlainHTTP(r *http.Request) bool {
+	p := r.URL.Path
+	switch {
+	case p == "/health", strings.HasPrefix(p, "/health/"),
+		strings.HasPrefix(p, "/sub/"),
+		strings.HasPrefix(p, "/api/v1/public/"),
+		s.metricsPath != "" && p == s.metricsPath:
+		return true
+	}
+	rest := p
+	if s.basePath != "" {
+		var ok bool
+		if rest, ok = strings.CutPrefix(p, s.basePath); !ok || !strings.HasPrefix(rest, "/") {
+			return false
+		}
+	}
+	switch {
+	case strings.HasPrefix(rest, "/sub/"),
+		strings.HasPrefix(rest, "/assets/"),
+		// the built-in node's Xray downloads; the rest of /deploy is admin-only
+		strings.HasPrefix(rest, "/api/v1/deploy/xray/"):
+		return true
+	}
+	// files at the top of the build (logo, icons), which the sub page loads too
+	name := strings.TrimPrefix(rest, "/")
+	if s.distFS == nil || name == "" || strings.Contains(name, "/") || path.Ext(name) == "" || name == "index.html" {
+		return false
+	}
+	_, err := fs.Stat(s.distFS, name)
+	return err == nil
+}
+
 // prefixConn is a net.Conn that prepends already-read bytes before the real connection.
 type prefixConn struct {
 	net.Conn
 	prefix []byte
 	offset int
+}
+
+// CloseWrite lets http.Server half-close a plain connection, so a redirect
+// answering a request whose body it didn't read isn't lost to a reset.
+func (c *prefixConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
 }
 
 func (c *prefixConn) Read(b []byte) (int, error) {

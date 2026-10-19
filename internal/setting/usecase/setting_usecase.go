@@ -25,6 +25,8 @@ type InitialConfig struct {
 	ACMEAutoRenew   bool
 	TLSCertFile     string
 	TLSKeyFile      string
+	TLSSelfSigned   bool
+	AgentHubURL     string
 	MetricsUsername string
 	MetricsPassword string
 	LogLevel        string
@@ -606,6 +608,7 @@ func (u *settingUsecase) buildEnvSettings() []*domain.Setting {
 		{Key: "acme_auto_renew", Value: boolStr(u.initialCfg.ACMEAutoRenew), Type: "bool", Category: "server", Description: "Automatically renew ACME certificates", Label: "ACME Auto Renew"},
 		{Key: "tls_cert_file", Value: u.initialCfg.TLSCertFile, Type: "string", Category: "server", Description: "Path to TLS certificate PEM file (for manual HTTPS without ACME)", Label: "TLS Certificate File", RequiresRestart: true},
 		{Key: "tls_key_file", Value: u.initialCfg.TLSKeyFile, Type: "string", Category: "server", Description: "Path to TLS private key PEM file (for manual HTTPS without ACME)", Label: "TLS Key File", RequiresRestart: true},
+		{Key: "tls_self_signed", Value: boolStr(u.initialCfg.TLSSelfSigned), Type: "bool", Category: "server", Description: "Serve HTTPS on a certificate the panel makes itself, when neither certificate files nor Let's Encrypt are set", Label: "Self-signed HTTPS", RequiresRestart: true},
 		{Key: "metrics_enabled", Value: "false", Type: "bool", Category: "server", Description: "Enable Prometheus metrics collection and /metrics endpoint", Label: "Metrics Enabled"},
 		{Key: "metrics_username", Value: u.initialCfg.MetricsUsername, Type: "string", Category: "server", Description: "Username for /metrics Basic Auth (empty = public)", Label: "Metrics Username", RequiresRestart: true},
 		{Key: "metrics_password", Value: u.initialCfg.MetricsPassword, Type: "string", Category: "server", Description: "Password for /metrics Basic Auth (empty = public)", Label: "Metrics Password", RequiresRestart: true, Sensitive: true},
@@ -614,7 +617,7 @@ func (u *settingUsecase) buildEnvSettings() []*domain.Setting {
 		{Key: "hub_enabled", Value: "false", Type: "bool", Category: "server", Description: "Accept connections from nodes in reverse mode, which dial this panel", Label: "Reverse Connections", RequiresRestart: true},
 		{Key: "hub_port", Value: fmt.Sprintf("%d", u.initialCfg.HubPort), Type: "int", Category: "server", Description: "Port reverse-mode nodes dial into", Label: "Reverse Connection Port", RequiresRestart: true},
 		{Key: "node_offline_debounce_sec", Value: "30", Type: "int", Category: "server", Description: "How long a node must keep failing before the outage is recorded and announced (0 = record immediately). Absorbs flapping links: one event per real outage instead of one per bounce. The recorded timestamp is when the failure started, not when it was confirmed.", Label: "Node Offline Debounce (seconds)"},
-		{Key: "agent_hub_url", Value: "", Type: "string", Category: "server", Description: "Address remote nodes use to reach this panel (host or https URL). Set it when the panel sits on a LAN address; empty uses the base URL.", Label: "Panel Address for Agents"},
+		{Key: "agent_hub_url", Value: u.initialCfg.AgentHubURL, Type: "string", Category: "server", Description: "Address remote nodes use to reach this panel (host or https URL). Set it when the panel sits on a LAN address; empty uses the base URL.", Label: "Panel Address for Agents"},
 		{Key: "telegram_proxy_enabled", Value: boolStr(u.initialCfg.ProxyEnabled), Type: "bool", Category: "telegram", Description: "Route Telegram API traffic through a SOCKS5 proxy", Label: "Proxy Enabled", RequiresRestart: true},
 		{Key: "telegram_proxy_type", Value: u.initialCfg.ProxyType, Type: "string", Category: "telegram", Description: "Proxy protocol type", Label: "Proxy Type", RequiresRestart: true},
 		{Key: "telegram_proxy_host", Value: u.initialCfg.ProxyHost, Type: "string", Category: "telegram", Description: "Proxy server hostname or IP address", Label: "Proxy Host", RequiresRestart: true},

@@ -938,6 +938,10 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	tokenManager := auth.NewTokenManager(cfg.JWT.SecretKey)
 
+	// The panel's own certificate, served when self-signed HTTPS is chosen
+	// and neither certificate files nor Let's Encrypt are set.
+	selfSigned := newSelfSignedManager(repos.Setting, uc.Setting, uc.Audit)
+
 	// HTTP server
 	server := httpTransport.NewServer(httpTransport.ServerDeps{
 		Core: httpTransport.CoreDeps{
@@ -982,6 +986,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			ShutdownCtx:       bgCtx,
 			HTTPClientFactory: httpFactory,
 			RuntimeStatus:     runtimeStatus,
+			SelfSigned:        selfSigned,
 		},
 		Config: httpTransport.ConfigDeps{
 			AdminConfig:      cfg.Admin,
@@ -1003,19 +1008,35 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Resolve manual certificate paths again against the environment baseline.
 	cfg.App.TLSCertFile = envCfg.App.TLSCertFile
 	cfg.App.TLSKeyFile = envCfg.App.TLSKeyFile
-	if err := resolveStartupTLSFiles(cfg, getStartupSetting); err != nil {
+	cfg.App.TLSSelfSigned = envCfg.App.TLSSelfSigned
+	if err := resolveStartupTLS(cfg, getStartupSetting); err != nil {
 		log.WithError(err).Fatal("Cannot resolve panel TLS settings")
 	}
 	tlsCfg, err := prepareServerTLS(bgCtx, cfg, certManager)
 	if err != nil {
 		log.WithError(err).Fatal("Cannot initialize requested TLS; refusing to start plain HTTP")
 	}
-	runtimeStatus.SetHTTPS(serverTLSStatus(cfg, tlsCfg))
+	httpsStatus := serverTLSStatus(cfg, tlsCfg)
+	var plainOK func(*http.Request) bool
+	if tlsCfg == nil && cfg.App.TLSSelfSigned {
+		// Unlike the other modes, a self-signed failure falls back to plain
+		// HTTP: it is the default on router installs, and must never lock
+		// anyone out of their router.
+		if err := selfSigned.Ensure(bgCtx); err != nil {
+			log.WithError(err).Error("Self-signed HTTPS unavailable; serving plain HTTP")
+			httpsStatus.Error = "The self-signed certificate couldn't be set up: " + err.Error()
+		} else {
+			tlsCfg, plainOK = selfSigned.TLSConfig(), server.SelfSignedPlainHTTP
+			httpsStatus = runtimestatus.HTTPS{Mode: "self-signed", Cert: selfSigned.Leaf}
+			selfSigned.StartRenewal(bgCtx)
+		}
+	}
+	runtimeStatus.SetHTTPS(httpsStatus)
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.App.Port)
 		if tlsCfg != nil {
 			log.WithField("address", addr).Info("HTTPS server starting")
-			if err := server.RunTLS(addr, tlsCfg, nil); err != nil && err != http.ErrServerClosed {
+			if err := server.RunTLS(addr, tlsCfg, plainOK); err != nil && err != http.ErrServerClosed {
 				log.WithError(err).Fatal("HTTPS server failed")
 			}
 			return

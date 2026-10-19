@@ -6,7 +6,12 @@ import "context"
 // settings API skips them.
 var protectedKeys = map[string]bool{
 	"agent_cert_strict_mode": true,
+	SelfSignedCertKey:        true,
 }
+
+// SelfSignedCertKey holds the panel's self-signed certificate and key as
+// one PEM blob, in the hidden admin category.
+const SelfSignedCertKey = "panel_tls_self_signed"
 
 type protectedWriteKey struct{}
 

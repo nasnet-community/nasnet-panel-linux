@@ -192,6 +192,8 @@ func initUsecases(
 		ACMEAutoRenew:   cfg.ACME.AutoRenew,
 		TLSCertFile:     cfg.App.TLSCertFile,
 		TLSKeyFile:      cfg.App.TLSKeyFile,
+		TLSSelfSigned:   cfg.App.TLSSelfSigned,
+		AgentHubURL:     cfg.App.AgentHubURL,
 		MetricsUsername: cfg.Metrics.Username,
 		MetricsPassword: cfg.Metrics.Password,
 		LogLevel:        cfg.Log.Level,

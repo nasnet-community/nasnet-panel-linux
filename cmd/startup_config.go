@@ -53,10 +53,12 @@ func resolveStartupConfig(cfg *config.Config, getSetting func(string) (string, e
 	if err := cfg.Admin.Validate(); err != nil {
 		return err
 	}
-	return resolveStartupTLSFiles(cfg, getSetting)
+	return resolveStartupTLS(cfg, getSetting)
 }
 
-func resolveStartupTLSFiles(cfg *config.Config, getSetting func(string) (string, error)) error {
+// resolveStartupTLS reads the saved panel TLS settings over the environment:
+// certificate paths when set, the self-signed switch whenever it is stored.
+func resolveStartupTLS(cfg *config.Config, getSetting func(string) (string, error)) error {
 	for _, setting := range []struct {
 		key string
 		dst *string
@@ -71,6 +73,13 @@ func resolveStartupTLSFiles(cfg *config.Config, getSetting func(string) (string,
 		if err == nil && value != "" {
 			*setting.dst = value
 		}
+	}
+	value, err := getSetting("tls_self_signed")
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to read startup setting tls_self_signed")
+	}
+	if err == nil {
+		cfg.App.TLSSelfSigned = value == "true"
 	}
 	return nil
 }

@@ -213,7 +213,7 @@ func (h *AuthHandler) auditLoginAttempt(c *gin.Context, username, result string)
 // Refresh refreshes the access token using the refresh token
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	// Try to get refresh token from cookie first
-	refreshToken, err := c.Cookie(RefreshTokenCookie)
+	refreshToken, err := authMiddleware.AuthCookie(c, RefreshTokenCookie)
 	if err != nil {
 		// Try from request body
 		var req struct {
@@ -302,7 +302,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	// use claims from context; otherwise fall back to extracting from cookie.
 	if claims, ok := authMiddleware.GetUserClaims(c); ok && claims.ID != "" {
 		_ = h.jwtManager.RevokeToken(c.Request.Context(), claims.ID, claims.ExpiresAt.Time)
-	} else if token, err := c.Cookie(AccessTokenCookie); err == nil && token != "" {
+	} else if token, err := authMiddleware.AuthCookie(c, AccessTokenCookie); err == nil && token != "" {
 		if claims, err := h.jwtManager.ValidateAccessToken(token); err == nil && claims.ID != "" {
 			_ = h.jwtManager.RevokeToken(c.Request.Context(), claims.ID, claims.ExpiresAt.Time)
 		}
@@ -316,7 +316,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // GetCurrentUser returns the current authenticated user
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	// Extract token from cookie (auth routes are public, so we need to validate manually)
-	token, err := c.Cookie(AccessTokenCookie)
+	token, err := authMiddleware.AuthCookie(c, AccessTokenCookie)
 	if err != nil || token == "" {
 		httputil.Error(c, http.StatusUnauthorized, "not authenticated")
 		return
@@ -384,6 +384,16 @@ func (h *AuthHandler) resolveTokenExpiry(c *gin.Context) (accessExpiry, refreshE
 func (h *AuthHandler) setTokenCookies(c *gin.Context, tokenPair *jwt.TokenPair, rememberMe bool, accessExpiry, refreshExpiry time.Duration) {
 	cfg := h.jwtManager.GetConfig()
 
+	// Over HTTPS the cookies are Secure whatever JWT_COOKIE_SECURE says, and
+	// named apart (see SecureCookiePrefix). SameSite follows JWT_COOKIE_SECURE
+	// alone: Lax is the panel's only CSRF defence.
+	secure := cfg.CookieSecure || c.Request.TLS != nil
+	accessName, refreshName := AccessTokenCookie, RefreshTokenCookie
+	if c.Request.TLS != nil {
+		accessName = authMiddleware.SecureCookiePrefix + accessName
+		refreshName = authMiddleware.SecureCookiePrefix + refreshName
+	}
+
 	// Determine SameSite based on whether it's cross-origin
 	sameSite := http.SameSiteLaxMode
 	if cfg.CookieSecure {
@@ -400,12 +410,12 @@ func (h *AuthHandler) setTokenCookies(c *gin.Context, tokenPair *jwt.TokenPair, 
 
 	// Access token cookie (lifetime matches the JWT exp claim)
 	accessCookie := &http.Cookie{
-		Name:     AccessTokenCookie,
+		Name:     accessName,
 		Value:    tokenPair.AccessToken,
 		Path:     "/",
 		Domain:   cfg.CookieDomain,
 		MaxAge:   int(accessExpiry.Seconds()),
-		Secure:   cfg.CookieSecure,
+		Secure:   secure,
 		HttpOnly: true,
 		SameSite: sameSite,
 	}
@@ -413,12 +423,12 @@ func (h *AuthHandler) setTokenCookies(c *gin.Context, tokenPair *jwt.TokenPair, 
 
 	// Refresh token cookie (lifetime matches the JWT exp claim)
 	refreshCookie := &http.Cookie{
-		Name:     RefreshTokenCookie,
+		Name:     refreshName,
 		Value:    tokenPair.RefreshToken,
 		Path:     "/",
 		Domain:   cfg.CookieDomain,
 		MaxAge:   refreshMaxAge,
-		Secure:   cfg.CookieSecure,
+		Secure:   secure,
 		HttpOnly: true,
 		SameSite: sameSite,
 	}
@@ -428,24 +438,11 @@ func (h *AuthHandler) setTokenCookies(c *gin.Context, tokenPair *jwt.TokenPair, 
 // clearTokenCookies removes the authentication cookies
 func (h *AuthHandler) clearTokenCookies(c *gin.Context) {
 	config := h.jwtManager.GetConfig()
-
-	c.SetCookie(
-		AccessTokenCookie,
-		"",
-		-1,
-		"/",
-		config.CookieDomain,
-		config.CookieSecure,
-		true,
-	)
-
-	c.SetCookie(
-		RefreshTokenCookie,
-		"",
-		-1,
-		"/",
-		config.CookieDomain,
-		config.CookieSecure,
-		true,
-	)
+	secure := config.CookieSecure || c.Request.TLS != nil
+	for _, name := range []string{AccessTokenCookie, RefreshTokenCookie} {
+		c.SetCookie(name, "", -1, "/", config.CookieDomain, secure, true)
+		if c.Request.TLS != nil {
+			c.SetCookie(authMiddleware.SecureCookiePrefix+name, "", -1, "/", config.CookieDomain, true, true)
+		}
+	}
 }

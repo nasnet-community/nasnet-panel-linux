@@ -34,7 +34,7 @@ type Bot struct {
 
 // HTTPS is how the panel's listener came up.
 type HTTPS struct {
-	Mode     string // "files", "acme" or "plain"
+	Mode     string // "files", "acme", "self-signed" or "plain"
 	CertFile string
 	Error    string
 	// Cert returns the certificate being served, or nil.

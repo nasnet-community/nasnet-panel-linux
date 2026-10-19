@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/runtimestatus"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/selfsigned"
 )
 
 // StatusDeps feed GET /settings/status. Each one is optional.
@@ -27,11 +29,14 @@ type StatusDeps struct {
 func (h *SettingHandler) SetStatusDeps(d StatusDeps) { h.status = d }
 
 type certStatus struct {
-	Issuer   string    `json:"issuer,omitempty"`
-	Subject  string    `json:"subject,omitempty"`
-	Domains  []string  `json:"domains,omitempty"`
-	NotAfter time.Time `json:"not_after"`
-	DaysLeft int       `json:"days_left"`
+	Issuer  string   `json:"issuer,omitempty"`
+	Subject string   `json:"subject,omitempty"`
+	Domains []string `json:"domains,omitempty"` // host names, then IP addresses
+	// Fingerprint is the SHA-256 fingerprint browsers show, to compare
+	// before accepting a self-signed certificate.
+	Fingerprint string    `json:"fingerprint"`
+	NotAfter    time.Time `json:"not_after"`
+	DaysLeft    int       `json:"days_left"`
 }
 
 type statusResponse struct {
@@ -53,7 +58,7 @@ type statusResponse struct {
 		TokenSet bool       `json:"token_set"`
 	} `json:"bot"`
 	HTTPS struct {
-		Mode  string      `json:"mode"` // files, acme or plain
+		Mode  string      `json:"mode"` // files, acme, self-signed or plain
 		Error string      `json:"error,omitempty"`
 		Cert  *certStatus `json:"cert,omitempty"`
 		// OnDisk is set when the certificate file now holds a different
@@ -163,19 +168,24 @@ func (h *SettingHandler) Status(c *gin.Context) {
 
 func describeCert(c *x509.Certificate) *certStatus {
 	cs := &certStatus{
-		Issuer:   c.Issuer.CommonName,
-		Subject:  c.Subject.CommonName,
-		NotAfter: c.NotAfter,
+		Issuer:      c.Issuer.CommonName,
+		Subject:     c.Subject.CommonName,
+		Fingerprint: selfsigned.Fingerprint(c),
+		NotAfter:    c.NotAfter,
 		// floor, so a certificate that ran out hours ago reads as -1, not 0
 		DaysLeft: int(math.Floor(time.Until(c.NotAfter).Hours() / 24)),
 	}
-	if c.Subject.CommonName != "" {
+	// a self-signed certificate's common name is a label, not a host
+	if c.Subject.CommonName != "" && !strings.ContainsAny(c.Subject.CommonName, " \t") {
 		cs.Domains = append(cs.Domains, c.Subject.CommonName)
 	}
 	for _, d := range c.DNSNames {
 		if d != c.Subject.CommonName {
 			cs.Domains = append(cs.Domains, d)
 		}
+	}
+	for _, ip := range c.IPAddresses {
+		cs.Domains = append(cs.Domains, ip.String())
 	}
 	return cs
 }

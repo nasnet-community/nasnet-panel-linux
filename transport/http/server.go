@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"strings"
@@ -63,6 +64,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/maintenance"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/metrics"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/runtimestatus"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/selfsigned"
 	httpMiddleware "github.com/nasnet-community/nasnet-panel-linux/transport/http/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
@@ -72,6 +74,10 @@ type Server struct {
 	engine          *gin.Engine
 	httpServer      *http.Server
 	chatRateLimiter *chatHttp.ChatRateLimiter
+	// what SelfSignedPlainHTTP needs to tell the panel from the rest
+	basePath    string
+	metricsPath string
+	distFS      fs.FS
 }
 
 // CoreDeps holds the core business usecases (required)
@@ -119,6 +125,8 @@ type InfraDeps struct {
 	HTTPClientFactory *httpclient.Factory
 	// RuntimeStatus is what the running panel knows about itself (settings page).
 	RuntimeStatus *runtimestatus.Registry
+	// SelfSigned is the panel's own certificate; Active only when it is served.
+	SelfSigned *selfsigned.Manager
 }
 
 // ConfigDeps holds configuration values
@@ -164,9 +172,10 @@ func NewServer(deps ServerDeps) *Server {
 	engine.Use(maintenanceMiddleware(basePath))
 
 	// Prometheus metrics middleware and endpoint
+	var metricsPath string
 	if deps.Config.MetricsConfig.Enabled && metrics.Registry != nil {
 		engine.Use(metrics.GinMiddleware())
-		metricsPath := deps.Config.MetricsConfig.Path
+		metricsPath = deps.Config.MetricsConfig.Path
 		if metricsPath == "" {
 			metricsPath = "/metrics"
 		}
@@ -183,7 +192,12 @@ func NewServer(deps ServerDeps) *Server {
 
 	// Health check (liveness)
 	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		body := gin.H{"status": "ok"}
+		// what the installer prints for people to compare with their browser
+		if deps.Infra.SelfSigned.Active() {
+			body["tls_fingerprint"] = selfsigned.Fingerprint(deps.Infra.SelfSigned.Leaf())
+		}
+		c.JSON(http.StatusOK, body)
 	})
 
 	// Readiness check (checks DB connectivity)
@@ -439,6 +453,9 @@ func NewServer(deps ServerDeps) *Server {
 				statusDeps.ActiveReach, statusDeps.DBSize = q.ActiveReach, q.DBSize
 			}
 			settingHandler.SetStatusDeps(statusDeps)
+			if deps.Infra.SelfSigned != nil {
+				settingHandler.SetSelfSigned(deps.Infra.SelfSigned, deps.Admin.AuditUsecase)
+			}
 			settingHandler.RegisterRoutes(adminAPI)
 		}
 
@@ -518,7 +535,10 @@ func NewServer(deps ServerDeps) *Server {
 		BasePath:      spaConfig.BasePath,
 	})
 
-	return &Server{engine: engine, chatRateLimiter: chatRateLimiter}
+	return &Server{
+		engine: engine, chatRateLimiter: chatRateLimiter,
+		basePath: basePath, metricsPath: metricsPath, distFS: spaConfig.DistFS,
+	}
 }
 
 func (s *Server) Run(addr string) error {

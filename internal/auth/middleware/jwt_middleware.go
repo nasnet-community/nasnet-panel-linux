@@ -116,11 +116,25 @@ func (m *JWTMiddleware) OptionalAuth() gin.HandlerFunc {
 	}
 }
 
+// SecureCookiePrefix names the auth cookies set over HTTPS. A browser won't
+// let plain HTTP replace a Secure cookie of the same name, so a panel switched
+// from HTTPS back to plain HTTP could never log anyone in again.
+const SecureCookiePrefix = "__Secure-"
+
+// AuthCookie returns the named auth cookie, preferring the copy set over
+// HTTPS; plain HTTP never receives that one.
+func AuthCookie(c *gin.Context, name string) (string, error) {
+	if v, err := c.Cookie(SecureCookiePrefix + name); err == nil && v != "" {
+		return v, nil
+	}
+	return c.Cookie(name)
+}
+
 // extractToken attempts to extract the JWT token from the request
 // Priority: 1. Cookie, 2. Authorization header
 func (m *JWTMiddleware) extractToken(c *gin.Context) string {
 	// Try cookie first (preferred for browser-based apps)
-	if token, err := c.Cookie("access_token"); err == nil && token != "" {
+	if token, err := AuthCookie(c, "access_token"); err == nil && token != "" {
 		return token
 	}
 

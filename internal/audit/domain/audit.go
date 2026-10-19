@@ -53,8 +53,10 @@ const (
 
 	// Settings actions
 	AuditSettingsUpdate AuditAction = "settings.update"
-	AuditPasswordChange AuditAction = "auth.password_change"
-	AuditAdminLogin     AuditAction = "auth.admin_login"
+	// The panel's self-signed HTTPS certificate was created, renewed or regenerated.
+	AuditPanelCertificate AuditAction = "settings.https_certificate"
+	AuditPasswordChange   AuditAction = "auth.password_change"
+	AuditAdminLogin       AuditAction = "auth.admin_login"
 
 	// Data management
 	AuditDataExport AuditAction = "data.export"

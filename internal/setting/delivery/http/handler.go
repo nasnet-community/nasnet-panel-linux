@@ -8,13 +8,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 )
 
 type SettingHandler struct {
-	usecase domain.SettingUsecase
-	status  StatusDeps
+	usecase    domain.SettingUsecase
+	status     StatusDeps
+	selfSigned SelfSignedCert
+	audit      auditDomain.AuditLogUsecase
 }
 
 func NewSettingHandler(usecase domain.SettingUsecase) *SettingHandler {
@@ -31,6 +34,7 @@ func (h *SettingHandler) RegisterRoutes(router *gin.RouterGroup) {
 		settings.POST("/import", h.Import)
 		settings.POST("/test-tls", h.TestTLS)
 		settings.POST("/test-proxy", h.TestProxy)
+		settings.POST("/https/regenerate", h.RegenerateCertificate)
 	}
 }
 
