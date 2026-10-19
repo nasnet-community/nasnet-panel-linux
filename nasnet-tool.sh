@@ -466,13 +466,79 @@ _health_ok() {
     fi
 }
 
+# The address people open the panel at. A self-signed panel serves its pages
+# over HTTPS on the same port, while subscription links keep SUB_PANEL_URL's
+# plain http.
+panel_login_url() {
+    local url="${1:-${SUB_PANEL_URL:-}}" self_signed="${2:-${TLS_SELF_SIGNED:-false}}"
+    if [[ "$self_signed" == true && "$url" == http://* ]]; then
+        echo "https://${url#http://}"
+    else
+        echo "$url"
+    fi
+}
+
+# The SHA-256 fingerprint of the running panel's self-signed certificate, for
+# people to compare with their browser's; empty when it serves none.
+panel_tls_fingerprint() {
+    { curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:${1:-$(get_app_port)}/health" 2>/dev/null \
+        | sed -n 's/.*"tls_fingerprint":"\([0-9A-F:]*\)".*/\1/p'; } || true
+}
+
+# The self-signed choice the panel goes by: its database row, which wins over
+# .env once it exists, else .env.
+stored_self_signed() {
+    local v="" sql="SELECT value FROM settings WHERE key='tls_self_signed';"
+    if is_sqlite; then
+        v=$(psql_exec "$sql" 2>/dev/null) || v=""
+    else
+        v=$(echo "$sql" | psql_exec -tA 2>/dev/null) || v=""
+    fi
+    v="${v//[[:space:]]/}"
+    if [[ "$v" == true || "$v" == false ]]; then echo "$v"; else echo "${TLS_SELF_SIGNED:-false}"; fi
+}
+
+# A reinstall over an existing database keeps the HTTPS choice stored there,
+# which the panel reads over .env. Bring it in line and restart once.
+wizard_apply_https_choice() {
+    local want="${WIZ_SELF_SIGNED:-false}" served=false i
+    [[ -n "$(panel_tls_fingerprint "$WIZ_APP_PORT")" ]] && served=true
+    [[ "$served" == "$want" ]] && return 0
+    step_info "Applying the HTTPS choice to the existing database..."
+    sync_https_settings "$want" "${WIZ_AGENT_HUB_URL:-}"
+    if [[ "$WIZ_DEPLOY_MODE" == docker ]]; then
+        _compose_cmd_with_files restart app >/dev/null 2>&1 || true
+    else
+        sudo systemctl restart "$BACKEND_SERVICE" 2>/dev/null || true
+    fi
+    for i in $(seq 1 30); do
+        curl -fsS --noproxy '*' --max-time 2 "http://127.0.0.1:${WIZ_APP_PORT}/health" &>/dev/null && break
+        sleep 1
+    done
+}
+
+# The panel reads tls_self_signed from its database once the row exists, so a
+# choice made here goes there too. agent_hub_url is only filled when empty.
+sync_https_settings() {
+    local self_signed="${1:-false}" hub_url="${2:-}" sql
+    sql="UPDATE settings SET value='${self_signed}' WHERE key='tls_self_signed';"
+    [[ -n "$hub_url" ]] && sql+="UPDATE settings SET value='${hub_url}' WHERE key='agent_hub_url' AND value='';"
+    if is_sqlite; then
+        psql_exec "$sql" 2>/dev/null
+    else
+        echo "$sql" | psql_exec -q 2>/dev/null
+    fi || step_warn "Couldn't save the HTTPS choice to the database: set it in the panel's settings"
+}
+
 _panel_url_ok() {
-    local url="${SUB_PANEL_URL:-}" result body
+    local url="${SUB_PANEL_URL:-}" result body insecure=()
     [[ "$url" == http://* || "$url" == https://* ]] || return 1
     local redirects='=http,https'
     [[ "$url" == https://* ]] && redirects='=https'
+    # a self-signed panel redirects its pages to a certificate curl can't check
+    [[ "${WIZ_SELF_SIGNED:-${TLS_SELF_SIGNED:-false}}" == true ]] && insecure=(-k)
     body=$(mktemp) || return 1
-    if ! result=$(curl -fsSL --max-time "${NASNET_PROBE_TIMEOUT:-10}" --proto '=http,https' --proto-redir "$redirects" \
+    if ! result=$(curl -fsSL ${insecure[@]+"${insecure[@]}"} --max-time "${NASNET_PROBE_TIMEOUT:-10}" --proto '=http,https' --proto-redir "$redirects" \
         -o "$body" -w '%{http_code} %{content_type}' "$url"); then
         rm -f "$body"; return 1
     fi
@@ -497,7 +563,7 @@ wizard_verify_install() {
             (( remaining > 0 )) || break
             NASNET_PROBE_TIMEOUT=$(( remaining < 10 ? remaining : 10 ))
             if _panel_url_ok; then
-                step_ok "Backend ready and web panel reachable at ${SUB_PANEL_URL}"
+                step_ok "Backend ready and web panel reachable at $(panel_login_url "$SUB_PANEL_URL" "${WIZ_SELF_SIGNED:-${TLS_SELF_SIGNED:-false}}")"
                 return 0
             fi
         fi
@@ -2296,6 +2362,7 @@ APP_PORT=${WIZ_APP_PORT}
 APP_BASE_URL=${WIZ_APP_BASE_URL}
 SUB_PANEL_URL=${WIZ_SUB_PANEL_URL}
 APP_PANEL_BASE_PATH=${WIZ_BASE_PATH}
+AGENT_HUB_URL=${WIZ_AGENT_HUB_URL-${AGENT_HUB_URL:-}}
 
 # Database
 DB_DRIVER=${db_driver}
@@ -2350,6 +2417,8 @@ ADMIN_PASSWORD_HASH='${WIZ_ADMIN_HASH}'
 # TLS (optional — leave empty for auto ACME, or set paths for custom certs)
 TLS_CERT_FILE=$(wizard_env_quote "${WIZ_TLS_CERT_FILE-${TLS_CERT_FILE:-}}")
 TLS_KEY_FILE=$(wizard_env_quote "${WIZ_TLS_KEY_FILE-${TLS_KEY_FILE:-}}")
+# HTTPS on a certificate the panel makes itself, when the two above are empty
+TLS_SELF_SIGNED=${WIZ_SELF_SIGNED:-${TLS_SELF_SIGNED:-false}}
 
 # ACME / Let's Encrypt
 ACME_ENABLED=${WIZ_ACME_ENABLED:-false}
@@ -2512,7 +2581,7 @@ wizard_prompt_access_mode() {
                     "Domain mode (recommended)" "IP-only mode" || access_status=$?
                 if [[ $access_status -eq 0 ]]; then
                     if [[ $access_choice -eq 0 ]]; then
-                        WIZ_MODE=domain; access_next=protocol
+                        WIZ_MODE=domain; WIZ_SELF_SIGNED=false; access_next=protocol
                     else
                         WIZ_MODE=ip; access_next=ip
                     fi
@@ -2564,7 +2633,18 @@ wizard_prompt_access_mode() {
                 if [[ $access_status -eq 0 ]] && ! wizard_valid_ip "$WIZ_IP"; then
                     step_fail "Invalid IP address: ${WIZ_IP}"; access_status=1
                 fi
-                access_proto=http; access_next=path
+                access_proto=http; access_next=self_signed
+                ;;
+            self_signed)
+                local ARROW_MENU_DETAILS=wizard_self_signed_details
+                [[ "${WIZ_SELF_SIGNED:-}" == false ]] && ARROW_MENU_DEFAULT=1
+                wizard_navigation_menu "Panel HTTPS" access_choice \
+                    "HTTPS with a self-signed certificate (recommended)" "Plain HTTP" || access_status=$?
+                ARROW_MENU_DETAILS=""
+                if [[ $access_status -eq 0 ]]; then
+                    if [[ $access_choice -eq 0 ]]; then WIZ_SELF_SIGNED=true; else WIZ_SELF_SIGNED=false; fi
+                fi
+                access_next=path
                 ;;
             path)
                 if [[ "${WIZ_PATH_GENERATED:-false}" != true && -z "$WIZ_BASE_PATH" ]]; then
@@ -2587,6 +2667,12 @@ wizard_prompt_access_mode() {
                     else
                         access_api="http://${WIZ_IP}:${WIZ_APP_PORT}"
                         access_panel="${access_api}${WIZ_BASE_PATH}"
+                    fi
+                    # Remote nodes install with one command from an https
+                    # address; a self-signed panel pins its own key for them.
+                    WIZ_AGENT_HUB_URL=""
+                    if [[ "$WIZ_MODE" == ip && "${WIZ_SELF_SIGNED:-false}" == true ]]; then
+                        WIZ_AGENT_HUB_URL="https://${WIZ_IP}:${WIZ_APP_PORT}"
                     fi
                     # Retain custom public URLs unless their underlying inputs changed.
                     if [[ "${WIZ_DERIVED_API:-}" != "$access_api" ]]; then WIZ_APP_BASE_URL="$access_api"; fi
@@ -2712,6 +2798,16 @@ wizard_prompt_access_mode() {
 wizard_access_urls_review() {
     step_info "Backend API: ${WIZ_APP_BASE_URL}"
     step_info "Web panel: ${WIZ_SUB_PANEL_URL}"
+    if [[ "${WIZ_SELF_SIGNED:-false}" == true ]]; then
+        step_info "Panel login: $(panel_login_url "$WIZ_SUB_PANEL_URL" true)"
+    fi
+    echo ""
+}
+
+wizard_self_signed_details() {
+    step_info "Without a domain the panel can make its own certificate."
+    step_info "Browsers warn on the first visit from each device: compare the fingerprint shown after install, then continue."
+    step_info "Subscription links stay on plain HTTP, where VPN apps can fetch them."
     echo ""
 }
 
@@ -2762,6 +2858,8 @@ wizard_restore_saved_config() {
     WIZ_ACME_EMAIL="${ACME_EMAIL:-}"
     WIZ_TLS_CERT_FILE="${TLS_CERT_FILE:-}"
     WIZ_TLS_KEY_FILE="${TLS_KEY_FILE:-}"
+    WIZ_SELF_SIGNED="${TLS_SELF_SIGNED:-false}"
+    WIZ_AGENT_HUB_URL="${AGENT_HUB_URL:-}"
     WIZ_TELEGRAM_ENABLED="${TELEGRAM_ENABLED:-false}"
     WIZ_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
     WIZ_ADMIN_IDS="${ADMIN_IDS:-}"
@@ -2911,6 +3009,8 @@ wizard_prepare_router_access() {
     WIZ_COOKIE_DOMAIN=""; WIZ_COOKIE_SECURE=false
     WIZ_ACME_ENABLED=false; WIZ_ACME_STAGING=false; WIZ_ACME_EMAIL=""
     WIZ_TLS_CERT_FILE=""; WIZ_TLS_KEY_FILE=""
+    # a LAN address is no use to a remote node
+    WIZ_AGENT_HUB_URL=""
     wizard_validate_access
 }
 
@@ -2976,10 +3076,18 @@ wizard_collect_install_settings() {
                 ;;
             access)
                 if [[ "$WIZ_ROUTER_MODE" == true ]]; then
-                    if wizard_prepare_router_access; then
-                        setup_step=review; continue
+                    local ARROW_MENU_DETAILS=wizard_self_signed_details
+                    [[ "${WIZ_SELF_SIGNED:-}" == false ]] && ARROW_MENU_DEFAULT=1
+                    wizard_navigation_menu "Panel HTTPS" setup_choice \
+                        "HTTPS with a self-signed certificate (recommended)" "Plain HTTP" || setup_status=$?
+                    ARROW_MENU_DETAILS=""
+                    if [[ $setup_status -eq 0 ]]; then
+                        if [[ $setup_choice -eq 0 ]]; then WIZ_SELF_SIGNED=true; else WIZ_SELF_SIGNED=false; fi
+                        if wizard_prepare_router_access; then
+                            setup_step=review; continue
+                        fi
+                        setup_status=2
                     fi
-                    setup_status=2
                 else
                     [[ -n "$WIZ_APP_PORT" ]] || WIZ_APP_PORT=$(wizard_random_port)
                     wizard_prompt_access_mode || setup_status=$?
@@ -3076,8 +3184,8 @@ wizard_install_review() {
         "Deployment|${WIZ_DEPLOY_MODE}" "Install method|${WIZ_INSTALL_METHOD}" \
         "Router mode|${WIZ_ROUTER_MODE}" "Database|${WIZ_DB_DRIVER}" \
         "Database role|${WIZ_DB_USER}" "Database host|${WIZ_DB_HOST}:${WIZ_DB_PORT}" \
-        "Web panel|${WIZ_SUB_PANEL_URL}" "Backend API|${WIZ_APP_BASE_URL}" \
-        "ACME|${WIZ_ACME_ENABLED}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
+        "Web panel|$(panel_login_url "$WIZ_SUB_PANEL_URL" "${WIZ_SELF_SIGNED:-false}")" "Backend API|${WIZ_APP_BASE_URL}" \
+        "ACME|${WIZ_ACME_ENABLED}" "Self-signed HTTPS|${WIZ_SELF_SIGNED:-false}" "Telegram|${WIZ_TELEGRAM_ENABLED}" \
         "Config|${ENV_FILE}" "Secrets|Existing values kept; missing values generated during install"
     if [[ "$WIZ_ROUTER_MODE" == true && -z "$WIZ_ADMIN_HASH" ]]; then
         step_info "An admin password will be generated during installation"
@@ -3100,6 +3208,7 @@ wizard_install() {
     local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL="" WIZ_APP_PORT=""
     local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="false" WIZ_ACME_STAGING="false"
     local WIZ_ACME_ENABLED="false" WIZ_ACME_EMAIL="" WIZ_TLS_CERT_FILE="" WIZ_TLS_KEY_FILE=""
+    local WIZ_SELF_SIGNED="" WIZ_AGENT_HUB_URL=""
     local WIZ_TELEGRAM_ENABLED="false" WIZ_BOT_TOKEN="" WIZ_ADMIN_IDS=""
     local WIZ_ADMIN_PASS="" WIZ_ADMIN_HASH="" WIZ_JWT_SECRET="" WIZ_DB_PASSWORD=""
     local WIZ_DB_USER="nasnet_panel" WIZ_DB_NAME="nasnet_panel" WIZ_DB_HOST="localhost" WIZ_DB_PORT="5432"
@@ -3167,8 +3276,19 @@ wizard_install() {
         local WIZ_PROM_TARGET="${PROMETHEUS_TARGET:-localhost:$WIZ_APP_PORT}"
         wizard_write_env "$WIZ_DEPLOY_MODE" "Installation verified" || return 1
         _sync_env_to_install_dir || return 1
+        wizard_apply_https_choice
         draw_header "Installation complete"
-        step_ok "Web panel: ${WIZ_SUB_PANEL_URL}"
+        step_ok "Web panel: $(panel_login_url "$WIZ_SUB_PANEL_URL" "${WIZ_SELF_SIGNED:-false}")"
+        if [[ "${WIZ_SELF_SIGNED:-false}" == true ]]; then
+            local fingerprint
+            fingerprint=$(panel_tls_fingerprint "$WIZ_APP_PORT")
+            if [[ -n "$fingerprint" ]]; then
+                step_info "Your browser warns on the first visit. Continue only if the certificate's SHA-256 fingerprint is:"
+                step_info "  ${fingerprint}"
+            else
+                step_info "Your browser warns on the first visit. The certificate's fingerprint is in the panel's HTTPS settings and in nasnet config."
+            fi
+        fi
         if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
             step_info "Username: admin"
             step_info "Password: ${WIZ_ADMIN_PASS}"
@@ -3232,6 +3352,8 @@ wizard_reconfigure() {
     local WIZ_DERIVED_API="" WIZ_DERIVED_PANEL="" WIZ_ACCESS_PROTO=https
     local WIZ_APP_BASE_URL="" WIZ_SUB_PANEL_URL=""
     local WIZ_COOKIE_DOMAIN="" WIZ_COOKIE_SECURE="" WIZ_ACME_STAGING="" WIZ_ACME_ENABLED="" WIZ_ACME_EMAIL=""
+    local WIZ_SELF_SIGNED WIZ_AGENT_HUB_URL="${AGENT_HUB_URL:-}"
+    WIZ_SELF_SIGNED=$(stored_self_signed)
     local WIZ_APP_PORT
     if [[ -n "${APP_PORT:-}" ]]; then
         WIZ_APP_PORT="$APP_PORT"
@@ -3305,6 +3427,7 @@ wizard_reconfigure() {
         "JWT_COOKIE_SECURE|${WIZ_COOKIE_SECURE}" \
         "ACME_ENABLED|${WIZ_ACME_ENABLED}" \
         "ACME_STAGING|${WIZ_ACME_STAGING}" \
+        "TLS_SELF_SIGNED|${WIZ_SELF_SIGNED}" \
         "TELEGRAM_ENABLED|${WIZ_TELEGRAM_ENABLED}" \
         "BOT_TOKEN|${review_bot_token}" \
         "ADMIN_IDS|${EXISTING_ADMIN_IDS:-(none)}" \
@@ -3337,6 +3460,7 @@ wizard_reconfigure() {
 
     # Reload env
     load_env
+    sync_https_settings "$WIZ_SELF_SIGNED" "$WIZ_AGENT_HUB_URL"
 
     # ── Rebuild & Restart ─────────────────────────────────────────────────
     draw_header "Rebuilding & Restarting"
@@ -4073,6 +4197,8 @@ wizard_change_urls() {
     local old_cookie_secure="${JWT_COOKIE_SECURE:-false}"
     local old_cookie_domain="${JWT_COOKIE_DOMAIN:-}"
     local old_acme_enabled="${ACME_ENABLED:-false}"
+    local old_self_signed
+    old_self_signed=$(stored_self_signed)
 
     local app_port
     app_port=$(get_app_port)
@@ -4093,6 +4219,7 @@ wizard_change_urls() {
     fi
 
     local mode_label="IP (HTTP)"
+    [[ "$old_self_signed" == true ]] && mode_label="IP (self-signed HTTPS)"
     if [[ "$current_mode" == "domain" ]]; then
         if [[ "$current_proto" == "https" ]]; then
             mode_label="Domain (HTTPS)"
@@ -4129,6 +4256,7 @@ wizard_change_urls() {
     # ── Collect server address ────────────────────────────────────────────
     local new_host=""
     local new_proto="http"
+    local new_self_signed=false
 
     if [[ "$new_mode" == "ip" ]]; then
         local default_ip="$current_host"
@@ -4157,6 +4285,15 @@ wizard_change_urls() {
                 return
             fi
         done
+
+        # Pages over HTTPS on a certificate the panel makes; links stay http
+        local ss_default=no
+        [[ "$old_self_signed" == true ]] && ss_default=yes
+        if confirm_action "Serve the panel over HTTPS with a self-signed certificate? Browsers warn on the first visit from each device" "$ss_default"; then
+            new_self_signed=true
+        else
+            new_self_signed=false
+        fi
 
         new_proto="http"
     else
@@ -4301,6 +4438,9 @@ wizard_change_urls() {
             rows+=("SUB_PANEL_URL|${new_sub_url} ${DIM}(unchanged)${RESET}")
         fi
 
+        if [[ "$new_self_signed" != "$old_self_signed" ]]; then
+            rows+=("TLS_SELF_SIGNED|${old_self_signed} → ${GREEN}${new_self_signed}${RESET}")
+        fi
         if $mode_switched; then
             rows+=("JWT_COOKIE_SECURE|${old_cookie_secure} → ${GREEN}${new_cookie_secure}${RESET}")
             rows+=("JWT_COOKIE_DOMAIN|${old_cookie_domain:-(empty)} → ${GREEN}${new_cookie_domain:-(empty)}${RESET}")
@@ -4313,7 +4453,7 @@ wizard_change_urls() {
     # ── Check if anything changed ─────────────────────────────────────────
     if [[ "$new_base_url" == "$old_base_url" && \
           "$new_sub_url" == "$old_sub_url" && "$new_base_path" == "$old_base_path" && \
-          "$mode_switched" == "false" ]]; then
+          "$mode_switched" == "false" && "$new_self_signed" == "$old_self_signed" ]]; then
         step_info "No changes — URLs remain the same"
         press_any_key
         return
@@ -4389,6 +4529,12 @@ wizard_change_urls() {
     [[ "$new_base_url" != "$old_base_url" ]]         && _env_set APP_BASE_URL "$new_base_url"
     [[ "$new_sub_url" != "$old_sub_url" ]]           && _env_set SUB_PANEL_URL "$new_sub_url"
     [[ "$new_base_path" != "$old_base_path" ]]       && _env_set APP_PANEL_BASE_PATH "$new_base_path"
+    [[ "$new_self_signed" != "$old_self_signed" ]]   && _env_set TLS_SELF_SIGNED "$new_self_signed"
+    local new_hub_url=""
+    if [[ "$new_self_signed" == true && -z "${AGENT_HUB_URL:-}" ]]; then
+        new_hub_url="https://${new_host}:${app_port}"
+        _env_set AGENT_HUB_URL "$new_hub_url"
+    fi
 
     # Mode-switch side effects
     if $mode_switched; then
@@ -4418,6 +4564,10 @@ wizard_change_urls() {
             else
                 echo "$sql" | psql_exec -q 2>/dev/null || db_ok=false
             fi
+        fi
+
+        if [[ "$new_self_signed" != "$old_self_signed" || -n "$new_hub_url" ]]; then
+            sync_https_settings "$new_self_signed" "$new_hub_url"
         fi
 
         if $db_ok; then
@@ -4475,7 +4625,8 @@ wizard_change_urls() {
     draw_header "URL Change Complete"
     draw_table "Variable|Value" \
         "APP_BASE_URL|${new_base_url}" \
-        "SUB_PANEL_URL|${new_sub_url}"
+        "SUB_PANEL_URL|${new_sub_url}" \
+        "Panel login|$(panel_login_url "$new_sub_url" "$new_self_signed")"
 
     press_any_key
 }
@@ -4494,8 +4645,16 @@ wizard_view_config() {
 
     # The panel path is randomly generated at install and shown once —
     # this is where people come back to find it.
-    echo -e "  ${BOLD}Panel login:${RESET} ${GREEN}${SUB_PANEL_URL:-(not set)}${RESET}"
+    local login_url self_signed
+    self_signed=$(stored_self_signed)
+    login_url=$(panel_login_url "${SUB_PANEL_URL:-}" "$self_signed")
+    echo -e "  ${BOLD}Panel login:${RESET} ${GREEN}${login_url:-(not set)}${RESET}"
     echo -e "  ${BOLD}Username:${RESET}    ${ADMIN_USERNAME:-admin}"
+    if [[ "$self_signed" == true ]]; then
+        local fingerprint
+        fingerprint=$(panel_tls_fingerprint)
+        echo -e "  ${BOLD}Certificate:${RESET} ${fingerprint:-${DIM}(panel not running)${RESET}} ${DIM}SHA-256, compare with your browser${RESET}"
+    fi
     echo ""
 
     local rows=()
@@ -4541,6 +4700,7 @@ wizard_view_config() {
     rows+=(" | ")
 
     _val="${ACME_ENABLED:-false}";               rows+=("ACME_ENABLED|${_val}")
+    rows+=("TLS_SELF_SIGNED|${self_signed}")
     _val="${ACME_EMAIL:-${DIM}(none)${RESET}}"; rows+=("ACME_EMAIL|${_val}")
     _val="${ACME_STAGING:-}";                  rows+=("ACME_STAGING|${_val}")
     _val="${METRICS_ENABLED:-}";               rows+=("METRICS_ENABLED|${_val}")
@@ -5029,7 +5189,9 @@ action_health_check() {
     else
         api_status="${RED}● Unreachable${RESET}"
     fi
-    rows+=("Backend API|http://localhost:${app_port}|${api_status}")
+    local api_scheme=http
+    [[ -n "$(panel_tls_fingerprint "$app_port")" ]] && api_scheme=https
+    rows+=("Backend API|${api_scheme}://localhost:${app_port}|${api_status}")
 
     # Check Database (mode-aware, driver-aware)
     local db_status

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,8 @@ type wizardVars struct {
 	AcmeStaging     string
 	AcmeEnabled     string
 	AcmeEmail       string
+	SelfSigned      string // "true": HTTPS on a certificate the panel makes itself
+	AgentHubURL     string // the https address remote nodes install from
 	AppPort         string
 	TelegramEnabled string
 	BotToken        string
@@ -65,6 +68,7 @@ func wizardPromptAccessMode(cfg *Config, wv *wizardVars) bool {
 	if modeChoice == 0 {
 		// ── Domain Mode ──
 		wv.Mode = "domain"
+		wv.SelfSigned, wv.AgentHubURL = "false", ""
 
 		// ── Protocol ──
 		fmt.Println()
@@ -221,13 +225,36 @@ func wizardPromptAccessMode(cfg *Config, wv *wizardVars) bool {
 			ui.StepFail("Server IP is required")
 			return false
 		}
+		if net.ParseIP(detectedIP) == nil {
+			ui.StepFail("Invalid IP address: " + detectedIP)
+			return false
+		}
+
+		// ── HTTPS on a certificate the panel makes itself ──
+		fmt.Println()
+		ui.StepInfo("Without a domain the panel can make its own certificate. Browsers warn on the first visit")
+		ui.StepInfo("from each device; subscription links stay on plain HTTP, where VPN apps can fetch them.")
+		httpsChoice, err := ui.Menu("Panel HTTPS", []string{
+			"HTTPS with a self-signed certificate (recommended)",
+			"Plain HTTP",
+		})
+		if err != nil || httpsChoice < 0 {
+			return false
+		}
+		wv.SelfSigned, wv.AgentHubURL = "false", ""
+		panelScheme := "http"
+		if httpsChoice == 0 {
+			wv.SelfSigned, panelScheme = "true", "https"
+			// one-command node installs pin the panel's own key
+			wv.AgentHubURL = fmt.Sprintf("https://%s:%s", detectedIP, wv.AppPort)
+		}
 
 		// ── Panel base path (auto-generated for security) ──
 		wv.BasePath = genRandomPath()
 		fmt.Println()
 		ui.StepInfo("A random panel path has been generated for security.")
 		ui.StepInfo(fmt.Sprintf("Your admin panel will be at: %s",
-			ui.StyleSuccess.Render(fmt.Sprintf("http://%s:%s%s", detectedIP, wv.AppPort, wv.BasePath))))
+			ui.StyleSuccess.Render(fmt.Sprintf("%s://%s:%s%s", panelScheme, detectedIP, wv.AppPort, wv.BasePath))))
 
 		bpInput, err := ui.InputStringDefault("Panel base path", wv.BasePath)
 		if err != nil {
@@ -254,6 +281,9 @@ func wizardPromptAccessMode(cfg *Config, wv *wizardVars) bool {
 		ui.StepInfo("Derived URLs:")
 		fmt.Printf("    APP_BASE_URL  = %s\n", ui.StyleSuccess.Render(wv.AppBaseURL))
 		fmt.Printf("    SUB_PANEL_URL = %s\n", ui.StyleSuccess.Render(wv.SubPanelURL))
+		if wv.SelfSigned == "true" {
+			fmt.Printf("    Panel login   = %s\n", ui.StyleSuccess.Render("https://"+strings.TrimPrefix(wv.SubPanelURL, "http://")))
+		}
 		fmt.Println()
 	}
 
@@ -296,6 +326,7 @@ func wizardWriteEnv(cfg *Config, wv *wizardVars, deployMode, comment string) {
 	sb.WriteString(fmt.Sprintf("APP_BASE_URL=%s\n", wv.AppBaseURL))
 	sb.WriteString(fmt.Sprintf("SUB_PANEL_URL=%s\n", wv.SubPanelURL))
 	sb.WriteString(fmt.Sprintf("APP_PANEL_BASE_PATH=%s\n", wv.BasePath))
+	sb.WriteString(fmt.Sprintf("AGENT_HUB_URL=%s\n", wv.AgentHubURL))
 	sb.WriteString("\n")
 	sb.WriteString("# Database\n")
 	sb.WriteString(fmt.Sprintf("DB_DRIVER=%s\n", dbDriver))
@@ -350,6 +381,12 @@ func wizardWriteEnv(cfg *Config, wv *wizardVars, deployMode, comment string) {
 	}
 	sb.WriteString(fmt.Sprintf("TLS_CERT_FILE=%s\n", tlsCert))
 	sb.WriteString(fmt.Sprintf("TLS_KEY_FILE=%s\n", tlsKey))
+	selfSigned := wv.SelfSigned
+	if selfSigned == "" {
+		selfSigned = "false"
+	}
+	sb.WriteString("# HTTPS on a certificate the panel makes itself, when the two above are empty\n")
+	sb.WriteString(fmt.Sprintf("TLS_SELF_SIGNED=%s\n", selfSigned))
 	sb.WriteString("\n")
 	sb.WriteString("# ACME / Let's Encrypt\n")
 	acmeEnabled := wv.AcmeEnabled

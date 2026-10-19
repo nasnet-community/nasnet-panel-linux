@@ -148,6 +148,7 @@ func WizardReconfigure(cfg *Config) {
 			{"JWT_COOKIE_SECURE", wv.CookieSecure},
 			{"ACME_ENABLED", wv.AcmeEnabled},
 			{"ACME_STAGING", wv.AcmeStaging},
+			{"TLS_SELF_SIGNED", wv.SelfSigned},
 			{"TELEGRAM_ENABLED", telegramEnabled},
 			{"BOT_TOKEN", reviewBotToken},
 			{"ADMIN_IDS", adminIDsDisplay},
@@ -166,6 +167,7 @@ func WizardReconfigure(cfg *Config) {
 	// ── Write .env ────────────────────────────────────────────────────────
 	comment := fmt.Sprintf("Reconfigured by nasnet-tool wizard on %s", time.Now().Format("2006-01-02 15:04:05"))
 	wizardWriteEnv(cfg, wv, deployMode, comment)
+	syncHTTPSSettings(cfg, wv)
 
 	// Sync .env to install dir for systemd
 	_ = cfg.SyncEnvToInstallDir()
@@ -206,4 +208,21 @@ func WizardReconfigure(cfg *Config) {
 	fmt.Println()
 	ui.StepOk("Reconfiguration complete")
 	ui.PressAnyKey()
+}
+
+// syncHTTPSSettings saves the HTTPS choice to the database too: the panel
+// reads tls_self_signed from there once the row exists. agent_hub_url is only
+// filled when empty.
+func syncHTTPSSettings(cfg *Config, wv *wizardVars) {
+	selfSigned := wv.SelfSigned
+	if selfSigned != "true" {
+		selfSigned = "false"
+	}
+	sql := fmt.Sprintf("UPDATE settings SET value='%s' WHERE key='tls_self_signed';", selfSigned)
+	if wv.AgentHubURL != "" {
+		sql += fmt.Sprintf("UPDATE settings SET value='%s' WHERE key='agent_hub_url' AND value='';", wv.AgentHubURL)
+	}
+	if err := cfg.DBExecCmd(sql).Run(); err != nil {
+		ui.StepWarn("Couldn't save the HTTPS choice to the database: set it in the panel's settings")
+	}
 }

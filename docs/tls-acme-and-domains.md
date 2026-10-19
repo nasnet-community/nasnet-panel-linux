@@ -1,6 +1,6 @@
 # TLS, ACME & Domains
 
-You should serve the panel over **HTTPS** in production: secure cookies require it. There are three ways to get TLS, and the app picks one at startup in this order: **manual certificate files → ACME → plain HTTP**.
+You should serve the panel over **HTTPS** in production: secure cookies require it. There are four ways to get TLS, and the app picks one at startup in this order: **manual certificate files → ACME → self-signed → plain HTTP**.
 
 ## Option 1 — Automatic certificates (ACME / Let's Encrypt)
 
@@ -73,6 +73,25 @@ server {
 
 The panel uses WebSockets and server-sent events for the live terminal, charts, and chat, so make sure your proxy passes `Upgrade`/`Connection` headers and uses generous timeouts.
 
+## Option 4 — Self-signed, for installs without a domain
+
+Let's Encrypt can't certify a LAN or bare IP address, so a panel opened at `http://192.168.1.1:9761` would otherwise send its login in the clear. With `TLS_SELF_SIGNED=true` (the installer's default for router and IP installs) the panel makes its own certificate:
+
+```dotenv
+APP_BASE_URL=http://203.0.113.10:9761
+SUB_PANEL_URL=http://203.0.113.10:9761/abc123
+TLS_SELF_SIGNED=true
+AGENT_HUB_URL=https://203.0.113.10:9761
+```
+
+- The certificate is a P-256 one valid for 825 days, named after the machine's addresses and host name. It is kept in the database (so backups carry it), renews itself a month before it runs out, and **Settings → HTTPS → Make a new certificate** replaces it without a restart.
+- Browsers warn on the first visit from each device. Compare the SHA-256 fingerprint they show with the one in **Settings → HTTPS** or `nasnet config`, then continue.
+- The panel, its login and its API move to HTTPS on the same port; plain-HTTP visits get a temporary redirect. Subscription links (`/sub/…`), the subscription page and its API, the built-in node's downloads, `/health` and `/metrics` stay on plain HTTP, since VPN apps and scripts can't get past a certificate nobody vouches for. Keep `APP_BASE_URL` and `SUB_PANEL_URL` on `http://`.
+- One-command node installs pin the panel's key (`curl -k --pinnedpubkey …`) when `AGENT_HUB_URL` reaches the panel directly. Remote nodes fetch Xray updates from GitHub, as their agents can't check this certificate.
+- If the certificate can't be set up, the panel serves plain HTTP and says why in **Settings → HTTPS** rather than refusing to start.
+
+Saved in the panel, `tls_self_signed` wins over the environment; it takes effect after a restart.
+
 ## Running on a bare IP (no domain)
 
 You can run over plain HTTP on an IP for testing:
@@ -93,4 +112,5 @@ This is fine for a quick trial, but secure cookies won't work without HTTPS — 
 | Auto HTTPS on a domain | `ACME_ENABLED=true`, `ACME_EMAIL`, `APP_BASE_URL=https://…` |
 | Own certificate | `TLS_CERT_FILE`, `TLS_KEY_FILE` |
 | Behind a proxy/CDN | `APP_BASE_URL=https://…`, ACME off, secure cookies on |
+| No domain, HTTPS anyway | `TLS_SELF_SIGNED=true`, `APP_BASE_URL=http://ip:port` |
 | Plain IP (testing) | `APP_BASE_URL=http://ip:port`, ACME off, secure cookies off |

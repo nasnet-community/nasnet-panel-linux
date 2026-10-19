@@ -55,6 +55,8 @@ See [TLS, ACME & Domains](./tls-acme-and-domains.md) for the full story.
 | `ACME_AUTO_RENEW` | `true` | Automatically renew before expiry. |
 | `TLS_CERT_FILE` | _(empty)_ | Path to a manual TLS certificate (bypasses ACME). |
 | `TLS_KEY_FILE` | _(empty)_ | Path to the manual TLS private key. |
+| `TLS_SELF_SIGNED` | `false` | Serve HTTPS on a certificate the panel makes itself, when neither manual files nor ACME are set. See [TLS, ACME & Domains](tls-acme-and-domains.md). |
+| `AGENT_HUB_URL` | _(empty)_ | Address remote nodes reach the panel at. Seeds the panel setting once; one-command node installs need an `https://` address. |
 | `JWT_COOKIE_DOMAIN` | _(empty)_ | Cookie domain (e.g. `example.com`); empty for IP mode. |
 | `JWT_COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS. |
 

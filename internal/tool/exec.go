@@ -168,6 +168,22 @@ func (c *Config) PGDumpToFile(filepath string) *exec.Cmd {
 			c.DBPassword, c.DBHost, c.DBUser, c.DBName, filepath))
 }
 
+// DBExecCmd runs one SQL statement list against the panel's database.
+func (c *Config) DBExecCmd(sql string) *exec.Cmd {
+	if c.IsSQLite() {
+		if c.IsDocker() {
+			return exec.Command("docker", "exec", "-i", DefaultContainerBackend, "sqlite3", c.DBPath, sql)
+		}
+		return exec.Command("sqlite3", c.DBPath, sql)
+	}
+	if c.IsDocker() {
+		return exec.Command("docker", "exec", "-i", DefaultContainerDB, "psql", "-U", c.DBUser, "-d", c.DBName, "-c", sql)
+	}
+	cmd := exec.Command("psql", "-h", c.DBHost, "-U", c.DBUser, "-d", c.DBName, "-c", sql)
+	cmd.Env = append(cmd.Environ(), "PGPASSWORD="+c.DBPassword)
+	return cmd
+}
+
 func (c *Config) DBShellCmd() *exec.Cmd {
 	if c.IsSQLite() {
 		if c.IsDocker() {
