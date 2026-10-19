@@ -2,7 +2,7 @@ import { useState, useRef } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
 import { BsTelegram } from "react-icons/bs"
-import { Check, Pencil, X, Loader2, Trash2, ExternalLink } from "lucide-react"
+import { Bell, Check, Pencil, X, Loader2, Trash2, ExternalLink } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "@/lib/toast"
 import { getApiBaseUrl } from '@/lib/config'
@@ -55,7 +55,7 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
             queryClient.invalidateQueries({ queryKey: ["sub-panel", uuid] })
             setIsEditing(false)
             setShowManual(false)
-            toast.success(chatId === 0 ? "Telegram Chat ID cleared" : "Telegram Chat ID updated")
+            toast.success(chatId === 0 ? "Chat ID removed" : "Telegram Chat ID updated")
         },
         onError: (err: Error) => {
             toast.error(err.message)
@@ -121,157 +121,127 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
     }
 
     const isSet = currentChatId > 0
+    const isOn = isSet || !!connectedViaAccount
+    const manualOpen = isEditing || (!isSet && showManual)
+
+    const botLink = botUsername && (
+        <a
+            href={`https://t.me/${botUsername}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 dark:text-sky-400 hover:text-sky-500 transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+        >
+            @{botUsername}
+            <ExternalLink className="w-3 h-3" />
+        </a>
+    )
 
     return (
         <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
-            <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-2">
+            <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-3">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <BsTelegram className="w-4 h-4 text-sky-400" />
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                            Telegram Chat ID
-                        </h2>
+                        <Bell className="w-4 h-4 text-sky-400" />
+                        <h2 className="text-sm font-medium text-muted-foreground">Notifications</h2>
                     </div>
-                    {isSet && !isEditing && (
-                        <div className="flex items-center gap-1">
-                            <motion.button
-                                type="button"
-                                whileTap={{ scale: 0.95 }}
-                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                                onClick={handleEdit}
-                            >
-                                <Pencil className="w-3 h-3" />
-                                Edit
-                            </motion.button>
-                            <motion.button
-                                type="button"
-                                whileTap={{ scale: 0.95 }}
-                                disabled={mutation.isPending}
-                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs text-destructive hover:text-destructive/80 rounded-md hover:bg-destructive/10 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                                onClick={handleClear}
-                            >
-                                {mutation.isPending ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                    <Trash2 className="w-3 h-3" />
-                                )}
-                                Clear
-                            </motion.button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Display mode: show current value + bot link */}
-                {isSet && !isEditing && (
-                    <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 py-1.5 px-2">
-                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span className="text-sm font-mono">{currentChatId}</span>
-                        </div>
-                        {botUsername && (
-                            <a
-                                href={`https://t.me/${botUsername}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 min-h-11 px-2 text-xs font-medium text-sky-700 dark:text-sky-400 hover:text-sky-500 transition-colors rounded-md hover:bg-muted/50 w-fit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                            >
-                                <BsTelegram className="w-3.5 h-3.5" />
-                                <span>@{botUsername}</span>
-                                <ExternalLink className="w-3 h-3" />
-                            </a>
-                        )}
-                    </div>
-                )}
-
-                {/* No explicit chat ID. Either already reachable via the owner's
-                    Telegram account (show that, offer override), or prompt to connect. */}
-                {!isSet && !isEditing && (
-                    <div className="space-y-2">
-                        {connectedViaAccount ? (
-                            <>
-                                <div className="flex items-center gap-2 py-1.5 px-2">
-                                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                    <span className="text-sm">Connected via your Telegram account</span>
-                                </div>
-                                {botUsername && (
-                                    <a
-                                        href={`https://t.me/${botUsername}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1.5 min-h-11 px-2 text-xs font-medium text-sky-700 dark:text-sky-400 hover:text-sky-500 transition-colors rounded-md hover:bg-muted/50 w-fit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                                    >
-                                        <BsTelegram className="w-3.5 h-3.5" />
-                                        <span>@{botUsername}</span>
-                                        <ExternalLink className="w-3 h-3" />
-                                    </a>
-                                )}
-                                <p className="text-xs text-muted-foreground">
-                                    Notifications go to your Telegram. Set a specific Chat ID to override.
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-xs text-muted-foreground">
-                                    Connect your Telegram to receive subscription notifications.
-                                </p>
-                                {botUsername ? (
-                                    <motion.button
-                                        type="button"
-                                        whileTap={{ scale: 0.97 }}
-                                        disabled={connecting}
-                                        onClick={handleConnect}
-                                        className="w-full flex items-center justify-center gap-2 h-9 px-3 text-sm font-medium rounded-md bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 transition-colors disabled:opacity-50"
-                                    >
-                                        {connecting ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                        ) : (
-                                            <BsTelegram className="w-4 h-4" />
-                                        )}
-                                        Connect Telegram
-                                    </motion.button>
-                                ) : (
-                                    <p className="text-xs text-muted-foreground">Telegram bot is not configured.</p>
-                                )}
-                            </>
-                        )}
-                        {!showManual && (
-                            <button
-                                type="button"
-                                onClick={() => {
+                    {isOn && !manualOpen && (
+                        <motion.button
+                            type="button"
+                            whileTap={{ scale: 0.95 }}
+                            className="flex items-center gap-1.5 min-h-11 px-2 -mr-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                            onClick={() => {
+                                if (isSet) {
+                                    handleEdit()
+                                } else {
                                     setValue("")
                                     setShowManual(true)
                                     setTimeout(() => inputRef.current?.focus(), 0)
-                                }}
-                                className="-ml-2 min-h-11 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
-                            >
-                                › {connectedViaAccount ? "set a specific Chat ID" : "enter Chat ID manually"}
-                            </button>
+                                }
+                            }}
+                        >
+                            <Pencil className="w-3 h-3" />
+                            Change
+                        </motion.button>
+                    )}
+                </div>
+
+                {/* Where alerts go. The chat ID itself only matters while changing it. */}
+                <div className="flex items-center gap-2.5">
+                    <span className="grid place-items-center size-8 shrink-0 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400">
+                        <BsTelegram className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                        <p className="text-sm font-medium">
+                            {isSet ? "On, in Telegram" : connectedViaAccount ? "On, via your Telegram account" : "Off"}
+                        </p>
+                        {isOn ? (
+                            botLink || <p className="text-xs text-muted-foreground font-mono">Chat ID {currentChatId}</p>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">
+                                Connect Telegram to hear before your plan ends or your data runs out.
+                            </p>
                         )}
+                    </div>
+                </div>
+
+                {!isOn && !manualOpen && (
+                    <div className="space-y-1">
+                        {botUsername ? (
+                            <motion.button
+                                type="button"
+                                whileTap={{ scale: 0.97 }}
+                                disabled={connecting}
+                                onClick={handleConnect}
+                                className="w-full flex items-center justify-center gap-2 h-11 px-3 text-sm font-medium rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-400 hover:bg-sky-500/25 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60"
+                            >
+                                {connecting ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <BsTelegram className="w-4 h-4" />
+                                )}
+                                Connect Telegram
+                            </motion.button>
+                        ) : (
+                            <p className="text-xs text-muted-foreground">Telegram bot is not configured.</p>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setValue("")
+                                setShowManual(true)
+                                setTimeout(() => inputRef.current?.focus(), 0)
+                            }}
+                            className="-ml-2 min-h-11 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                        >
+                            Enter a Chat ID instead
+                        </button>
                     </div>
                 )}
 
-                {/* Manual input: editing an existing value, or expanded fallback */}
-                {(isEditing || (!isSet && showManual)) && (
-                    <div className="flex items-center gap-2">
-                        <input
-                            ref={inputRef}
-                            id="sub-chat-id"
-                            aria-label="Telegram Chat ID"
-                            type="number"
-                            placeholder="Enter Chat ID"
-                            value={value}
-                            onChange={(e) => setValue(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            disabled={mutation.isPending}
-                            className="flex-1 h-8 px-2.5 text-sm font-mono bg-muted/50 border border-border/50 rounded-md outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <div className="flex items-center gap-1">
+                {manualOpen && (
+                    <div className="space-y-1.5">
+                        <label htmlFor="sub-chat-id" className="text-xs text-muted-foreground">
+                            {isSet ? "Telegram Chat ID" : connectedViaAccount ? "Send alerts to another Chat ID" : "Telegram Chat ID"}
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                ref={inputRef}
+                                id="sub-chat-id"
+                                type="number"
+                                placeholder="Enter Chat ID"
+                                value={value}
+                                onChange={(e) => setValue(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={mutation.isPending}
+                                className="flex-1 min-w-0 h-9 px-2.5 text-sm font-mono bg-muted/50 border border-border/50 rounded-md outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
                             <motion.button
                                 type="button"
                                 whileTap={{ scale: 0.9 }}
                                 disabled={mutation.isPending}
                                 onClick={handleSave}
-                                className="h-8 w-8 flex items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                                aria-label="Save Chat ID"
+                                className="h-9 w-9 flex items-center justify-center rounded-md bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                             >
                                 {mutation.isPending ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -284,11 +254,23 @@ export function TelegramChatId({ uuid, currentChatId, connectedViaAccount, botUs
                                 whileTap={{ scale: 0.9 }}
                                 disabled={mutation.isPending}
                                 onClick={handleCancel}
-                                className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
+                                aria-label="Cancel"
+                                className="h-9 w-9 flex items-center justify-center rounded-md text-muted-foreground hover:bg-muted/50 transition-colors disabled:opacity-50"
                             >
                                 <X className="w-3.5 h-3.5" />
                             </motion.button>
                         </div>
+                        {isSet && (
+                            <button
+                                type="button"
+                                disabled={mutation.isPending}
+                                onClick={handleClear}
+                                className="-ml-2 inline-flex items-center gap-1.5 min-h-11 px-2 text-xs font-medium text-destructive hover:text-destructive/80 rounded-md hover:bg-destructive/10 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                            >
+                                <Trash2 className="w-3 h-3" />
+                                Remove this Chat ID
+                            </button>
+                        )}
                     </div>
                 )}
             </CardContent>

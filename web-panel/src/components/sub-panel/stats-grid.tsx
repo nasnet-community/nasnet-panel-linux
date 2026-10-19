@@ -1,19 +1,29 @@
 import { useRef, useEffect, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import { motion, useMotionValue, useSpring, useInView } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card"
 import { CircularProgress } from "@/components/ui/circular-progress"
-import { Database, Clock, Zap } from "lucide-react"
-import { formatBytes } from "@/lib/utils"
+import { AlertCircle, AlertTriangle, CircleCheck, Clock, Database, Zap } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import { cn, formatBytes, parseDateLocal } from "@/lib/utils"
 import { useSubExhaustionPrediction } from "@/lib/queries/use-sub-panel-analytics"
-import type { SubPanelData } from "@/lib/types/sub-panel"
+import type { SubPanelData, SubPanelExhaustionPrediction } from "@/lib/types/sub-panel"
 import { DataDetailDialog } from "./data-detail-dialog"
 import { TimeDetailDialog } from "./time-detail-dialog"
-
-function getColor(percent: number): "emerald" | "amber" | "red" {
-    if (percent > 90) return "red"
-    if (percent > 70) return "amber"
-    return "emerald"
-}
+import {
+    compactRemaining,
+    dataLeftPercent,
+    dataTone,
+    hasEndDate,
+    hasEnded,
+    isCancelled,
+    isPastEnd,
+    shortDate,
+    timeLeftPercent,
+    timeTone,
+    wholeDaysLeft,
+    type Tone,
+} from "./plan-state"
 
 function parseValueAndSuffix(display: string): { num: number; suffix: string; decimals: number; numeric: boolean } {
     const match = display.match(/^([\d.]+)\s*(.*)$/)
@@ -82,7 +92,7 @@ function AnimatedDaysCount({ days }: { days: number }) {
 function StatRow({ label, value, animated = true }: { label: string; value: string; animated?: boolean }) {
     return (
         <div className="flex justify-between sm:justify-start sm:flex-col sm:items-start gap-0.5">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
             <p className="text-sm md:text-base font-semibold">
                 {animated ? <AnimatedNumber value={value} /> : value}
             </p>
@@ -90,92 +100,138 @@ function StatRow({ label, value, animated = true }: { label: string; value: stri
     )
 }
 
-function parseDaysFromRemaining(timeRemaining: string): number {
-    const match = timeRemaining.match(/^(\d+)\s*days?/)
-    return match ? parseInt(match[1], 10) : 0
+/** "26.82 GB" → 26.8 over "GB left": one decimal fits the ring at any size. */
+function ringFigure(display: string): { num: string; unit: string } {
+    const m = display.match(/^([\d.]+)\s*(\S+)/)
+    if (!m) return { num: display, unit: "" }
+    const n = parseFloat(m[1])
+    return { num: n >= 100 ? Math.round(n).toString() : String(+n.toFixed(1)), unit: m[2] }
 }
 
-function formatCompactRemaining(timeRemaining: string): string {
-    const days = timeRemaining.match(/(\d+)\s*days?/)
-    const hours = timeRemaining.match(/(\d+)\s*hours?/)
-    const mins = timeRemaining.match(/(\d+)\s*min/)
-    const parts: string[] = []
-    if (days) parts.push(`${days[1]}d`)
-    if (hours) parts.push(`${hours[1]}h`)
-    if (!days && mins) parts.push(`${mins[1]}m`)
-    return parts.join(" ") || timeRemaining
+const TONE_ICON: Record<Tone, string> = {
+    emerald: "text-emerald-600 dark:text-emerald-400",
+    amber: "text-amber-600 dark:text-amber-400",
+    red: "text-red-600 dark:text-red-400",
+    zinc: "text-muted-foreground",
 }
+
+/** Card footer: a one-line status. */
+function CardFooter({
+    icon: Icon,
+    tone,
+    children,
+}: {
+    icon: LucideIcon
+    tone: Tone
+    children: ReactNode
+}) {
+    return (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-1.5 border-t border-border/30">
+            <span className="flex items-start gap-1.5 min-w-0">
+                <Icon className={cn("w-3.5 h-3.5 shrink-0 mt-px", TONE_ICON[tone])} />
+                <span className="text-xs text-muted-foreground">{children}</span>
+            </span>
+        </div>
+    )
+}
+
+function DataFooter({ data, prediction }: { data: SubPanelData; prediction?: SubPanelExhaustionPrediction }) {
+    const hasForecast = !!prediction && prediction.confidence > 0 && prediction.daily_avg_bytes > 0
+
+    if (data.is_unlimited) {
+        // Nothing to run out of; the pace is still worth showing.
+        return hasForecast ? (
+            <CardFooter icon={Zap} tone="amber">{formatBytes(prediction.daily_avg_bytes, 1)}/day avg</CardFooter>
+        ) : null
+    }
+    if (data.status === "traffic_exhausted" || dataLeftPercent(data) <= 0) {
+        return <CardFooter icon={AlertCircle} tone="red">Out of data</CardFooter>
+    }
+    if (hasEnded(data)) {
+        // A cancelled plan is already said three times over in the time card.
+        return isCancelled(data) ? null : <CardFooter icon={Clock} tone="zinc">Paused until it's renewed</CardFooter>
+    }
+    if (data.status !== "active") return null
+    if (!hasForecast) {
+        return <CardFooter icon={Zap} tone="zinc">Forecast after a day of use</CardFooter>
+    }
+    const lastsUntil = prediction.exhaustion_date ? shortDate(parseDateLocal(prediction.exhaustion_date)) : null
+    if (prediction.will_exhaust_first && lastsUntil) {
+        return <CardFooter icon={AlertTriangle} tone="amber">Runs out ~{lastsUntil}</CardFooter>
+    }
+    if (hasEndDate(data) && data.end_date) {
+        return <CardFooter icon={CircleCheck} tone="emerald">Lasts past {shortDate(new Date(data.end_date))}</CardFooter>
+    }
+    return lastsUntil ? <CardFooter icon={CircleCheck} tone="emerald">Lasts until ~{lastsUntil}</CardFooter> : null
+}
+
+// The ring and the status pill already say "ending soon"; the footer only
+// says when the plan is over.
+function TimeFooter({ data }: { data: SubPanelData }) {
+    if (!hasEndDate(data) || !hasEnded(data)) return null
+    return <CardFooter icon={AlertCircle} tone="red">{isCancelled(data) ? "Cancelled" : "Expired"}</CardFooter>
+}
+
+const RING = 84
 
 export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) {
-    const dataColor = data.is_unlimited ? "emerald" : getColor(data.data_usage_percent)
-    const timeColor = getColor(data.time_used_percent)
-    const hasEndDate = data.days_remaining >= 0
-    const displayDays = hasEndDate ? parseDaysFromRemaining(data.time_remaining) : 0
+    const hasEnd = hasEndDate(data)
+    const ended = hasEnded(data)
+    const displayDays = hasEnd ? wholeDaysLeft(data) : 0
     const [dataDialogOpen, setDataDialogOpen] = useState(false)
     const [timeDialogOpen, setTimeDialogOpen] = useState(false)
 
-    // Share the forecast card's number instead of computing a lifetime average
-    // here — two different "per day" figures on one page can't both be right.
-    // Same query key, so this is a cache read, not a second request.
+    // Same query key as the forecast card, so this is a cache read, not a
+    // second request.
     const { data: prediction } = useSubExhaustionPrediction(uuid)
-
-    const dailyBurnRate = useMemo(() => {
-        if (data.is_unlimited) return null
-        if (!prediction || prediction.daily_avg_bytes <= 0) return null
-        return formatBytes(prediction.daily_avg_bytes, 1)
-    }, [data.is_unlimited, prediction])
+    const dataColor = dataTone(data, prediction)
+    const timeColor = timeTone(data)
+    const remaining = useMemo(() => ringFigure(data.data_remaining_display), [data.data_remaining_display])
 
     return (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4">
             {/* Data Usage Card */}
             <motion.div className="h-full" whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}>
             <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0 cursor-pointer hover:border-border/80 hover:bg-card/70 transition-colors h-full" onClick={() => setDataDialogOpen(true)}>
-                <CardContent className="p-3.5 sm:p-4 md:p-5">
-                    <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3">
+                <CardContent className="p-3.5 sm:p-4 md:p-5 flex flex-col gap-2.5 md:gap-3 h-full">
+                    <div className="flex items-center gap-1.5 md:gap-2">
                         <Database className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-                        <span className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Data</span>
+                        <span className="text-xs md:text-sm font-medium text-muted-foreground">Data</span>
                     </div>
                     <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-3 md:gap-4">
                         {data.is_unlimited ? (
                             <div
                                 className="flex flex-col items-center justify-center shrink-0 md:!w-24 md:!h-24"
-                                style={{ width: 76, height: 76 }}
+                                style={{ width: RING, height: RING }}
                             >
                                 <span className="text-3xl md:text-4xl font-bold text-emerald-700 dark:text-emerald-500 leading-none">∞</span>
+                                <span className="text-[12px] font-medium text-muted-foreground mt-1">unlimited</span>
                             </div>
                         ) : (
                             <CircularProgress
-                                value={data.data_usage_percent}
-                                size={76}
+                                value={dataLeftPercent(data)}
+                                size={RING}
                                 strokeWidth={6}
                                 color={dataColor}
-                                showValue
-                                label="used"
                                 className="md:!w-24 md:!h-24"
-                            />
+                            >
+                                <span className="text-lg md:text-xl font-bold tracking-tight leading-none">
+                                    <AnimatedNumber value={remaining.num} />
+                                </span>
+                                <span className="text-[12px] font-medium text-muted-foreground mt-0.5">
+                                    {remaining.unit} left
+                                </span>
+                            </CircularProgress>
                         )}
                         <div className="w-full space-y-1.5 md:space-y-2.5">
-                            {!data.is_unlimited && (
-                                <StatRow label="Left" value={data.data_remaining_display} />
-                            )}
                             <StatRow label="Used" value={data.data_used_display} />
                             {!data.is_unlimited && (
                                 <StatRow label="Limit" value={data.data_limit_display} />
                             )}
-                            {dailyBurnRate && (
-                                <div className="flex items-center gap-1.5 pt-1 border-t border-border/30">
-                                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                    {/* Must stay on one line — a wrap here makes the Data
-                                        card taller than Time and the grid row grows with it. */}
-                                    <span
-                                        className="text-xs text-muted-foreground whitespace-nowrap truncate"
-                                        title="Recent daily average"
-                                    >
-                                        {dailyBurnRate}/day avg
-                                    </span>
-                                </div>
-                            )}
                         </div>
+                    </div>
+                    <div className="mt-auto">
+                        <DataFooter data={data} prediction={prediction} />
                     </div>
                 </CardContent>
             </Card>
@@ -184,55 +240,71 @@ export function StatsGrid({ data, uuid }: { data: SubPanelData; uuid: string }) 
             {/* Time Remaining Card */}
             <motion.div className="h-full" whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }} transition={{ type: "spring", stiffness: 400, damping: 25 }}>
             <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0 cursor-pointer hover:border-border/80 hover:bg-card/70 transition-colors h-full" onClick={() => setTimeDialogOpen(true)}>
-                <CardContent className="p-3.5 sm:p-4 md:p-5">
-                    <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3">
+                <CardContent className="p-3.5 sm:p-4 md:p-5 flex flex-col gap-2.5 md:gap-3 h-full">
+                    <div className="flex items-center gap-1.5 md:gap-2">
                         <Clock className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-                        <span className="text-xs md:text-sm font-medium text-muted-foreground uppercase tracking-wider">Time</span>
+                        <span className="text-xs md:text-sm font-medium text-muted-foreground">Time</span>
                     </div>
                     <div className="flex flex-col items-center gap-2.5 sm:flex-row sm:gap-3 md:gap-4">
-                        {hasEndDate ? (
+                        {hasEnd ? (
                             <CircularProgress
-                                value={data.time_used_percent}
-                                size={76}
+                                value={ended ? 0 : timeLeftPercent(data)}
+                                size={RING}
                                 strokeWidth={6}
                                 color={timeColor}
-                                showValue={false}
                                 className="md:!w-24 md:!h-24"
                             >
-                                <span className="text-lg md:text-xl font-bold tracking-tight leading-none">
-                                    <AnimatedDaysCount days={displayDays} />
-                                </span>
-                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
-                                    days left
-                                </span>
+                                {ended && isCancelled(data) ? (
+                                    <span className="text-[13px] md:text-sm font-bold tracking-tight leading-none">Cancelled</span>
+                                ) : ended ? (
+                                    <>
+                                        <span className="text-base md:text-lg font-bold tracking-tight leading-none">Ended</span>
+                                        {data.end_date && (
+                                            <span className="text-[12px] font-medium text-muted-foreground mt-0.5">
+                                                {shortDate(new Date(data.end_date))}
+                                            </span>
+                                        )}
+                                    </>
+                                ) : displayDays > 0 ? (
+                                    <>
+                                        <span className="text-lg md:text-xl font-bold tracking-tight leading-none">
+                                            <AnimatedDaysCount days={displayDays} />
+                                        </span>
+                                        <span className="text-[12px] font-medium text-muted-foreground mt-0.5">
+                                            {displayDays === 1 ? "day left" : "days left"}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-lg md:text-xl font-bold tracking-tight leading-none">
+                                            {compactRemaining(data)}
+                                        </span>
+                                        <span className="text-[12px] font-medium text-muted-foreground mt-0.5">left</span>
+                                    </>
+                                )}
                             </CircularProgress>
                         ) : (
                             <div
                                 className="flex flex-col items-center justify-center shrink-0 md:!w-24 md:!h-24"
-                                style={{ width: 76, height: 76 }}
+                                style={{ width: RING, height: RING }}
                             >
                                 <span className="text-3xl md:text-4xl font-bold text-emerald-700 dark:text-emerald-500 leading-none">∞</span>
-                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-1">
-                                    no expiry
-                                </span>
+                                <span className="text-[12px] font-medium text-muted-foreground mt-1">no expiry</span>
                             </div>
                         )}
                         <div className="w-full space-y-1.5 md:space-y-2.5">
-                            {hasEndDate ? (
-                                <StatRow label="Left" value={formatCompactRemaining(data.time_remaining)} animated={false} />
+                            {hasEnd && data.end_date ? (
+                                <StatRow label={isPastEnd(data) ? "Ended" : "Ends"} value={shortDate(new Date(data.end_date))} animated={false} />
                             ) : (
                                 <StatRow label="Active for" value={data.start_date ? `${Math.floor((Date.now() - new Date(data.start_date).getTime()) / 86400000)}d` : "—"} animated={false} />
                             )}
                             {data.start_date && (
-                                <StatRow label="Start" value={new Date(data.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
-                            )}
-                            {/* Only shown when there IS an end date. A plan duration
-                                printed next to "no expiry" reads as a countdown that
-                                doesn't exist. */}
-                            {data.end_date && (
-                                <StatRow label="End" value={new Date(data.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} />
+                                <StatRow label="Started" value={shortDate(new Date(data.start_date))} animated={false} />
                             )}
                         </div>
+                    </div>
+                    <div className="mt-auto">
+                        <TimeFooter data={data} />
                     </div>
                 </CardContent>
             </Card>

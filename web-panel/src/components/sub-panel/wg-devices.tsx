@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react"
 import { QRCodeSVG } from "qrcode.react"
 import { motion } from "framer-motion"
-import { Check, Copy, Download, Plus, QrCode, RotateCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react"
+import { Check, Copy, Download, Ellipsis, Plus, QrCode, RotateCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
@@ -17,7 +24,7 @@ import {
 } from "@/components/ui/select"
 import { ConfirmDialogProvider, useConfirm } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
-import { cn, copyToClipboard } from "@/lib/utils"
+import { cn, copyToClipboard, getRelativeTime } from "@/lib/utils"
 import {
     ApiError,
     useAddWgDevice,
@@ -28,6 +35,7 @@ import {
     useWgServers,
 } from "@/lib/queries/use-wg-devices"
 import type { WgDevice, WgServerOption } from "@/lib/types/sub-panel"
+import { shortDate } from "./plan-state"
 
 function fmtBytes(n: number): string {
     if (!n || n < 0) return "0 B"
@@ -61,6 +69,10 @@ function serverKey(s: WgServerOption): string {
 function serverLabel(s: WgServerOption): string {
     const detail = s.label || (s.host_id ? s.endpoint : "")
     return detail ? `${s.node_name} — ${detail}` : s.node_name
+}
+
+function confFilename(label: string): string {
+    return `${(label || "wireguard").replace(/[^a-zA-Z0-9_-]+/g, "_")}.conf`
 }
 
 function downloadConf(filename: string, text: string) {
@@ -97,7 +109,6 @@ function ConfigReveal({
         toast.success("Config copied")
         setTimeout(() => setCopied(false), 2000)
     }
-    const safeName = (label || "wireguard").replace(/[^a-zA-Z0-9_-]+/g, "_")
     return (
         <Card className="border-emerald-500/30 bg-emerald-500/[0.04] py-0 gap-0">
             <CardContent className="flex flex-col items-center gap-3 p-4">
@@ -114,7 +125,7 @@ function ConfigReveal({
                         {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
                         {copied ? "Copied!" : "Copy config"}
                     </Button>
-                    <Button variant="outline" className="w-full" onClick={() => downloadConf(`${safeName}.conf`, conf)}>
+                    <Button variant="outline" className="w-full" onClick={() => downloadConf(confFilename(label), conf)}>
                         <Download className="size-4" /> Download .conf
                     </Button>
                 </div>
@@ -214,19 +225,34 @@ function AddDeviceSheet({
     )
 }
 
+/** Only an exception earns a pill; every working device was "active". */
 function StatusBadge({ status }: { status: string }) {
-    const active = status === "active"
+    if (status === "active") return null
     return (
-        <Badge
-            variant={active ? "success" : "outline"}
-            className={cn("h-5 px-1.5 text-xs font-semibold", !active && "text-muted-foreground border-border")}
-        >
-            {active ? "active" : status || "disabled"}
+        <Badge variant="outline" className="h-5 px-1.5 text-xs font-semibold text-muted-foreground border-border">
+            {status || "disabled"}
         </Badge>
     )
 }
 
-function WgDevicesInner({ uuid }: { uuid: string }) {
+/** `online` comes from the panel API, so it matches the header's "Online now". */
+function LastSeen({ online, lastSeen }: { online: boolean; lastSeen?: string | null }) {
+    return (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+                className={cn("h-2 w-2 shrink-0 rounded-full", online ? "bg-emerald-500" : "bg-muted-foreground/50")}
+                aria-hidden
+            />
+            {online
+                ? "Online now"
+                : lastSeen
+                  ? `Last seen ${getRelativeTime(new Date(lastSeen).getTime())}`
+                  : "Not connected yet"}
+        </div>
+    )
+}
+
+function WgDevicesInner({ uuid, onlineIds }: { uuid: string; onlineIds: number[] }) {
     const confirm = useConfirm()
     const devicesQ = useWgDevices(uuid, true)
     const serversQ = useWgServers(uuid, true)
@@ -264,18 +290,29 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
         }
     }
 
-    // Re-download: the device keeps working, so no confirm — unlike rotate.
-    const onShow = async (d: WgDevice) => {
+    /** The device's current config, or null after telling the user why not. */
+    const fetchConfig = async (d: WgDevice): Promise<string | null> => {
         try {
-            const res = await showConfig.mutateAsync(d.id)
-            setReveal({ label: d.label, conf: res.config, fresh: false })
+            return (await showConfig.mutateAsync(d.id)).config
         } catch (e) {
             if (e instanceof ApiError && e.status === 409) {
                 toast.error("This device predates config re-download — regenerate to get a new one")
             } else {
                 toast.error("Could not load config")
             }
+            return null
         }
+    }
+
+    // Re-download: the device keeps working, so no confirm — unlike rotate.
+    const onShow = async (d: WgDevice) => {
+        const conf = await fetchConfig(d)
+        if (conf) setReveal({ label: d.label, conf, fresh: false })
+    }
+
+    const onDownload = async (d: WgDevice) => {
+        const conf = await fetchConfig(d)
+        if (conf) downloadConf(confFilename(d.label), conf)
     }
 
     const onRotate = async (d: WgDevice) => {
@@ -320,15 +357,13 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                 <div className="flex items-center justify-between gap-2 px-3.5 md:px-4 pt-3 md:pt-3.5 pb-2 md:pb-2.5">
                     <div className="flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                            WireGuard Devices
-                        </h2>
-                        {!loading && (
-                            <Badge variant="secondary" className="h-5 px-1.5 text-xs font-semibold">
-                                {max > 0 ? `${used} / ${max}` : used}
-                            </Badge>
-                        )}
+                        <h2 className="text-sm font-medium text-muted-foreground">WireGuard devices</h2>
                     </div>
+                    {!loading && (
+                        <span className="text-xs text-muted-foreground">
+                            {max > 0 ? `${used} of ${max}` : used}
+                        </span>
+                    )}
                 </div>
 
                 <div className="px-3.5 md:px-4 pb-3.5 md:pb-4 space-y-2.5">
@@ -370,7 +405,7 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                                 <span className="text-sm font-medium truncate">{d.label}</span>
                                                 <StatusBadge status={d.status} />
                                             </div>
-                                            <div className="text-xs text-muted-foreground font-mono">{d.assigned_ip}</div>
+                                            <LastSeen online={onlineIds.includes(d.id)} lastSeen={d.last_seen} />
                                             {multi &&
                                                 (() => {
                                                     const s = srvByEndpoint.get(endpointKey(d.inbound_id, d.host_id))
@@ -381,8 +416,9 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                                         </div>
                                                     )
                                                 })()}
+                                            {/* Counted since the device was added, not per plan period. */}
                                             <div className="text-xs text-muted-foreground">
-                                                ↑↓ {fmtBytes((d.up_bytes || 0) + (d.down_bytes || 0))}
+                                                {fmtBytes((d.up_bytes || 0) + (d.down_bytes || 0))} since {shortDate(new Date(d.created_at))}
                                             </div>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
@@ -397,26 +433,47 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                                             >
                                                 <QrCode className="size-4" />
                                             </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="size-11"
-                                                aria-label="Regenerate config"
-                                                disabled={rotate.isPending}
-                                                onClick={() => void onRotate(d)}
-                                            >
-                                                <RotateCw className="size-4" />
-                                            </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                aria-label="Remove device"
-                                                disabled={remove.isPending}
-                                                className="size-11 text-destructive hover:text-destructive"
-                                                onClick={() => void onRemove(d)}
-                                            >
-                                                <Trash2 className="size-4" />
-                                            </Button>
+                                            {/* Regenerate and Remove break the device's config, so they
+                                                sit one step away instead of beside Show config. */}
+                                            <DropdownMenu modal={false}>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="icon"
+                                                        className="size-11"
+                                                        aria-label={`More actions for ${d.label}`}
+                                                    >
+                                                        <Ellipsis className="size-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-52">
+                                                    <DropdownMenuItem
+                                                        className="gap-2 min-h-10"
+                                                        disabled={showConfig.isPending}
+                                                        onSelect={() => void onDownload(d)}
+                                                    >
+                                                        <Download className="size-4" />
+                                                        Download config
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        className="gap-2 min-h-10"
+                                                        disabled={rotate.isPending}
+                                                        onSelect={() => void onRotate(d)}
+                                                    >
+                                                        <RotateCw className="size-4" />
+                                                        Regenerate config
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        className="gap-2 min-h-10 text-destructive focus:text-destructive"
+                                                        disabled={remove.isPending}
+                                                        onSelect={() => void onRemove(d)}
+                                                    >
+                                                        <Trash2 className="size-4" />
+                                                        Remove device
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </div>
                                     </motion.div>
                                 ))}
@@ -430,6 +487,9 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
                             >
                                 <Plus className="size-4" />
                                 {full ? "Device limit reached" : "Add device"}
+                                {!full && max > 0 && (
+                                    <span className="font-normal text-muted-foreground">· {max - used} left</span>
+                                )}
                             </Button>
                             {full && (
                                 <p className="text-center text-xs text-muted-foreground">
@@ -456,10 +516,10 @@ function WgDevicesInner({ uuid }: { uuid: string }) {
 
 // WgDevices wraps the section in its own ConfirmDialogProvider because the public
 // /sub/:uuid route (unlike the admin dashboard) doesn't mount one globally.
-export function WgDevices({ uuid }: { uuid: string }) {
+export function WgDevices({ uuid, onlineIds }: { uuid: string; onlineIds: number[] }) {
     return (
         <ConfirmDialogProvider>
-            <WgDevicesInner uuid={uuid} />
+            <WgDevicesInner uuid={uuid} onlineIds={onlineIds} />
         </ConfirmDialogProvider>
     )
 }

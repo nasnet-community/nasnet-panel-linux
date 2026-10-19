@@ -1,29 +1,46 @@
 import { useMemo } from "react"
+import type { ReactNode } from "react"
 import { useSubUsagePattern } from "@/lib/queries/use-sub-panel-analytics"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Clock } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { hourLabel, localHourBuckets } from "./plan-state"
 
-const HOUR_LABELS = [
-    "12a", "1a", "2a", "3a", "4a", "5a", "6a", "7a",
-    "8a", "9a", "10a", "11a", "12p", "1p", "2p", "3p",
-    "4p", "5p", "6p", "7p", "8p", "9p", "10p", "11p",
-]
-
-/** Dense 24-element array (index = hour 0..23) of connection counts,
- *  backfilling hours the server omitted with 0. Ignores out-of-range hours. */
-function buildHourBuckets(points?: { hour: number; count: number }[]): number[] {
-    const buckets = new Array(24).fill(0)
-    for (const p of points ?? []) {
-        if (p.hour >= 0 && p.hour < 24) buckets[p.hour] = p.count
-    }
-    return buckets
+function HoursFrame({ aside, children }: { aside?: string; children: ReactNode }) {
+    return (
+        <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
+            <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-emerald-400" />
+                        <h2 className="text-sm font-medium text-muted-foreground">Busiest hours</h2>
+                    </div>
+                    {aside && <span className="text-xs text-muted-foreground">{aside}</span>}
+                </div>
+                {children}
+            </CardContent>
+        </Card>
+    )
 }
 
-function formatNumber(n: number): string {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M"
-    if (n >= 1000) return (n / 1000).toFixed(1) + "K"
-    return String(n)
+/** 24 hour bars, peak hour picked out; shared by the card and the time dialog. */
+export function HourBars({ hours, className }: { hours: number[]; className?: string }) {
+    const max = Math.max(...hours)
+    const total = hours.reduce((sum, n) => sum + n, 0)
+    const peak = hours.indexOf(max)
+    return (
+        <div className={cn("flex items-end gap-[3px]", className)} role="img" aria-label={`Busiest around ${hourLabel(peak)}`}>
+            {hours.map((count, hour) => (
+                <div
+                    key={hour}
+                    className={cn("flex-1 rounded-t-[2px]", hour === peak ? "bg-emerald-500" : "bg-emerald-500/30")}
+                    style={{ height: `${max > 0 ? (count / max) * 100 : 0}%`, minHeight: 2 }}
+                    title={`${hourLabel(hour)}: ${total > 0 ? Math.round((count / total) * 100) : 0}% of your activity`}
+                />
+            ))}
+        </div>
+    )
 }
 
 interface UsageHeatmapProps {
@@ -33,32 +50,11 @@ interface UsageHeatmapProps {
 export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
     const { data, isLoading, isError } = useSubUsagePattern(uuid)
 
-    const buckets = useMemo(() => buildHourBuckets(data), [data])
-    const maxCount = useMemo(() => Math.max(...buckets, 1), [buckets])
-
-    const peakHour = useMemo(() => {
-        if (!data?.length) return null
-        let max = data[0]
-        for (const p of data) {
-            if (p.count > max.count) max = p
-        }
-        return max.count > 0 ? max : null
-    }, [data])
-
-    const totalConnections = useMemo(() => {
-        if (!data?.length) return 0
-        return data.reduce((sum, p) => sum + p.count, 0)
-    }, [data])
-
-    function getIntensity(count: number): string {
-        if (count === 0) return "bg-muted/30"
-        const ratio = count / maxCount
-        if (ratio < 0.2) return "bg-emerald-500/20"
-        if (ratio < 0.4) return "bg-emerald-500/40"
-        if (ratio < 0.6) return "bg-emerald-500/60"
-        if (ratio < 0.8) return "bg-emerald-500/80"
-        return "bg-emerald-500"
-    }
+    // The API buckets by UTC hour; show the visitor's own hours.
+    const buckets = useMemo(() => localHourBuckets(data), [data])
+    const total = buckets.reduce((sum, n) => sum + n, 0)
+    const max = Math.max(...buckets)
+    const peak = buckets.indexOf(max)
 
     if (isLoading) {
         return (
@@ -72,83 +68,24 @@ export function UsageHeatmap({ uuid }: UsageHeatmapProps) {
     }
 
     if (isError) {
-        return (
-            <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
-                <CardContent className="p-3.5 sm:p-4 md:p-5">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-4 h-4 text-emerald-400" />
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h2>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Activity data unavailable right now.</p>
-                </CardContent>
-            </Card>
-        )
+        return <HoursFrame><p className="text-xs text-muted-foreground">Activity data unavailable right now.</p></HoursFrame>
     }
-    if (totalConnections === 0) {
-        return (
-            <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
-                <CardContent className="p-3.5 sm:p-4 md:p-5">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-4 h-4 text-emerald-400" />
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Activity Pattern</h2>
-                    </div>
-                    <p className="text-xs text-muted-foreground">No activity recorded yet — your hourly usage pattern will appear here once you connect.</p>
-                </CardContent>
-            </Card>
-        )
+    if (total === 0) {
+        return <HoursFrame><p className="text-xs text-muted-foreground">No activity yet. Your busiest hours show up once you connect.</p></HoursFrame>
     }
 
     return (
-        <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
-            <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-3">
-                {/* Stacked on phones — at 12px the summary no longer fits beside the
-                    title, and wrapping the title mid-phrase reads worse. */}
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-emerald-400" />
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                            Activity Pattern
-                        </h2>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        {formatNumber(totalConnections)} connections{peakHour && HOUR_LABELS[peakHour.hour] ? `, peak at ${HOUR_LABELS[peakHour.hour]}` : ""}
-                    </p>
+        <HoursFrame aside={`around ${hourLabel(peak)}`}>
+            <div className="space-y-1.5">
+                <HourBars hours={buckets} className="h-10" />
+                <div className="flex justify-between text-xs text-muted-foreground px-0.5">
+                    <span>12 am</span>
+                    <span>6 am</span>
+                    <span>12 pm</span>
+                    <span>6 pm</span>
+                    <span>11 pm</span>
                 </div>
-
-                {/* Heatmap grid: 24 hours */}
-                <div className="space-y-1.5">
-                    <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
-                        {buckets.map((count, hour) => (
-                            <div
-                                key={hour}
-                                className={`aspect-square rounded-sm ${getIntensity(count)} transition-colors cursor-default`}
-                                title={`${HOUR_LABELS[hour]}: ${formatNumber(count)} connections`}
-                            />
-                        ))}
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground px-0.5">
-                        <span>12am</span>
-                        <span>6am</span>
-                        <span>12pm</span>
-                        <span>6pm</span>
-                        <span>11pm</span>
-                    </div>
-                </div>
-
-                {/* Legend */}
-                <div className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
-                    <span>Less</span>
-                    <div className="flex gap-0.5">
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-muted/30" />
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-emerald-500/20" />
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-emerald-500/40" />
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-emerald-500/60" />
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-emerald-500/80" />
-                        <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm bg-emerald-500" />
-                    </div>
-                    <span>More</span>
-                </div>
-            </CardContent>
-        </Card>
+            </div>
+        </HoursFrame>
     )
 }

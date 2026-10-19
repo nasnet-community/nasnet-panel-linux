@@ -8,6 +8,7 @@ import { cn, copyToClipboard, formatRelativeTime } from "@/lib/utils"
 import { QRDialog } from "./qr-dialog"
 import type { SubPanelServer } from "@/lib/types/sub-panel"
 import { ImportToAppSheet } from "./import-to-app-sheet"
+import { cleanServerName } from "./plan-state"
 
 const FOCUS_RING =
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-inset"
@@ -26,23 +27,6 @@ const HIT_SLOP =
  * overlapping and stealing each other's taps.
  */
 const HIT_SLOP_SQUARE = "relative before:absolute before:content-[''] before:-inset-1.5"
-
-/**
- * Remark templates decorate the node label for VPN clients — "🇩🇪 Berlin | 📊 12 GB
- * left | ⏳ 9d". The panel already shows the flag, usage and expiry in their own
- * columns, so a row titled with the raw remark repeats them and doubles the flag.
- * Prefer the plain node name; fall back to stripping the decoration.
- */
-function cleanServerName(server: SubPanelServer): string {
-    if (server.node_name) return server.node_name
-    const head = (server.name || "").split("|")[0]
-    return (
-        head
-            .replace(/^(?:[\s\u{1F1E6}-\u{1F1FF}\p{Extended_Pictographic}]|\u{200D}|\u{FE0F})+/u, "")
-            .replace(/[\s|\-–—]+$/u, "")
-            .trim() || server.address
-    )
-}
 
 const listContainerVariants = {
     hidden: {},
@@ -96,7 +80,6 @@ function metaLine(server: SubPanelServer): string {
     const parts = [server.protocol]
     if (server.network && server.network !== "none") parts.push(server.network)
     if (server.security && server.security !== "none") parts.push(server.security)
-    if (server.last_activity_at) parts.push(formatRelativeTime(server.last_activity_at))
     return parts.join(" · ")
 }
 
@@ -131,26 +114,22 @@ function ServerNode({ server, isFirst }: { server: SubPanelServer; isFirst: bool
                 </span>
 
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                        <span className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm font-semibold tracking-tight truncate">{name}</span>
-                            <span className="relative flex h-2 w-2 shrink-0 self-center">
-                                {server.is_online && (
-                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                )}
-                                <span className={cn(
-                                    "relative inline-flex h-2 w-2 rounded-full",
-                                    server.is_online ? "bg-emerald-500" : "bg-muted-foreground/50"
-                                )} />
-                            </span>
-                            <span className="sr-only">{server.is_online ? "Online" : "Offline"}</span>
-                        </span>
-                        <span className="ml-auto shrink-0 text-xs font-medium tabular-nums">
-                            {server.data_used_display || "0 B"}
-                        </span>
-                    </div>
+                    <p className="text-sm font-semibold tracking-tight truncate">{name}</p>
                     <p className="text-xs text-muted-foreground truncate">{metaLine(server)}</p>
                 </div>
+
+                {/* When this subscription last used the server. A grey "offline" dot
+                    read as "server down", and per-server "0 KB" said nothing. */}
+                {server.is_online ? (
+                    <span className="flex items-center gap-1.5 shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                        Online
+                    </span>
+                ) : server.last_activity_at ? (
+                    <span className="shrink-0 text-xs text-muted-foreground" title="Last used">
+                        {formatRelativeTime(server.last_activity_at)}
+                    </span>
+                ) : null}
 
                 {/* Icon actions: 32px of ink, 44px of tap. Repeating a full-width
                     "Copy Link / QR Code" bar under every server tripled the card's
@@ -253,11 +232,10 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                 <CardContent className="p-0">
                     {/* Section header inside card */}
                     <div className="flex items-center justify-between gap-2 px-3.5 md:px-4 pt-3 md:pt-3.5 pb-2 md:pb-2.5">
-                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-                            Servers ({realServers.length})
+                        <h2 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                            Servers <span className="font-semibold text-foreground">{realServers.length}</span>
                         </h2>
                         {realServers.length > 0 && (
-                        <div className="flex items-center gap-1">
                             <motion.div whileTap={{ scale: 0.95 }}>
                                 <Button
                                     variant="ghost"
@@ -267,29 +245,10 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                                 >
                                     <CopyIconMorph copied={allCopied} />
                                     <span className={cn(allCopied && "text-emerald-500")}>
-                                        {allCopied ? "Copied!" : "Copy All"}
+                                        {allCopied ? "Copied!" : "Copy all"}
                                     </span>
                                 </Button>
                             </motion.div>
-                            {/* Getting the config into a VPN app is the job customers
-                                come here for — keep it in the header row, but tinted so
-                                it reads as the action rather than another ghost link. */}
-                            <motion.div whileTap={{ scale: 0.95 }}>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={cn(
-                                        "h-8 px-2.5 text-xs font-semibold gap-1.5 text-emerald-700 dark:text-emerald-400",
-                                        "bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-800 dark:hover:text-emerald-300",
-                                        HIT_SLOP
-                                    )}
-                                    onClick={() => setImportSheetOpen(true)}
-                                >
-                                    <Smartphone className="h-3.5 w-3.5" />
-                                    Import to App
-                                </Button>
-                            </motion.div>
-                        </div>
                         )}
                     </div>
 
@@ -312,6 +271,27 @@ export function ServerList({ servers, subscriptionUrl, label }: ServerListProps)
                             />
                         ))}
                     </motion.ul>
+
+                    {/* Getting the config into a VPN app is the job customers come
+                        here for, so it's the card's one full-width button. */}
+                    {realServers.length > 0 && (
+                        <div className="px-3.5 md:px-4 pb-3.5 md:pb-4 pt-1">
+                            <motion.div whileTap={{ scale: 0.98 }}>
+                                <Button
+                                    variant="ghost"
+                                    className={cn(
+                                        "w-full h-11 text-sm font-semibold gap-2 text-emerald-700 dark:text-emerald-400",
+                                        "bg-emerald-500/10 hover:bg-emerald-500/20 hover:text-emerald-800 dark:hover:text-emerald-300",
+                                        FOCUS_RING
+                                    )}
+                                    onClick={() => setImportSheetOpen(true)}
+                                >
+                                    <Smartphone className="h-4 w-4" />
+                                    Add to app
+                                </Button>
+                            </motion.div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

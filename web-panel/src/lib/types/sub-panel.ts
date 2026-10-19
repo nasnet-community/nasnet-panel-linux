@@ -26,6 +26,8 @@ export interface SubPanelData {
     is_online: boolean
     online_count: number
     online_ips?: string[]
+    /** WireGuard devices that moved traffic in the last few minutes. */
+    online_devices?: { id: number; label: string }[]
     last_active_at: string | null
     servers: SubPanelServer[]
     chat_enabled: boolean

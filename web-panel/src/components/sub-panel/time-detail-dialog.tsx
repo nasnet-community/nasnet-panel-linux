@@ -10,34 +10,26 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Clock } from "lucide-react"
 import { useSubUsagePattern } from "@/lib/queries/use-sub-panel-analytics"
 import type { SubPanelData, SubPanelHourlyUsagePoint } from "@/lib/types/sub-panel"
+import {
+    compactRemaining,
+    DAY_MS,
+    hasEndDate,
+    hasEnded,
+    hourLabel,
+    isCancelled,
+    localHourBuckets,
+    timeLeftPercent,
+    timeTone,
+    wholeDaysLeft,
+    type Tone,
+} from "./plan-state"
+import { HourBars } from "./usage-heatmap"
 
 interface TimeDetailDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     data: SubPanelData
     uuid: string
-}
-
-function getColor(percent: number): "emerald" | "amber" | "red" {
-    if (percent > 90) return "red"
-    if (percent > 70) return "amber"
-    return "emerald"
-}
-
-function parseDaysFromRemaining(timeRemaining: string): number {
-    const match = timeRemaining.match(/^(\d+)\s*days?/)
-    return match ? parseInt(match[1], 10) : 0
-}
-
-function formatCompactRemaining(timeRemaining: string): string {
-    const days = timeRemaining.match(/(\d+)\s*days?/)
-    const hours = timeRemaining.match(/(\d+)\s*hours?/)
-    const mins = timeRemaining.match(/(\d+)\s*min/)
-    const parts: string[] = []
-    if (days) parts.push(`${days[1]}d`)
-    if (hours) parts.push(`${hours[1]}h`)
-    if (!days && mins) parts.push(`${mins[1]}m`)
-    return parts.join(" ") || timeRemaining
 }
 
 function formatDate(dateStr: string): string {
@@ -48,82 +40,46 @@ function formatDate(dateStr: string): string {
     })
 }
 
-function formatHourLabel(hour: number): string {
-    if (hour === 0) return "12a"
-    if (hour < 12) return `${hour}a`
-    if (hour === 12) return "12p"
-    return `${hour - 12}p`
-}
-
-const barColorMap = {
+const barColorMap: Record<Tone, string> = {
     emerald: "bg-emerald-500",
     amber: "bg-amber-500",
     red: "bg-red-500",
+    zinc: "bg-zinc-500",
 }
 
 function PeakActivityChart({ data }: { data: SubPanelHourlyUsagePoint[] }) {
-    const { maxCount, peakHour } = useMemo(() => {
-        let max = 0
-        let peak = 0
-        for (const point of data) {
-            if (point.count > max) {
-                max = point.count
-                peak = point.hour
-            }
-        }
-        return { maxCount: max, peakHour: peak }
-    }, [data])
+    // The API buckets by UTC hour; show the visitor's own hours.
+    const hours = useMemo(() => localHourBuckets(data), [data])
+    const maxCount = Math.max(...hours)
 
     if (maxCount === 0) return null
-
-    // Build a full 24-hour array, filling missing hours with 0
-    const hourMap = new Map(data.map((p) => [p.hour, p.count]))
-    const hours = Array.from({ length: 24 }, (_, i) => ({
-        hour: i,
-        count: hourMap.get(i) ?? 0,
-    }))
 
     return (
         <div className="space-y-2">
             <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                    Peak Activity
-                </span>
+                <span className="text-xs text-muted-foreground font-medium">Busiest hours</span>
             </div>
 
-            <div className="flex items-end gap-px h-12">
-                {hours.map(({ hour, count }) => {
-                    const heightPercent = maxCount > 0 ? (count / maxCount) * 100 : 0
-                    return (
-                        <div
-                            key={hour}
-                            className="flex-1 flex items-end"
-                        >
-                            <div
-                                className={`w-full rounded-t-sm transition-all ${
-                                    hour === peakHour
-                                        ? "bg-emerald-400"
-                                        : "bg-emerald-500/40"
-                                }`}
-                                style={{
-                                    height: `${Math.max(heightPercent, 2)}%`,
-                                    minHeight: count > 0 ? 2 : 1,
-                                }}
-                            />
-                        </div>
-                    )
-                })}
-            </div>
+            <HourBars hours={hours} className="h-12" />
 
             <div className="flex justify-between">
-                <span className="text-xs text-muted-foreground">12a</span>
-                <span className="text-xs text-muted-foreground">11p</span>
+                <span className="text-xs text-muted-foreground">12 am</span>
+                <span className="text-xs text-muted-foreground">11 pm</span>
             </div>
 
             <p className="text-xs text-muted-foreground">
-                Peak: <span className="font-semibold text-foreground">{formatHourLabel(peakHour)}</span>
+                Busiest around <span className="font-semibold text-foreground">{hourLabel(hours.indexOf(maxCount))}</span>
             </p>
+        </div>
+    )
+}
+
+function Metric({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
+    return (
+        <div className={wide ? "col-span-2 space-y-0.5" : "space-y-0.5"}>
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            <p className="text-sm font-semibold">{value}</p>
         </div>
     )
 }
@@ -131,16 +87,26 @@ function PeakActivityChart({ data }: { data: SubPanelHourlyUsagePoint[] }) {
 export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailDialogProps) {
     const { data: usagePattern, isLoading: patternLoading } = useSubUsagePattern(uuid)
 
-    const hasEndDate = data.days_remaining >= 0
-    const displayDays = hasEndDate ? parseDaysFromRemaining(data.time_remaining) : 0
-    const color = getColor(data.time_used_percent)
-    const compactRemaining = formatCompactRemaining(data.time_remaining)
+    const hasEnd = hasEndDate(data)
+    const ended = hasEnded(data)
+    const displayDays = hasEnd ? wholeDaysLeft(data) : 0
+    const tone = timeTone(data)
+    const compactLeft = compactRemaining(data)
+    const cancelled = isCancelled(data)
 
     const daysElapsed = useMemo(() => {
         if (!data.start_date) return 0
-        const msElapsed = Date.now() - new Date(data.start_date).getTime()
-        return Math.max(0, Math.floor(msElapsed / (1000 * 60 * 60 * 24)))
+        return Math.max(0, Math.floor((Date.now() - new Date(data.start_date).getTime()) / DAY_MS))
     }, [data.start_date])
+
+    // The whole span, start to end. Custom end dates make it differ from the
+    // plan's own length, which is what the old "Duration" showed.
+    const spanDays = data.start_date && data.end_date
+        ? Math.round((new Date(data.end_date).getTime() - new Date(data.start_date).getTime()) / DAY_MS)
+        : null
+    const elapsedPercent = spanDays ? Math.min(100, (daysElapsed / spanDays) * 100) : 0
+    const createdDiffers = !!data.created_at && (!data.start_date
+        || Math.abs(new Date(data.created_at).getTime() - new Date(data.start_date).getTime()) > DAY_MS)
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,27 +114,31 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-muted-foreground" />
-                        Time Details
+                        Time
                     </DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-4">
-                    {/* Hero section */}
                     <div className="flex flex-col items-center gap-2">
-                        {hasEndDate ? (
+                        {hasEnd ? (
                             <CircularProgress
-                                value={data.time_used_percent}
+                                value={ended ? 0 : timeLeftPercent(data)}
                                 size={120}
                                 strokeWidth={8}
-                                color={color}
-                                showValue={false}
+                                color={tone}
                             >
-                                <span className="text-2xl font-bold tracking-tight leading-none">
-                                    {displayDays}
-                                </span>
-                                <span className="text-xs uppercase font-medium text-muted-foreground tracking-wider mt-0.5">
-                                    days
-                                </span>
+                                {ended ? (
+                                    <span className="text-xl font-bold tracking-tight leading-none">{cancelled ? "Cancelled" : "Ended"}</span>
+                                ) : (
+                                    <>
+                                        <span className="text-2xl font-bold tracking-tight leading-none">
+                                            {displayDays > 0 ? displayDays : compactLeft}
+                                        </span>
+                                        <span className="text-xs font-medium text-muted-foreground mt-0.5">
+                                            {displayDays === 1 ? "day left" : displayDays > 1 ? "days left" : "left"}
+                                        </span>
+                                    </>
+                                )}
                             </CircularProgress>
                         ) : (
                             <div className="flex flex-col items-center justify-center" style={{ width: 120, height: 120 }}>
@@ -176,81 +146,44 @@ export function TimeDetailDialog({ open, onOpenChange, data, uuid }: TimeDetailD
                             </div>
                         )}
                         <p className="text-xs text-muted-foreground">
-                            {hasEndDate ? `${compactRemaining} remaining` : "Unlimited time"}
+                            {!hasEnd ? "No end date" : cancelled ? "Cancelled" : ended ? `Ended ${data.end_date ? formatDate(data.end_date) : ""}` : `${compactLeft} left`}
                         </p>
                     </div>
 
-                    {/* Timeline bar */}
-                    {hasEndDate && data.start_date && data.end_date && (
+                    {/* Timeline: how far through the whole span today is. */}
+                    {hasEnd && data.start_date && data.end_date && (
                         <div className="space-y-1.5">
                             <div className="relative h-2 rounded-full bg-muted/30 overflow-hidden">
                                 <div
-                                    className={`absolute inset-y-0 left-0 rounded-full ${barColorMap[color]}`}
-                                    style={{ width: `${Math.min(data.time_used_percent, 100)}%` }}
+                                    className={`absolute inset-y-0 left-0 rounded-full ${barColorMap[tone]}`}
+                                    style={{ width: `${elapsedPercent}%` }}
                                 />
-                                {/* Current position marker */}
                                 <div
                                     className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-background bg-foreground"
                                     style={{
-                                        left: `${Math.min(data.time_used_percent, 100)}%`,
+                                        left: `${elapsedPercent}%`,
                                         transform: "translate(-50%, -50%)",
                                     }}
                                 />
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-xs text-muted-foreground">
-                                    {formatDate(data.start_date)}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                    {formatDate(data.end_date)}
-                                </span>
+                                <span className="text-xs text-muted-foreground">{formatDate(data.start_date)}</span>
+                                <span className="text-xs text-muted-foreground">{formatDate(data.end_date)}</span>
                             </div>
                         </div>
                     )}
 
-                    {/* Metrics grid */}
                     <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Elapsed
-                            </p>
-                            <p className="text-sm font-semibold">
-                                {data.start_date ? `${daysElapsed} days` : "--"}
-                            </p>
-                        </div>
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Remaining
-                            </p>
-                            <p className="text-sm font-semibold">
-                                {hasEndDate ? compactRemaining : "Unlimited"}
-                            </p>
-                        </div>
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Plan
-                            </p>
-                            <p className="text-sm font-semibold">{data.plan_name}</p>
-                        </div>
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Duration
-                            </p>
-                            <p className="text-sm font-semibold">{data.plan_duration} days</p>
-                        </div>
-                        {data.created_at && (
-                            <div className="col-span-2 space-y-0.5">
-                                <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                    Created
-                                </p>
-                                <p className="text-sm font-semibold">
-                                    {formatDate(data.created_at)}
-                                </p>
-                            </div>
-                        )}
+                        <Metric label="Elapsed" value={data.start_date ? `${daysElapsed} days` : "—"} />
+                        <Metric label="Left" value={!hasEnd ? "No end date" : ended ? "None" : compactLeft} />
+                        <Metric label="Plan" value={data.plan_name || "—"} />
+                        <Metric
+                            label="Length"
+                            value={spanDays !== null ? `${spanDays} days` : data.plan_duration ? `${data.plan_duration} days` : "—"}
+                        />
+                        {createdDiffers && <Metric label="Created" value={formatDate(data.created_at)} wide />}
                     </div>
 
-                    {/* Peak Activity Hours */}
                     {patternLoading ? (
                         <div className="space-y-2">
                             <Skeleton className="h-3.5 w-24" />

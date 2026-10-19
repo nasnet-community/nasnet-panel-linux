@@ -28,14 +28,12 @@ export function UsageTrendChart({ uuid }: Props) {
   const unit = data?.unit_hint ?? "MB"
 
   return (
-    <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0 mt-3 md:mt-4">
+    <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
       <CardContent className="p-3.5 sm:p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Traffic Usage
-            </h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Daily usage</h2>
           </div>
           <RangeToggle range={range} onChange={setRange} />
         </div>
@@ -52,14 +50,14 @@ export function UsageTrendChart({ uuid }: Props) {
 
         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
+            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: DOWNLOAD_COLOR }} />
+            Download
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{
               background: `repeating-linear-gradient(45deg, ${UPLOAD_COLOR}, ${UPLOAD_COLOR} 1.5px, rgba(0,0,0,0.45) 1.5px, rgba(0,0,0,0.45) 3px)`,
             }} />
-            ▲ Upload
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: DOWNLOAD_COLOR }} />
-            ▼ Download
+            Upload
           </span>
         </div>
       </CardContent>

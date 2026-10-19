@@ -72,7 +72,7 @@ export function CoreConfigCard({ protocol, content, nodeName, dataUsedDisplay }:
             <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-3">
                 <div className="flex items-center gap-2">
                     <LinkIcon className="w-4 h-4 text-primary" />
-                    <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    <h2 className="text-sm font-medium text-muted-foreground">
                         {TITLES[protocol] ?? protocol}
                     </h2>
                     {nodeName && (

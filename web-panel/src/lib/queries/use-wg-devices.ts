@@ -56,6 +56,8 @@ export function useWgDevices(uuid: string, enabled: boolean) {
         enabled,
         retry: noAuthRetry,
         staleTime: 15_000,
+        // Rows show "Last seen …" from last_seen; keep it current.
+        refetchInterval: 30_000,
     })
 }
 

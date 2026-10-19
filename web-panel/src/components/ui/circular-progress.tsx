@@ -6,7 +6,7 @@ interface CircularProgressProps {
     value: number // 0-100
     size?: number // default 120
     strokeWidth?: number // default 8
-    color?: "emerald" | "amber" | "red" | "blue" | "purple" | "teal"
+    color?: "emerald" | "amber" | "red" | "blue" | "purple" | "teal" | "zinc"
     showValue?: boolean
     label?: string
     className?: string
@@ -20,6 +20,7 @@ const colorMap = {
     blue: "stroke-blue-500",
     purple: "stroke-purple-500",
     teal: "stroke-teal-500",
+    zinc: "stroke-zinc-400 dark:stroke-zinc-500",
 }
 
 const bgColorMap = {
@@ -29,6 +30,7 @@ const bgColorMap = {
     blue: "stroke-blue-500/20",
     purple: "stroke-purple-500/20",
     teal: "stroke-teal-500/20",
+    zinc: "stroke-zinc-500/20",
 }
 
 export function CircularProgress({

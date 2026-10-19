@@ -3,14 +3,10 @@ import { CircularProgress } from "@/components/ui/circular-progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSubExhaustionPrediction } from "@/lib/queries/use-sub-panel-analytics"
 import { formatBytes, parseDateLocal } from "@/lib/utils"
-import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
+import type { ReactNode } from "react"
 import type { SubPanelData } from "@/lib/types/sub-panel"
-
-function getColor(percent: number): "emerald" | "amber" | "red" {
-    if (percent > 90) return "red"
-    if (percent > 70) return "amber"
-    return "emerald"
-}
+import { cleanServerName, dataLeftPercent, dataTone, shortDate, TREND_STYLE } from "./plan-state"
 
 interface DataDetailDialogProps {
     open: boolean
@@ -19,43 +15,39 @@ interface DataDetailDialogProps {
     uuid: string
 }
 
+const PROTOCOL_LABEL: Record<string, string> = { WIREGUARD: "WireGuard" }
+
+function Metric({ label, loading, children }: { label: string; loading?: boolean; children: ReactNode }) {
+    return (
+        <div className="space-y-0.5">
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            {loading ? <Skeleton className="h-5 w-20" /> : children}
+        </div>
+    )
+}
+
 export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailDialogProps) {
     const { data: prediction, isLoading } = useSubExhaustionPrediction(uuid)
 
-    const color = data.is_unlimited ? "emerald" : getColor(data.data_usage_percent)
+    const hasForecast = !!prediction && prediction.confidence > 0 && prediction.daily_avg_bytes > 0
+    const trend = prediction ? TREND_STYLE[prediction.usage_trend] : null
+    const TrendIcon = trend?.icon
 
-    const trendConfig = prediction
-        ? {
-              increasing: {
-                  icon: <TrendingUp className="w-3.5 h-3.5" />,
-                  label: "Increasing",
-                  color: "text-red-400",
-              },
-              decreasing: {
-                  icon: <TrendingDown className="w-3.5 h-3.5" />,
-                  label: "Decreasing",
-                  color: "text-emerald-400",
-              },
-              stable: {
-                  icon: <Minus className="w-3.5 h-3.5" />,
-                  label: "Stable",
-                  color: "text-muted-foreground",
-              },
-          }[prediction.usage_trend]
-        : null
-
-    const servers = data.servers ?? []
+    // Same server can appear once per protocol ("Main" over VLESS and WireGuard).
+    const servers = (data.servers ?? [])
+        .filter((s) => s.protocol !== "INFO")
+        .sort((a, b) => b.data_used - a.data_used)
     const totalDataUsed = servers.reduce((sum, s) => sum + s.data_used, 0)
+    const daysShort = prediction ? prediction.days_until_expiry - prediction.days_remaining : 0
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-sm overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>Data Usage</DialogTitle>
+                    <DialogTitle>Data usage</DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-4">
-                    {/* Hero section */}
                     <div className="flex flex-col items-center gap-2">
                         {data.is_unlimited ? (
                             <div
@@ -68,107 +60,74 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                             </div>
                         ) : (
                             <CircularProgress
-                                value={data.data_usage_percent}
+                                value={dataLeftPercent(data)}
                                 size={120}
                                 strokeWidth={8}
-                                color={color}
-                                showValue
-                            />
+                                color={dataTone(data, prediction)}
+                            >
+                                <span className="text-2xl font-bold tracking-tight leading-none">
+                                    {Math.round(dataLeftPercent(data))}%
+                                </span>
+                                <span className="text-xs font-medium text-muted-foreground mt-0.5">left</span>
+                            </CircularProgress>
                         )}
                         <p className="text-sm text-muted-foreground">
-                            {data.data_used_display}
-                            {" / "}
-                            {data.is_unlimited ? (
-                                <span>&infin;</span>
-                            ) : (
-                                data.data_limit_display
-                            )}
+                            {data.is_unlimited
+                                ? `${data.data_used_display} used`
+                                : `${data.data_used_display} of ${data.data_limit_display} used`}
                         </p>
                     </div>
 
-                    {/* Metrics grid */}
                     <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Remaining
-                            </p>
+                        <Metric label="Left">
+                            <p className="text-sm font-semibold">{data.data_remaining_display}</p>
+                        </Metric>
+                        <Metric label="Daily use" loading={isLoading}>
                             <p className="text-sm font-semibold">
-                                {data.data_remaining_display}
+                                {hasForecast ? formatBytes(prediction.daily_avg_bytes, 1) : "—"}
                             </p>
-                        </div>
-
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Daily Avg
-                            </p>
-                            {isLoading ? (
-                                <Skeleton className="h-5 w-20" />
-                            ) : prediction ? (
-                                <p className="text-sm font-semibold">
-                                    {formatBytes(prediction.daily_avg_bytes)}/day
-                                </p>
-                            ) : (
-                                <p className="text-sm font-semibold text-muted-foreground">&mdash;</p>
-                            )}
-                        </div>
-
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Trend
-                            </p>
-                            {isLoading ? (
-                                <Skeleton className="h-5 w-24" />
-                            ) : trendConfig ? (
-                                <div
-                                    className={`flex items-center gap-1 text-sm font-semibold ${trendConfig.color}`}
-                                >
-                                    {trendConfig.icon}
-                                    <span>{trendConfig.label}</span>
+                        </Metric>
+                        <Metric label="Trend" loading={isLoading}>
+                            {hasForecast && trend && TrendIcon ? (
+                                <div className={`flex items-center gap-1 text-sm font-semibold ${trend.color}`}>
+                                    <TrendIcon className="w-3.5 h-3.5" />
+                                    <span>{trend.label}</span>
                                 </div>
                             ) : (
                                 <p className="text-sm font-semibold text-muted-foreground">&mdash;</p>
                             )}
-                        </div>
-
-                        <div className="space-y-0.5">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Data Lasts Until
+                        </Metric>
+                        <Metric label="Lasts until" loading={isLoading}>
+                            <p className="text-sm font-semibold">
+                                {hasForecast && prediction.exhaustion_date
+                                    ? `~${shortDate(parseDateLocal(prediction.exhaustion_date))}`
+                                    : "—"}
                             </p>
-                            {isLoading ? (
-                                <Skeleton className="h-5 w-16" />
-                            ) : prediction?.exhaustion_date ? (
-                                <p className="text-sm font-semibold">
-                                    {parseDateLocal(prediction.exhaustion_date).toLocaleDateString(
-                                        "en-US",
-                                        { month: "short", day: "numeric" }
-                                    )}
-                                </p>
-                            ) : (
-                                <p className="text-sm font-semibold text-muted-foreground">&mdash;</p>
-                            )}
-                        </div>
+                        </Metric>
                     </div>
 
-                    {/* Server breakdown */}
                     {servers.length > 0 && (
                         <div className="space-y-2">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                                Usage by Server
-                            </p>
+                            <p className="text-xs text-muted-foreground font-medium">Usage by server</p>
                             <div className="space-y-2">
-                                {servers.map((server) => {
+                                {servers.map((server, i) => {
                                     const barPercent =
                                         totalDataUsed > 0
                                             ? (server.data_used / totalDataUsed) * 100
                                             : 0
 
                                     return (
-                                        <div key={server.name} className="space-y-1">
-                                            <div className="flex items-center justify-between text-xs">
-                                                <span className="font-medium">
-                                                    {server.flag} {server.name}
+                                        <div key={`${server.address}-${server.port}-${i}`} className="space-y-1">
+                                            <div className="flex items-center justify-between gap-2 text-xs">
+                                                <span className="min-w-0 truncate">
+                                                    <span className="font-medium">
+                                                        {server.flag} {cleanServerName(server)}
+                                                    </span>
+                                                    <span className="text-muted-foreground">
+                                                        {" · "}{PROTOCOL_LABEL[server.protocol] ?? server.protocol}
+                                                    </span>
                                                 </span>
-                                                <span className="text-muted-foreground">
+                                                <span className="shrink-0 text-muted-foreground tabular-nums">
                                                     {server.data_used_display}
                                                 </span>
                                             </div>
@@ -185,14 +144,13 @@ export function DataDetailDialog({ open, onOpenChange, data, uuid }: DataDetailD
                         </div>
                     )}
 
-                    {/* Warning banner */}
                     {prediction?.will_exhaust_first && (
-                        <div className="flex items-start gap-2 rounded-md bg-red-500/10 border border-red-500/20 p-2.5 text-xs text-red-400">
+                        <div className="flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-700 dark:text-amber-400">
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                             <span>
-                                Your data may run out{" "}
-                                <strong>{prediction.days_remaining} days</strong> before your
-                                subscription expires.
+                                {daysShort > 0
+                                    ? `At this pace your data runs out ${daysShort} ${daysShort === 1 ? "day" : "days"} before your plan ends.`
+                                    : "At this pace your data runs out before your plan ends."}
                             </span>
                         </div>
                     )}

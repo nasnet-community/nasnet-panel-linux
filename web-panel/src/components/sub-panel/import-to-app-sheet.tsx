@@ -223,7 +223,7 @@ function AppIcon({ app, size }: { app: AppInfo; size: "hero" | "row" }) {
 
 function SectionLabel({ children }: { children: ReactNode }) {
     return (
-        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground px-1 mb-2">
+        <h3 className="text-xs font-medium text-muted-foreground px-1 mb-2">
             {children}
         </h3>
     )
@@ -299,7 +299,7 @@ function HeroCard({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[15px] font-semibold text-foreground">{app.name}</span>
-                        <span className="text-xs font-medium uppercase tracking-wide bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-md">
                             Best for {PLATFORM_LABEL[app.platform]}
                         </span>
                     </div>

@@ -267,7 +267,8 @@ export function ChatWidget({ uuid }: ChatWidgetProps) {
                     >
                         <Button
                             size="lg"
-                            className="h-14 w-14 rounded-full shadow-lg relative"
+                            variant="outline"
+                            className="h-14 w-14 rounded-full shadow-lg relative bg-card text-foreground border-border hover:bg-muted dark:bg-zinc-800 dark:hover:bg-zinc-700"
                             onClick={handleOpen}
                             aria-label={`Open support chat${unreadCount > 0 ? `, ${unreadCount} unread messages` : ""}`}
                         >

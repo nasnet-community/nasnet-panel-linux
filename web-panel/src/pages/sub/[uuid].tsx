@@ -18,9 +18,7 @@ import { DataForecast } from "@/components/sub-panel/data-forecast"
 import { UsageHeatmap } from "@/components/sub-panel/usage-heatmap"
 import { cn, copyToClipboard, getRelativeTime } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { AlertCircle, Copy, LinkIcon, Monitor, Wifi } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 import { useIpGeolocation } from "@/lib/hooks/use-ip-geolocation"
@@ -28,8 +26,28 @@ import { NetworkConstellationBg } from "@/components/sub-panel/backgrounds/netwo
 import { useMaintenanceStatus } from "@/hooks/use-maintenance-status"
 import { MaintenanceBanner } from "@/components/maintenance/maintenance-banner"
 import { UsageTrendChart } from "@/components/sub-panel/usage-trend-chart"
+import { compactRemaining, hasEndDate, hasEnded, timeTone, wholeDaysLeft } from "@/components/sub-panel/plan-state"
+import type { SubPanelData } from "@/lib/types/sub-panel"
 
 const CONFIG_ID_REGEX = /^[a-zA-Z0-9_-]{8,64}$/
+
+function onlineLabel(data: SubPanelData): string {
+    if (data.is_online) {
+        // online_count counts server entries (one per host), not devices.
+        const wg = data.online_devices ?? []
+        const devices = wg.length + (data.online_ips?.length ?? 0)
+        if (devices > 1) return `Online now · ${devices} devices`
+        return wg.length === 1 ? `Online now · ${wg[0].label}` : "Online now"
+    }
+    if (data.last_active_at) return `Last online ${getRelativeTime(new Date(data.last_active_at).getTime())}`
+    return "Not connected yet"
+}
+
+/** "2 days", or "23h" under a day — a plan with 23 hours left may end tomorrow. */
+function endsInLabel(data: SubPanelData): string {
+    const days = wholeDaysLeft(data)
+    return days >= 1 ? `${days} ${days === 1 ? "day" : "days"}` : compactRemaining(data)
+}
 
 function InvalidUuidView() {
     return (
@@ -221,27 +239,27 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                 <span aria-hidden>·</span>
                                             </>
                                         )}
-                                        <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
-                                            {data.is_online && (
-                                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                                            )}
-                                            <span className={cn(
-                                                "relative inline-flex h-2 w-2 rounded-full",
-                                                data.is_online ? "bg-emerald-500" : "bg-muted-foreground/60"
-                                            )} />
+                                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                            <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+                                                {data.is_online && (
+                                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                                )}
+                                                <span className={cn(
+                                                    "relative inline-flex h-2 w-2 rounded-full",
+                                                    data.is_online ? "bg-emerald-500" : "bg-muted-foreground/60"
+                                                )} />
+                                            </span>
+                                            {onlineLabel(data)}
                                         </span>
-                                        <span>
-                                            {data.is_online
-                                                ? `Connected${data.online_count > 1 ? ` · ${data.online_count} devices` : ""}`
-                                                : "Not connected"}
-                                        </span>
-                                        {data.last_active_at && (
-                                            <span>· {getRelativeTime(new Date(data.last_active_at).getTime())}</span>
-                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                    <StatusBadges status={data.status} />
+                                    <StatusBadges
+                                        status={data.status}
+                                        endsIn={data.status === "active" && hasEndDate(data) && !hasEnded(data) && timeTone(data) !== "emerald"
+                                            ? endsInLabel(data)
+                                            : undefined}
+                                    />
                                     <button
                                         type="button"
                                         aria-label="Copy subscription link"
@@ -286,7 +304,7 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                         )}
                                         {hasWg && (
                                             <motion.div variants={itemVariants}>
-                                                <WgDevices uuid={uuid} />
+                                                <WgDevices uuid={uuid} onlineIds={data.online_devices?.map((d) => d.id) ?? []} />
                                             </motion.div>
                                         )}
                                         {coreTunnels.map((t, i) => (
@@ -307,20 +325,14 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                             {data.online_ips && data.online_ips.length > 0 && (
                                 <>
                                     <motion.div {...scrollRevealProps}>
-                                        <Separator className="opacity-50" />
-                                    </motion.div>
-                                    <motion.div {...scrollRevealProps}>
                                         <Card className="border-border/50 bg-card/60 backdrop-blur-md py-0 gap-0">
                                             <CardContent className="p-3.5 sm:p-4 md:p-5 space-y-2">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
                                                         <Wifi className="w-4 h-4 text-emerald-400" />
-                                                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                                                            Connected IPs
+                                                        <h2 className="text-sm font-medium text-muted-foreground">
+                                                            Connected IPs <span className="font-semibold text-foreground">{data.online_ips.length}</span>
                                                         </h2>
-                                                        <Badge variant="success" className="h-5 px-1.5 text-xs font-semibold">
-                                                            {data.online_ips.length}
-                                                        </Badge>
                                                     </div>
                                                     {data.online_ips.length > 1 && (
                                                         <button
@@ -359,7 +371,6 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                                                         <span className="hidden sm:inline">{geoData[ip].city}</span>
                                                                     </span>
                                                                 )}
-                                                                <Badge variant="success" className="h-5 px-1.5 text-xs font-semibold shrink-0">active</Badge>
                                                             </div>
                                                             <Copy className="w-3.5 h-3.5 shrink-0 ml-2 text-muted-foreground/60 group-hover:text-foreground transition-colors" />
                                                         </button>
@@ -373,24 +384,18 @@ function SubPanelContent({ uuid }: { uuid: string }) {
 
                             {/* Data Forecast */}
                             {!data.is_unlimited && (
-                                <>
-                                    <motion.div {...scrollRevealProps}>
-                                        <Separator className="opacity-50" />
-                                    </motion.div>
-                                    <motion.div {...scrollRevealProps}>
-                                        <DataForecast uuid={uuid} />
-                                    </motion.div>
-                                </>
+                                <motion.div {...scrollRevealProps}>
+                                    <DataForecast data={data} uuid={uuid} />
+                                </motion.div>
                             )}
 
-                            {/* Activity Pattern */}
+                            {/* Busiest hours */}
                             <motion.div {...scrollRevealProps}>
                                 <UsageHeatmap uuid={uuid} />
                             </motion.div>
 
-                            {/* Traffic Usage (up/down split, 7d or 30d) */}
+                            {/* Daily usage (up/down split, 7d or 30d) */}
                             <motion.div {...scrollRevealProps}>
-                                <Separator className="opacity-50" />
                                 <UsageTrendChart uuid={uuid} />
                             </motion.div>
 
@@ -417,7 +422,7 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                             animate={{ opacity: [0.4, 1, 0.4] }}
                                             transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                                         />
-                                        Live updates enabled
+                                        Live updates on
                                     </>
                                 ) : eventStatus === "connecting" ? (
                                     <>
@@ -427,7 +432,7 @@ function SubPanelContent({ uuid }: { uuid: string }) {
                                 ) : (
                                     <>
                                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-500" />
-                                        Live updates paused — refreshing periodically
+                                        Live updates paused, refreshing every 15s
                                     </>
                                 )}
                             </motion.div>
