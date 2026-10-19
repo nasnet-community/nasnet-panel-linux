@@ -156,13 +156,16 @@ func (u *maintenanceUsecase) Resolve(ctx context.Context, userID uint, subID *ui
 
 func (u *maintenanceUsecase) SetGlobal(ctx context.Context, enabled bool, message string, notify bool) error {
 	now := time.Now().UTC()
+	// Only switching on starts a maintenance window: editing the notice while
+	// it is on keeps "since" and doesn't message everyone again.
+	turningOn := enabled && !u.globalActive.Load()
 	pairs := []*SettingPair{
 		{Key: "maintenance_mode_enabled", Value: strconv.FormatBool(enabled)},
 		{Key: "maintenance_mode_message", Value: message},
 	}
-	if enabled {
+	if turningOn {
 		pairs = append(pairs, &SettingPair{Key: "maintenance_mode_since", Value: now.Format(time.RFC3339)})
-	} else {
+	} else if !enabled {
 		pairs = append(pairs, &SettingPair{Key: "maintenance_mode_since", Value: ""})
 	}
 	if err := u.settings.UpdateMany(ctx, pairs); err != nil {
@@ -171,13 +174,13 @@ func (u *maintenanceUsecase) SetGlobal(ctx context.Context, enabled bool, messag
 
 	u.globalActive.Store(enabled)
 	u.globalMessage.Store(message)
-	if enabled {
+	if turningOn {
 		u.globalSince.Store(now)
-	} else {
+	} else if !enabled {
 		u.globalSince.Store(time.Time{})
 	}
 
-	if enabled && notify && u.broadcast != nil {
+	if turningOn && notify && u.broadcast != nil {
 		msg := message
 		if msg == "" {
 			msg = "Service maintenance in progress. Purchases and renewals are temporarily paused."
