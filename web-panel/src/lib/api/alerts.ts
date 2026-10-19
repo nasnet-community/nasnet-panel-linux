@@ -8,6 +8,7 @@ export type AlertRuleType =
     | "relay_allowlist_violation"
     | "relay_egress_down"
     | "relay_disguise_down"
+    | "reverse_tunnel_down"
 export type AlertScope = "global" | "node_ids" | "tag"
 
 export interface AlertThreshold {

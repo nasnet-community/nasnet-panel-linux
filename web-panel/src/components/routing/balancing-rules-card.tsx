@@ -11,19 +11,20 @@ import {
     expandSelectorPrefixes,
     rulesUsingBalancer,
 } from "@/components/routing/balancing-rule-dialog"
-import type { BalancingRule, Outbound, RoutingRule } from "@/lib/types"
+import type { BalancingRule, Outbound, RoutingRule, ReverseTunnelTarget } from "@/lib/types"
 
 type Strategy = BalancingRule["strategy"]
 
 interface BalancingRulesCardProps {
     nodeId: number
     outbounds: Outbound[]
+    tunnels?: ReverseTunnelTarget[]
     rules: BalancingRule[]
     routingRules?: RoutingRule[]
     onRulesChanged: () => void
 }
 
-export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = [], onRulesChanged }: BalancingRulesCardProps) {
+export function BalancingRulesCard({ nodeId, outbounds, tunnels, rules, routingRules = [], onRulesChanged }: BalancingRulesCardProps) {
     const [dialogOpen, setDialogOpen] = useState(false)
     const [dialogMode, setDialogMode] = useState<"create" | "edit">("create")
     const [editing, setEditing] = useState<BalancingRule | null>(null)
@@ -166,6 +167,7 @@ export function BalancingRulesCard({ nodeId, outbounds, rules, routingRules = []
                 rule={editing}
                 nodeId={nodeId}
                 outbounds={outbounds}
+                tunnels={tunnels}
                 existingBalancers={rules}
                 routingRules={routingRules}
                 onSaved={onRulesChanged}

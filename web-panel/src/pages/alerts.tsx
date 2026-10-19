@@ -66,6 +66,11 @@ const RULE_TYPE_META: Record<string, { label: string; summary: (t: AlertThreshol
         summary: () => "Fires when an MTProto node's cover site stops working.",
         fields: [],
     },
+    reverse_tunnel_down: {
+        label: "Reverse Tunnel Down",
+        summary: (t) => `Bridge disconnected for ${t.duration_sec ?? 180}s`,
+        fields: ["duration_sec"],
+    },
 }
 
 export default function AlertsPage() {
@@ -77,7 +82,7 @@ export default function AlertsPage() {
         <div className="space-y-6 animate-in fade-in duration-500">
             <PageHeader
                 title="Alerts"
-                description="Fires on node offline, Xray crash loops, and resource thresholds. Delivery uses the Telegram/webhook channels configured in Settings → Alert channels."
+                description="Fires on node offline, Xray crash loops, reverse tunnels going down, and resource thresholds. Delivery uses the Telegram/webhook channels configured in Settings → Alert channels."
             />
 
             <Card>

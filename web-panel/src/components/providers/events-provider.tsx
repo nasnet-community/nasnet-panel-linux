@@ -160,6 +160,7 @@ export function EventsProvider({ children }: EventsProviderProps) {
             'subscription.created', 'subscription.expiring', 'subscription.expired',
             'system.alert',
             'user.registered', 'subscription.renewed', 'subscription.cancelled', 'account.data_exhausted',
+            'reverse_tunnel.down', 'reverse_tunnel.up',
             // Named events only arrive if we ask for them by name.
             'interface.added', 'interface.removed', 'interface.link_changed',
             'wan.up', 'wan.down', 'wan.failover', 'wan.failover_lost',
@@ -317,6 +318,13 @@ function handleEvent(
             queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
             invalidateLiveDashboard(queryClient)
             queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+            break
+        }
+        case 'reverse_tunnel.down':
+        case 'reverse_tunnel.up': {
+            // A portal saw its bridge drop or connect. Alerts come through
+            // system.alert after the grace period; this only refreshes status.
+            queryClient.invalidateQueries({ queryKey: queryKeys.reverseTunnels() })
             break
         }
         case 'node.updated': {

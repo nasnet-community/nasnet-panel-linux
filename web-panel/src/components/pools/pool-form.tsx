@@ -5,18 +5,19 @@ import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { defaultPool, emptySource, type OutboundPool, type PoolSettings } from "@/lib/api/outbound-pools"
-import type { BalancingRule, Outbound } from "@/lib/types"
+import type { BalancingRule, Outbound, ReverseTunnelTarget } from "@/lib/types"
 
 const selectClass = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
 function Field({ label, children }: { label: string, children: ReactNode }) {
     return <label className="grid gap-1.5 text-sm"><span className="font-medium">{label}</span>{children}</label>
 }
-export function PoolForm({ pool, balancers, outbounds, pending, onClose, onSave, maxThreads = 2000 }: {
+export function PoolForm({ pool, balancers, outbounds, tunnels = [], pending, onClose, onSave, maxThreads = 2000 }: {
     pool?: OutboundPool
     /** Node-wide scan budget: 32 on the built-in node, 2000 on remote nodes. */
     maxThreads?: number
     balancers: BalancingRule[]
     outbounds: Outbound[]
+    tunnels?: ReverseTunnelTarget[]
     pending: boolean
     onClose: () => void
     onSave: (settings: PoolSettings) => Promise<void>
@@ -93,7 +94,7 @@ export function PoolForm({ pool, balancers, outbounds, pending, onClose, onSave,
                         <Field label="Balancer tag"><Input required maxLength={100} value={form.balancer_tag} onChange={e => update("balancer_tag", e.target.value)} placeholder="upstream-pool" /></Field>
                         <Field label="Strategy"><select className={selectClass} value={form.strategy} onChange={e => update("strategy", e.target.value)}><option value="leastping">Lowest latency</option><option value="random">Random</option><option value="roundrobin">Round robin</option><option value="leastload">Least load</option></select></Field>
                     </div>}
-                    <Field label="Fallback outbound"><select required disabled={!!pool} className={selectClass} value={form.fallback_tag} onChange={e => update("fallback_tag", e.target.value)}><option value="">Choose an explicit fallback</option>{outbounds.filter(o => !o.managed_pool_id && !o.is_disabled).map(o => <option key={o.id} value={o.tag}>{o.tag} · {o.protocol}</option>)}</select></Field>
+                    <Field label="Fallback outbound"><select required disabled={!!pool} className={selectClass} value={form.fallback_tag} onChange={e => update("fallback_tag", e.target.value)}><option value="">Choose an explicit fallback</option>{outbounds.filter(o => !o.managed_pool_id && !o.is_disabled).map(o => <option key={o.id} value={o.tag}>{o.tag} · {o.protocol}</option>)}{tunnels.map(t => <option key={`rvs-${t.id}`} value={t.tag}>{t.tag} · reverse tunnel</option>)}</select></Field>
                     <p className="text-xs text-muted-foreground">The fallback is used when no pool member is reachable. Choose routing rules for this balancer in Routing. {pool && "Edit its fallback and strategy there."}</p>
                 </fieldset>
                 </>}

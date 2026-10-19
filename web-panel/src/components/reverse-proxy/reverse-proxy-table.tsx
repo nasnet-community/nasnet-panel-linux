@@ -1,21 +1,20 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from "react-icons/hi"
+import { HiOutlinePencil, HiOutlineTrash } from "react-icons/hi"
 import type { ReverseProxy } from "@/lib/types"
 
 interface ReverseProxyTableProps {
     reverseProxies: ReverseProxy[]
     onEdit: (rp: ReverseProxy) => void
     onDelete: (rp: ReverseProxy) => void
-    onCreate: () => void
 }
 
+// Hand-built bridge and portal entries; the tab lists them under its tunnels.
 export function ReverseProxyTable({
     reverseProxies,
     onEdit,
     onDelete,
-    onCreate,
 }: ReverseProxyTableProps) {
     const isEmpty = reverseProxies.length === 0
 
@@ -24,13 +23,9 @@ export function ReverseProxyTable({
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
                 <div>
-                    <h3 className="text-lg font-semibold">Reverse Proxies</h3>
-                    <p className="text-sm text-muted-foreground">Configure VLESS Reverse bridge and portal entries</p>
+                    <h3 className="text-lg font-semibold">Hand-built entries</h3>
+                    <p className="text-sm text-muted-foreground">Bridge and portal entries wired up by hand, for setups a tunnel doesn't cover</p>
                 </div>
-                <Button size="sm" onClick={onCreate}>
-                    <HiOutlinePlus className="w-4 h-4 mr-2" />
-                    Add Reverse
-                </Button>
             </div>
 
             <div className="rounded-2xl border bg-card/50 backdrop-blur-sm border-white/5 overflow-hidden">
@@ -124,12 +119,8 @@ export function ReverseProxyTable({
                         </Table>
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-4">
-                        <p>No reverse proxies configured.</p>
-                        <Button size="sm" onClick={onCreate}>
-                            <HiOutlinePlus className="w-4 h-4 mr-2" />
-                            Add Reverse
-                        </Button>
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                        <p>No hand-built entries.</p>
                     </div>
                 )}
             </div>

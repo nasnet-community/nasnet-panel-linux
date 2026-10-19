@@ -11,10 +11,10 @@ import { queryKeys } from "@/lib/queries/keys"
 import { PoolForm } from "./pool-form"
 import { PoolCard } from "./pool-card"
 import { relativeTime } from "./pool-display"
-import type { BalancingRule, Outbound } from "@/lib/types"
+import type { BalancingRule, Outbound, ReverseTunnelTarget } from "@/lib/types"
 import { toast } from "@/lib/toast"
 
-export function NodePools({ nodeId, outbounds, balancers, local = false }: { nodeId: number, outbounds: Outbound[], balancers: BalancingRule[], local?: boolean }) {
+export function NodePools({ nodeId, outbounds, balancers, tunnels, local = false }: { nodeId: number, outbounds: Outbound[], balancers: BalancingRule[], tunnels?: ReverseTunnelTarget[], local?: boolean }) {
     const queryClient = useQueryClient()
     const confirm = useConfirm()
     const key = ["outbound-pools", nodeId]
@@ -81,7 +81,7 @@ export function NodePools({ nodeId, outbounds, balancers, local = false }: { nod
                 onToggleSchedule={() => mutation.mutate(() => poolAPI.save(nodeId, pool.id, { ...pool, enabled: !pool.enabled, fallback_tag: pool.balancer.fallback_tag }))}
                 onDelete={() => void remove(pool)}
             />)}
-            {editing && <PoolForm key={editing === "new" ? "new" : editing.id} pool={editing === "new" ? undefined : editing} balancers={balancers} outbounds={outbounds} maxThreads={local ? 32 : 2000} pending={mutation.isPending} onClose={() => setEditing(null)} onSave={save} />}
+            {editing && <PoolForm key={editing === "new" ? "new" : editing.id} pool={editing === "new" ? undefined : editing} balancers={balancers} outbounds={outbounds} tunnels={tunnels} maxThreads={local ? 32 : 2000} pending={mutation.isPending} onClose={() => setEditing(null)} onSave={save} />}
         </div>
     </TooltipProvider>
 }

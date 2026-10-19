@@ -6,6 +6,9 @@ import type {
     RoutingRule,
     BalancingRule,
     ReverseProxy,
+    ReverseTunnel,
+    ReverseTunnelInput,
+    ReverseTunnelPeerConfig,
 } from "@/lib/types"
 
 // ==================== Routing Settings ====================
@@ -117,4 +120,30 @@ export async function updateReverseProxy(id: number, data: Partial<ReverseProxy>
 
 export async function deleteReverseProxy(id: number): Promise<ApiResponse<void>> {
     return api.delete<void>(`/api/v1/reverse-proxies/${id}`)
+}
+
+// ==================== Reverse Tunnels ====================
+
+export async function listReverseTunnels(nodeId: number): Promise<ApiResponse<ReverseTunnel[]>> {
+    return api.get<ReverseTunnel[]>(`/api/v1/nodes/${nodeId}/reverse-tunnels`)
+}
+
+export async function createReverseTunnel(data: ReverseTunnelInput): Promise<ApiResponse<ReverseTunnel>> {
+    return api.post<ReverseTunnel>(`/api/v1/reverse-tunnels`, data)
+}
+
+export async function updateReverseTunnel(id: number, data: ReverseTunnelInput): Promise<ApiResponse<ReverseTunnel>> {
+    return api.put<ReverseTunnel>(`/api/v1/reverse-tunnels/${id}`, data)
+}
+
+export async function deleteReverseTunnel(id: number): Promise<ApiResponse<void>> {
+    return api.delete<void>(`/api/v1/reverse-tunnels/${id}`)
+}
+
+export async function rotateReverseTunnel(id: number): Promise<ApiResponse<void>> {
+    return api.post<void>(`/api/v1/reverse-tunnels/${id}/rotate`, {})
+}
+
+export async function getReverseTunnelPeerConfig(id: number): Promise<ApiResponse<ReverseTunnelPeerConfig>> {
+    return api.get<ReverseTunnelPeerConfig>(`/api/v1/reverse-tunnels/${id}/peer-config`)
 }

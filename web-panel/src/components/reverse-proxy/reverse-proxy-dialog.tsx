@@ -14,6 +14,12 @@ import {
 } from "@/components/ui/select"
 import { reverseProxySchema, type ReverseProxyFormData } from "@/lib/validations/reverse-proxy-schema"
 import type { ReverseProxy } from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { copyToClipboard } from "@/lib/utils"
+import { toast } from "@/lib/toast"
+
+// The bridge exit the panel manages: Freedom with private addresses blocked.
+const MANAGED_EXIT_TAG = "rvs-exit"
 
 interface ReverseProxyDialogProps {
     open: boolean
@@ -208,12 +214,7 @@ export function ReverseProxyDialog({
                         {/* Outbound */}
                         <div className="space-y-2">
                             <Label>Outbound</Label>
-                            {outboundTags.length === 0 ? (
-                                <p className="text-sm text-muted-foreground border rounded-md px-3 py-2">
-                                    No outbounds configured
-                                </p>
-                            ) : (
-                                <Controller
+                            <Controller
                                     control={control}
                                     name="outbound_tag"
                                     render={({ field }) => (
@@ -225,6 +226,7 @@ export function ReverseProxyDialog({
                                                 <SelectValue placeholder="Select outbound..." />
                                             </SelectTrigger>
                                             <SelectContent>
+                                                <SelectItem value={MANAGED_EXIT_TAG}>Direct, LAN blocked</SelectItem>
                                                 {outboundTags.map((tag) => (
                                                     <SelectItem key={tag} value={tag}>
                                                         {tag}
@@ -234,11 +236,10 @@ export function ReverseProxyDialog({
                                         </Select>
                                     )}
                                 />
-                            )}
                             {errors.outbound_tag && (
                                 <p className="text-xs text-destructive">{errors.outbound_tag.message}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">Outbound to forward traffic to. For Freedom targets, add an Allow Final Rule for the intended destination in Outbound settings.</p>
+                            <p className="text-xs text-muted-foreground">Where tunnel traffic leaves this node. Xray blocks it at a Freedom outbound without an Allow final rule; "Direct, LAN blocked" has one and keeps private addresses out.</p>
                         </div>
                     </>
                 )}
@@ -287,7 +288,25 @@ export function ReverseProxyDialog({
                             {errors.interconnection_tags && (
                                 <p className="text-xs text-destructive">{errors.interconnection_tags.message}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">Use dedicated VLESS inbounds. Every user on these inbounds can establish this reverse tunnel.</p>
+                            <p className="text-xs text-muted-foreground">The entry gets one hidden client on each of these inbounds, and only that credential can open the tunnel. Customers on them keep working.</p>
+                            {mode === "edit" && reverseProxy?.uuid && (
+                                <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                                    <div className="min-w-0">
+                                        <p className="text-xs text-muted-foreground">Bridge credential (VLESS id)</p>
+                                        <p className="font-mono text-xs truncate">{reverseProxy.uuid}</p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={async () => {
+                                            if (await copyToClipboard(reverseProxy.uuid!)) toast.success("Copied")
+                                        }}
+                                    >
+                                        Copy
+                                    </Button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Inbound (multi-select) */}

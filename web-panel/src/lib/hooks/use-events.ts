@@ -18,6 +18,8 @@ export type EventType =
     | 'subscription.renewed'
     | 'subscription.cancelled'
     | 'account.data_exhausted'
+    | 'reverse_tunnel.down'
+    | 'reverse_tunnel.up'
     // Router mode. The backend has always published these; nothing subscribed.
     | 'interface.added'
     | 'interface.removed'

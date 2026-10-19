@@ -37,6 +37,8 @@ import { DNSSettingsCard } from "@/components/dns/dns-settings-card"
 import { BalancingRulesCard } from "@/components/routing/balancing-rules-card"
 import { ReverseProxyTable } from "@/components/reverse-proxy/reverse-proxy-table"
 import { ReverseProxyDialog } from "@/components/reverse-proxy/reverse-proxy-dialog"
+import { ReverseTunnelSection } from "@/components/reverse-proxy/reverse-tunnel-section"
+import { useReverseTunnels } from "@/lib/queries/use-reverse-tunnels"
 import type { Inbound, Outbound, OutboundTestEntry, RoutingRule, ReverseProxy } from "@/lib/types"
 import { deleteNodeInbound } from "@/lib/api/nodes"
 import { toggleInboundDisabled } from "@/lib/api/inbounds"
@@ -226,6 +228,12 @@ export function NodeNetworkConfig({
     const { data: routingRules = [], isLoading: rrLoading } = useNodeRouting(nodeId)
     const { data: balancingRules = [] } = useBalancingRules(nodeId)
     const { data: reverseProxies = [] } = useReverseProxies(nodeId)
+    const { data: reverseTunnels = [] } = useReverseTunnels(nodeId)
+    // Tunnels portalled here route like outbounds: rules, balancers and pools.
+    const tunnelTargets = useMemo(
+        () => reverseTunnels.filter(t => t.portal_node_id === nodeId).map(t => ({ id: t.id, tag: t.portal_tag, name: t.name })),
+        [reverseTunnels, nodeId],
+    )
     const isLoading = ibLoading || obLoading || rrLoading
 
     // Mutations — each invalidates relevant cache on success
@@ -948,6 +956,13 @@ export function NodeNetworkConfig({
     }
 
     const handleDeleteReverseProxy = async (rp: ReverseProxy) => {
+        const ok = await confirm({
+            title: "Delete hand-built entry",
+            description: <>Delete <span className="font-mono font-semibold">{rp.tag}</span> and its routing rule?</>,
+            confirmLabel: "Delete",
+            variant: "destructive",
+        })
+        if (!ok) return
         try {
             await deleteReverseProxyMut.mutateAsync(rp.id)
             onRefresh?.()
@@ -1020,7 +1035,7 @@ export function NodeNetworkConfig({
                         >
                             <HiOutlineArrowsExpand className="w-4 h-4 mr-1.5 md:mr-2" />
                             Reverse
-                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{reverseProxies.length}</Badge>
+                            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-xs bg-muted/50 hidden sm:inline-flex">{reverseProxies.length + reverseTunnels.length}</Badge>
                         </TabsTrigger>
                         <TabsTrigger
                             value="dns"
@@ -1198,7 +1213,7 @@ export function NodeNetworkConfig({
 
                 {/* Outbounds Content */}
                 <TabsContent value="pools" className="animate-in fade-in-50 duration-300">
-                    <NodePools nodeId={nodeId} outbounds={allOutbounds} balancers={balancingRules} local={isLocal} />
+                    <NodePools nodeId={nodeId} outbounds={allOutbounds} balancers={balancingRules} tunnels={tunnelTargets} local={isLocal} />
                 </TabsContent>
 
                 <TabsContent value="outbounds" className="animate-in fade-in-50 duration-300">
@@ -1442,6 +1457,7 @@ export function NodeNetworkConfig({
                         <BalancingRulesCard
                             nodeId={nodeId}
                             outbounds={allOutbounds}
+                            tunnels={tunnelTargets}
                             rules={balancingRules}
                             routingRules={routingRules}
                             onRulesChanged={() => {
@@ -1454,12 +1470,22 @@ export function NodeNetworkConfig({
 
                 {/* Reverse Proxy Content */}
                 <TabsContent value="reverse" className="animate-in fade-in-50 duration-300">
-                    <ReverseProxyTable
-                        reverseProxies={reverseProxies}
-                        onEdit={(rp) => setReverseProxyDialog({ open: true, mode: "edit", reverseProxy: rp })}
-                        onDelete={handleDeleteReverseProxy}
-                        onCreate={() => setReverseProxyDialog({ open: true, mode: "create", reverseProxy: null })}
+                    <ReverseTunnelSection
+                        nodeId={nodeId}
+                        nodes={allNodesData || []}
+                        inbounds={inbounds}
+                        tunnels={reverseTunnels}
+                        onAddHandBuilt={() => setReverseProxyDialog({ open: true, mode: "create", reverseProxy: null })}
                     />
+                    {reverseProxies.length > 0 && (
+                        <div className="mt-8">
+                            <ReverseProxyTable
+                                reverseProxies={reverseProxies}
+                                onEdit={(rp) => setReverseProxyDialog({ open: true, mode: "edit", reverseProxy: rp })}
+                                onDelete={handleDeleteReverseProxy}
+                            />
+                        </div>
+                    )}
                 </TabsContent>
 
                 {/* DNS Content */}
@@ -1545,6 +1571,7 @@ export function NodeNetworkConfig({
                 rule={routingDialog.rule}
                 nodeId={nodeId}
                 outbounds={allOutbounds}
+                tunnels={tunnelTargets}
                 inbounds={inbounds}
                 balancingRules={balancingRules}
                 onSave={handleSaveRoutingRule}

@@ -18,16 +18,18 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import {
     Select,
     SelectContent,
+    SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
-import { HiOutlinePlus, HiX, HiOutlineExclamation, HiChevronDown } from "react-icons/hi"
+import { HiOutlinePlus, HiX, HiOutlineExclamation, HiChevronDown, HiOutlineInformationCircle } from "react-icons/hi"
 import { ArrayInput, InboundTagInput, TagList } from "@/components/ui/tag-input"
 import { PRESET_RULE_TAGS } from "@/components/routing/routing-settings-card"
 import { BalancingRuleDialog, STRATEGIES } from "@/components/routing/balancing-rule-dialog"
-import type { RoutingRule, DomainMatcher, Outbound, Inbound, BalancingRule } from "@/lib/types"
+import type { RoutingRule, DomainMatcher, Outbound, Inbound, BalancingRule, ReverseTunnelTarget } from "@/lib/types"
 
 const DOMAIN_TYPES = [
     { value: "domain", label: "Domain (include subdomains)" },
@@ -212,6 +214,8 @@ interface RoutingRuleDialogProps {
     rule: RoutingRule | null
     nodeId: number
     outbounds: Outbound[]
+    /** Reverse tunnels portalled on this node: targets that exist only at runtime. */
+    tunnels?: ReverseTunnelTarget[]
     inbounds: Inbound[]
     balancingRules: BalancingRule[]
     onSave: (data: Partial<RoutingRule>) => Promise<void>
@@ -257,6 +261,7 @@ export function RoutingRuleDialog({
     rule,
     nodeId,
     outbounds,
+    tunnels = [],
     inbounds,
     balancingRules,
     onSave,
@@ -390,10 +395,12 @@ export function RoutingRuleDialog({
     const targetTag = targetKind === "balancer" ? formData.balancing_tag : formData.outbound_tag
     const selectedBalancer = balancingRules.find(b => b.tag === formData.balancing_tag)
 
+    const tunnelTarget = targetKind === "outbound" ? tunnels.find(t => t.tag === formData.outbound_tag) : undefined
+
     // Dangling target: the rule points at something that no longer exists on the node.
     const danglingTarget =
         targetKind === "outbound"
-            ? Boolean(formData.outbound_tag) && !outbounds.some(o => o.tag === formData.outbound_tag)
+            ? Boolean(formData.outbound_tag) && !outbounds.some(o => o.tag === formData.outbound_tag) && !tunnelTarget
             : Boolean(formData.balancing_tag) && !selectedBalancer
 
     const invalidReason = (() => {
@@ -572,7 +579,7 @@ export function RoutingRuleDialog({
                                 value={formData.outbound_tag || "__none"}
                                 onValueChange={(v) => updateField("outbound_tag", v === "__none" ? "" : v)}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full min-w-0 [&_[data-slot=select-value]]:min-w-0">
                                     <SelectValue placeholder="Select outbound" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -587,6 +594,19 @@ export function RoutingRuleDialog({
                                             </span>
                                         </SelectItem>
                                     ))}
+                                    {tunnels.length > 0 && (
+                                        <SelectGroup>
+                                            <SelectLabel>Reverse tunnels</SelectLabel>
+                                            {tunnels.map((t) => (
+                                                <SelectItem key={`rvs-${t.id}`} value={t.tag} className="[&>span:last-child]:min-w-0">
+                                                    <span className="truncate">
+                                                        <span className="font-mono">{t.tag}</span>
+                                                        <span className="text-muted-foreground"> ({t.name})</span>
+                                                    </span>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectGroup>
+                                    )}
                                 </SelectContent>
                             </Select>
                         </TargetCard>
@@ -658,6 +678,16 @@ export function RoutingRuleDialog({
                             )}
                         </TargetCard>
                     </div>
+                    {tunnelTarget && (
+                        <div className="flex gap-2 items-start rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] text-muted-foreground">
+                            <HiOutlineInformationCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                            <div>
+                                Traffic leaves through reverse tunnel <span className="font-medium text-foreground">{tunnelTarget.name}</span>.
+                                Customers sent there aren't limited by their bandwidth tier, and the connection fails
+                                while the bridge is down.
+                            </div>
+                        </div>
+                    )}
                     {danglingTarget && (
                         <div className="flex gap-2 items-start rounded-lg border border-red-500/30 bg-red-500/[0.07] px-3 py-2 text-[13px] text-red-200">
                             <HiOutlineExclamation className="w-4 h-4 shrink-0 mt-0.5" />
@@ -972,6 +1002,7 @@ export function RoutingRuleDialog({
                 rule={null}
                 nodeId={nodeId}
                 outbounds={outbounds}
+                tunnels={tunnels}
                 existingBalancers={balancingRules}
                 compact
                 onSaved={(tag) => {

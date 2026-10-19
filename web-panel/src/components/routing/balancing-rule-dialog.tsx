@@ -9,7 +9,7 @@ import { ResponsiveDialog } from "@/components/ui/responsive-dialog"
 import { toast } from "@/lib/toast"
 import { HiOutlineExclamation, HiOutlineInformationCircle, HiOutlineSearch } from "react-icons/hi"
 import { addBalancingRule, updateBalancingRule } from "@/lib/api/routing"
-import type { BalancingRule, Outbound, RoutingRule } from "@/lib/types"
+import type { BalancingRule, Outbound, ReverseTunnelTarget, RoutingRule } from "@/lib/types"
 
 export const STRATEGIES = [
     { value: "leastping", label: "Least ping", description: "Fastest responder wins.", probes: true },
@@ -58,6 +58,12 @@ export function expandSelectorPrefixes(selectors: string[], outbounds: Outbound[
     return Array.from(extra)
 }
 
+/** Lists reverse tunnels as candidates next to the node's outbounds. */
+export function withTunnels(outbounds: Outbound[], tunnels: ReverseTunnelTarget[] = []): Outbound[] {
+    if (tunnels.length === 0) return outbounds
+    return [...outbounds, ...tunnels.map(t => ({ id: -t.id, tag: t.tag, protocol: "reverse tunnel" }) as Outbound)]
+}
+
 /** Routing rules that point at this balancer — deleting it while these exist breaks the xray config. */
 export function rulesUsingBalancer(tag: string, rules: RoutingRule[]): RoutingRule[] {
     if (!tag) return []
@@ -71,6 +77,8 @@ interface BalancingRuleDialogProps {
     rule: BalancingRule | null
     nodeId: number
     outbounds: Outbound[]
+    /** Reverse tunnels portalled on this node; they can join the pool or catch its fallback. */
+    tunnels?: ReverseTunnelTarget[]
     existingBalancers: BalancingRule[]
     routingRules?: RoutingRule[]
     /** Fired after a successful save with the balancer's tag — parent refreshes and may select it. */
@@ -85,12 +93,14 @@ export function BalancingRuleDialog({
     mode,
     rule,
     nodeId,
-    outbounds,
+    outbounds: nodeOutbounds,
+    tunnels,
     existingBalancers,
     routingRules = [],
     onSaved,
     compact = false,
 }: BalancingRuleDialogProps) {
+    const outbounds = useMemo(() => withTunnels(nodeOutbounds, tunnels), [nodeOutbounds, tunnels])
     const [form, setForm] = useState<FormData>(emptyForm)
     const [saving, setSaving] = useState(false)
     const [filter, setFilter] = useState("")
