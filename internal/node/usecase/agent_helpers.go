@@ -625,6 +625,94 @@ func (u *nodeUsecase) RepushForSNI(ctx context.Context, sniID uint) {
 	}
 }
 
+// shapingAgentVersion is the first agent that shapes by socket priority and
+// keeps its shaping across restarts: the first release after 1.0.0. Older
+// agents shape by fwmark, which the tier outbounds no longer set, so limits
+// only work once they're updated.
+const shapingAgentVersion = "1.0.1"
+
+// applyBandwidth brings the agent's TC shaping in line with the node's
+// settings. Current agents take it as a cheap check, so it goes out on every
+// push while shaping is on, which also restores it after a reinstall. Older
+// agents rebuild their qdiscs on each call, so they get it only when the
+// config or the settings changed, as before.
+func (u *nodeUsecase) applyBandwidth(ctx context.Context, client agent.NodeClient, nodeID uint, configChanged bool) {
+	// The pushed node can be a cached copy; shaping follows the saved settings.
+	node, err := u.nodeRepo.GetNode(ctx, nodeID)
+	if err != nil {
+		return
+	}
+	log := logger.GetLogger().WithField("node_id", nodeID)
+	bw := node.GetBandwidthSettingsOrDefault()
+	var iface, warning string
+	if u.routerModeFor(node) {
+		iface, warning = node.ResolveShapingInterface(u.ingressUplinkIfName())
+	} else if iface = bw.InterfaceOverride; iface == "" {
+		iface = bw.Interface // a remote box's own uplink
+	}
+	if iface == "" {
+		iface = "eth0"
+	}
+	totalBW := bw.TotalBW
+	if totalBW <= 0 {
+		totalBW = 1000
+	}
+	agentVersion, _ := u.agentVersions(ctx, client, nodeID, false)
+	// the built-in node runs this panel's own agent
+	current := node.IsLocal() || versionAtLeast(agentVersion, shapingAgentVersion)
+	key := fmt.Sprintf("%t|%s|%d|%s", bw.Enabled, iface, totalBW, agentVersion)
+	u.bwMu.Lock()
+	sent := u.bwApplied[nodeID] == key
+	u.bwMu.Unlock()
+	if sent && !(bw.Enabled && (current || configChanged)) {
+		return
+	}
+
+	if bw.Enabled && !sent {
+		if warning != "" {
+			log.Warn(warning)
+		}
+		if !current {
+			log.WithField("agent_version", agentVersion).Warnf("[pushConfigToAgent] Speed limits need agent %s or newer; update the agent", shapingAgentVersion)
+		}
+	}
+	if bw.Enabled {
+		err = client.SetupBandwidth(ctx, iface, totalBW)
+	} else {
+		err = client.TeardownBandwidth(ctx)
+	}
+	if err != nil {
+		log.WithError(err).Warn("[pushConfigToAgent] Failed to apply bandwidth shaping (non-fatal)")
+		return
+	}
+	u.bwMu.Lock()
+	u.bwApplied[nodeID] = key
+	u.bwMu.Unlock()
+	if bw.Enabled && !sent {
+		log.WithFields(map[string]interface{}{"interface": iface, "total_bw": totalBW}).Info("[pushConfigToAgent] Bandwidth shaping in place")
+	}
+}
+
+// versionAtLeast compares dotted numeric versions ("1.0.1"); anything it
+// can't read counts as older.
+func versionAtLeast(version, min string) bool {
+	have, want := strings.Split(strings.TrimPrefix(version, "v"), "."), strings.Split(min, ".")
+	for i, w := range want {
+		wn, _ := strconv.Atoi(w)
+		if i >= len(have) {
+			return wn == 0
+		}
+		hn, err := strconv.Atoi(have[i])
+		if err != nil {
+			return false
+		}
+		if hn != wn {
+			return hn > wn
+		}
+	}
+	return true
+}
+
 // pushConfigToAgent builds and pushes Xray config to the agent (no direct Xray API call).
 func (u *nodeUsecase) pushConfigToAgent(ctx context.Context, node *domain.Node) error {
 	state := u.getOrCreatePushState(node.ID)
@@ -888,6 +976,8 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 				// recovery trigger (the scheduler's reconcile tick, a heartbeat
 				// reconnect) arrives here with an unchanged xray config.
 				u.reconcileCoresBestEffort(ctx, client, node.ID)
+				// Shaping settings don't show in the Xray config at all.
+				u.applyBandwidth(ctx, client, node.ID, false)
 				// Cache the hash so drift detection knows the current state
 				u.configHashMu.Lock()
 				u.lastPushedConfigHash[node.ID] = newHashStr
@@ -945,39 +1035,7 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		return fmt.Errorf("xray failed to start after config push (port may be in use)")
 	}
 
-	// Setup or teardown TC bandwidth shaping based on node settings
-	bwSettings := node.GetBandwidthSettingsOrDefault()
-	if bwSettings.Enabled {
-		var iface, warning string
-		if u.routerModeFor(node) {
-			iface, warning = node.ResolveShapingInterface(u.ingressUplinkIfName())
-		} else if iface = bwSettings.InterfaceOverride; iface == "" {
-			iface = bwSettings.Interface // a remote box's own uplink
-		}
-		if warning != "" {
-			log.WithField("node", node.ID).Warn(warning)
-		}
-		if iface == "" {
-			iface = "eth0"
-		}
-		totalBW := bwSettings.TotalBW
-		if totalBW <= 0 {
-			totalBW = 1000
-		}
-		if err := client.SetupBandwidth(ctx, iface, totalBW); err != nil {
-			log.WithError(err).Warn("[pushConfigToAgent] Failed to setup TC bandwidth shaping (non-fatal)")
-		} else {
-			log.WithFields(map[string]interface{}{
-				"interface": iface,
-				"total_bw":  totalBW,
-			}).Info("[pushConfigToAgent] TC bandwidth shaping configured")
-		}
-	} else {
-		// Teardown any existing bandwidth shaping if disabled
-		if err := client.TeardownBandwidth(ctx); err != nil {
-			log.WithError(err).Debug("[pushConfigToAgent] Teardown bandwidth (non-fatal, may not have been set up)")
-		}
-	}
+	u.applyBandwidth(ctx, client, node.ID, true)
 
 	u.reconcileCoresBestEffort(ctx, client, node.ID)
 

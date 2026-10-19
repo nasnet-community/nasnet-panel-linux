@@ -230,6 +230,10 @@ type NodeUsecase interface {
 	// Agent Management
 	PushConfigViaAgent(ctx context.Context, nodeID uint) error
 	PushFullConfig(ctx context.Context, nodeID uint) error
+	// RequestShapingPush pushes soon to the given nodes (all nodes when none
+	// are given) that shape bandwidth, so a speed limit applies within seconds
+	// instead of at the next reconcile pass.
+	RequestShapingPush(nodeIDs ...uint)
 	GetNodeSystemStats(ctx context.Context, nodeID uint) (*agent.SystemStats, error)
 	CheckAgentHealth(ctx context.Context, id uint) (*domain.NodeHealth, error)
 	GetNodeWithSystemStats(ctx context.Context, id uint) (*domain.Node, error)
@@ -422,6 +426,7 @@ type configPushState struct {
 	applyMu     sync.Mutex
 	mu          sync.Mutex
 	inProgress  bool
+	queued      bool // a requested push is waiting for its turn
 	failures    int
 	lastFailure time.Time
 }
@@ -442,6 +447,11 @@ type nodeUsecase struct {
 
 	// reverseWatch tracks which reverse tunnels had their state announced.
 	reverseWatch reverseTunnelWatch
+
+	// Bandwidth shaping last applied per node, keyed by settings and agent
+	// version (see applyBandwidth).
+	bwMu      sync.Mutex
+	bwApplied map[uint]string
 
 	// Config drift detection: tracks the config hash reported by each agent after the last successful push.
 	// Used to detect when an agent's config drifts from what the master last pushed.
@@ -609,6 +619,7 @@ func NewNodeUsecase(nodeRepo repository.NodeRepository, subRepo subRepo.Subscrip
 		settingUC:            settingUC,
 		tm:                   tm,
 		lastPushedConfigHash: make(map[uint]string),
+		bwApplied:            make(map[uint]string),
 		usersLeft:            map[uint]bool{},
 		credCache:            make(map[uint]*cachedCreds),
 		pushState:            make(map[uint]*configPushState),
@@ -693,6 +704,72 @@ func (u *nodeUsecase) tryScheduleConfigPush(node *domain.Node) {
 			state.lastFailure = time.Time{}
 			state.inProgress = false
 			state.mu.Unlock()
+		}
+	}()
+}
+
+// pushRequestDelay lets the requester's transaction commit and a burst of
+// requests (a bulk limit change, a batch of purchases) share one push.
+const pushRequestDelay = 2 * time.Second
+
+// requestConfigPush pushes the node's config shortly, after any push already
+// running, so a change made just now never waits for the next reconcile pass.
+// Requests made while one is waiting share it.
+func (u *nodeUsecase) requestConfigPush(nodeID uint) {
+	state := u.getOrCreatePushState(nodeID)
+	state.mu.Lock()
+	// A failing node is retried on the backoff schedule; don't add to it.
+	if state.queued || (state.failures > 0 && time.Since(state.lastFailure) < pushBackoffDuration(state.failures)) {
+		state.mu.Unlock()
+		return
+	}
+	state.queued = true
+	state.mu.Unlock()
+
+	go func() {
+		time.Sleep(pushRequestDelay)
+		state.applyMu.Lock()
+		defer state.applyMu.Unlock()
+		// From here on the push reads the database, so a later request must
+		// queue another one.
+		state.mu.Lock()
+		state.queued = false
+		state.mu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		node, err := u.nodeRepo.GetNode(ctx, nodeID)
+		// A changed config would restart an Xray the admin stopped.
+		if err != nil || !node.IsActive || node.XrayStopped {
+			return
+		}
+		if err := u.pushConfigToAgentUnlocked(ctx, node); err != nil {
+			logger.GetLogger().WithError(err).WithField("node_id", nodeID).Warn("[requestConfigPush] Config push failed")
+		}
+	}()
+}
+
+func (u *nodeUsecase) RequestShapingPush(nodeIDs ...uint) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		var nodes []*domain.Node
+		if len(nodeIDs) == 0 {
+			all, err := u.nodeRepo.ListNodes(ctx)
+			if err != nil {
+				return
+			}
+			nodes = all
+		}
+		for _, id := range nodeIDs {
+			if node, err := u.nodeRepo.GetNode(ctx, id); err == nil {
+				nodes = append(nodes, node)
+			}
+		}
+		for _, node := range nodes {
+			if node.IsActive && !node.IsStealth && node.GetBandwidthSettingsOrDefault().Enabled {
+				u.requestConfigPush(node.ID)
+			}
 		}
 	}()
 }

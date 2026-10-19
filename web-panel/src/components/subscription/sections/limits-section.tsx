@@ -319,7 +319,8 @@ export function LimitsSection({
                     0 = unlimited.
                     {subscription.is_bandwidth_custom && (
                         <span className="text-amber-500 ml-1">(custom override active)</span>
-                    )}
+                    )}{" "}
+                    Shared by everyone on this speed on a node.
                 </p>
             </div>
             */}

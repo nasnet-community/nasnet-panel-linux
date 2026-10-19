@@ -337,6 +337,7 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	// Wire NodeClient callback so the provider can reach both direct and reverse-mode nodes
 	xrayProv.SetNodeClientFunc(uc.Node.GetNodeClient)
+	xrayProv.SetShapingPushFunc(uc.Node.RequestShapingPush)
 
 	// WireGuard: render managed peers into pushed configs + suspend/resume peers on sub lifecycle
 	wgPeers := wireguardNodebridge.New(repos.WGPeer)

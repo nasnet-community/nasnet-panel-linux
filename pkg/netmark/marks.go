@@ -2,10 +2,14 @@
 // panel puts on packets. Three subsystems share it, so the layout lives here
 // and nowhere else.
 //
-//	0x0000FFFF  bandwidth tier    pkg/bandwidth Tier.Mark
+//	0x0000FFFF  bandwidth tier    marks of agents before shaping moved to socket priority
 //	0x00FF0000  group selector    1 = domestic, 2 = foreign, 0x10|i = foreign via uplink i
 //	0x0F000000  ingress pin       uplink index — NOT a group
-//	0xF0000000  reserved          must stay zero (see MaskAll)
+//	0xF0000000  reserved          the bandwidth tier, in the conntrack mark only (pkg/bandwidth)
+//
+// The agent's own nftables table keeps the tier in the reserved nibble of the
+// conntrack mark, and tc copies it onto replies masked. MaskAll leaves it out,
+// so the router's save/restore never moves it onto a packet.
 package netmark
 
 import "fmt"
@@ -17,8 +21,8 @@ const (
 	MaskPin      uint32 = 0x0F000000
 	MaskReserved uint32 = 0xF0000000
 
-	// MaskAll is the only mask permitted in a conntrack save/restore or a
-	// `tc ... fw` filter handle
+	// MaskAll is the only mask permitted in the router's conntrack
+	// save/restore
 	MaskAll uint32 = MaskTier | MaskGroup | MaskPin
 
 	shiftGroup = 16

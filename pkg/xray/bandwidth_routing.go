@@ -7,13 +7,19 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
-	"github.com/nasnet-community/nasnet-panel-linux/pkg/netmark"
 )
 
 // applyBandwidthRouting specializes each destination without changing which
 // policy matches first. Blackholes, loopbacks and reverse portals retain their
-// identity: they don't open an ordinary upstream socket to mark here.
+// identity: they don't open an ordinary upstream socket to tag here.
+// WireGuard does too: a second handler with the same key would fight the
+// original for the peer, so traffic through it stays unshaped.
 func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
+	// The copies only mean something where the agent shapes them. Elsewhere
+	// they would add a loopback hop to every unmatched connection.
+	if b.node == nil || !b.node.GetBandwidthSettingsOrDefault().Enabled {
+		return
+	}
 	var tiers []bandwidth.Tier
 	for _, tier := range bandwidth.RateLimitedTiers() {
 		if len(b.getEmailsForLevel(tier.Level)) > 0 {
@@ -42,51 +48,39 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 	// Selectors in Xray are prefixes. Generated handlers must never become
 	// candidates of an original selector once it is expanded to existing tags.
 	prefix := bandwidthNamespace(tags, b)
-	name := func(kind, tag string, mark uint32) string {
-		return fmt.Sprintf("%s%s-%d-%x", prefix, kind, mark, sha256.Sum256([]byte(tag)))
+	name := func(kind, tag string, level uint32) string {
+		return fmt.Sprintf("%s%s-%d-%x", prefix, kind, level, sha256.Sum256([]byte(tag)))
 	}
 	clones := make(map[string]string)
 	var internalRules []map[string]interface{}
-	var clone func(string, uint32) string
-	clone = func(tag string, mark uint32) string {
+	var clone func(string, bandwidth.Tier) string
+	clone = func(tag string, tier bandwidth.Tier) string {
 		src := base[tag]
-		if src == nil || src["protocol"] == "blackhole" || src["protocol"] == "loopback" {
+		if src == nil || src["protocol"] == "blackhole" || src["protocol"] == "loopback" || src["protocol"] == "wireguard" {
 			return tag
 		}
-		key := name("out", tag, mark)
+		key := name("out", tag, tier.Level)
 		if existing := clones[key]; existing != "" {
 			return existing
 		}
 		clones[key] = key
-		socketMark := mark
-		if b.routerMode {
-			// The router box shares the mark word between shaping, WAN
-			// selection and ingress pins. Replace only the tier bits on
-			// each physical dialer; remote nodes own their whole mark.
-			socketMark = mark & netmark.MaskTier
-			if stream, ok := src["streamSettings"].(map[string]interface{}); ok {
-				if sock, ok := stream["sockopt"].(map[string]interface{}); ok {
-					if existing, ok := sock["mark"].(uint32); ok {
-						socketMark |= existing &^ netmark.MaskTier
-					}
-				}
-			}
-		}
-		out := b.cloneOutboundWithMark(src, key, socketMark)
+		// The copy keeps the original's mark, so dual-WAN routing still picks
+		// the same WAN for it.
+		out := b.cloneOutboundForTier(src, key, tier)
 		// Only the original VLESS handler owns the reverse control channel.
 		if settings, ok := out["settings"].(map[string]interface{}); ok {
 			delete(settings, "reverse")
 		}
-		// The last dialer in a chain owns the socket, so mark that handler too.
+		// The last dialer in a chain owns the socket, so tag that handler too.
 		if ps, ok := out["proxySettings"].(map[string]interface{}); ok {
 			if next, ok := ps["tag"].(string); ok && next != "" {
-				ps["tag"] = clone(next, mark)
+				ps["tag"] = clone(next, tier)
 			}
 		}
 		ss := out["streamSettings"].(map[string]interface{})
 		sock := ss["sockopt"].(map[string]interface{})
 		if next, ok := sock["dialerProxy"].(string); ok && next != "" {
-			sock["dialerProxy"] = clone(next, mark)
+			sock["dialerProxy"] = clone(next, tier)
 		}
 		c.Outbounds = append(c.Outbounds, out)
 		return key
@@ -94,16 +88,18 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 	// Balancers need a unique selector for every candidate, including virtual
 	// destinations. Leaving a portal's original prefix would also select any
 	// unmarked ordinary outbounds sharing that prefix.
-	cloneSelection := func(tag string, mark uint32) string {
-		if target := clone(tag, mark); target != tag {
+	cloneSelection := func(tag string, tier bandwidth.Tier) string {
+		if target := clone(tag, tier); target != tag {
 			return target
 		}
-		key := name("virtual", tag, mark)
+		key := name("virtual", tag, tier.Level)
 		if clones[key] != "" {
 			return key
 		}
 		clones[key] = key
-		if src := base[tag]; src != nil {
+		// A copied WireGuard handler would be a second session on the same key;
+		// loop back to the original instead.
+		if src := base[tag]; src != nil && src["protocol"] != "wireguard" {
 			out := deepCopyMap(src)
 			out["tag"] = key
 			c.Outbounds = append(c.Outbounds, out)
@@ -129,12 +125,12 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 		byBalancer[bal["tag"].(string)] = bal
 	}
 	balancerClones := make(map[string]string)
-	cloneBalancer := func(tag string, mark uint32) string {
+	cloneBalancer := func(tag string, tier bandwidth.Tier) string {
 		src := byBalancer[tag]
 		if src == nil {
 			return tag
 		}
-		key := name("bal", tag, mark)
+		key := name("bal", tag, tier.Level)
 		if existing := balancerClones[key]; existing != "" {
 			return existing
 		}
@@ -142,11 +138,11 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 		bal["tag"] = key
 		var selectors []string
 		for _, target := range src["selector"].([]string) {
-			selectors = append(selectors, cloneSelection(target, mark))
+			selectors = append(selectors, cloneSelection(target, tier))
 		}
 		bal["selector"] = selectors
 		if fallback, ok := bal["fallbackTag"].(string); ok {
-			bal["fallbackTag"] = clone(fallback, mark)
+			bal["fallbackTag"] = clone(fallback, tier)
 		}
 		balancers = append(balancers, bal)
 		balancerClones[key] = key
@@ -171,13 +167,17 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 			variant := deepCopyMap(rule)
 			changed := false
 			if target, ok := rule["outboundTag"].(string); ok {
-				variant["outboundTag"] = clone(target, tier.Mark)
+				variant["outboundTag"] = clone(target, tier)
 				changed = variant["outboundTag"] != target
 			} else if target, ok := rule["balancerTag"].(string); ok {
-				variant["balancerTag"] = cloneBalancer(target, tier.Mark)
+				variant["balancerTag"] = cloneBalancer(target, tier)
 				changed = variant["balancerTag"] != target
 			}
 			if changed {
+				// Xray refuses to start when two rules share a ruleTag.
+				if tag, ok := rule["ruleTag"].(string); ok && tag != "" {
+					variant["ruleTag"] = fmt.Sprintf("%srule-%d-%s", prefix, tier.Level, tag)
+				}
 				variant["user"] = emails
 				rules = append(rules, variant)
 			}
@@ -193,7 +193,7 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 	internalTag := prefix + "fallback"
 	var fallbackRules []map[string]interface{}
 	for _, tier := range tiers {
-		if target := clone(defaultTag, tier.Mark); target != defaultTag {
+		if target := clone(defaultTag, tier); target != defaultTag {
 			fallbackRules = append(fallbackRules, map[string]interface{}{
 				"type": "field", "inboundTag": []string{internalTag},
 				"user": b.getEmailsForLevel(tier.Level), "outboundTag": target,
@@ -263,7 +263,7 @@ func bandwidthNamespace(outboundTags []string, b *FullConfigBuilder) string {
 	}
 	for _, rule := range b.routing {
 		tags = append(tags, rule.InboundTags...)
-		tags = append(tags, rule.OutboundTag, rule.BalancingTag)
+		tags = append(tags, rule.OutboundTag, rule.BalancingTag, rule.RuleTag)
 	}
 	prefix := "__panel_bw/"
 	for candidate := rune(0xe000); ; candidate++ {

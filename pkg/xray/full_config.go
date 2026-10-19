@@ -2080,6 +2080,43 @@ func (b *FullConfigBuilder) cloneOutboundWithMark(src map[string]interface{}, ta
 	return cloned
 }
 
+// cloneOutboundForTier deep-copies an outbound and tags its sockets with the
+// tier's priority, which the agent shapes on. The outbound's own sockopt,
+// including any mark used for routing, is left as it is.
+func (b *FullConfigBuilder) cloneOutboundForTier(src map[string]interface{}, tag string, tier bandwidth.Tier) map[string]interface{} {
+	cloned := deepCopyMap(src)
+	cloned["tag"] = tag
+
+	ss, ok := cloned["streamSettings"].(map[string]interface{})
+	if !ok {
+		ss = map[string]interface{}{}
+		cloned["streamSettings"] = ss
+	}
+	sockopt, ok := ss["sockopt"].(map[string]interface{})
+	if !ok {
+		sockopt = map[string]interface{}{}
+		ss["sockopt"] = sockopt
+	}
+	// SO_PRIORITY (SOL_SOCKET=1, opt 12). Appended last, so it wins over an
+	// admin-set priority on the same socket.
+	priority := map[string]interface{}{
+		"system": "linux", "level": "1", "opt": "12", "type": "int",
+		"value": strconv.FormatUint(uint64(tier.SocketPriority()), 10),
+	}
+	var custom []interface{}
+	switch existing := sockopt["customSockopt"].(type) {
+	case []map[string]interface{}:
+		for _, entry := range existing {
+			custom = append(custom, entry)
+		}
+	case []interface{}:
+		custom = existing
+	}
+	sockopt["customSockopt"] = append(custom, priority)
+
+	return cloned
+}
+
 // deepCopyMap creates a deep copy of a map[string]interface{}.
 func deepCopyMap(src map[string]interface{}) map[string]interface{} {
 	dst := make(map[string]interface{}, len(src))

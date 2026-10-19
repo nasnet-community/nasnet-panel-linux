@@ -34,6 +34,7 @@ type Provider struct {
 	linkBuilder   *LinkBuilder
 	getNodeClient NodeClientFunc
 	wgProvisioner WGDeviceProvisioner
+	shapingPush   func(nodeIDs ...uint)
 }
 
 // NewProvider creates a new Xray provider
@@ -52,6 +53,17 @@ func (p *Provider) SetNodeClientFunc(fn NodeClientFunc) {
 
 // SetWGProvisioner injects WireGuard per-device provisioning (optional, mixed plans).
 func (p *Provider) SetWGProvisioner(w WGDeviceProvisioner) { p.wgProvisioner = w }
+
+// SetShapingPushFunc injects the request for a prompt config push (optional).
+// A user added through the API carries its tier level, but the tier routing
+// that limits it arrives with the next full config.
+func (p *Provider) SetShapingPushFunc(fn func(nodeIDs ...uint)) { p.shapingPush = fn }
+
+func (p *Provider) requestShaping(level uint32, nodeID uint) {
+	if level > 0 && p.shapingPush != nil {
+		p.shapingPush(nodeID)
+	}
+}
 
 // GetType returns the product type
 func (p *Provider) GetType() product.ProductType {
@@ -159,6 +171,7 @@ func (p *Provider) GenerateConfig(ctx context.Context, sub *product.Subscription
 			})
 		} else {
 			successCount++
+			p.requestShaping(user.Level, inbound.NodeID)
 		}
 	}
 
@@ -506,7 +519,9 @@ func (p *Provider) ActivateUser(ctx context.Context, sub *product.SubscriptionIn
 			log.WithError(err).WithField("node_id", inbound.NodeID).Warn("[XrayProvider] Failed to get agent client for ActivateUser, skipping")
 			continue
 		}
-		_ = client.AddUser(ctx, inbound.Tag, sub.Email, sub.ConfigID, string(protocol), user.Flow, user.Encryption, int32(user.Level))
+		if client.AddUser(ctx, inbound.Tag, sub.Email, sub.ConfigID, string(protocol), user.Flow, user.Encryption, int32(user.Level)) == nil {
+			p.requestShaping(user.Level, inbound.NodeID)
+		}
 		client.Close()
 	}
 	// Keyed by sub ID and a no-op when the sub has no peers, so don't gate on

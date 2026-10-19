@@ -72,21 +72,32 @@ func panelOutbound(t *testing.T, c *OrderedConfig, tag string) map[string]interf
 	t.Fatalf("missing outbound %s", tag)
 	return nil
 }
-func assertPanelMark(t *testing.T, c *OrderedConfig, tag string, mark uint32) {
+func panelShapedNode() *d.Node {
+	return &d.Node{BandwidthSettings: &d.BandwidthSettings{Enabled: true, Interface: "eth0", TotalBW: 1000}}
+}
+func panelSockopt(t *testing.T, c *OrderedConfig, tag string) map[string]interface{} {
 	t.Helper()
-	out := panelOutbound(t, c, tag)
-	ss, _ := out["streamSettings"].(map[string]interface{})
+	ss, _ := panelOutbound(t, c, tag)["streamSettings"].(map[string]interface{})
 	sock, _ := ss["sockopt"].(map[string]interface{})
-	if sock["mark"] != mark {
-		t.Fatalf("outbound %s mark=%v, want %d", tag, sock["mark"], mark)
+	return sock
+}
+func assertPanelTier(t *testing.T, c *OrderedConfig, tag string, level uint32) {
+	t.Helper()
+	custom, _ := panelSockopt(t, c, tag)["customSockopt"].([]interface{})
+	if len(custom) == 0 {
+		t.Fatalf("outbound %s has no tier priority", tag)
+	}
+	last := custom[len(custom)-1].(map[string]interface{})
+	if want := fmt.Sprint(0xb00000 | level); last["opt"] != "12" || last["value"] != want {
+		t.Fatalf("outbound %s priority=%v, want %s", tag, last, want)
 	}
 }
 func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).
+	b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).
 		WithUsers(map[string][]*User{"in": {{Email: "limited@example.test", Level: 1}, {Email: "another@example.test", Level: 1}}}).
 		WithOutbounds([]*d.Outbound{
 			{Tag: "proxy", Protocol: "socks", Address: "192.0.2.1", Port: 1080, ProxySettings: &d.ProxySettings{Tag: "direct"}},
-			{Tag: "warp", Protocol: "freedom", Network: "tcp", SockoptSettings: &d.SockoptSettings{Interface: "wg0"}},
+			{Tag: "warp", Protocol: "freedom", Network: "tcp", SockoptSettings: &d.SockoptSettings{Interface: "wg0", Mark: 0xca6d}},
 		}).WithRoutingRules([]*d.RoutingRule{
 		{Enabled: true, RuleTag: "block", OutboundTag: "blocked", DomainRules: d.DomainMatcherSlice{{Type: "regex", Value: `^blocked\.test$`}}},
 		{Enabled: true, RuleTag: "private", OutboundTag: "proxy", UserEmails: []string{"other@test"}, DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "private.test"}}},
@@ -108,9 +119,9 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 		}
 	}
 	tag, _ := firstPanelRoute(t, c, "in", "limited@example.test", "warp.test")
-	assertPanelMark(t, c, tag, 10)
-	if panelOutbound(t, c, tag)["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{})["interface"] != "wg0" {
-		t.Fatal("lost interface")
+	assertPanelTier(t, c, tag, 1)
+	if sock := panelSockopt(t, c, tag); sock["interface"] != "wg0" || sock["mark"] != uint32(0xca6d) {
+		t.Fatalf("lost interface or policy mark: %v", sock)
 	}
 	// The specialized rule must intersect the original user matcher.
 	tag, _ = firstPanelRoute(t, c, "in", "another@example.test", "warp.test")
@@ -118,7 +129,7 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 		t.Fatal("user matcher broadened")
 	}
 	tag, _ = firstPanelRoute(t, c, "in", "limited@example.test", "private.test")
-	assertPanelMark(t, c, tag, 10)
+	assertPanelTier(t, c, tag, 1)
 	if panelOutbound(t, c, tag)["protocol"] != "freedom" {
 		t.Fatal("private user route broadened")
 	}
@@ -134,11 +145,11 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 		}
 		if bal["tag"] == balTag {
 			for _, outTag := range bal["selector"].([]string) {
-				assertPanelMark(t, c, outTag, 10)
-				chain := panelOutbound(t, c, outTag)["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{})["dialerProxy"].(string)
-				assertPanelMark(t, c, chain, 10)
+				assertPanelTier(t, c, outTag, 1)
+				chain := panelSockopt(t, c, outTag)["dialerProxy"].(string)
+				assertPanelTier(t, c, chain, 1)
 			}
-			assertPanelMark(t, c, bal["fallbackTag"].(string), 10)
+			assertPanelTier(t, c, bal["fallbackTag"].(string), 1)
 		}
 	}
 	// No map-order nondeterminism or mutation of the model between builds.
@@ -151,7 +162,7 @@ func TestPanelSettingsBandwidthRetainsPolicyOrder(t *testing.T) {
 
 func TestPanelSettingsBandwidthUserMatcherCompatibility(t *testing.T) {
 	for _, users := range [][]string{{"regexp:"}, {"regexp:["}, {"regexp:^limited@"}, {"limited@test"}, {""}} {
-		b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).
+		b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).
 			WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 			WithOutbounds([]*d.Outbound{{Tag: "private", Protocol: "socks", Address: "192.0.2.1", Port: 1080}}).
 			WithRoutingRules([]*d.RoutingRule{{Enabled: true, OutboundTag: "private", UserEmails: users}, {Enabled: true, OutboundTag: "blocked", NetworkRules: []string{"tcp", "udp"}}})
@@ -175,7 +186,7 @@ func (d *panelTestDNS) LookupIP(_ string, _ dns.IPOption) ([]net.IP, uint32, err
 	return []net.IP{net.ParseIP("203.0.113.7")}, 60, nil
 }
 func TestPanelSettingsBandwidthPreservesDNSRetryAndImplicitDefault(t *testing.T) {
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
+	b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 		WithOutbounds([]*d.Outbound{{Tag: "first-proxy", Protocol: "socks", Address: "192.0.2.1", Port: 1080}}).
 		WithRoutingRules([]*d.RoutingRule{{Enabled: true, OutboundTag: "blocked", IPCIDRRules: []string{"203.0.113.0/24"}}})
 	c := b.buildOrderedConfig()
@@ -203,7 +214,7 @@ func TestPanelSettingsBandwidthPreservesDNSRetryAndImplicitDefault(t *testing.T)
 	}
 	internal := loop["settings"].(map[string]interface{})["inboundTag"].(string)
 	tag, _ = firstPanelRoute(t, c, internal, "limited@test", "198.51.100.1")
-	assertPanelMark(t, c, tag, 10)
+	assertPanelTier(t, c, tag, 1)
 	if panelOutbound(t, c, tag)["protocol"] != "socks" {
 		t.Fatal("implicit default changed")
 	}
@@ -313,10 +324,10 @@ func TestPanelSettingsReverseRulesPrecedeCatchAll(t *testing.T) {
 // Instantiate real core features so generated loopback handlers, routing,
 // defaults, and balancers are checked together for startup compatibility.
 func TestPanelSettingsGeneratedConfigStarts(t *testing.T) {
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).
+	b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).
 		WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 		WithBalancingRules([]*d.BalancingRule{{Tag: "pool", Enabled: true, Strategy: "roundrobin", OutboundSelectors: []string{"direct"}}}).
-		WithRoutingRules([]*d.RoutingRule{{Enabled: true, BalancingTag: "pool", DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "balanced.test"}}}}).
+		WithRoutingRules([]*d.RoutingRule{{Enabled: true, RuleTag: "balanced", BalancingTag: "pool", DomainRules: d.DomainMatcherSlice{{Type: "full", Value: "balanced.test"}}}}).
 		WithReverseProxies(nil)
 	raw, err := b.Build()
 	if err != nil {
@@ -347,7 +358,7 @@ type panelTestHandler struct {
 
 func (h *panelTestHandler) Tag() string { return h.tag }
 func TestPanelSettingsBalancerPrefixIsolation(t *testing.T) {
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).
+	b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).
 		WithOutbounds([]*d.Outbound{{Tag: "portal-extra", Protocol: "freedom"}}).
 		WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 		WithBalancingRules([]*d.BalancingRule{{Tag: "pool", Enabled: true, Strategy: "roundrobin", OutboundSelectors: []string{"portal"}}}).

@@ -846,7 +846,7 @@ function StepConfigure({
                         ))}
                     </select>
                     <p className="text-xs text-muted-foreground">
-                        Maximum bandwidth per connection. Requires TC bandwidth shaping on nodes.
+                        Shared by everyone on this speed on a node. Applies on nodes with bandwidth shaping on.
                     </p>
                 </div>
                 */}

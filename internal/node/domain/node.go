@@ -167,8 +167,9 @@ type BandwidthSettings struct {
 	InterfaceOverride string `json:"interface_override,omitempty"` // forces a device when the derived one is wrong
 }
 
-// ResolveShapingInterface returns the device carrying the HTB and IFB qdiscs,
-// plus a warning when that isn't the derived one.
+// ResolveShapingInterface returns the uplink the agent must shape (it shapes
+// every other eligible device too), plus a warning when that isn't the derived
+// one.
 func (n *Node) ResolveShapingInterface(ingressIfName string) (string, string) {
 	bs := n.GetBandwidthSettingsOrDefault()
 

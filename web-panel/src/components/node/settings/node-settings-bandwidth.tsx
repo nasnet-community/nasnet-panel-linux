@@ -26,7 +26,7 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
             <CardHeader>
                 <CardTitle className="text-base">Bandwidth Shaping</CardTitle>
                 <CardDescription>
-                    Control per-user bandwidth limits using Linux TC (Traffic Control)
+                    Enforce the speed limits of subscriptions with Linux TC (Traffic Control)
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -45,14 +45,15 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                                         <FormLabel className="flex items-center gap-2">
                                             Enable Bandwidth Shaping
                                             <InfoPopover>
-                                                When enabled, the agent sets up Linux TC (HTB) rules to
-                                                enforce per-user speed limits. Subscriptions with a speed limit
-                                                have their traffic shaped to it.
+                                                When enabled, the agent enforces the speed limits set on
+                                                subscriptions. Each speed is one pipe on this node, shared by
+                                                everyone on it: two users on 10 Mbps get 10 Mbps between them.
+                                                Traffic through WireGuard outbounds isn&apos;t limited.
                                                 Requires the agent to run as root.
                                             </InfoPopover>
                                         </FormLabel>
                                         <FormDescription>
-                                            Apply TC rate limiting on this node
+                                            Enforce speed limits on this node
                                         </FormDescription>
                                     </div>
                                     <FormControl>
@@ -81,7 +82,7 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                                                 />
                                             </FormControl>
                                             <FormDescription>
-                                                Egress interface for TC shaping (e.g. eth0, ens3)
+                                                Main uplink (e.g. eth0, ens3). Tunnels on the node are covered too.
                                             </FormDescription>
                                             <FormMessage />
                                         </FormItem>
@@ -102,7 +103,7 @@ export function NodeSettingsBandwidth({ settingsForm, isStealth }: NodeSettingsB
                                                 />
                                             </FormControl>
                                             <FormDescription>
-                                                Total bandwidth of the server&apos;s link
+                                                Cap for all limited users together, usually the link speed
                                             </FormDescription>
                                             <FormMessage />
                                         </FormItem>

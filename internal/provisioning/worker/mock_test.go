@@ -373,6 +373,7 @@ func (m *mockNodeUsecase) ReverseTunnelPeerConfig(context.Context, uint) (*nodeU
 // Agent Management
 func (m *mockNodeUsecase) PushConfigViaAgent(context.Context, uint) error { return nil }
 func (m *mockNodeUsecase) PushFullConfig(context.Context, uint) error     { return nil }
+func (m *mockNodeUsecase) RequestShapingPush(...uint)                     {}
 func (m *mockNodeUsecase) GetNodeSystemStats(context.Context, uint) (*agent.SystemStats, error) {
 	return nil, nil
 }

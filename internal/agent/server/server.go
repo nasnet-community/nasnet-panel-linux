@@ -111,8 +111,10 @@ type Server struct {
 	// depMgr installs tunnel binaries on demand; built on first use.
 	depMgr *depinstall.Manager
 
-	// Bandwidth shaping (TC)
+	// Bandwidth shaping (TC). bwMu guards tcManager; bwStop ends the keeper.
+	bwMu      sync.Mutex
 	tcManager *agenttc.Manager
+	bwStop    chan struct{}
 
 	// The single writer of `table inet nasnet`
 	nftManager *nft.Manager
@@ -187,13 +189,11 @@ func NewServer(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("register mtproto core: %w", err)
 	}
 
-	// Initialize bandwidth shaping (TC)
+	// Initialize bandwidth shaping (TC). The hub's last settings are persisted
+	// in the agent config, so shaping comes back after a restart or reboot.
+	s.bwStop = make(chan struct{})
 	if cfg.Bandwidth.Enabled && cfg.Bandwidth.Interface != "" {
-		tcMgr, err := agenttc.NewManager(cfg.Bandwidth.Interface, cfg.Bandwidth.TotalBW, s.nftManager)
-		if err != nil {
-			return nil, fmt.Errorf("bandwidth manager: %w", err)
-		}
-		s.tcManager = tcMgr
+		s.tcManager = agenttc.NewManager(cfg.Bandwidth.Interface, cfg.Bandwidth.TotalBW)
 	}
 
 	// Initialize access log collector (per-subscription DNS logs)
@@ -248,12 +248,8 @@ func (s *Server) StartBackgroundServices(ctx context.Context) {
 		}
 	}
 
-	// Setup TC bandwidth shaping
-	if s.tcManager != nil {
-		if err := s.tcManager.Setup(ctx); err != nil {
-			logrus.WithError(err).Warn("Failed to setup TC bandwidth shaping (non-fatal)")
-		}
-	}
+	// Keep TC bandwidth shaping in place
+	go s.keepBandwidth()
 
 	// Start traffic collector after xray
 	if s.trafficCollector != nil {
@@ -367,11 +363,11 @@ func (s *Server) stop(ctx context.Context) {
 		s.accessLogCollector.Stop()
 	}
 
-	// Teardown TC bandwidth shaping
-	if s.tcManager != nil {
-		if err := s.tcManager.Teardown(ctx); err != nil {
-			logrus.WithError(err).Warn("Failed to teardown TC bandwidth shaping")
-		}
+	// Bandwidth shaping stays in place across restarts and self-updates, so
+	// limited users aren't let loose while the agent is down. Uninstalling
+	// and TeardownBandwidth remove it.
+	if s.bwStop != nil {
+		close(s.bwStop)
 	}
 
 	// Stop Xray
@@ -1125,7 +1121,8 @@ func (s *Server) StreamLogs(req *pb.LogRequest, stream pb.NodeAgent_StreamLogsSe
 
 // ===== Bandwidth Shaping Methods =====
 
-// SetupBandwidth initializes TC bandwidth shaping on the node
+// SetupBandwidth brings TC bandwidth shaping on the node in line with the
+// hub's settings. It is idempotent: when nothing changed it only checks.
 func (s *Server) SetupBandwidth(ctx context.Context, req *pb.BandwidthRequest) (*pb.CommandResponse, error) {
 	iface := req.InterfaceName
 	if iface == "" {
@@ -1143,48 +1140,104 @@ func (s *Server) SetupBandwidth(ctx context.Context, req *pb.BandwidthRequest) (
 		totalBW = s.cfg.Bandwidth.TotalBW
 	}
 
-	tcMgr, err := agenttc.NewManager(iface, totalBW, s.nftManager)
+	s.bwMu.Lock()
+	defer s.bwMu.Unlock()
+	if s.tcManager == nil || s.tcManager.Iface() != iface || s.tcManager.TotalBW() != totalBW {
+		s.tcManager = agenttc.NewManager(iface, totalBW)
+	}
+	err := s.tcManager.Ensure()
+	// Persisted even when incomplete, so a restart retries it.
+	s.persistBandwidth(true, iface, totalBW)
 	if err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
-			Message:   "Failed to create bandwidth manager",
-			ErrorCode: err.Error(),
-		}, nil
-	}
-	s.tcManager = tcMgr
-	if err := s.tcManager.Setup(ctx); err != nil {
-		return &pb.CommandResponse{
-			Success:   false,
-			Message:   "Failed to setup bandwidth shaping",
-			ErrorCode: err.Error(),
+			Message:   "Bandwidth shaping is incomplete: " + err.Error(),
+			ErrorCode: "BANDWIDTH_SETUP_FAILED",
 		}, nil
 	}
 
 	return &pb.CommandResponse{
 		Success: true,
-		Message: fmt.Sprintf("Bandwidth shaping configured on %s (%d Mbps link)", iface, totalBW),
+		Message: fmt.Sprintf("Bandwidth shaping in place (uplink %s, %d Mbps)", iface, totalBW),
 	}, nil
 }
 
-// TeardownBandwidth removes TC bandwidth shaping from the node
+// TeardownBandwidth removes TC bandwidth shaping from the node, including any
+// left by an earlier agent process or version.
 func (s *Server) TeardownBandwidth(ctx context.Context, _ *pb.Empty) (*pb.CommandResponse, error) {
-	if s.tcManager == nil {
-		return &pb.CommandResponse{Success: true, Message: "No bandwidth shaping configured"}, nil
+	s.bwMu.Lock()
+	defer s.bwMu.Unlock()
+	mgr := s.tcManager
+	if mgr == nil {
+		mgr = agenttc.NewManager(s.cfg.Bandwidth.Interface, s.cfg.Bandwidth.TotalBW)
 	}
-
-	if err := s.tcManager.Teardown(ctx); err != nil {
+	err := mgr.Teardown()
+	s.tcManager = nil
+	s.persistBandwidth(false, "", 0)
+	if err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
-			Message:   "Failed to teardown bandwidth shaping",
-			ErrorCode: err.Error(),
+			Message:   "Failed to teardown bandwidth shaping: " + err.Error(),
+			ErrorCode: "BANDWIDTH_TEARDOWN_FAILED",
 		}, nil
 	}
-	s.tcManager = nil
 
 	return &pb.CommandResponse{
 		Success: true,
 		Message: "Bandwidth shaping removed",
 	}, nil
+}
+
+// keepBandwidth applies the persisted shaping at startup and re-checks it every
+// minute, which also covers interfaces created later: tunnels brought up after
+// the agent, or the TUN devices Xray recreates when it restarts.
+func (s *Server) keepBandwidth() {
+	var lastErr string
+	ensure := func() {
+		s.bwMu.Lock()
+		defer s.bwMu.Unlock()
+		if s.tcManager == nil {
+			return
+		}
+		err := s.tcManager.Ensure()
+		switch {
+		case err == nil:
+			lastErr = ""
+		case err.Error() != lastErr:
+			lastErr = err.Error()
+			logrus.WithError(err).Warn("Bandwidth shaping is incomplete")
+		}
+	}
+	ensure()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			ensure()
+		case <-s.bwStop:
+			return
+		}
+	}
+}
+
+// persistBandwidth records the hub's shaping settings in the agent config.
+func (s *Server) persistBandwidth(enabled bool, iface string, totalBW int) {
+	b := &s.cfg.Bandwidth
+	if b.Enabled == enabled && (!enabled || (b.Interface == iface && b.TotalBW == totalBW)) {
+		return
+	}
+	b.Enabled = enabled
+	if enabled {
+		b.Interface, b.TotalBW = iface, totalBW
+	}
+	// The built-in node has no config file; the panel sends it the settings.
+	if s.cfg.FilePath == "" {
+		return
+	}
+	if err := s.cfg.Save(); err != nil {
+		logrus.WithError(err).Warn("Failed to persist bandwidth settings")
+	}
 }
 
 // ===== Access Log Methods =====
@@ -2114,6 +2167,10 @@ func (s *Server) scheduleSelfDestruct() {
 // runSelfDestructInline performs the actual cleanup and exits. Separated so
 // tests can run it synchronously in a subprocess if needed.
 func (s *Server) runSelfDestructInline() {
+	// Shaping outlives agent restarts on purpose; it goes with the agent.
+	if err := agenttc.NewManager(s.cfg.Bandwidth.Interface, s.cfg.Bandwidth.TotalBW).Teardown(); err != nil {
+		logrus.WithError(err).Warn("Failed to remove bandwidth shaping")
+	}
 	xrayServiceName := s.cfg.Process.ServiceName
 	if xrayServiceName != "" {
 		logrus.WithField("service", xrayServiceName).Info("Disabling xray systemd service")

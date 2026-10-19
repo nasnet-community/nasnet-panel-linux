@@ -57,6 +57,17 @@ set -e
 if [[ $EUID -ne 0 ]]; then echo "run as root" >&2; exit 1; fi
 systemctl stop nasnet-agent 2>/dev/null || true
 systemctl disable nasnet-agent 2>/dev/null || true
+# Bandwidth shaping outlives agent restarts; it goes with the agent.
+nft delete table inet nasnet_bw 2>/dev/null || true
+for dev in $(ls /sys/class/net); do
+    { tc filter show dev "$dev" egress; tc filter show dev "$dev" ingress; } 2>/dev/null | grep -q "device nasnet-bw-" || continue
+    for hook in egress ingress; do
+        for prio in 41001 41002; do tc filter del dev "$dev" "$hook" prio "$prio" 2>/dev/null || true; done
+    done
+    [ -z "$(tc filter show dev "$dev" egress 2>/dev/null)$(tc filter show dev "$dev" ingress 2>/dev/null)" ] && tc qdisc del dev "$dev" clsact 2>/dev/null || true
+done
+ip link del nasnet-bw-up 2>/dev/null || true
+ip link del nasnet-bw-down 2>/dev/null || true
 rm -f /etc/systemd/system/nasnet-agent.service
 rm -rf /etc/nasnet-agent /var/lib/nasnet-agent /var/log/nasnet-agent
 rm -f /usr/local/bin/nasnet-agent

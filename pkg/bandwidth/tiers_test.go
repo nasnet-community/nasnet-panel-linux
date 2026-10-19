@@ -2,22 +2,16 @@ package bandwidth
 
 import "testing"
 
-func TestTier_OutboundTag(t *testing.T) {
-	if got := (Tier{RateMbit: 0}).OutboundTag(); got != "direct" {
-		t.Errorf("unlimited tag = %q, want direct", got)
+func TestTier_Identifiers(t *testing.T) {
+	tier := Tier{Level: 3}
+	if got := tier.SocketPriority(); got != 0xb00003 {
+		t.Errorf("socket priority = %#x, want 0xb00003", got)
 	}
-	if got := (Tier{RateMbit: 30}).OutboundTag(); got != "direct-bw30" {
-		t.Errorf("30Mbps tag = %q, want direct-bw30", got)
+	if got := tier.ClassID(); got != "b1:3" {
+		t.Errorf("class = %q, want b1:3", got)
 	}
-}
-
-func TestTier_TCClassID(t *testing.T) {
-	// Mark==0 falls back to the default class 1:99.
-	if got := (Tier{Mark: 0}).TCClassID(); got != "1:99" {
-		t.Errorf("default class = %q", got)
-	}
-	if got := (Tier{Mark: 50}).TCClassID(); got != "1:50" {
-		t.Errorf("mark=50 class = %q", got)
+	if got := tier.ConnMark(); got != 0x30000000 || got&^ConnMarkMask != 0 {
+		t.Errorf("conn mark = %#x, want 0x30000000 inside the mask", got)
 	}
 }
 

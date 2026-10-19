@@ -192,7 +192,7 @@ func (u *subscriptionUsecase) SetCustomDataLimit(ctx context.Context, id uint, l
 
 // SetCustomBandwidthLimit sets a custom bandwidth limit override for a subscription
 // Pass nil to clear the override (unlimited), Pass pointer to 0 for unlimited
-// Note: The new bandwidth tier takes effect on next config push/sync.
+// Nodes that shape bandwidth get the new tier within seconds.
 func (u *subscriptionUsecase) SetCustomBandwidthLimit(ctx context.Context, id uint, limitMbps *int) error {
 	log := logger.GetLogger()
 
@@ -203,6 +203,11 @@ func (u *subscriptionUsecase) SetCustomBandwidthLimit(ctx context.Context, id ui
 
 	if err := u.subRepo.SetCustomBandwidthLimit(ctx, id, limitMbps); err != nil {
 		return err
+	}
+	// Nodes that shape bandwidth get the new tier within seconds; a node
+	// whose config doesn't change skips the push.
+	if u.nodeUC != nil {
+		u.nodeUC.RequestShapingPush()
 	}
 
 	actionStr := "reset to default"

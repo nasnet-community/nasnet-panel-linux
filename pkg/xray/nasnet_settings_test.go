@@ -13,7 +13,7 @@ import (
 func TestPanelSettingsRouterBandwidthPreservesWANSelection(t *testing.T) {
 	via := TagDirectForeignVia("secondary2")
 	pinned := netmark.GroupMark(netmark.GroupForeignVia(3)) | netmark.PinMark(2)
-	b := NewFullConfigBuilder(&d.Node{}).WithAPI(false, 0).WithRouterMode(true).WithRouterWANs(twoVias()).
+	b := NewFullConfigBuilder(panelShapedNode()).WithAPI(false, 0).WithRouterMode(true).WithRouterWANs(twoVias()).
 		WithUsers(map[string][]*User{"in": {{Email: "limited@test", Level: 1}}}).
 		WithOutbounds([]*d.Outbound{
 			{Tag: "pinned", Protocol: "freedom", Network: "tcp", SockoptSettings: &d.SockoptSettings{Mark: pinned | 200}},
@@ -34,7 +34,8 @@ func TestPanelSettingsRouterBandwidthPreservesWANSelection(t *testing.T) {
 		{"via.test", via, netmark.GroupForeignVia(3)},
 	} {
 		tag, _ := firstPanelRoute(t, c, "in", "limited@test", tc.host)
-		assertPanelMark(t, c, tag, netmark.GroupMark(tc.group)|10)
+		assertPanelMark(t, c, tag, netmark.GroupMark(tc.group))
+		assertPanelTier(t, c, tag, 1)
 		tag, _ = firstPanelRoute(t, c, "in", "unlimited@test", tc.host)
 		if tag != tc.original {
 			t.Fatalf("unlimited %s selected %s", tc.host, tag)
@@ -54,15 +55,15 @@ func TestPanelSettingsRouterBandwidthPreservesWANSelection(t *testing.T) {
 		}
 		inbound := c.Outbounds[0]["settings"].(map[string]interface{})["inboundTag"].(string)
 		tag, _ = firstPanelRoute(t, c, inbound, email, "fallback.test")
-		mark := netmark.GroupMark(netmark.GroupForeign)
+		assertPanelMark(t, c, tag, netmark.GroupMark(netmark.GroupForeign))
 		if email == "limited@test" {
-			mark |= 10
+			assertPanelTier(t, c, tag, 1)
 		}
-		assertPanelMark(t, c, tag, mark)
 	}
 	tag, _ := firstPanelRoute(t, c, "in", "limited@test", "chain.test")
 	dialer := panelOutbound(t, c, tag)["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{})["dialerProxy"].(string)
-	assertPanelMark(t, c, dialer, pinned|10)
+	assertPanelMark(t, c, dialer, pinned|200)
+	assertPanelTier(t, c, dialer, 1)
 	assertPanelMark(t, c, "pinned", pinned|200)
 	_, balTag := firstPanelRoute(t, c, "in", "limited@test", "balanced.test")
 	found := false
@@ -78,9 +79,10 @@ func TestPanelSettingsRouterBandwidthPreservesWANSelection(t *testing.T) {
 		for _, selector := range selectors {
 			mark := sockoptMark(t, panelOutbound(t, c, selector))
 			group := netmark.Group(mark)
-			if netmark.Tier(mark) != 10 || (group != netmark.GroupForeign && !netmark.IsGroupForeignVia(group)) {
-				t.Fatalf("balancer changed WAN or tier: 0x%x", mark)
+			if group != netmark.GroupForeign && !netmark.IsGroupForeignVia(group) {
+				t.Fatalf("balancer changed WAN: 0x%x", mark)
 			}
+			assertPanelTier(t, c, selector, 1)
 		}
 	}
 	if !found {
@@ -96,6 +98,14 @@ func TestPanelSettingsRouterBandwidthPreservesWANSelection(t *testing.T) {
 	}
 	if _, err := parsed.Build(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The router's tier copies keep the original's WAN mark untouched.
+func assertPanelMark(t *testing.T, c *OrderedConfig, tag string, mark uint32) {
+	t.Helper()
+	if got := panelSockopt(t, c, tag)["mark"]; got != mark {
+		t.Fatalf("outbound %s mark=%v, want %d", tag, got, mark)
 	}
 }
 

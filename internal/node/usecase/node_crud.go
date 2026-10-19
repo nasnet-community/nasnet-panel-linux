@@ -579,6 +579,7 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	ipChanged := node.IP != existing.IP
 	portChanged := existing.AgentPort != node.AgentPort
 	accessLogChanged := existing.EnableAccessLog != node.EnableAccessLog
+	shapingChanged := *existing.GetBandwidthSettingsOrDefault() != *node.GetBandwidthSettingsOrDefault()
 
 	// Update DB first
 	if err := u.nodeRepo.UpdateNode(ctx, node); err != nil {
@@ -606,6 +607,12 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	}
 	if u.statsCache != nil {
 		u.statsCache.Invalidate(node.ID)
+	}
+
+	// Turning shaping on or off adds or drops the tier routing in the Xray
+	// config; the push also applies the shaping itself.
+	if shapingChanged && node.IsActive {
+		u.requestConfigPush(node.ID)
 	}
 
 	// If API Port changed and using agent, update agent config

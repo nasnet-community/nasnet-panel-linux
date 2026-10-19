@@ -780,7 +780,8 @@ func (c *Client) SetupBandwidth(ctx context.Context, iface string, totalBWMbps i
 		return err
 	}
 	if !resp.Success {
-		return fmt.Errorf("failed to setup bandwidth: %s", resp.Message)
+		// Older agents put the actual error in ErrorCode.
+		return fmt.Errorf("failed to setup bandwidth: %s (%s)", resp.Message, resp.ErrorCode)
 	}
 	return nil
 }
