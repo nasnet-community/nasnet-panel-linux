@@ -134,6 +134,8 @@ func (u *nodeUsecase) UpdateHost(ctx context.Context, host *domain.Host) error {
 	if err := u.nodeRepo.UpdateHost(ctx, host); err != nil {
 		return err
 	}
+	// A reverse tunnel's bridge may dial through this host.
+	u.pushReverseBridgesOfHost(ctx, host.ID)
 	return nil
 }
 
@@ -142,6 +144,9 @@ func (u *nodeUsecase) DeleteHost(ctx context.Context, id uint) error {
 	log := logger.GetLogger()
 	log.WithField("host_id", id).Info("[DeleteHost] Deleting host")
 
+	if err := u.rejectReverseTunnelHost(ctx, id); err != nil {
+		return err
+	}
 	if err := u.nodeRepo.DeleteHost(ctx, id); err != nil {
 		log.WithError(err).Error("[DeleteHost] Failed to delete host")
 		return err

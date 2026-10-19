@@ -43,6 +43,10 @@ func newFakeStatsNodeRepo(nodes ...*domain.Node) *fakeStatsNodeRepo {
 	return r
 }
 
+func (r *fakeStatsNodeRepo) ListReverseTunnelsByNode(context.Context, uint) ([]*domain.ReverseTunnel, error) {
+	return nil, nil
+}
+
 func (r *fakeStatsNodeRepo) GetNode(_ context.Context, id uint) (*domain.Node, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

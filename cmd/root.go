@@ -216,6 +216,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&nodeDomain.NodeCertSighting{},
 		&nodeDomain.UsedDeploymentToken{},
 		&nodeDomain.ReverseProxy{},
+		&nodeDomain.ReverseTunnel{},
 		&chatDomain.ChatMessage{},
 		&chatDomain.ChatReaction{},
 		&alertDomain.Rule{},

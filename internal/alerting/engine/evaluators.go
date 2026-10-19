@@ -487,3 +487,93 @@ func displayName(name string, id uint) string {
 	}
 	return fmt.Sprintf("node #%d", id)
 }
+
+// ----- reverse_tunnel_down -----
+
+func (e *Engine) evalTunnelDown(ctx context.Context, p events.ReverseTunnelPayload) {
+	e.mu.Lock()
+	if prev, ok := e.tunnelsDown[p.TunnelID]; ok && prev.Since.Before(p.Since) {
+		p.Since = prev.Since
+	}
+	e.tunnelsDown[p.TunnelID] = p
+	e.mu.Unlock()
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeReverseTunnelDown) {
+		e.evalTunnelDownForRule(ctx, rule, p)
+	}
+}
+
+// evalTunnelDownForRule honours DurationSec as a grace period from when the
+// portal stopped seeing the bridge; config pushes restart both ends and drop
+// the tunnel for a few seconds.
+func (e *Engine) evalTunnelDownForRule(ctx context.Context, rule *domain.Rule, p events.ReverseTunnelPayload) {
+	if !e.ruleAppliesToNode(rule, p.PortalNodeID) {
+		return
+	}
+	if grace := time.Duration(rule.Threshold.DurationSec) * time.Second; time.Since(p.Since) < grace {
+		return
+	}
+	// A portal that is offline itself is the node-offline alert's to report.
+	e.mu.Lock()
+	online, known := e.nodeOnline[p.PortalNodeID]
+	e.mu.Unlock()
+	if known && !online {
+		return
+	}
+	title := fmt.Sprintf("Reverse tunnel down: %s", p.Name)
+	msg := fmt.Sprintf("The bridge of reverse tunnel %s hasn't been connected to its portal for %s.", p.Name, time.Since(p.Since).Round(time.Second))
+	e.fireOrSkip(ctx, rule, tunnelEntityKey(p.TunnelID), title, msg, valueAsJSON(p))
+}
+
+func (e *Engine) resolveTunnelDown(ctx context.Context, p events.ReverseTunnelPayload) {
+	e.mu.Lock()
+	delete(e.tunnelsDown, p.TunnelID)
+	e.mu.Unlock()
+	if p.Removed {
+		e.clearTunnelDown(ctx, p)
+		return
+	}
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeReverseTunnelDown) {
+		if !e.ruleAppliesToNode(rule, p.PortalNodeID) {
+			continue
+		}
+		title := fmt.Sprintf("Recovered: reverse tunnel %s is up", p.Name)
+		msg := fmt.Sprintf("The bridge of reverse tunnel %s is connected again", p.Name)
+		if p.BridgeIP != "" {
+			msg += " from " + p.BridgeIP
+		}
+		e.resolveIfFiring(ctx, rule, tunnelEntityKey(p.TunnelID), title, msg+".")
+	}
+}
+
+// clearTunnelDown closes a deleted tunnel's alert without a recovery notice:
+// nothing recovered, the tunnel is gone.
+func (e *Engine) clearTunnelDown(ctx context.Context, p events.ReverseTunnelPayload) {
+	entity := tunnelEntityKey(p.TunnelID)
+	for _, rule := range e.rulesOfType(ctx, domain.RuleTypeReverseTunnelDown) {
+		state, err := e.repo.GetState(ctx, rule.ID, entity)
+		if err != nil || state == nil || !state.Firing {
+			continue
+		}
+		now := time.Now()
+		_ = e.repo.InsertEvent(ctx, &domain.Event{
+			RuleID:    rule.ID,
+			EntityKey: entity,
+			Status:    domain.EventStatusResolved,
+			Title:     fmt.Sprintf("Removed: reverse tunnel %s", p.Name),
+			Message:   fmt.Sprintf("Reverse tunnel %s was deleted.", p.Name),
+			CreatedAt: now,
+		})
+		_ = e.repo.UpsertState(ctx, &domain.State{
+			RuleID:           rule.ID,
+			EntityKey:        entity,
+			Firing:           false,
+			FirstTriggeredAt: state.FirstTriggeredAt,
+			LastNotifiedAt:   &now,
+			UpdatedAt:        now,
+		})
+	}
+}
+
+func tunnelEntityKey(tunnelID uint) string {
+	return fmt.Sprintf("tunnel:%d", tunnelID)
+}

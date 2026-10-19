@@ -146,6 +146,9 @@ func (u *nodeUsecase) DeleteNode(ctx context.Context, id uint, force bool) error
 			return fmt.Errorf("remove the node's outbound pools first")
 		}
 	}
+	if err := u.rejectNodeInReverseTunnel(ctx, id); err != nil {
+		return err
+	}
 
 	log := logger.GetLogger()
 	log.WithField("node_id", id).WithField("force", force).Info("[DeleteNode] Request to delete node")
@@ -596,6 +599,10 @@ func (u *nodeUsecase) UpdateNode(ctx context.Context, node *domain.Node) error {
 	if (ipChanged || portChanged) && u.heartbeatMgr != nil {
 		u.heartbeatMgr.StopNode(node.ID)
 		u.heartbeatMgr.TriggerSync()
+	}
+	// Bridges dial this node's address; its own config doesn't change.
+	if ipChanged {
+		u.pushReverseBridgesOf(node.ID)
 	}
 	if u.statsCache != nil {
 		u.statsCache.Invalidate(node.ID)

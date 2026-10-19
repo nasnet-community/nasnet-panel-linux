@@ -275,6 +275,19 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		reverseProxies.PUT("/:id", h.UpdateReverseProxy)
 		reverseProxies.DELETE("/:id", h.DeleteReverseProxy)
 	}
+
+	// Reverse Tunnel Operations
+	nodes.GET("/:id/reverse-tunnels", h.ListReverseTunnels)
+
+	reverseTunnels := rg.Group("/reverse-tunnels")
+	{
+		reverseTunnels.POST("", h.CreateReverseTunnel)
+		reverseTunnels.GET("/:id", h.GetReverseTunnel)
+		reverseTunnels.PUT("/:id", h.UpdateReverseTunnel)
+		reverseTunnels.DELETE("/:id", h.DeleteReverseTunnel)
+		reverseTunnels.POST("/:id/rotate", h.RotateReverseTunnel)
+		reverseTunnels.GET("/:id/peer-config", h.ReverseTunnelPeerConfig)
+	}
 }
 
 // ==================== Node Operations ====================

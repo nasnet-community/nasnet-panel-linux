@@ -88,6 +88,10 @@ func (u *nodeUsecase) GenerateXrayConfig(ctx context.Context, nodeID uint) (stri
 	if err != nil {
 		return "", err
 	}
+	portals, bridges, err := u.reverseTunnelEnds(ctx, node)
+	if err != nil {
+		return "", err
+	}
 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
@@ -98,6 +102,7 @@ func (u *nodeUsecase) GenerateXrayConfig(ctx context.Context, nodeID uint) (stri
 		WithRoutingRules(rulePtrs).
 		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
+		WithReverseTunnels(portals, bridges).
 		WithUsers(usersMap).
 		WithTunnelSocks(socks).
 		WithAPI(true, node.APIPort)

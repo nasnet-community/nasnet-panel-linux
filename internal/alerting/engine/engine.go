@@ -52,6 +52,9 @@ type Engine struct {
 	latestOffline map[uint]events.NodeStatusPayload
 	// cache of last known node_name/ip for richer alert messages
 	nodeMeta map[uint]nodeMetaEntry
+	// tunnelID → the reverse tunnel outage still in progress, re-evaluated on
+	// the tick like a node that stays down
+	tunnelsDown map[uint]events.ReverseTunnelPayload
 	// MTProto counting rules: "type:nodeID" → occurrences, oldest first
 	mtprotoWindows map[string][]mtprotoHit
 	// MTProto counting rules we fired: "ruleID:entity" → state the tick resolves from
@@ -78,6 +81,7 @@ func NewEngine(bus *events.EventBus, repo repository.AlertRepository) *Engine {
 		offlineSinceAt: make(map[uint]time.Time),
 		latestOffline:  make(map[uint]events.NodeStatusPayload),
 		nodeMeta:       make(map[uint]nodeMetaEntry),
+		tunnelsDown:    make(map[uint]events.ReverseTunnelPayload),
 		mtprotoWindows: make(map[string][]mtprotoHit),
 		mtprotoFiring:  make(map[string]mtprotoFire),
 	}
@@ -182,6 +186,14 @@ func (e *Engine) handleEvent(ctx context.Context, ev events.Event) {
 		if p, ok := ev.Payload.(events.NodeLifecyclePayload); ok && (ev.Type == events.EventNodeDeleted || p.Planned) {
 			e.forgetOfflineSince(p.NodeID)
 		}
+	case events.EventReverseTunnelDown:
+		if p, ok := ev.Payload.(events.ReverseTunnelPayload); ok {
+			e.evalTunnelDown(ctx, p)
+		}
+	case events.EventReverseTunnelUp:
+		if p, ok := ev.Payload.(events.ReverseTunnelPayload); ok {
+			e.resolveTunnelDown(ctx, p)
+		}
 	case events.EventNodeStatsUpdated:
 		if p, ok := ev.Payload.(events.NodeStatsPayload); ok {
 			e.rememberMeta(p.NodeID, p.NodeName, "")
@@ -216,8 +228,19 @@ func (e *Engine) tick(ctx context.Context) {
 	}
 	e.mu.Unlock()
 
+	e.mu.Lock()
+	tunnels := make([]events.ReverseTunnelPayload, 0, len(e.tunnelsDown))
+	for _, p := range e.tunnelsDown {
+		tunnels = append(tunnels, p)
+	}
+	e.mu.Unlock()
+
 	for _, rule := range rules {
 		switch rule.RuleType {
+		case domain.RuleTypeReverseTunnelDown:
+			for _, p := range tunnels {
+				e.evalTunnelDownForRule(ctx, rule, p)
+			}
 		case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk:
 			for _, s := range stats {
 				e.evalStatsForRule(ctx, rule, s)
@@ -434,7 +457,7 @@ func (e *Engine) resolveIfFiring(ctx context.Context, rule *domain.Rule, entityK
 // channel enabledness by-level stays intuitive.
 func levelFor(t domain.RuleType) string {
 	switch t {
-	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop:
+	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop, domain.RuleTypeReverseTunnelDown:
 		return "error"
 	case domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown:
 		return "error"

@@ -102,6 +102,8 @@ type FullConfigBuilder struct {
 	routerMode     bool
 	routerWANs     []RouterWAN
 	tunnelSocks    []TunnelSocks
+	reversePortals []ReversePortal
+	reverseBridges []ReverseBridge
 }
 
 // TunnelSocksTagPrefix starts the tag of each loopback SOCKS inbound a tunnel
@@ -332,6 +334,7 @@ func (b *FullConfigBuilder) buildOrderedConfig() *OrderedConfig {
 	// Configure VLESS Reverse; the top-level legacy reverse block was removed.
 	b.applyVLESSReverse(config)
 	b.applyBandwidthRouting(config)
+	b.applyReverseTunnels(config)
 
 	return config
 }
@@ -1946,7 +1949,7 @@ func (b *FullConfigBuilder) buildRouting() map[string]interface{} {
 	}
 
 	// Convert domain routing rules (both preset and manual rules from DB)
-	for _, rule := range nodeDomain.OrderReverseRoutingRules(b.routing, b.reverseProxies) {
+	for _, rule := range nodeDomain.OrderReverseRoutingRules(b.routing, b.managedReverseRules()) {
 		if rule == nil || !rule.Enabled {
 			continue
 		}

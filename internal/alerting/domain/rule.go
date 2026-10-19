@@ -19,6 +19,10 @@ const (
 	RuleTypeMTProtoAllowlistViolation RuleType = "relay_allowlist_violation"
 	RuleTypeMTProtoEgressDown         RuleType = "relay_egress_down"
 	RuleTypeMTProtoDisguiseDown       RuleType = "relay_disguise_down"
+
+	// RuleTypeReverseTunnelDown fires when a reverse tunnel's portal stops
+	// seeing its bridge.
+	RuleTypeReverseTunnelDown RuleType = "reverse_tunnel_down"
 )
 
 // ScopeKind controls which entities a rule applies to. v1 ships `global`
@@ -38,6 +42,7 @@ const (
 //   - high_cpu/disk:    Value (%) + DurationSec (sustain)
 //   - relay_allowlist_violation, relay_egress_down: Count + WindowSec; resolve once the window is quiet
 //   - relay_disguise_down: none (fires on down, resolves on up)
+//   - reverse_tunnel_down: DurationSec (grace before firing)
 type Threshold struct {
 	Value       float64 `json:"value,omitempty"`
 	Count       int     `json:"count,omitempty"`

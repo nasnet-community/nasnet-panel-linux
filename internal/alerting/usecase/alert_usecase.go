@@ -116,7 +116,8 @@ func validateRule(r *domain.Rule) error {
 	switch r.RuleType {
 	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop,
 		domain.RuleTypeHighCPU, domain.RuleTypeHighDisk,
-		domain.RuleTypeMTProtoAllowlistViolation, domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown:
+		domain.RuleTypeMTProtoAllowlistViolation, domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown,
+		domain.RuleTypeReverseTunnelDown:
 	default:
 		return fmt.Errorf("unknown rule_type %q", r.RuleType)
 	}
@@ -205,6 +206,17 @@ func defaultRules() []*domain.Rule {
 			Scope:       domain.ScopeGlobal,
 			CooldownSec: 3600,
 			Description: "Fires when an MTProto node's cover site stops working.",
+		},
+		{
+			// On from the start: it stays silent until someone builds a
+			// tunnel, and building one is asking to hear when it drops.
+			Name:        "Reverse tunnel down",
+			RuleType:    domain.RuleTypeReverseTunnelDown,
+			Scope:       domain.ScopeGlobal,
+			Threshold:   domain.Threshold{DurationSec: 180},
+			CooldownSec: 900,
+			Enabled:     true,
+			Description: "Fires when a reverse tunnel's bridge stays disconnected from its portal.",
 		},
 	}
 }

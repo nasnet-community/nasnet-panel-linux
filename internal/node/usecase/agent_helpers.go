@@ -841,6 +841,10 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 	if err != nil {
 		return err
 	}
+	portals, bridges, err := u.reverseTunnelEnds(ctx, node)
+	if err != nil {
+		return err
+	}
 
 	// Build full Xray config
 	configBuilder := xray.NewFullConfigBuilder(node).
@@ -851,6 +855,7 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 		WithRoutingRules(routingRules).
 		WithBalancingRules(balancingRules).
 		WithReverseProxies(reverseProxies).
+		WithReverseTunnels(portals, bridges).
 		WithUsers(usersMap).
 		WithTunnelSocks(socks).
 		WithAPI(true, apiPort)
@@ -993,6 +998,9 @@ func (u *nodeUsecase) pushConfigToAgentUnlocked(ctx context.Context, node *domai
 
 	// Reset push backoff state so drift detection resumes normally
 	u.resetPushState(node.ID)
+
+	// Bridges dial what this node serves; carry its changes over to them.
+	u.pushReverseBridgesOf(node.ID)
 
 	// Config changed and Xray was restarted — clear the user-stopped flag
 	// so subsequent pushes don't think the user wants Xray stopped.

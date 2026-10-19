@@ -566,6 +566,28 @@ func (m *mockNodeRepo) DeleteReverseProxiesByNode(_ context.Context, _ uint) err
 func (m *mockNodeRepo) ListReverseProxiesByReferencedTag(_ context.Context, _ uint, _ string) ([]*nodeDomain.ReverseProxy, error) {
 	return nil, nil
 }
+func (m *mockNodeRepo) CreateReverseTunnel(_ context.Context, _ *nodeDomain.ReverseTunnel) error {
+	return nil
+}
+func (m *mockNodeRepo) GetReverseTunnel(_ context.Context, _ uint) (*nodeDomain.ReverseTunnel, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockNodeRepo) UpdateReverseTunnel(_ context.Context, _ *nodeDomain.ReverseTunnel) error {
+	return nil
+}
+func (m *mockNodeRepo) DeleteReverseTunnel(_ context.Context, _ uint) error { return nil }
+func (m *mockNodeRepo) ListReverseTunnels(_ context.Context) ([]*nodeDomain.ReverseTunnel, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) ListReverseTunnelsByNode(_ context.Context, _ uint) ([]*nodeDomain.ReverseTunnel, error) {
+	return nil, nil
+}
+func (m *mockNodeRepo) UpdateReverseTunnelState(_ context.Context, _ *nodeDomain.ReverseTunnel) error {
+	return nil
+}
+func (m *mockNodeRepo) AddReverseTunnelTraffic(_ context.Context, _ uint, _, _ int64) error {
+	return nil
+}
 func (m *mockNodeRepo) CleanupOldNodeStats(_ context.Context, _ int) (int64, error) { return 0, nil }
 func (m *mockNodeRepo) CleanupOldNodeDailyTraffic(_ context.Context, _ int) (int64, error) {
 	return 0, nil

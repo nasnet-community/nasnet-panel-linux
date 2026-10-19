@@ -227,6 +227,9 @@ func (u *nodeUsecase) ensureUniqueTag(ctx context.Context, inbound *domain.Inbou
 	if strings.HasPrefix(inbound.Tag, xray.TunnelSocksTagPrefix) {
 		return fmt.Errorf("inbound tags starting with %q are kept for tunnels", xray.TunnelSocksTagPrefix)
 	}
+	if domain.IsReverseTag(inbound.Tag) {
+		return fmt.Errorf("inbound tags starting with %q are kept for reverse tunnels", domain.ReverseTagPrefix)
+	}
 	existing, err := u.nodeRepo.ListInboundsByNode(ctx, inbound.NodeID)
 	if err != nil {
 		return fmt.Errorf("failed to check inbound tags: %w", err)
@@ -572,6 +575,9 @@ func (u *nodeUsecase) ToggleInboundDisabled(ctx context.Context, id uint) (*doma
 		if len(refs) > 0 {
 			return nil, fmt.Errorf("cannot disable: inbound %q is referenced by reverse proxy %q", current.Tag, refs[0].Tag)
 		}
+		if err := u.rejectReverseTunnelInbound(ctx, current, "disable", false); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := u.nodeRepo.ToggleInboundDisabled(ctx, id); err != nil {
@@ -617,6 +623,9 @@ func (u *nodeUsecase) DeleteInbound(ctx context.Context, id uint) error {
 	}
 	if len(refs) > 0 {
 		return fmt.Errorf("cannot delete: inbound '%s' is referenced by reverse proxy '%s'", inbound.Tag, refs[0].Tag)
+	}
+	if err := u.rejectReverseTunnelInbound(ctx, inbound, "delete", true); err != nil {
+		return err
 	}
 
 	// 1. Soft-delete associated accounts
@@ -675,6 +684,11 @@ func (u *nodeUsecase) UpdateInbound(ctx context.Context, inbound *domain.Inbound
 	inbound.NodeID = prev.NodeID
 	if prev.Tag != inbound.Tag {
 		if err := u.rejectReferencedTagRename(ctx, prev.NodeID, prev.Tag, "inbound", nil); err != nil {
+			return err
+		}
+	}
+	if inbound.IsDisabled || !strings.EqualFold(inbound.Protocol, "vless") {
+		if err := u.rejectReverseTunnelInbound(ctx, prev, "change", false); err != nil {
 			return err
 		}
 	}
@@ -805,6 +819,9 @@ func (u *nodeUsecase) GetRealtimeUsers(ctx context.Context, nodeID uint) ([]*dom
 
 	users := make([]*domain.XrayUser, 0)
 	for email, stat := range userStats {
+		if domain.IsReverseEmail(email) {
+			continue // a tunnel, not a customer
+		}
 		users = append(users, &domain.XrayUser{
 			Email:    email,
 			Uplink:   stat.Up,

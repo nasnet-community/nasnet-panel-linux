@@ -474,6 +474,9 @@ func validateBalancingRule(rule *domain.BalancingRule) error {
 	if len(tag) > 100 {
 		return fmt.Errorf("%w: balancing rule tag must be at most 100 characters", ErrInvalidRoutingRule)
 	}
+	if domain.IsReverseTag(tag) {
+		return fmt.Errorf("%w: balancing rule tags starting with %q are kept for reverse tunnels", ErrInvalidRoutingRule, domain.ReverseTagPrefix)
+	}
 	rule.Tag = tag
 
 	if len(rule.OutboundSelectors) == 0 {
@@ -559,6 +562,11 @@ func (u *nodeUsecase) UpdateBalancingRule(ctx context.Context, rule *domain.Bala
 	if err := u.guardPoolBalancer(ctx, rule, false); err != nil {
 		return err
 	}
+	if existing.Tag != rule.Tag || !rule.Enabled {
+		if err := u.rejectReverseTunnelExit(ctx, existing.NodeID, existing.Tag, true, "change"); err != nil {
+			return err
+		}
+	}
 
 	if exists, err := u.balancingTagExistsOnNode(ctx, rule.NodeID, rule.Tag, rule.ID); err != nil {
 		return fmt.Errorf("failed to check balancing rule uniqueness: %w", err)
@@ -586,6 +594,9 @@ func (u *nodeUsecase) DeleteBalancingRule(ctx context.Context, id uint) error {
 	}
 
 	if err := u.guardPoolBalancer(ctx, rule, true); err != nil {
+		return err
+	}
+	if err := u.rejectReverseTunnelExit(ctx, rule.NodeID, rule.Tag, true, "delete"); err != nil {
 		return err
 	}
 

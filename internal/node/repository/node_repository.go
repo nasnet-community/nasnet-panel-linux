@@ -129,6 +129,16 @@ type NodeRepository interface {
 	DeleteReverseProxiesByNode(ctx context.Context, nodeID uint) error
 	ListReverseProxiesByReferencedTag(ctx context.Context, nodeID uint, tag string) ([]*domain.ReverseProxy, error)
 
+	// Reverse Tunnel Operations
+	CreateReverseTunnel(ctx context.Context, t *domain.ReverseTunnel) error
+	GetReverseTunnel(ctx context.Context, id uint) (*domain.ReverseTunnel, error)
+	UpdateReverseTunnel(ctx context.Context, t *domain.ReverseTunnel) error
+	DeleteReverseTunnel(ctx context.Context, id uint) error
+	ListReverseTunnels(ctx context.Context) ([]*domain.ReverseTunnel, error)
+	ListReverseTunnelsByNode(ctx context.Context, nodeID uint) ([]*domain.ReverseTunnel, error)
+	UpdateReverseTunnelState(ctx context.Context, t *domain.ReverseTunnel) error
+	AddReverseTunnelTraffic(ctx context.Context, id uint, toBridge, fromBridge int64) error
+
 	// Cleanup
 	CleanupOldNodeStats(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldNodeDailyTraffic(ctx context.Context, olderThanDays int) (int64, error)

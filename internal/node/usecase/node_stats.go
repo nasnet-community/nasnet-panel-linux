@@ -916,6 +916,8 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 	{
 		if bulkIPs != nil {
 			observedAt := telemetrySampleTime(onlineIPsCollectedAt, time.Now())
+			// Hidden reverse users are tunnels, not customers online.
+			u.observeReverseTunnels(ctx, node, bulkIPs, observedAt)
 			observedAt = cache.ApplyNodeOnlineIPSnapshot(node.ID, bulkIPs, observedAt, onlineIPsCollectedAt)
 			emails := make([]string, 0, len(bulkIPs))
 			for email, ips := range bulkIPs {
@@ -1007,6 +1009,13 @@ func (u *nodeUsecase) syncSingleNode(ctx context.Context, node *domain.Node, acc
 			persistedAny := false
 			hasFailure := false
 			for _, entry := range resp.Entries {
+				if domain.IsReverseEmail(entry.Email) {
+					// A tunnel's hidden user isn't a customer: no history, but
+					// the hour still counts as handled for the ack.
+					persistedAny = true
+					maxTS = max(maxTS, entry.HourTimestamp)
+					continue
+				}
 				domainsJSON, _ := json.Marshal(entry.Domains)
 				rejDomainsJSON, _ := json.Marshal(entry.RejectedDomains)
 				ipsJSON, _ := json.Marshal(entry.SourceIps)

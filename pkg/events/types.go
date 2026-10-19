@@ -51,6 +51,10 @@ const (
 	EventXrayUp        EventType = "xray.up"
 	EventXrayCrashLoop EventType = "xray.crash_loop"
 
+	// Reverse tunnel events: a portal saw its bridge connect or drop
+	EventReverseTunnelDown EventType = "reverse_tunnel.down"
+	EventReverseTunnelUp   EventType = "reverse_tunnel.up"
+
 	// Chat events
 	EventChatUserMessage       EventType = "chat.user_message"
 	EventChatAdminMessage      EventType = "chat.admin_message"
@@ -260,4 +264,16 @@ type ChatReactionPayload struct {
 	MessageID      uint   `json:"message_id"`
 	Reactor        string `json:"reactor"`
 	Emoji          string `json:"emoji"`
+}
+
+// ReverseTunnelPayload reports a reverse tunnel's bridge connecting or dropping,
+// as its portal sees it.
+type ReverseTunnelPayload struct {
+	TunnelID     uint      `json:"tunnel_id"`
+	Name         string    `json:"name"`
+	PortalNodeID uint      `json:"portal_node_id"`
+	BridgeIP     string    `json:"bridge_ip,omitempty"`
+	Since        time.Time `json:"since"`
+	// Removed marks a deleted tunnel: forget it without a recovery notice.
+	Removed bool `json:"removed,omitempty"`
 }

@@ -66,6 +66,9 @@ func (u *nodeUsecase) acquireStatsSync(ctx context.Context, nodeID uint) (func()
 }
 
 type trafficBytes struct{ up, down int64 }
+
+// tunnelBytes is a reverse tunnel's traffic: to and from its bridge.
+type tunnelBytes struct{ to, from int64 }
 type trafficDayEmail struct {
 	day   time.Time
 	email string
@@ -97,6 +100,8 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 	outbounds := make(map[string]trafficBytes)
 	coreTraffic := make(map[string]map[string]int64)
 	activeInbounds := make(map[string]bool)
+	tunnels := make(map[uint]tunnelBytes) // a portal's hidden users
+	links := make(map[uint]tunnelBytes)   // a bridge's outbounds to its portal
 	var nodeBytes trafficBytes
 	var through int64
 	for _, record := range records {
@@ -107,7 +112,17 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			through = record.Timestamp
 		}
 		day := time.Unix(record.Timestamp, 0).UTC().Truncate(24 * time.Hour)
+		var hidden trafficBytes
 		for email, bytes := range record.UserUplink {
+			if domain.IsReverseEmail(email) {
+				hidden.up += bytes
+				if id, ok := domain.ReverseTunnelIDFromEmail(email); ok {
+					b := tunnels[id]
+					b.from += bytes
+					tunnels[id] = b
+				}
+				continue
+			}
 			b := users[email]
 			b.up += bytes
 			users[email] = b
@@ -117,6 +132,15 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			dailyUsers[k] = b
 		}
 		for email, bytes := range record.UserDownlink {
+			if domain.IsReverseEmail(email) {
+				hidden.down += bytes
+				if id, ok := domain.ReverseTunnelIDFromEmail(email); ok {
+					b := tunnels[id]
+					b.to += bytes
+					tunnels[id] = b
+				}
+				continue
+			}
 			b := users[email]
 			b.down += bytes
 			users[email] = b
@@ -141,15 +165,25 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			}
 			coreTraffic[usage.Email][usage.Protocol] += usage.Uplink + usage.Downlink
 		}
-		if record.TotalUplink > 0 || record.TotalDownlink > 0 {
-			nodeBytes.up += record.TotalUplink
-			nodeBytes.down += record.TotalDownlink
+		// A tunnel's bytes are counted on its hidden user and again on the
+		// portal inbound the bridge dials. Take both out so a customer sent
+		// through a tunnel counts like one leaving directly.
+		totalUp := max(record.TotalUplink-2*hidden.up, 0)
+		totalDown := max(record.TotalDownlink-2*hidden.down, 0)
+		if totalUp > 0 || totalDown > 0 {
+			nodeBytes.up += totalUp
+			nodeBytes.down += totalDown
 			b := dailyNode[day]
-			b.up += record.TotalUplink
-			b.down += record.TotalDownlink
+			b.up += totalUp
+			b.down += totalDown
 			dailyNode[day] = b
 		}
 		for tag, bytes := range record.OutboundUplink {
+			if id, ok := domain.ReverseTunnelIDFromLinkTag(tag); ok {
+				b := links[id]
+				b.from += bytes
+				links[id] = b
+			}
 			if bytes > 0 {
 				b := outbounds[tag]
 				b.up += bytes
@@ -157,6 +191,11 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			}
 		}
 		for tag, bytes := range record.OutboundDownlink {
+			if id, ok := domain.ReverseTunnelIDFromLinkTag(tag); ok {
+				b := links[id]
+				b.to += bytes
+				links[id] = b
+			}
 			if bytes > 0 {
 				b := outbounds[tag]
 				b.down += bytes
@@ -336,6 +375,25 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 		tags = append(tags, tag)
 	}
 	sort.Strings(tags)
+	// A bridge's own counters only matter when the panel can't see the portal.
+	if len(links) > 0 {
+		if list, err := u.nodeRepo.ListReverseTunnelsByNode(ctx, node.ID); err == nil {
+			for _, t := range list {
+				if b, ok := links[t.ID]; ok && t.PortalNodeID == nil {
+					cur := tunnels[t.ID]
+					cur.to, cur.from = cur.to+b.to, cur.from+b.from
+					tunnels[t.ID] = cur
+				}
+			}
+		}
+	}
+	tunnelIDs := make([]uint, 0, len(tunnels))
+	for id, b := range tunnels {
+		if b.to > 0 || b.from > 0 {
+			tunnelIDs = append(tunnelIDs, id)
+		}
+	}
+	sort.Slice(tunnelIDs, func(i, j int) bool { return tunnelIDs[i] < tunnelIDs[j] })
 	err = u.tm.Do(ctx, func(txCtx context.Context) error {
 		if nodeBytes.up > 0 || nodeBytes.down > 0 {
 			if err := u.nodeRepo.AddNodeTraffic(txCtx, node.ID, nodeBytes.up, nodeBytes.down); err != nil {
@@ -352,6 +410,12 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			b := outbounds[tag]
 			if err := u.nodeRepo.AddOutboundTraffic(txCtx, node.ID, tag, b.up, b.down); err != nil {
 				return fmt.Errorf("outbound traffic: %w", err)
+			}
+		}
+		for _, id := range tunnelIDs {
+			b := tunnels[id]
+			if err := u.nodeRepo.AddReverseTunnelTraffic(txCtx, id, b.to, b.from); err != nil {
+				return fmt.Errorf("reverse tunnel traffic: %w", err)
 			}
 		}
 		if len(dailyDeltas) > 0 {

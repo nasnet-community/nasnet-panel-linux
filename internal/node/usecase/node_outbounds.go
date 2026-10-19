@@ -92,6 +92,9 @@ func (u *nodeUsecase) ensureUniqueOutboundTag(ctx context.Context, outbound *dom
 	if u.routerModeForNodeID(outbound.NodeID) && domain.IsRouterXrayTag(outbound.Tag) {
 		return fmt.Errorf("outbound tag %q is reserved for a managed router outbound", outbound.Tag)
 	}
+	if domain.IsReverseTag(outbound.Tag) {
+		return fmt.Errorf("outbound tags starting with %q are kept for reverse tunnels", domain.ReverseTagPrefix)
+	}
 	existing, err := u.nodeRepo.ListOutboundsByNode(ctx, outbound.NodeID)
 	if err != nil {
 		return fmt.Errorf("failed to check outbound tags: %w", err)
@@ -213,7 +216,6 @@ func (u *nodeUsecase) DeleteOutbound(ctx context.Context, id uint) error {
 	if err := u.guardPoolOutbound(ctx, outbound, true); err != nil {
 		return err
 	}
-
 	// Check if any reverse proxy references this outbound's tag
 	refs, refErr := u.nodeRepo.ListReverseProxiesByReferencedTag(ctx, outbound.NodeID, outbound.Tag)
 	if refErr != nil {
@@ -221,6 +223,9 @@ func (u *nodeUsecase) DeleteOutbound(ctx context.Context, id uint) error {
 	}
 	if len(refs) > 0 {
 		return fmt.Errorf("cannot delete: outbound '%s' is referenced by reverse proxy '%s'", outbound.Tag, refs[0].Tag)
+	}
+	if err := u.rejectReverseTunnelExit(ctx, outbound.NodeID, outbound.Tag, false, "delete"); err != nil {
+		return err
 	}
 
 	// Check if any other outbound chains to this one via proxy_settings
@@ -262,6 +267,9 @@ func (u *nodeUsecase) ToggleOutboundDisabled(ctx context.Context, id uint) (*dom
 
 	// Validation: only when disabling (currently enabled → about to disable)
 	if !outbound.IsDisabled {
+		if err := u.rejectReverseTunnelExit(ctx, outbound.NodeID, outbound.Tag, false, "disable"); err != nil {
+			return nil, err
+		}
 		// Check routing rules
 		rules, err := u.nodeRepo.ListRoutingRulesByOutboundTag(ctx, outbound.NodeID, outbound.Tag)
 		if err != nil {
@@ -332,6 +340,11 @@ func (u *nodeUsecase) UpdateOutbound(ctx context.Context, outbound *domain.Outbo
 	outbound.NodeID = prev.NodeID
 	if prev.Tag != outbound.Tag {
 		if err := u.rejectReferencedTagRename(ctx, prev.NodeID, prev.Tag, "outbound", nil); err != nil {
+			return err
+		}
+	}
+	if prev.Tag != outbound.Tag || outbound.IsDisabled {
+		if err := u.rejectReverseTunnelExit(ctx, prev.NodeID, prev.Tag, false, "change"); err != nil {
 			return err
 		}
 	}

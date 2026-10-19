@@ -106,84 +106,12 @@ func extractSalamanderPassword(fm *nodeDomain.FinalMask) string {
 
 // buildInboundDetail converts a node Inbound (with Node preloaded) into a product.InboundDetail
 func (u *subscriptionUsecase) buildInboundDetail(ctx context.Context, in *nodeDomain.Inbound) product.InboundDetail {
-	nodeIP := in.Node.IP
-	if in.Address != "" {
-		nodeIP = in.Address
-	}
-
-	detail := product.InboundDetail{
-		NodeID:      in.Node.ID,
-		Tag:         in.Tag,
-		Protocol:    in.Protocol,
-		LinkFormat:  in.LinkFormat,
-		NodeIP:      nodeIP,
-		ProvisionIP: in.Node.IP, // Always the real node IP for provisioning
-		APIPort:     in.Node.APIPort,
-		PublicPort:  in.Port,
-		Remark:      fmt.Sprintf("%s - %s", in.Node.Name, in.Remark),
-		NodeName:    in.Node.Name,
-		CountryCode: in.Node.CountryCode,
-		Network:     in.Network,
-		Security:    in.Security,
-		PortRange:   in.PortRange,
-	}
+	detail := product.LinkDetail(in, in.Node)
 
 	// hysteria2 obfs: client link needs the server's salamander password
 	if strings.EqualFold(in.Protocol, "hysteria2") {
 		detail.HysteriaObfsPassword = extractSalamanderPassword(in.FinalMask)
 	}
-
-	// Populate TLS settings
-	tlsSettings := in.GetTLSSettingsOrDefault()
-	if tlsSettings != nil {
-		detail.TLSSni = tlsSettings.ServerName
-		detail.TLSALPN = tlsSettings.ALPN
-		detail.TLSFingerprint = tlsSettings.Fingerprint
-	}
-
-	// Populate Reality settings
-	realitySettings := in.GetRealitySettingsOrDefault()
-	if realitySettings != nil {
-		detail.RealityPublicKey = realitySettings.PublicKey
-		detail.RealityShortID = realitySettings.ShortID
-		if len(realitySettings.ServerNames) > 0 {
-			detail.RealitySNI = realitySettings.ServerNames[0]
-		}
-		detail.RealityFingerprint = realitySettings.Fingerprint
-		detail.RealitySpiderX = realitySettings.SpiderX
-	}
-
-	// Populate Transport settings
-	transportSettings := in.GetTransportSettingsOrDefault()
-	if transportSettings != nil {
-		detail.TransportPath = transportSettings.Path
-		detail.TransportHost = transportSettings.Host
-		detail.TransportServiceName = transportSettings.ServiceName
-		detail.TransportHeaderType = transportSettings.HeaderType
-		detail.TransportMode = transportSettings.Mode
-	}
-
-	// Populate VLESS settings (for MLKEM encryption)
-	if strings.ToLower(in.Protocol) == "vless" {
-		vlessSettings := in.GetVLESSSettingsOrDefault()
-		if vlessSettings != nil {
-			detail.VLESSFlow = vlessSettings.Flow
-			detail.VLESSEncryption = vlessSettings.Encryption
-			detail.VLESSDecryption = vlessSettings.Decryption
-		}
-	}
-
-	// Populate VMess settings (for AlterId / scy in URI)
-	if strings.ToLower(in.Protocol) == "vmess" {
-		if vmessSettings := in.GetVMessSettingsOrDefault(); vmessSettings != nil {
-			if vmessSettings.AlterId > 0 {
-				detail.VMessAlterId = uint32(vmessSettings.AlterId)
-			}
-			detail.VMessSecurity = vmessSettings.Security
-		}
-	}
-
-	detail.AgentPort = in.Node.AgentPort
 
 	return detail
 }

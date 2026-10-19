@@ -36,6 +36,9 @@ func (b *FullConfigBuilder) applyBandwidthRouting(c *OrderedConfig) {
 			tags = append(tags, rp.Tag)
 		}
 	}
+	for _, p := range b.reversePortals {
+		tags = append(tags, p.Tag)
+	}
 	// Selectors in Xray are prefixes. Generated handlers must never become
 	// candidates of an original selector once it is expanded to existing tags.
 	prefix := bandwidthNamespace(tags, b)

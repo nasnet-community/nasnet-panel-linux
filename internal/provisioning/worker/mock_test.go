@@ -352,6 +352,23 @@ func (m *mockNodeUsecase) UpdateReverseProxy(context.Context, *nodeDomain.Revers
 	return nil
 }
 func (m *mockNodeUsecase) DeleteReverseProxy(context.Context, uint) error { return nil }
+func (m *mockNodeUsecase) ListReverseTunnels(context.Context, uint) ([]*nodeUC.ReverseTunnelView, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) GetReverseTunnel(context.Context, uint) (*nodeUC.ReverseTunnelView, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) CreateReverseTunnel(context.Context, *nodeDomain.ReverseTunnel) (*nodeUC.ReverseTunnelView, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) UpdateReverseTunnel(context.Context, uint, *nodeDomain.ReverseTunnel) (*nodeUC.ReverseTunnelView, error) {
+	return nil, nil
+}
+func (m *mockNodeUsecase) DeleteReverseTunnel(context.Context, uint) error { return nil }
+func (m *mockNodeUsecase) RotateReverseTunnel(context.Context, uint) error { return nil }
+func (m *mockNodeUsecase) ReverseTunnelPeerConfig(context.Context, uint) (*nodeUC.ReverseTunnelPeerConfig, error) {
+	return nil, nil
+}
 
 // Agent Management
 func (m *mockNodeUsecase) PushConfigViaAgent(context.Context, uint) error { return nil }

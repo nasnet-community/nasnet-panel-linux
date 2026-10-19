@@ -214,6 +214,15 @@ type NodeUsecase interface {
 	UpdateReverseProxy(ctx context.Context, rp *domain.ReverseProxy) error
 	DeleteReverseProxy(ctx context.Context, id uint) error
 
+	// Reverse Tunnel Management
+	ListReverseTunnels(ctx context.Context, nodeID uint) ([]*ReverseTunnelView, error)
+	GetReverseTunnel(ctx context.Context, id uint) (*ReverseTunnelView, error)
+	CreateReverseTunnel(ctx context.Context, t *domain.ReverseTunnel) (*ReverseTunnelView, error)
+	UpdateReverseTunnel(ctx context.Context, id uint, t *domain.ReverseTunnel) (*ReverseTunnelView, error)
+	DeleteReverseTunnel(ctx context.Context, id uint) error
+	RotateReverseTunnel(ctx context.Context, id uint) error
+	ReverseTunnelPeerConfig(ctx context.Context, id uint) (*ReverseTunnelPeerConfig, error)
+
 	// User Management (Agent Aware)
 	AddUserViaAgent(ctx context.Context, node *domain.Node, inboundTag, email, uuid, protocol, flow, encryption string) error
 	RemoveUserViaAgent(ctx context.Context, node *domain.Node, inboundTag, email string) error
@@ -430,6 +439,9 @@ type nodeUsecase struct {
 	eventBus    *events.EventBus
 	settingUC   settingDomain.SettingUsecase
 	tm          database.TransactionManager
+
+	// reverseWatch tracks which reverse tunnels had their state announced.
+	reverseWatch reverseTunnelWatch
 
 	// Config drift detection: tracks the config hash reported by each agent after the last successful push.
 	// Used to detect when an agent's config drifts from what the master last pushed.

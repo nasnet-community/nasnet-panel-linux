@@ -320,6 +320,16 @@ func validatePool(p *d.OutboundPool) error {
 }
 
 func poolFallback(tx *gorm.DB, nodeID uint, tag string) error {
+	// A reverse tunnel portalled here exists only at runtime.
+	if d.IsReverseTag(tag) {
+		var tunnels int64
+		if err := tx.Model(&d.ReverseTunnel{}).Where("portal_node_id = ? AND portal_tag = ?", nodeID, tag).Count(&tunnels).Error; err != nil {
+			return err
+		}
+		if tunnels > 0 {
+			return nil
+		}
+	}
 	var outbounds []d.Outbound
 	if err := tx.Where("node_id = ?", nodeID).Find(&outbounds).Error; err != nil {
 		return err
