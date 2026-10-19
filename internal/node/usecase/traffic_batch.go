@@ -262,7 +262,14 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 	var coreDeltas []contract.CoreUsageDelta
 	var peerDeltas []contract.WGUsageDelta
 	for k, b := range dailyUsers {
-		if sub := subs[k.email]; sub != nil && (b.up != 0 || b.down != 0) {
+		if b.up == 0 && b.down == 0 {
+			continue
+		}
+		// A WireGuard peer's synthetic email matches no config email; its
+		// subscription comes from the peer, as for the totals below.
+		if ref, ok := wgIndex[k.email]; ok {
+			dailyDeltas = append(dailyDeltas, subRepo.DailyUsageDelta{SubscriptionID: ref.SubID, Date: k.day, Upload: b.up, Download: b.down})
+		} else if sub := subs[k.email]; sub != nil {
 			dailyDeltas = append(dailyDeltas, subRepo.DailyUsageDelta{SubscriptionID: sub.ID, Date: k.day, Upload: b.up, Download: b.down})
 		}
 	}
@@ -278,8 +285,6 @@ func (u *nodeUsecase) persistBufferedTrafficThen(ctx context.Context, node *doma
 			if id := accountsBySub[trafficAccountKey{ref.SubID, ref.InboundID}].ID; id != 0 {
 				accountDeltas = append(accountDeltas, accountRepo.UsageDelta{AccountID: id, Bytes: total, LastActive: now})
 			}
-			// Preserve legacy WG daily-attribution behavior: synthetic emails do not
-			// have a config-email subscription row, so no synthetic daily split is added.
 			continue
 		}
 		sub := subs[email]
