@@ -28,7 +28,7 @@ import {
     savedWAN,
     validateWAN,
 } from "@/lib/wan-config"
-import { cn } from "@/lib/utils"
+import { cn, generateUUID } from "@/lib/utils"
 import type {
     AssignRoleRequest,
     NetworkApply,
@@ -220,7 +220,7 @@ export function WANConfigSheet({
     }
 
     async function apply() {
-        requestID.current = crypto.randomUUID()
+        requestID.current = generateUUID()
         setMessage("")
         setStep("applying")
         setBusy(true)
