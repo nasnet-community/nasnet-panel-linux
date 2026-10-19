@@ -16,7 +16,6 @@ import {
     splitAddress,
     targetError,
 } from "@/lib/router-checks"
-import { isHiddenSettingKey } from "@/components/settings/settings-constants"
 
 describe("groups and keys", () => {
     it("puts every domestic slot in the domestic group and the rest abroad", () => {
@@ -109,21 +108,5 @@ describe("display", () => {
         ])
         expect(isPreset("domestic", own)).toBe(false)
         expect(isPreset("domestic", CHECK_PRESETS.domestic[0])).toBe(true)
-    })
-})
-
-describe("settings page", () => {
-    it("hides the per-line keys, which are edited on the Router page", () => {
-        expect(isHiddenSettingKey(slotTargetsKey("domestic2"))).toBe(true)
-        expect(isHiddenSettingKey(slotRttKey("secondary3"))).toBe(true)
-        expect(isHiddenSettingKey(slotLossKey("domestic"))).toBe(true)
-    })
-
-    it("leaves the group keys on the settings page", () => {
-        expect(isHiddenSettingKey(groupTargetsKey("domestic"))).toBe(false)
-        expect(isHiddenSettingKey(groupRttKey("secondary"))).toBe(false)
-        expect(isHiddenSettingKey("router_degraded_loss_pct")).toBe(false)
-        expect(isHiddenSettingKey(groupLossKey("domestic2"))).toBe(false)
-        expect(isHiddenSettingKey("router_failover_domestic_to_vpn")).toBe(false)
     })
 })

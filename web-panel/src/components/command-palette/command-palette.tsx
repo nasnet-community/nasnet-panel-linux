@@ -9,6 +9,7 @@ import { useCommandPalette } from "@/store/command-palette-store"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
 import { useTheme } from "@/components/providers/theme-provider"
 import { PALETTE_PAGES, type NavItem } from "@/components/layouts/nav-config"
+import { CARDS, SECTIONS, cardHaystack } from "@/components/settings/catalog"
 import { listSubscriptions } from "@/lib/api/subscriptions"
 import { isLocalNode, nodeAddress } from "@/lib/node-kind"
 import { getApiBaseUrl } from "@/lib/config"
@@ -90,6 +91,17 @@ export function CommandPalette({ onToggleSidebar, onLogout }: CommandPaletteProp
         value: `page:${p.href}`, label: p.label, icon: p.icon, href: p.href, run: () => navigate(p.href),
     })
 
+    const settingEntries = (q: string): Entry[] => CARDS
+        .filter((c) => cardHaystack(c).includes(q))
+        .map((c) => ({
+            value: `setting:${c.id}`,
+            label: c.title,
+            detail: SECTIONS.find((s) => s.id === c.section)?.title.toLowerCase(),
+            icon: c.icon,
+            href: `/settings#${c.id}`,
+            run: () => navigate(`/settings#${c.id}`),
+        }))
+
     const recentEntry = (r: RecentItem): Entry => ({
         value: `recent:${r.key ?? r.href}`,
         label: r.label,
@@ -163,6 +175,7 @@ export function CommandPalette({ onToggleSidebar, onLogout }: CommandPaletteProp
             { heading: "Subscriptions", entries: search.subscriptions.map(subscriptionEntry) },
             { heading: "Nodes", entries: search.nodes.map(nodeEntry) },
             { heading: "Pages", entries: PALETTE_PAGES.filter((p) => matches(p.label)).map(pageEntry) },
+            { heading: "Settings", entries: settingEntries(q) },
             { heading: "Actions", entries: actions.filter((a) => a.value === "action:access-history" || matches(a.label)) },
         ]
         : [

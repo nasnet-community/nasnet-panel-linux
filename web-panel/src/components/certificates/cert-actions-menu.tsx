@@ -35,7 +35,7 @@ export function CertActionsMenu({ overview }: { overview?: CertOverview }) {
                 <DropdownMenuItem disabled={!strict || (!strict.enabled && !strict.ready)} onClick={actions.toggleStrict}>
                     <Lock className="mr-2 h-4 w-4" />{strict?.enabled ? "Turn off strict mode" : "Turn on strict mode"}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <DropdownMenuItem onClick={() => navigate("/settings#agent-certificates")}>
                     <Settings className="mr-2 h-4 w-4" />Auto-rotate settings
                 </DropdownMenuItem>
             </DropdownMenuContent>

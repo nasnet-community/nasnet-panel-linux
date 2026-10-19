@@ -10,6 +10,7 @@ export function RouterDangerZone() {
     return (
         <DangerZone
             nodeId={local.id} nodeName={local.name} canRemoveRecord={false} online={local.is_online}
+            title="This router"
             note="These erase this router. The panel is deleted too, so this page stops working."
         />
     )

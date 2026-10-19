@@ -15,6 +15,8 @@ export interface SettingsSectionMeta {
     /** a group in it holds unsaved edits */
     dirty?: boolean
     danger?: boolean
+    /** something in it needs attention, said in a few words */
+    note?: string
 }
 
 const sectionId = (id: string) => `settings-section-${id}`
@@ -140,7 +142,10 @@ export function SettingsPage({ sections, children, footer }: { sections: Setting
                                     className={cn("h-10 gap-2.5", s.id === current.id && "bg-muted font-medium", s.danger && "text-red-500 focus:text-red-500")}
                                 >
                                     <s.icon className={cn("size-4", s.danger ? "text-red-500" : "text-muted-foreground")} aria-hidden />
-                                    <span className="flex-1">{s.title}</span>
+                                    <span className="flex min-w-0 flex-1 flex-col">
+                                        {s.title}
+                                        {s.note && <span className="truncate text-xs text-amber-500">{s.note}</span>}
+                                    </span>
                                     {s.dirty && <span className="size-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
                                     <Check className={cn("size-4", s.id === current.id ? "opacity-100" : "opacity-0")} aria-hidden />
                                 </DropdownMenuItem>
@@ -162,7 +167,7 @@ export function SettingsPage({ sections, children, footer }: { sections: Setting
                         )}
                     >
                         <s.icon className="size-3.5" aria-hidden />{s.title}
-                        {s.dirty && <span className="size-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
+                        {(s.dirty || s.note) && <span className="size-1.5 rounded-full bg-amber-500" aria-label={s.note ?? "Unsaved changes"} title={s.note} />}
                     </button>
                 ))}
             </nav>
@@ -182,9 +187,12 @@ export function SettingsPage({ sections, children, footer }: { sections: Setting
                                     s.id === active ? "border-foreground font-medium text-foreground" : "border-border text-muted-foreground hover:text-foreground",
                                 )}
                             >
-                                <s.icon className="size-3.5 shrink-0" aria-hidden />
-                                <span className="flex-1">{s.title}</span>
-                                {s.dirty && <span className="size-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
+                                <s.icon className="size-3.5 shrink-0 self-start mt-[3px]" aria-hidden />
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                    {s.title}
+                                    {s.note && <span className="text-xs font-normal text-amber-500">{s.note}</span>}
+                                </span>
+                                {s.dirty && <span className="size-1.5 self-start mt-[7px] rounded-full bg-amber-500" aria-label="Unsaved changes" />}
                             </button>
                         ))}
                     </div>

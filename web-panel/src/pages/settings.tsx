@@ -1,363 +1,293 @@
-import { useEffect, useState, useMemo, useCallback } from "react"
-import { useSearchParams } from "react-router"
-import { Input } from "@/components/ui/input"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useLocation, useNavigate, useParams } from "react-router"
+import { ArrowLeft, ChevronRight, Search, TriangleAlert, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { HiOutlineRefresh, HiOutlineSearch, HiOutlineX, HiOutlineCog, HiOutlineExclamation } from "react-icons/hi"
-import { Loader2 } from "lucide-react"
-import { useSettings, useUpdateSettings } from "@/lib/queries"
-import { restartServer } from "@/lib/api/backup"
-import { useConfirm } from "@/components/ui/confirm-dialog"
-import { toast } from "@/lib/toast"
-import { getApiBaseUrl } from '@/lib/config'
+import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useIsMobile } from "@/hooks/use-is-mobile"
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes"
+import { useSettings, useSettingsStatus } from "@/lib/queries/use-settings"
+import type { SettingsGrouped } from "@/lib/domain/setting"
+import { SettingsPage as OnePage, SettingsSection, type SettingsSectionMeta } from "@/components/settings-page/settings-page"
+import { SECTIONS, CARDS, cardById, cardsIn, matchCard, sectionNote, type Ctx, type SectionId, type Values } from "@/components/settings/catalog"
+import { SettingsPageProvider, type Draft } from "@/components/settings/settings-card"
+import { CardView } from "@/components/settings/card-view"
 import { DangerZone } from "@/components/settings/danger-zone"
 import { RouterDangerZone } from "@/components/settings/router-danger-zone"
-import { categoryMeta } from "@/components/settings/settings-constants"
-import { SettingsSidebar, type SidebarItem } from "@/components/settings/settings-sidebar"
-import { SettingsCategoryContent } from "@/components/settings/settings-category-content"
-import { SettingsSearchResults, buildSearchResults } from "@/components/settings/settings-search-results"
-import { SettingsSaveBar } from "@/components/settings/settings-save-bar"
-import { SettingsImportExport } from "@/components/settings/settings-import-export"
-import { SettingsHeaderMobileMenu } from "@/components/settings/settings-header-mobile-menu"
-import { SettingsSkeleton } from "@/components/settings/settings-skeleton"
-import type { SettingsGrouped } from "@/lib/domain/setting"
+import { SettingsHeader } from "@/components/settings/settings-header"
+import { cn } from "@/lib/utils"
 
-// not a settings category: the router's own Wipe and Nuke
-const DANGER = "danger"
+const DANGER = { id: "danger", title: "Danger zone", icon: TriangleAlert, description: "Erase customer data, wipe or nuke this router" } as const
 
-export default function SettingsPage() {
-    const { data: serverSettings, isLoading, isRefetching } = useSettings()
-    const updateSettings = useUpdateSettings()
-    const confirmDialog = useConfirm()
-
-    const [editedSettings, setEditedSettings] = useState<SettingsGrouped>({})
-    const [params] = useSearchParams()
-    const [activeCategory, setActiveCategory] = useState<string>(() => params.get("category") ?? "")
-    const [search, setSearch] = useState("")
-    const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
-    const [restarting, setRestarting] = useState(false)
-    const [savingAll, setSavingAll] = useState(false)
-
-    // Sync server data to local edit state
-    useEffect(() => {
-        if (serverSettings && Object.keys(serverSettings).length > 0) {
-            setEditedSettings(serverSettings)
-        }
-    }, [serverSettings])
-
-    // Sort categories by defined order
-    const categories = useMemo(() =>
-        Object.keys(editedSettings).sort((a, b) => {
-            const orderA = categoryMeta[a]?.order ?? 99
-            const orderB = categoryMeta[b]?.order ?? 99
-            return orderA - orderB
-        }),
-        [editedSettings]
+function DangerCards() {
+    return (
+        <>
+            <DangerZone />
+            <RouterDangerZone />
+        </>
     )
+}
+type PageSection = SectionId | "danger"
 
-    // Default to first category when categories load
-    useEffect(() => {
-        if (categories.length > 0 && !activeCategory) {
-            setActiveCategory(categories[0])
-        }
-    }, [categories, activeCategory])
+function flatten(grouped?: SettingsGrouped): Values {
+    const out: Values = {}
+    for (const list of Object.values(grouped ?? {})) for (const s of list) out[s.key] = s.value
+    return out
+}
 
-    const isCategoryDirty = useCallback((category: string): boolean => {
-        if (!serverSettings?.[category]) return false
-        const serverList = serverSettings[category]
-        const editedList = editedSettings[category] || []
-        for (let i = 0; i < serverList.length; i++) {
-            if (serverList[i]?.value !== editedList[i]?.value) return true
-        }
-        return false
-    }, [serverSettings, editedSettings])
-
-    // Count dirty categories for save bar
-    const dirtyCategories = useMemo(() =>
-        categories.filter(c => isCategoryDirty(c)),
-        [categories, isCategoryDirty]
+/** Scrolls a card into view and rings it for a moment. */
+function flashCard(id: string) {
+    const el = document.getElementById(`group-${id}`)
+    if (!el) return false
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 24, behavior: "smooth" })
+    el.animate(
+        [{ boxShadow: "0 0 0 2px var(--ring)" }, { boxShadow: "0 0 0 2px var(--ring)", offset: 0.4 }, { boxShadow: "0 0 0 2px transparent" }],
+        { duration: 1800, easing: "ease-out" },
     )
+    return true
+}
 
-    const handleSettingChange = useCallback((category: string, key: string, value: string | boolean) => {
-        setEditedSettings(prev => ({
-            ...prev,
-            [category]: prev[category].map(s =>
-                s.key === key ? { ...s, value: value.toString() } : s
-            ),
-        }))
+export default function SettingsRoute() {
+    const { section: param } = useParams<{ section?: string }>()
+    const location = useLocation()
+    const navigate = useNavigate()
+    const phone = useIsMobile()
+    const { data: grouped, isLoading, refetch } = useSettings()
+    const { data: status } = useSettingsStatus()
+    const values = useMemo(() => flatten(grouped), [grouped])
+    const ctx = useMemo<Ctx>(() => ({ values, status }), [values, status])
+    const loaded = !!grouped
+    const [query, setQuery] = useState("")
+    const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set())
+    const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+    const setDraft = useCallback((id: string, fn: (d: Draft | undefined) => Draft | undefined) => {
+        setDrafts(prev => {
+            const next = fn(prev[id])
+            if (next === prev[id]) return prev
+            const out = { ...prev }
+            if (next) out[id] = next
+            else delete out[id]
+            return out
+        })
+    }, [])
+    const unsaved = useUnsavedChanges(dirty.size > 0)
+    const section: PageSection | undefined = param === "danger" ? "danger" : SECTIONS.find(s => s.id === param)?.id
+
+    const report = useCallback((id: string, isDirty: boolean) => {
+        setDirty(prev => {
+            if (prev.has(id) === isDirty) return prev
+            const next = new Set(prev)
+            if (isDirty) next.add(id)
+            else next.delete(id)
+            return next
+        })
     }, [])
 
-    const handleResetCategory = useCallback((category: string) => {
-        if (!serverSettings?.[category]) return
-        setEditedSettings(prev => ({
-            ...prev,
-            [category]: serverSettings[category],
-        }))
-    }, [serverSettings])
-
-    const handleDiscardAll = useCallback(() => {
-        if (!serverSettings) return
-        setEditedSettings(serverSettings)
-    }, [serverSettings])
-
-    const saveCategorySettings = useCallback(async (category: string): Promise<boolean> => {
-        const categorySettings = editedSettings[category]
-        if (!categorySettings) return false
-
-        // Filter out unchanged sensitive fields (still showing masked value)
-        const serverList = serverSettings?.[category] || []
-        const settingsToSave = categorySettings.filter(s => {
-            if (s.sensitive) {
-                const serverVal = serverList.find(sv => sv.key === s.key)?.value
-                if (serverVal === s.value) return false
-            }
-            return true
-        })
-
-        try {
-            await updateSettings.mutateAsync(settingsToSave)
-
-            // Check for restart-required modifications
-            const modifiedRestartKeys = settingsToSave.filter(s => {
-                if (!s.requires_restart) return false
-                const serverVal = serverList.find(sv => sv.key === s.key)?.value
-                return serverVal !== s.value
-            })
-
-            if (modifiedRestartKeys.length > 0) {
-                toast.warning("Server restart required", {
-                    description: "Some changes require a server restart to take effect.",
-                })
-            }
-            return true
-        } catch {
-            return false
+    const goto = useCallback((cardId: string) => {
+        const card = cardById(cardId)
+        setQuery("")
+        if (phone && card && card.section !== section) {
+            navigate(`/settings/${card.section}#${cardId}`)
+            return
         }
-    }, [editedSettings, serverSettings, updateSettings])
+        setTimeout(() => flashCard(cardId), 50)
+    }, [phone, section, navigate])
 
-    const handleSaveCategory = useCallback(async (category: string) => {
-        await saveCategorySettings(category)
-    }, [saveCategorySettings])
-
-    const handleSaveAll = useCallback(async () => {
-        if (dirtyCategories.length === 0) return
-
-        const confirmed = await confirmDialog({
-            title: "Save All Changes",
-            description: `Save changes across ${dirtyCategories.length} ${dirtyCategories.length === 1 ? "category" : "categories"}?`,
-            confirmLabel: "Save All",
-        })
-        if (!confirmed) return
-
-        setSavingAll(true)
-        for (const category of dirtyCategories) {
-            await saveCategorySettings(category)
+    // /settings#<card> from ⌘K and other pages
+    useEffect(() => {
+        let id = ""
+        try { id = decodeURIComponent(location.hash.slice(1)) } catch { /* a mangled link */ }
+        const card = cardById(id)
+        if (!loaded || !card) return
+        if (phone && card.section !== section) {
+            navigate(`/settings/${card.section}#${id}`, { replace: true })
+            return
         }
-        setSavingAll(false)
-    }, [confirmDialog, dirtyCategories, saveCategorySettings])
+        const t = setTimeout(() => flashCard(id), 80)
+        return () => clearTimeout(t)
+    }, [location.hash, loaded, phone, section, navigate])
 
-    const handleNavigateToCategory = useCallback((category: string, key: string) => {
-        setSearch("")
-        setActiveCategory(category)
-        setHighlightedKey(key)
-        setTimeout(() => setHighlightedKey(null), 2500)
-    }, [])
+    // /settings/<section> on a wide screen is the same page, scrolled there
+    useEffect(() => {
+        if (phone || !loaded || !section || location.hash) return
+        document.getElementById(`settings-section-${section}`)?.scrollIntoView({ block: "start" })
+    }, [phone, loaded, section, location.hash])
 
-    const handleRestart = useCallback(async () => {
-        const confirmed = await confirmDialog({
-            title: "Restart Server",
-            description: "This will restart the server. All active connections will be dropped.",
-            confirmLabel: "Restart",
-            variant: "destructive",
-        })
-        if (!confirmed) return
+    const matches = useMemo(() => new Map(CARDS.map(c => [c.id, matchCard(c, query, values)])), [query, values])
+    const searching = query.trim() !== ""
+    const hits = useMemo(() => {
+        let cards = 0, rows = 0
+        for (const m of matches.values()) if (m) { cards++; rows += m === "all" ? 1 : m.size }
+        return { cards, rows }
+    }, [matches])
 
-        try {
-            const result = await restartServer()
-            if (!result.success) {
-                toast.error("Failed to restart server", { description: result.error })
-                return
-            }
-            setRestarting(true)
-            toast.success("Server restart initiated", {
-                description: "The page will reload when the server is back.",
-            })
+    if (isLoading) return <SettingsSkeleton />
+    // a failed background refetch keeps the cached settings; only a page with none shows the error
+    if (!grouped) {
+        return (
+            <div className="space-y-4">
+                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Settings</h1>
+                <p className="text-sm text-muted-foreground">Settings didn't load.</p>
+                <Button variant="outline" onClick={() => refetch()}>Try again</Button>
+            </div>
+        )
+    }
 
-            // Poll health endpoint until server is back
-            const pollInterval = setInterval(async () => {
-                try {
-                    const base = getApiBaseUrl()
-                    const resp = await fetch(`${base}/health`, { cache: "no-store" })
-                    if (resp.ok) {
-                        clearInterval(pollInterval)
-                        window.location.reload()
-                    }
-                } catch {
-                    // Expected during restart — server is down
-                }
-            }, 2000)
-        } catch {
-            // Network error likely means server is already restarting
-            setRestarting(true)
-            toast.success("Server restart initiated", {
-                description: "The page will reload when the server is back.",
-            })
-            const pollInterval = setInterval(async () => {
-                try {
-                    const base = getApiBaseUrl()
-                    const resp = await fetch(`${base}/health`, { cache: "no-store" })
-                    if (resp.ok) {
-                        clearInterval(pollInterval)
-                        window.location.reload()
-                    }
-                } catch {
-                    // Expected during restart
-                }
-            }, 2000)
-        }
-    }, [confirmDialog])
+    const cardsOf = (id: SectionId) => cardsIn(id).filter(c => matches.get(c.id))
+        .map(c => <CardView key={c.id} card={c} match={matches.get(c.id)!} />)
+    const searchBox = <SearchBox query={query} onChange={setQuery} hits={searching ? hits : null} />
 
-    // Sidebar items
-    const sidebarItems: SidebarItem[] = useMemo(() => [
-        ...categories.map(cat => ({
-            key: cat,
-            label: cat,
-            icon: categoryMeta[cat]?.icon || HiOutlineCog,
-            dirty: isCategoryDirty(cat),
-            settingCount: editedSettings[cat]?.length,
-        })),
-        { key: DANGER, label: "Danger zone", icon: HiOutlineExclamation, dirty: false },
-    ], [categories, isCategoryDirty, editedSettings])
-
-    // Search results
-    const searchResults = useMemo(() =>
-        buildSearchResults(editedSettings, serverSettings, search),
-        [editedSettings, serverSettings, search]
-    )
-
-    const loading = isLoading || isRefetching
-    const saving = updateSettings.isPending || savingAll
-    const isSearchActive = search.length > 0
-
-    if (isLoading && Object.keys(editedSettings).length === 0) {
-        return <SettingsSkeleton />
+    const found = SECTIONS.filter(s => cardsIn(s.id).some(c => matches.get(c.id)))
+    let body: ReactNode
+    if (searching && !found.length) {
+        body = <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Nothing matches “{query.trim()}”.</p>
+    } else if (searching && phone) {
+        body = <div className="@container space-y-7">{found.map(s => (
+            <SettingsSection key={s.id} id={s.id} title={s.title} icon={s.icon}>{cardsOf(s.id)}</SettingsSection>
+        ))}</div>
+    } else if (phone && !section) {
+        body = <SectionList ctx={ctx} dirty={dirty} onOpen={id => navigate(`/settings/${id}`)} />
+    } else if (phone && section) {
+        const meta = section === "danger" ? DANGER : SECTIONS.find(s => s.id === section)!
+        body = (
+            <div className="space-y-4">
+                <Button variant="ghost" size="sm" className="-ml-2 h-8 gap-1.5 px-2 text-muted-foreground" onClick={() => navigate("/settings")}>
+                    <ArrowLeft className="size-4" />Settings
+                </Button>
+                <div className="flex items-center gap-3">
+                    <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", section === "danger" ? "bg-red-500/10 text-red-500" : "bg-muted text-muted-foreground")}>
+                        <meta.icon className="size-[18px]" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-semibold leading-6">{meta.title}</h2>
+                        <p className="text-sm text-muted-foreground">{meta.description}</p>
+                    </div>
+                </div>
+                <div className="@container space-y-2.5">{section === "danger" ? <DangerCards /> : cardsOf(section)}</div>
+            </div>
+        )
+    } else {
+        // a search keeps this layout and narrows it to the cards that match
+        const metas: SettingsSectionMeta[] = [
+            ...found.map(s => ({
+                id: s.id, title: s.title, icon: s.icon,
+                note: sectionNote(s.id, ctx),
+                dirty: cardsIn(s.id).some(c => dirty.has(c.id)),
+            })),
+            ...(searching ? [] : [{ id: DANGER.id, title: DANGER.title, icon: DANGER.icon, danger: true }]),
+        ]
+        body = (
+            <OnePage sections={metas}>
+                {found.map(s => (
+                    <SettingsSection key={s.id} id={s.id} title={s.title} icon={s.icon}>{cardsOf(s.id)}</SettingsSection>
+                ))}
+                {!searching && (
+                    <SettingsSection id={DANGER.id} title={DANGER.title} icon={DANGER.icon} hideTitle>
+                        <div className="space-y-2.5"><DangerCards /></div>
+                    </SettingsSection>
+                )}
+            </OnePage>
+        )
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 sm:flex-row">
-                <div className="min-w-0 flex-1">
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Settings</h1>
-                    <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-                        Configure global system settings and preferences
-                    </p>
-                </div>
-
-                {/* Desktop action row */}
-                <div className="hidden md:flex gap-2 self-start flex-wrap">
-                    <SettingsImportExport disabled={saving || loading} />
-                    <DangerZone disabled={saving || loading} />
-                    <Button variant="outline" onClick={handleRestart} disabled={saving || loading || restarting}>
-                        <HiOutlineRefresh className={`w-4 h-4 mr-2 ${restarting ? "animate-spin" : ""}`} />
-                        Restart Server
-                    </Button>
-                </div>
-
-                {/* Mobile kebab */}
-                <div className="md:hidden">
-                    <SettingsHeaderMobileMenu
-                        onRestart={handleRestart}
-                        restarting={restarting}
-                        loading={loading}
-                        saving={saving}
-                    />
-                </div>
+        <SettingsPageProvider value={{ ctx, query, goto, report, drafts, setDraft }}>
+            <div className="space-y-5 animate-in fade-in duration-300">
+                <SettingsHeader ctx={ctx} phone={phone} />
+                {searchBox}
+                {body}
             </div>
+            <Dialog open={unsaved.showDialog} onOpenChange={o => { if (!o) unsaved.cancelNavigation() }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Leave with unsaved changes?</DialogTitle>
+                        <DialogDescription>Edits you haven't saved are lost.</DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={unsaved.cancelNavigation}>Keep editing</Button>
+                        <Button variant="destructive" onClick={unsaved.confirmNavigation}>Discard and leave</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </SettingsPageProvider>
+    )
+}
 
-            {/* Search */}
+function SearchBox({ query, onChange, hits }: { query: string; onChange: (q: string) => void; hits: { cards: number; rows: number } | null }) {
+    return (
+        <div className="space-y-2">
             <div className="relative max-w-md">
-                <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                 <Input
-                    placeholder="Search settings by name, key, or description..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 h-10"
+                    value={query} onChange={e => onChange(e.target.value)} placeholder="Search settings"
+                    aria-label="Search settings" className="h-10 pl-9 pr-9" spellCheck={false}
+                    onKeyDown={e => { if (e.key === "Escape") onChange("") }}
                 />
-                {search && (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                        onClick={() => setSearch("")}
-                    >
-                        <HiOutlineX className="w-3.5 h-3.5" />
+                {query && (
+                    <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 size-8 -translate-y-1/2" aria-label="Clear search" onClick={() => onChange("")}>
+                        <X className="size-3.5" />
                     </Button>
                 )}
             </div>
-
-            {/* Mobile category selector — hidden on md+ */}
-            {!isSearchActive && (
-                <div className="md:hidden">
-                    <SettingsSidebar
-                        items={sidebarItems}
-                        active={activeCategory}
-                        onSelect={setActiveCategory}
-                        mode="mobile"
-                    />
-                </div>
+            {hits && hits.cards > 0 && (
+                <p className="text-xs text-muted-foreground">
+                    {hits.rows === 1 ? "1 match" : `${hits.rows} matches`} in {hits.cards === 1 ? "1 card" : `${hits.cards} cards`}
+                </p>
             )}
+        </div>
+    )
+}
 
-            {/* Main layout */}
-            {isSearchActive ? (
-                <SettingsSearchResults
-                    results={searchResults}
-                    onSettingChange={handleSettingChange}
-                    onNavigateToCategory={handleNavigateToCategory}
-                    highlightedKey={highlightedKey}
-                />
-            ) : (
-                <div className="md:flex md:gap-6">
-                    {/* Desktop sidebar — hidden below md */}
-                    <div className="hidden md:flex">
-                        <SettingsSidebar
-                            items={sidebarItems}
-                            active={activeCategory}
-                            onSelect={setActiveCategory}
-                        />
+/** Phones: the sections as a list; each opens as its own page. */
+function SectionList({ ctx, dirty, onOpen }: { ctx: Ctx; dirty: ReadonlySet<string>; onOpen: (id: PageSection) => void }) {
+    const rows = [...SECTIONS.map(s => ({ ...s, note: sectionNote(s.id, ctx) })), { ...DANGER, note: undefined }]
+    return (
+        <nav aria-label="Settings sections" className="overflow-hidden rounded-xl border border-border/60 bg-card">
+            {rows.map((s, i) => {
+                const danger = s.id === "danger"
+                const unsaved = !danger && cardsIn(s.id as SectionId).some(c => dirty.has(c.id))
+                return (
+                    <button
+                        key={s.id} type="button" onClick={() => onOpen(s.id)}
+                        className={cn("flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors active:bg-muted/60", i > 0 && "border-t border-border/40")}
+                    >
+                        <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg",
+                            danger ? "bg-red-500/10 text-red-500" : s.note ? "bg-amber-500/10 text-amber-500" : "bg-muted text-muted-foreground")}>
+                            <s.icon className="size-[18px]" aria-hidden />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className={cn("block text-[15px] font-medium", danger && "text-red-500")}>{s.title}</span>
+                            <span className={cn("block text-[13px] leading-[17px]", s.note ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}>{s.note ?? s.description}</span>
+                        </span>
+                        {unsaved && <span className="flex items-center gap-1.5 text-xs text-amber-500"><span className="size-1.5 rounded-full bg-amber-500" />Unsaved</span>}
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    </button>
+                )
+            })}
+        </nav>
+    )
+}
+
+function SettingsSkeleton() {
+    return (
+        <div className="space-y-5">
+            <div className="space-y-2">
+                <Skeleton className="h-8 w-40" />
+                <Skeleton className="h-4 w-64" />
+            </div>
+            <Skeleton className="h-10 max-w-md" />
+            <div className="max-w-[720px] space-y-2.5">
+                {[0, 1, 2].map(i => (
+                    <div key={i} className="overflow-hidden rounded-xl border border-border/60">
+                        <Skeleton className="h-12 rounded-none" />
+                        <div className="space-y-3 p-4">
+                            <Skeleton className="h-4 w-3/4" />
+                            <Skeleton className="h-4 w-1/2" />
+                        </div>
                     </div>
-
-                    {/* Content area */}
-                    <div className="flex-1 min-w-0 rounded-xl border bg-card p-4 sm:p-6">
-                        {activeCategory === DANGER ? (
-                            <RouterDangerZone />
-                        ) : activeCategory && editedSettings[activeCategory] ? (
-                            <SettingsCategoryContent
-                                category={activeCategory}
-                                settings={editedSettings[activeCategory]}
-                                serverSettings={serverSettings?.[activeCategory]}
-                                isDirty={isCategoryDirty(activeCategory)}
-                                isSaving={saving}
-                                onSettingChange={handleSettingChange}
-                                onSave={() => handleSaveCategory(activeCategory)}
-                                onReset={() => handleResetCategory(activeCategory)}
-                                highlightedKey={highlightedKey}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center py-16 text-muted-foreground">
-                                Select a category
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {/* Floating save bar */}
-            <SettingsSaveBar
-                dirtyCount={dirtyCategories.length}
-                onSaveAll={handleSaveAll}
-                onDiscardAll={handleDiscardAll}
-                isSaving={saving}
-            />
+                ))}
+            </div>
         </div>
     )
 }

@@ -21,7 +21,7 @@ describe("the router's danger zone in panel settings", () => {
     it("offers Wipe and Nuke for this router and says the panel goes too", () => {
         vi.mocked(useNodes).mockReturnValue({ data: nodes, isError: false } as unknown as ReturnType<typeof useNodes>)
         setup()
-        expect(screen.getAllByRole("heading", { name: "Danger zone" })).toHaveLength(1)
+        expect(screen.getAllByRole("heading", { name: "This router" })).toHaveLength(1)
         expect(screen.getByText(/The panel is deleted too/)).toBeInTheDocument()
         expect(screen.getByText(/then the panel itself/)).toBeInTheDocument()
         expect(screen.getByRole("button", { name: "Wipe…" })).toBeEnabled()

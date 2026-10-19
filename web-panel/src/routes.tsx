@@ -73,7 +73,8 @@ export const router = createBrowserRouter([
         { path: "/subscriptions", element: r(<Subscriptions />) },
         { path: "/accounts", element: r(<Accounts />) },
         // { path: "/chats", element: r(<Chats />) },
-        { path: "/settings", element: r(<Settings />) },
+        // one route, so moving between the section list and a section keeps unsaved edits
+        { path: "/settings/:section?", element: r(<Settings />) },
         { path: "/certificates", element: r(<Certificates />) },
         { path: "/domains", element: r(<Domains />) },
         { path: "/hosts", element: r(<Hosts />) },

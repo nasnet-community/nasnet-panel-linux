@@ -184,12 +184,12 @@ export function OnOff({ on, onText = "On", offText = "Off" }: { on: boolean; onT
     )
 }
 
-/** A value that may be empty. */
-export function Value({ children, mono, empty = "Not set" }: { children?: ReactNode; mono?: boolean; empty?: string }) {
+/** A value that may be empty. wrap lets long ones (URLs, addresses) break instead of truncating. */
+export function Value({ children, mono, wrap, empty = "Not set" }: { children?: ReactNode; mono?: boolean; wrap?: boolean; empty?: string }) {
     const blank = children === undefined || children === null || children === ""
     return blank
         ? <span className="text-muted-foreground">{empty}</span>
-        : <span className={cn("min-w-0 truncate", mono && "font-mono text-[13px]")}>{children}</span>
+        : <span className={cn("min-w-0", wrap ? "[overflow-wrap:anywhere]" : "truncate", mono && "font-mono text-[13px]")}>{children}</span>
 }
 
 export function StateBadge({ tone, children }: { tone: GroupTone | "muted"; children: ReactNode }) {

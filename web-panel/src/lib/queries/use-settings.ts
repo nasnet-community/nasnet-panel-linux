@@ -17,7 +17,32 @@ export function useSettings() {
     })
 }
 
+// What the running hub has in effect: bot, certificate, restart-only changes
+// still waiting, last backup. Cheap to compute, so it refreshes while the
+// settings page is open.
+export function useSettingsStatus() {
+    return useQuery({
+        queryKey: queryKeys.settingsStatus(),
+        queryFn: () => settingsApi.getStatus(),
+        refetchInterval: 30_000,
+        staleTime: 10_000,
+    })
+}
+
 // ==================== Mutations ====================
+
+// Saves only the keys given; the settings page's cards toast for themselves.
+export function useSaveSettings() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: (values: Record<string, string>) => settingsApi.save(values),
+        // the card reads its new values from this refetch; status can follow
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.settingsStatus() })
+            return queryClient.invalidateQueries({ queryKey: queryKeys.settings, exact: true })
+        },
+    })
+}
 
 // Update multiple settings
 export function useUpdateSettings() {
@@ -67,23 +92,18 @@ export function useExportSettings() {
     })
 }
 
-// Import settings
+// Import settings: the server applies known keys and says what it skipped.
 export function useImportSettings() {
     const queryClient = useQueryClient()
     return useMutation({
-        mutationFn: async (settings: Setting[]) => {
-            return await settingsApi.importAll(settings)
-        },
+        mutationFn: (settings: Pick<Setting, "key" | "value">[]) => settingsApi.importAll(settings),
         onSuccess: (data) => {
-            toast.success("Settings imported", {
-                description: `${data.count} settings have been imported successfully.`,
-            })
+            const n = data.applied.length
+            toast.success(n === 1 ? "1 setting imported" : `${n} settings imported`)
             queryClient.invalidateQueries({ queryKey: queryKeys.settings })
         },
-        onError: () => {
-            toast.error("Import failed", {
-                description: "Failed to import settings. Please check the file format.",
-            })
+        onError: (error: Error) => {
+            toast.error("Import failed", { description: error.message })
         },
     })
 }

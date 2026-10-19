@@ -1,15 +1,16 @@
-import type { ReactNode } from "react"
+import { useId, type ReactNode } from "react"
 import { TriangleAlert, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 /** The page's last card: actions that act on the server and can't be taken back. */
-export function DangerCard({ children, note = "These act on the server and can't be taken back." }: { children: ReactNode; note?: string }) {
+export function DangerCard({ children, note = "These act on the server and can't be taken back.", title = "Danger zone" }: { children: ReactNode; note?: string; title?: string }) {
+    const titleId = useId()
     return (
-        <section aria-labelledby="danger-zone-title" className="overflow-hidden rounded-xl border border-red-500/30 bg-card">
+        <section aria-labelledby={titleId} className="overflow-hidden rounded-xl border border-red-500/30 bg-card">
             <header className="px-4 pb-1 pt-3.5">
-                <h3 id="danger-zone-title" className="flex items-center gap-2 text-sm font-semibold text-red-500">
-                    <TriangleAlert className="size-4" aria-hidden />Danger zone
+                <h3 id={titleId} className="flex items-center gap-2 text-sm font-semibold text-red-500">
+                    <TriangleAlert className="size-4" aria-hidden />{title}
                 </h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">{note}</p>
             </header>

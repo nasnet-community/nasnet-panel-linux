@@ -77,7 +77,7 @@ export default function AlertsPage() {
         <div className="space-y-6 animate-in fade-in duration-500">
             <PageHeader
                 title="Alerts"
-                description="Fires on node offline, Xray crash loops, and resource thresholds. Delivery uses the Telegram/webhook channels configured in Settings → Notifications."
+                description="Fires on node offline, Xray crash loops, and resource thresholds. Delivery uses the Telegram/webhook channels configured in Settings → Alert channels."
             />
 
             <Card>

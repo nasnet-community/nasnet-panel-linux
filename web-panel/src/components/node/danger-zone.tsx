@@ -46,13 +46,14 @@ export interface DangerZoneProps {
   online?: boolean
   /** the card's subtitle */
   note?: string
+  title?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DangerZone
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveRecord = true, online = true, note }: DangerZoneProps) {
+export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveRecord = true, online = true, note, title }: DangerZoneProps) {
   const navigate = useNavigate()
   const confirm = useConfirm()
 
@@ -117,7 +118,7 @@ export function DangerZone({ nodeId, nodeName, onDelete, deleteLabel, canRemoveR
 
   return (
     <>
-      <DangerCard note={note}>
+      <DangerCard note={note} title={title}>
           {onDelete && (
             <DangerRow
               icon={MinusCircle} tone="muted" title={deleteLabel || "Delete node"}

@@ -96,10 +96,14 @@ export type { UseSubscriptionsParams } from "./use-subscriptions"
 // Settings Queries & Mutations
 export {
     useSettings,
+    useSettingsStatus,
     useUpdateSettings,
+    useSaveSettings,
     useExportSettings,
     useImportSettings,
     useChangePassword,
+    useRetentionStats,
+    useRunRetentionCleanup,
 } from "./use-settings"
 
 // Certificate Queries & Mutations

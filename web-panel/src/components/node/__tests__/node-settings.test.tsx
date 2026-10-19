@@ -153,7 +153,7 @@ describe("node settings page", () => {
         const list = screen.getByRole("navigation", { name: "On this page" })
         expect(within(list).queryByRole("button", { name: "Danger zone" })).not.toBeInTheDocument()
         expect(screen.queryByText("Destructive operations")).not.toBeInTheDocument()
-        expect(screen.getByRole("link", { name: "Settings → Danger zone" })).toHaveAttribute("href", "/settings?category=danger")
+        expect(screen.getByRole("link", { name: "Settings → Danger zone" })).toHaveAttribute("href", "/settings/danger")
     })
 
     it("leaves the in-service switch off the built-in node", async () => {

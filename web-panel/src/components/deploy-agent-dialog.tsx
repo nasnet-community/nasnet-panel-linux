@@ -184,7 +184,7 @@ export function DeployAgentDialog({ nodeId, open, onOpenChange }: DeployAgentDia
                                 <h3 className="text-sm font-semibold text-muted-foreground">One-line install</h3>
                                 <p className="text-xs text-muted-foreground">
                                     {info.reason}{" "}
-                                    <Link to="/settings" className="underline underline-offset-2 hover:text-foreground">Open settings</Link>
+                                    <Link to="/settings#urls" className="underline underline-offset-2 hover:text-foreground">Open settings</Link>
                                 </p>
                             </section>
                         )}

@@ -1,211 +1,121 @@
 import { useState } from "react"
+import { Eraser, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Loader2, AlertTriangle, Info, CheckCircle2, Trash2 } from "lucide-react"
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useDatabaseCleanup, useCreateBackup } from "@/lib/queries"
 import type { CleanupResult } from "@/lib/api/backup"
+import { DangerCard, DangerRow } from "@/components/settings-page/danger-card"
 
-export function DangerZone({ disabled, asMenuItem = false }: { disabled?: boolean; asMenuItem?: boolean }) {
-    const [confirmOpen, setConfirmOpen] = useState(false)
-    const [resultOpen, setResultOpen] = useState(false)
-    const [confirmText, setConfirmText] = useState("")
-    const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null)
-    const [isRunning, setIsRunning] = useState(false)
+const RESULT_ROWS: { label: string; key: keyof CleanupResult }[] = [
+    { label: "Accounts removed from nodes", key: "accounts_removed" },
+    { label: "Subscriptions", key: "subscriptions_deleted" },
+    { label: "Users", key: "users_deleted" },
+    { label: "Audit log entries", key: "audit_logs_deleted" },
+    { label: "Notification log entries", key: "notification_logs_deleted" },
+    { label: "Provisioning tasks", key: "provisioning_tasks_deleted" },
+    { label: "Daily usage records", key: "user_daily_usage_deleted" },
+    { label: "Node stats", key: "node_stats_deleted" },
+    { label: "Deployment tokens", key: "used_tokens_deleted" },
+    { label: "Bot conversations", key: "conversations_deleted" },
+    { label: "Admins reset", key: "admins_reset" },
+]
 
-    const cleanup = useDatabaseCleanup()
+const WORD = "ERASE"
+
+/** Erasing customer data takes a backup first. */
+export function DangerZone() {
+    const [open, setOpen] = useState(false)
+    const [typed, setTyped] = useState("")
+    const [running, setRunning] = useState(false)
+    const [result, setResult] = useState<CleanupResult | null>(null)
     const backup = useCreateBackup()
+    const cleanup = useDatabaseCleanup()
 
-    const canConfirm = confirmText === "CLEANUP"
-
-    const handleConfirm = async () => {
-        setIsRunning(true)
+    const erase = async () => {
+        setRunning(true)
         try {
-            // Safety backup first
             await backup.mutateAsync()
-
-            // Then cleanup
-            const result = await cleanup.mutateAsync()
-            setCleanupResult(result)
-            setConfirmOpen(false)
-            setConfirmText("")
-            setResultOpen(true)
+            setResult(await cleanup.mutateAsync())
+            setOpen(false)
+            setTyped("")
         } catch {
-            // Errors handled by mutation onError callbacks
+            // both mutations toast their own errors
         } finally {
-            setIsRunning(false)
+            setRunning(false)
         }
     }
 
-    const resultRows: { label: string; key: keyof CleanupResult }[] = [
-        { label: "Accounts removed from nodes", key: "accounts_removed" },
-        { label: "Subscriptions deleted", key: "subscriptions_deleted" },
-        { label: "Users deleted", key: "users_deleted" },
-        { label: "Audit logs deleted", key: "audit_logs_deleted" },
-        { label: "Notification logs deleted", key: "notification_logs_deleted" },
-        { label: "Provisioning tasks deleted", key: "provisioning_tasks_deleted" },
-        { label: "Daily usage records deleted", key: "user_daily_usage_deleted" },
-        { label: "Node stats deleted", key: "node_stats_deleted" },
-        { label: "Deployment tokens deleted", key: "used_tokens_deleted" },
-        { label: "Conversation sessions deleted", key: "conversations_deleted" },
-        { label: "Admin accounts reset", key: "admins_reset" },
-    ]
-
     return (
         <>
-            {asMenuItem ? (
-                <DropdownMenuItem
-                    onSelect={(e) => {
-                        e.preventDefault()
-                        setConfirmOpen(true)
-                    }}
-                    disabled={disabled}
-                    className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Clean Database
-                </DropdownMenuItem>
-            ) : (
-                <Button
-                    variant="destructive"
-                    onClick={() => setConfirmOpen(true)}
-                    disabled={disabled}
-                >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Clean Database
-                </Button>
-            )}
+            <DangerCard note="These act on the panel's data and can't be taken back.">
+                <DangerRow
+                    icon={Eraser}
+                    tone="danger"
+                    title="Erase customer data"
+                    text="Deletes every non-admin user, their subscriptions with their accounts and tunnel users on nodes, usage history and the audit log. Nodes, inbounds, settings and certificates stay. A backup is taken first."
+                    button="Erase…"
+                    onClick={() => setOpen(true)}
+                />
+            </DangerCard>
 
-            {/* Confirmation Dialog */}
-            <Dialog open={confirmOpen} onOpenChange={(open) => {
-                if (!isRunning) {
-                    setConfirmOpen(open)
-                    if (!open) setConfirmText("")
-                }
-            }}>
+            <Dialog open={open} onOpenChange={o => { if (!running) { setOpen(o); if (!o) setTyped("") } }}>
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <AlertTriangle className="h-5 w-5 text-destructive" />
-                            Clean Database
-                        </DialogTitle>
-                        <DialogDescription>
-                            This action cannot be undone. Please read carefully before proceeding.
-                        </DialogDescription>
+                        <DialogTitle className="text-red-500">Erase customer data?</DialogTitle>
+                        <DialogDescription>This can't be undone, except by restoring the backup taken first.</DialogDescription>
                     </DialogHeader>
-
-                    <div className="space-y-4">
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>This will permanently delete:</AlertTitle>
-                            <AlertDescription>
-                                All users (non-admin), subscriptions, accounts, payments, coupons, audit logs, notification logs, usage data, import batches, and node statistics.
-                            </AlertDescription>
-                        </Alert>
-
-                        <Alert>
-                            <Info className="h-4 w-4" />
-                            <AlertTitle>Safety backup</AlertTitle>
-                            <AlertDescription>
-                                A safety backup will be created automatically before cleanup begins.
-                            </AlertDescription>
-                        </Alert>
-
-                        <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-                            <p className="font-medium mb-1">The following will be preserved:</p>
-                            <ul className="list-disc list-inside space-y-0.5">
-                                <li>Nodes, inbounds, and outbounds</li>
-                                <li>Plans (inbound links will be cleared)</li>
-                                <li>Settings and configuration</li>
-                                <li>Admin accounts (balance reset to 0)</li>
-                                <li>Agent certificates and SNIs</li>
+                    <div className="grid gap-4 text-sm sm:grid-cols-2">
+                        <div>
+                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deleted</p>
+                            <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                                <li>Users, except admins</li>
+                                <li>Subscriptions, their accounts and tunnel users on nodes</li>
+                                <li>Usage history, node stats</li>
+                                <li>Audit and notification logs</li>
                             </ul>
                         </div>
-
                         <div>
-                            <label className="text-sm font-medium">
-                                Type <span className="font-mono font-bold">CLEANUP</span> to confirm
-                            </label>
-                            <Input
-                                value={confirmText}
-                                onChange={(e) => setConfirmText(e.target.value)}
-                                placeholder="CLEANUP"
-                                className="mt-1"
-                                disabled={isRunning}
-                            />
+                            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Kept</p>
+                            <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                                <li>Nodes, inbounds and outbounds</li>
+                                <li>Settings and certificates</li>
+                                <li>Admins</li>
+                            </ul>
                         </div>
                     </div>
-
+                    <div className="space-y-1.5">
+                        <Label htmlFor="erase-confirm">Type <span className="font-mono font-semibold">{WORD}</span> to confirm</Label>
+                        <Input id="erase-confirm" autoComplete="off" value={typed} onChange={e => setTyped(e.target.value)} placeholder={WORD} className="font-mono" disabled={running} />
+                    </div>
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => { setConfirmOpen(false); setConfirmText("") }}
-                            disabled={isRunning}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            onClick={handleConfirm}
-                            disabled={!canConfirm || isRunning}
-                        >
-                            {isRunning ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Cleaning...
-                                </>
-                            ) : (
-                                "Clean Database"
-                            )}
+                        <Button variant="ghost" onClick={() => { setOpen(false); setTyped("") }} disabled={running}>Cancel</Button>
+                        <Button variant="destructive" onClick={erase} disabled={typed !== WORD || running}>
+                            {running && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+                            {running ? (backup.isPending ? "Backing up…" : "Erasing…") : "Back up and erase"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* Results Dialog */}
-            <Dialog open={resultOpen} onOpenChange={setResultOpen}>
+            <Dialog open={!!result} onOpenChange={o => { if (!o) setResult(null) }}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            Cleanup Complete
-                        </DialogTitle>
-                        <DialogDescription>
-                            The database has been cleaned successfully.
-                        </DialogDescription>
+                        <DialogTitle>Customer data erased</DialogTitle>
+                        <DialogDescription>The backup taken first is on the Backups page.</DialogDescription>
                     </DialogHeader>
-
-                    {cleanupResult && (
-                        <div className="rounded-md border p-3 max-h-80 overflow-y-auto">
-                            <table className="w-full text-sm">
-                                <tbody>
-                                    {resultRows.map(({ label, key }) => (
-                                        <tr key={key} className="border-b last:border-0">
-                                            <td className="py-1.5 text-muted-foreground">{label}</td>
-                                            <td className="py-1.5 text-right font-mono font-medium">
-                                                {cleanupResult[key]}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                    {result && (
+                        <dl className="divide-y divide-border/50 text-sm">
+                            {RESULT_ROWS.filter(r => (result[r.key] as number) > 0).map(r => (
+                                <div key={r.key} className="flex justify-between py-1.5">
+                                    <dt className="text-muted-foreground">{r.label}</dt>
+                                    <dd className="font-mono">{(result[r.key] as number).toLocaleString()}</dd>
+                                </div>
+                            ))}
+                        </dl>
                     )}
-
-                    <DialogFooter>
-                        <Button onClick={() => setResultOpen(false)}>
-                            Done
-                        </Button>
-                    </DialogFooter>
+                    <DialogFooter><Button onClick={() => setResult(null)}>Done</Button></DialogFooter>
                 </DialogContent>
             </Dialog>
         </>

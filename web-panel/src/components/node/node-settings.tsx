@@ -404,7 +404,7 @@ export function NodeSettings({ node, onRefresh, onDirtyChange }: NodeSettingsPro
                 {local ? (
                     <p className="text-xs text-muted-foreground">
                         Wiping or nuking this router deletes the panel too, so it's in{" "}
-                        <Link to="/settings?category=danger" className="font-medium text-foreground underline underline-offset-2">Settings → Danger zone</Link>.
+                        <Link to="/settings/danger" className="font-medium text-foreground underline underline-offset-2">Settings → Danger zone</Link>.
                     </p>
                 ) : (
                     <SettingsSection id="danger" title="Danger zone" icon={TriangleAlert} hideTitle>
