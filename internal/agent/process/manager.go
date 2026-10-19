@@ -569,16 +569,33 @@ func (m *XrayManager) Restart(ctx context.Context, validateFirst bool, timeout t
 	return m.Start()
 }
 
-// ValidateConfig runs xray with -test flag to validate config
-func (m *XrayManager) ValidateConfig() error {
-	cmd := exec.Command(m.binPath, "-test", "-c", m.configPath)
+// xrayCmd runs the xray binary the way Xray itself runs: from the config
+// directory, with the same geodata.
+func (m *XrayManager) xrayCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, m.binPath, args...)
 	cmd.Dir = filepath.Dir(m.configPath)
 	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.assetDir())
-	output, err := cmd.CombinedOutput()
+	return cmd
+}
+
+// ValidateConfig runs xray with -test flag to validate config
+func (m *XrayManager) ValidateConfig() error {
+	output, err := m.xrayCmd(context.Background(), "-test", "-c", m.configPath).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("config validation failed: %s", string(output))
 	}
 	return nil
+}
+
+// API runs `xray api <args>` against the running Xray. It uses the binary and
+// asset directory Xray itself runs with, so configs it builds (rules naming
+// geoip/geosite, users, outbounds) come out exactly as at startup.
+func (m *XrayManager) API(ctx context.Context, args ...string) (string, error) {
+	out, err := m.xrayCmd(ctx, append([]string{"api"}, args...)...).CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("xray api %s: %w (output: %s)", args[0], err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }
 
 // IsRunning returns whether the xray process is currently running
@@ -766,10 +783,7 @@ func (m *XrayManager) UpdateConfig(content string) error {
 	logger.Debug("Validating new config")
 
 	// Validate the new config
-	cmd := exec.Command(m.binPath, "-test", "-c", tmpPath)
-	cmd.Dir = filepath.Dir(m.configPath)
-	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.assetDir())
-	output, err := cmd.CombinedOutput()
+	output, err := m.xrayCmd(context.Background(), "-test", "-c", tmpPath).CombinedOutput()
 	if err != nil {
 		os.Remove(tmpPath)
 		logger.WithError(err).WithField("output", string(output)).Error("Config validation failed")

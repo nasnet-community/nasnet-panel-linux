@@ -190,6 +190,19 @@ func (c *LocalClient) RemoveUser(ctx context.Context, inboundTag, email string) 
 	return nil
 }
 
+// RemoveOutbound removes an outbound handler by tag
+func (c *LocalClient) RemoveOutbound(ctx context.Context, tag string) error {
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = handlerService.NewHandlerServiceClient(conn).RemoveOutbound(ctx, &handlerService.RemoveOutboundRequest{Tag: tag})
+	if err != nil {
+		return fmt.Errorf("failed to remove outbound %s: %w", tag, err)
+	}
+	return nil
+}
+
 // User represents a user in Xray
 type User struct {
 	Email string

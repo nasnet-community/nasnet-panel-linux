@@ -111,6 +111,12 @@ type Server struct {
 	// depMgr installs tunnel binaries on demand; built on first use.
 	depMgr *depinstall.Manager
 
+	// pushMu serializes config pushes, which plan against the running config.
+	// configDirty: a push failed to restart Xray, so the file may not be what
+	// it runs and the next push must restart rather than apply a diff.
+	pushMu      sync.Mutex
+	configDirty bool
+
 	// Bandwidth shaping (TC). bwMu guards tcManager; bwStop ends the keeper.
 	bwMu      sync.Mutex
 	tcManager *agenttc.Manager
@@ -661,6 +667,28 @@ func (s *Server) WriteFile(ctx context.Context, req *pb.FilePayload) (*pb.Comman
 
 // PushConfig receives and writes a new configuration
 func (s *Server) PushConfig(ctx context.Context, req *pb.ConfigPayload) (*pb.CommandResponse, error) {
+	s.pushMu.Lock()
+	defer s.pushMu.Unlock()
+
+	// Plan against the config Xray is running before the file is replaced.
+	var plan *agentxray.HotPlan
+	reason := "xray is not running"
+	if s.configDirty {
+		reason = "the last config push wasn't applied"
+	} else if s.xrayMgr.IsRunning() {
+		if running, err := s.xrayMgr.GetConfigContent(); err == nil {
+			s.mu.RLock()
+			xrayVersion := s.xrayVersion
+			s.mu.RUnlock()
+			if xrayVersion == "" {
+				xrayVersion = s.getXrayVersion()
+			}
+			plan, reason = agentxray.PlanHotApply(running, []byte(req.JsonContent), xrayVersion)
+		} else {
+			reason = err.Error()
+		}
+	}
+
 	if err := s.xrayMgr.UpdateConfig(req.JsonContent); err != nil {
 		return &pb.CommandResponse{
 			Success:   false,
@@ -669,14 +697,29 @@ func (s *Server) PushConfig(ctx context.Context, req *pb.ConfigPayload) (*pb.Com
 		}, nil
 	}
 
+	if plan != nil {
+		if err := plan.Apply(ctx, s.xrayMgr, s.xrayClient, s.cfg.Xray.APIAddr); err == nil {
+			return &pb.CommandResponse{
+				Success: true,
+				Message: "Configuration applied without restarting xray",
+			}, nil
+		} else {
+			logrus.WithError(err).Warn("Applying config through the xray API failed, restarting xray")
+		}
+	} else {
+		logrus.WithField("reason", reason).Info("Config change needs an xray restart")
+	}
+
 	// Restart xray to apply the new config (xray-core does not hot-reload)
 	if err := s.xrayMgr.Restart(ctx, false, s.cfg.Process.GracefulTimeout); err != nil {
+		s.configDirty = true
 		return &pb.CommandResponse{
 			Success:   false,
 			Message:   fmt.Sprintf("Config written but restart failed: %v", err),
 			ErrorCode: "RESTART_AFTER_CONFIG_FAILED",
 		}, nil
 	}
+	s.configDirty = false
 
 	return &pb.CommandResponse{
 		Success: true,
