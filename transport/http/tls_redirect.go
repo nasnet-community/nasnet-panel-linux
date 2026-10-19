@@ -1,93 +1,112 @@
 package http
 
 import (
-	"bufio"
 	"crypto/tls"
-	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
-
-	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
-// tlsAutoListener wraps a net.Listener to auto-detect TLS vs plain HTTP
-// on the same port. TLS connections are passed through as tls.Conn.
-// Plain HTTP connections receive a 301 redirect to HTTPS and are closed.
+// sniffTimeout bounds how long a new connection may stay silent before its
+// first byte says whether it speaks TLS.
+const sniffTimeout = 10 * time.Second
+
+// tlsAutoListener serves TLS and plain HTTP on one port. A connection whose
+// first byte opens a TLS handshake is handed over as a *tls.Conn; anything
+// else goes to the HTTP server as plain HTTP, where redirectPlainHTTP decides
+// what it may reach. The first byte is read per connection, so a client that
+// connects and sends nothing holds up only itself.
 type tlsAutoListener struct {
 	net.Listener
-	tlsConfig    *tls.Config
-	fallbackHost string // used in redirect if request has no Host header
+	tlsConfig *tls.Config
+	accepted  chan acceptResult
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
-// newTLSAutoListener creates a listener that serves TLS and redirects plain HTTP.
-func newTLSAutoListener(ln net.Listener, tlsCfg *tls.Config, fallbackHost string) net.Listener {
-	return &tlsAutoListener{
-		Listener:     ln,
-		tlsConfig:    tlsCfg,
-		fallbackHost: fallbackHost,
+type acceptResult struct {
+	conn net.Conn
+	err  error
+}
+
+func newTLSAutoListener(ln net.Listener, tlsCfg *tls.Config) *tlsAutoListener {
+	l := &tlsAutoListener{
+		Listener:  ln,
+		tlsConfig: tlsCfg,
+		accepted:  make(chan acceptResult),
+		done:      make(chan struct{}),
+	}
+	go l.acceptLoop()
+	return l
+}
+
+func (l *tlsAutoListener) acceptLoop() {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			// http.Server backs off on temporary errors before it asks again,
+			// and stops serving on the rest.
+			select {
+			case l.accepted <- acceptResult{err: err}:
+			case <-l.done:
+				return
+			}
+			continue
+		}
+		go l.sniff(conn)
+	}
+}
+
+func (l *tlsAutoListener) sniff(conn net.Conn) {
+	first := make([]byte, 1)
+	_ = conn.SetReadDeadline(time.Now().Add(sniffTimeout))
+	n, err := conn.Read(first)
+	_ = conn.SetReadDeadline(time.Time{})
+	if err != nil || n == 0 {
+		conn.Close()
+		return
+	}
+	var c net.Conn = &prefixConn{Conn: conn, prefix: first}
+	if first[0] == 0x16 { // TLS handshake record
+		c = tls.Server(c, l.tlsConfig)
+	}
+	select {
+	case l.accepted <- acceptResult{conn: c}:
+	case <-l.done:
+		conn.Close()
 	}
 }
 
 func (l *tlsAutoListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-
-		// Peek at first byte with a short timeout
-		peeked := make([]byte, 1)
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		n, err := conn.Read(peeked)
-		conn.SetReadDeadline(time.Time{})
-		if err != nil || n == 0 {
-			conn.Close()
-			continue
-		}
-
-		if peeked[0] == 0x16 {
-			// TLS ClientHello — wrap as TLS connection
-			tlsConn := tls.Server(&prefixConn{Conn: conn, prefix: peeked[:n]}, l.tlsConfig)
-			return tlsConn, nil
-		}
-
-		// Plain HTTP — redirect to HTTPS in a goroutine and accept next connection
-		go l.redirectHTTP(conn, peeked[:n])
+	select {
+	case r := <-l.accepted:
+		return r.conn, r.err
+	case <-l.done:
+		return nil, net.ErrClosed
 	}
 }
 
-// redirectHTTP reads the HTTP request path and sends a 301 redirect to HTTPS.
-func (l *tlsAutoListener) redirectHTTP(conn net.Conn, firstByte []byte) {
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+func (l *tlsAutoListener) Close() error {
+	l.closeOnce.Do(func() { close(l.done) })
+	return l.Listener.Close()
+}
 
-	reader := bufio.NewReader(&prefixConn{Conn: conn, prefix: firstByte})
-
-	req, err := http.ReadRequest(reader)
-	if err != nil {
-		return
-	}
-
-	// Use the Host header from the request (preserves original host:port)
-	host := req.Host
-	if host == "" {
-		host = l.fallbackHost
-	}
-	target := "https://" + host + req.URL.RequestURI()
-	body := fmt.Sprintf("<html><body>Redirecting to <a href=%q>%s</a></body></html>\n", target, target)
-
-	resp := fmt.Sprintf("HTTP/1.1 301 Moved Permanently\r\n"+
-		"Location: %s\r\n"+
-		"Content-Type: text/html\r\n"+
-		"Content-Length: %d\r\n"+
-		"Connection: close\r\n"+
-		"\r\n%s", target, len(body), body)
-
-	conn.Write([]byte(resp))
-
-	log := logger.GetLogger()
-	log.WithField("target", target).Debug("Redirected HTTP to HTTPS")
+// redirectPlainHTTP sends plain-HTTP requests to HTTPS on the same host and
+// port, except those plainOK lets through. 307, not 301: browsers keep a 301
+// for good and would go on jumping to https after HTTPS is turned off.
+func redirectPlainHTTP(next http.Handler, plainOK func(*http.Request) bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS != nil || (plainOK != nil && plainOK(r)) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Host == "" {
+			http.Error(w, "Missing Host header", http.StatusBadRequest)
+			return
+		}
+		http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+	})
 }
 
 // prefixConn is a net.Conn that prepends already-read bytes before the real connection.

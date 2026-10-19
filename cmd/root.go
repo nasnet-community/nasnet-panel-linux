@@ -1015,7 +1015,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		addr := fmt.Sprintf(":%d", cfg.App.Port)
 		if tlsCfg != nil {
 			log.WithField("address", addr).Info("HTTPS server starting")
-			if err := server.RunTLS(addr, tlsCfg); err != nil && err != http.ErrServerClosed {
+			if err := server.RunTLS(addr, tlsCfg, nil); err != nil && err != http.ErrServerClosed {
 				log.WithError(err).Fatal("HTTPS server failed")
 			}
 			return

@@ -532,23 +532,21 @@ func (s *Server) Run(addr string) error {
 	return s.httpServer.ListenAndServe()
 }
 
-func (s *Server) RunTLS(addr string, tlsConfig *tls.Config) error {
-	// Listen on a raw TCP socket so we can auto-detect TLS vs plain HTTP.
-	// Plain HTTP connections get a 301 redirect to HTTPS.
+// RunTLS serves HTTPS, and plain HTTP on the same port: plainOK picks the
+// plain-HTTP requests served as they are, the rest are sent to HTTPS.
+func (s *Server) RunTLS(addr string, tlsConfig *tls.Config, plainOK func(*http.Request) bool) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	autoLn := newTLSAutoListener(ln, tlsConfig, "")
-
 	s.httpServer = &http.Server{
 		Addr:           addr,
-		Handler:        s.engine,
+		Handler:        redirectPlainHTTP(s.engine, plainOK),
 		ReadTimeout:    5 * time.Minute,
 		WriteTimeout:   5 * time.Minute,
 		MaxHeaderBytes: 1 << 20,
 	}
-	return s.httpServer.Serve(autoLn)
+	return s.httpServer.Serve(newTLSAutoListener(ln, tlsConfig))
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
