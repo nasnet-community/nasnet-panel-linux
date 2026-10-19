@@ -81,14 +81,14 @@ export function StatusRow({ line }: { line: StatusLine }) {
     )
 }
 
-function CopyValue({ text }: { text: string }) {
+export function CopyValue({ text }: { text: string }) {
     const [done, setDone] = useState(false)
     return (
         <Button
             type="button" variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground"
             aria-label="Copy"
             onClick={async () => {
-                await copyToClipboard(text)
+                if (!await copyToClipboard(text)) return toast.error("Couldn't copy")
                 setDone(true)
                 setTimeout(() => setDone(false), 1500)
             }}

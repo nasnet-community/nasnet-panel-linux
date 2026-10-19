@@ -150,6 +150,18 @@ export function useRetentionStats(enabled = true) {
 
 // Trigger the retention sweep synchronously. Toasts the total-row summary
 // and refreshes the stats query so the UI reflects post-cleanup sizes.
+export function useRegenerateCertificate() {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async () => await settingsApi.regenerateCertificate(),
+        onSuccess: () => {
+            toast.success("New certificate", { description: "Browsers ask again the next time they connect." })
+            queryClient.invalidateQueries({ queryKey: queryKeys.settingsStatus() })
+        },
+        onError: (err: Error) => toast.error("Couldn't create a new certificate", { description: err.message }),
+    })
+}
+
 export function useRunRetentionCleanup() {
     const queryClient = useQueryClient()
     return useMutation({

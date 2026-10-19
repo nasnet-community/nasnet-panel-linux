@@ -30,7 +30,10 @@ export interface RetentionStat {
 export interface CertInfo {
     issuer?: string
     subject?: string
+    /** host names, then IP addresses */
     domains?: string[]
+    /** SHA-256, colon-separated, as browsers show it */
+    fingerprint: string
     not_after: string
     days_left: number
 }
@@ -58,7 +61,7 @@ export interface SettingsStatus {
         legacy?: string
         token_set: boolean
     }
-    https: { mode: "files" | "acme" | "plain"; error?: string; cert?: CertInfo; on_disk?: CertInfo }
+    https: { mode: "files" | "acme" | "self-signed" | "plain"; error?: string; cert?: CertInfo; on_disk?: CertInfo }
     reverse_hub: { listening: boolean; port: number; connected: number }
     backup: { last_run_at?: string; result?: BackupRunResult }
     maintenance: { since?: string; active: number; reach: number }
@@ -134,6 +137,13 @@ export const settingsApi = {
             return { success: false, error: resp.error || "Failed to test TLS certificate" };
         }
         return { ...resp.data, success: true };
+    },
+
+    /** Replaces the self-signed certificate; served from the next connection on. */
+    regenerateCertificate: async (): Promise<CertInfo> => {
+        const resp = await api.post<CertInfo>("/api/v1/settings/https/regenerate", {});
+        if (!resp.data) throw new Error(resp.error || "Couldn't create a new certificate");
+        return resp.data;
     },
 
     getRetentionStats: async (): Promise<RetentionStat[]> => {

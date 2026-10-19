@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react"
-import { Loader2, ShieldCheck } from "lucide-react"
+import { Loader2, RefreshCw, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { settingsApi, type TLSTestResult } from "@/lib/api/settings"
+import { useRegenerateCertificate } from "@/lib/queries/use-settings"
 import { SettingRow, SettingsGroup } from "@/components/settings-page/settings-group"
 import { cn } from "@/lib/utils"
 import { day, on, type CardDef, type FieldDef, type Values } from "./catalog"
-import { FieldRow, Hl, StatusRow, toneOf, useCardEdit, usePage } from "./settings-card"
+import { CopyValue, FieldRow, Hl, StatusRow, toneOf, useCardEdit, usePage } from "./settings-card"
 
-type Mode = "off" | "acme" | "files"
-const MODES: [Mode, string][] = [["off", "Off"], ["acme", "Let's Encrypt"], ["files", "Certificate files"]]
+type Mode = "off" | "acme" | "files" | "self-signed"
+const MODES: [Mode, string][] = [["off", "Off"], ["acme", "Let's Encrypt"], ["files", "Certificate files"], ["self-signed", "Self-signed"]]
 
 const FIELDS: FieldDef[] = [
     { key: "acme_email", label: "Account email", type: "text", placeholder: "you@example.com", show: v => v.https_mode === "acme" },
@@ -17,16 +19,19 @@ const FIELDS: FieldDef[] = [
     { key: "tls_key_file", label: "Private key", type: "text", mono: true, placeholder: "/etc/letsencrypt/live/example.com/privkey.pem", show: v => v.https_mode === "files" },
 ]
 
-/** The mode the panel uses at boot: certificate files win over Let's Encrypt. */
+/** The mode the panel uses at boot: certificate files, then Let's Encrypt, then self-signed. */
 function modeOf(v: Values): Mode {
     if (v.tls_cert_file && v.tls_key_file) return "files"
-    return on(v.acme_enabled) ? "acme" : "off"
+    if (on(v.acme_enabled)) return "acme"
+    return on(v.tls_self_signed) ? "self-signed" : "off"
 }
 
 export function HttpsCard({ card }: { card: CardDef }) {
     const { ctx } = usePage()
     const extra = useMemo<Values>(() => ({ https_mode: modeOf(ctx.values) }), [ctx.values])
     const [test, setTest] = useState<TLSTestResult | "running" | null>(null)
+    const confirm = useConfirm()
+    const regenerate = useRegenerateCertificate()
     const edit = useCardEdit(card, {
         extra,
         validate: d => {
@@ -39,17 +44,28 @@ export function HttpsCard({ card }: { card: CardDef }) {
             return e
         },
         toPayload: d => {
+            const selfSigned = d.https_mode === "self-signed" ? "true" : "false"
             const want: Values = d.https_mode === "files"
-                ? { acme_enabled: "false", tls_cert_file: d.tls_cert_file, tls_key_file: d.tls_key_file }
+                ? { acme_enabled: "false", tls_cert_file: d.tls_cert_file, tls_key_file: d.tls_key_file, tls_self_signed: selfSigned }
                 : d.https_mode === "acme"
-                    ? { acme_enabled: "true", acme_email: d.acme_email, acme_staging: d.acme_staging, tls_cert_file: "", tls_key_file: "" }
-                    : { acme_enabled: "false", tls_cert_file: "", tls_key_file: "" }
+                    ? { acme_enabled: "true", acme_email: d.acme_email, acme_staging: d.acme_staging, tls_cert_file: "", tls_key_file: "", tls_self_signed: selfSigned }
+                    : { acme_enabled: "false", tls_cert_file: "", tls_key_file: "", tls_self_signed: selfSigned }
             return Object.fromEntries(Object.entries(want).filter(([k, v]) => (ctx.values[k] ?? "") !== (v ?? "")))
         },
     })
     const status = card.status?.(ctx)
     const mode = (edit.editing ? edit.draft.https_mode : extra.https_mode) as Mode
     const source = edit.editing ? edit.draft : { ...ctx.values, ...extra }
+
+    const served = ctx.status?.https.mode === "self-signed" ? ctx.status.https.cert : undefined
+    const runRegenerate = async () => {
+        if (!await confirm({
+            title: "Make a new certificate?",
+            description: "Every browser and device that accepted the current one shows the warning again, and one-line node installs copied before now need a new command. The new certificate names this machine's addresses as they are now.",
+            confirmLabel: "Make a new one",
+        })) return
+        regenerate.mutate()
+    }
 
     const runTest = async () => {
         setTest("running")
@@ -83,6 +99,30 @@ export function HttpsCard({ card }: { card: CardDef }) {
                 ) : MODES.find(m => m[0] === mode)?.[1]}
             </SettingRow>
             {FIELDS.filter(f => f.show!(source)).map(f => <FieldRow key={f.key} card={card} f={f} edit={edit} />)}
+            {edit.editing && mode === "self-signed" && (
+                <SettingRow label="">
+                    <p className="py-1.5 text-xs text-muted-foreground">
+                        The panel makes its own certificate. Browsers warn on the first visit from each device, so compare the fingerprint they show with the one here. Subscription links stay on plain HTTP, where VPN apps can fetch them.
+                    </p>
+                </SettingRow>
+            )}
+            {!edit.editing && served && (
+                <>
+                    <SettingRow label={<Hl text="Fingerprint" />} hint="SHA-256. Your browser shows it in the certificate's details." action={<CopyValue text={served.fingerprint} />}>
+                        <span className="font-mono text-xs [overflow-wrap:anywhere]">{served.fingerprint}</span>
+                    </SettingRow>
+                    {!!served.domains?.length && (
+                        <SettingRow label={<Hl text="Names" />}>
+                            <span className="[overflow-wrap:anywhere]">{served.domains.join(", ")}</span>
+                        </SettingRow>
+                    )}
+                    <SettingRow label="" hint="For when this machine's addresses changed, or the key may have leaked.">
+                        <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5" onClick={runRegenerate} disabled={regenerate.isPending}>
+                            {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Make a new certificate
+                        </Button>
+                    </SettingRow>
+                </>
+            )}
             {edit.editing && mode === "files" && (
                 <SettingRow label="" hint={testHint(test)}>
                     <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5" onClick={runTest} disabled={test === "running" || !edit.draft.tls_cert_file || !edit.draft.tls_key_file}>

@@ -115,7 +115,7 @@ export interface CardDef {
 
 /** Settings that take effect only when the panel restarts. */
 export const RESTART_KEYS = new Set([
-    "panel_base_path", "acme_enabled", "acme_email", "acme_staging", "tls_cert_file", "tls_key_file",
+    "panel_base_path", "acme_enabled", "acme_email", "acme_staging", "tls_cert_file", "tls_key_file", "tls_self_signed",
     "hub_enabled", "hub_port", "metrics_username", "metrics_password",
     "telegram_proxy_enabled", "telegram_proxy_type", "telegram_proxy_host", "telegram_proxy_port",
     "telegram_proxy_username", "telegram_proxy_password",
@@ -215,14 +215,17 @@ function httpsStatus(ctx: Ctx): StatusLine | null {
     if (!h) return null
     if (h.mode === "plain") return { tone: h.error ? "danger" : "off", text: h.error ? "Serving plain HTTP: the certificate didn't load" : "Serving plain HTTP", hint: h.error ?? "Fine when a reverse proxy in front handles TLS." }
     const c = h.cert
-    if (!c) return { tone: "off", text: h.mode === "acme" ? "Let's Encrypt" : "Certificate files" }
+    if (!c) return { tone: "off", text: h.mode === "acme" ? "Let's Encrypt" : h.mode === "self-signed" ? "Self-signed" : "Certificate files" }
     const left = c.days_left
-    const text = `Serving ${c.issuer || "a certificate"} · expires ${day(c.not_after)}, ${left < 0 ? "expired" : `in ${plural(left, "day")}`}`
+    const what = h.mode === "self-signed" ? "a self-signed certificate" : c.issuer || "a certificate"
+    const text = `Serving ${what} · expires ${day(c.not_after)}, ${left < 0 ? "expired" : `in ${plural(left, "day")}`}`
     if (h.on_disk) return { tone: "warn", text, hint: `A renewed certificate (expires ${day(h.on_disk.not_after)}) is on disk. Restart the panel to serve it.` }
     return {
         tone: left < 14 ? "warn" : "ok",
         text,
-        hint: h.mode === "files" ? "The panel reads the files at startup, so it needs a restart after each renewal." : "Renews on its own before it expires.",
+        hint: h.mode === "files" ? "The panel reads the files at startup, so it needs a restart after each renewal."
+            : h.mode === "self-signed" ? "Renews on its own a month before it expires. Browsers warn on the first visit from each device."
+            : "Renews on its own before it expires.",
     }
 }
 
@@ -336,7 +339,7 @@ export const CARDS: CardDef[] = [
     },
     {
         id: "https", section: "panel", title: "HTTPS", icon: Lock, kind: "https",
-        description: "How the panel serves TLS.", keywords: "tls ssl certificate lets encrypt acme",
+        description: "How the panel serves TLS.", keywords: "tls ssl certificate lets encrypt acme self-signed fingerprint",
         status: httpsStatus,
         effect: () => ({ text: "Takes effect after a panel restart." }),
     },
@@ -521,7 +524,7 @@ export const cardById = (id: string) => CARDS.find(c => c.id === id)
 export function cardKeys(card: CardDef, values?: Values): string[] {
     if (card.kind === "events") return liveChannels(values ?? {}).flatMap(ch => EVENTS.flatMap(g => g.items.map(([ev]) => eventKey(ch, ev))))
     if (card.kind === "retention") return RETENTION.flatMap(g => g.rows.map(r => r[0]))
-    if (card.kind === "https") return ["acme_enabled", "acme_email", "acme_staging", "tls_cert_file", "tls_key_file"]
+    if (card.kind === "https") return ["acme_enabled", "acme_email", "acme_staging", "tls_cert_file", "tls_key_file", "tls_self_signed"]
     const keys: string[] = []
     for (const f of card.fields ?? []) {
         if (f.key) keys.push(f.key)
