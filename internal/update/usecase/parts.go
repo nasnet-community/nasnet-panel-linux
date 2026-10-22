@@ -51,6 +51,17 @@ type GeofilesPart struct {
 	BuiltAt *time.Time `json:"built_at,omitempty"`
 }
 
+// cachedParts keeps the card's node reads to one every 30 s: the section
+// polls every 3 s while a job runs.
+func (u *Usecase) cachedParts(ctx context.Context) Parts {
+	u.partsMu.Lock()
+	defer u.partsMu.Unlock()
+	if u.partsAt.IsZero() || u.now().Sub(u.partsAt) > 30*time.Second {
+		u.partsVal, u.partsAt = u.parts(ctx), u.now()
+	}
+	return u.partsVal
+}
+
 func (u *Usecase) parts(ctx context.Context) Parts {
 	var p Parts
 	if !u.deps.BuiltAt.IsZero() {

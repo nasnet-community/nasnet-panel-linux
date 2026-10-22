@@ -82,6 +82,10 @@ type Usecase struct {
 	running    atomic.Bool // this process runs a job's panel steps
 	recordMu   sync.Mutex
 
+	partsMu  sync.Mutex
+	partsAt  time.Time
+	partsVal Parts
+
 	mu        sync.Mutex
 	checking  bool
 	nextCheck time.Time
@@ -155,7 +159,7 @@ func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 	if st.History, err = u.History(ctx, 20); err != nil {
 		st.History = []domain.PanelUpdate{}
 	}
-	st.Parts = u.parts(ctx)
+	st.Parts = u.cachedParts(ctx)
 	return st, nil
 }
 
