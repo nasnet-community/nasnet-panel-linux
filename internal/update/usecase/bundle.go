@@ -28,14 +28,14 @@ func bundleEntry(name string) (string, error) {
 	name = strings.TrimPrefix(name, "./")
 	top, rest, _ := strings.Cut(name, "/")
 	if !strings.HasPrefix(top, bundleTopPrefix) {
-		return "", fmt.Errorf("update: %q is outside the bundle directory", name)
+		return "", fmt.Errorf("%q is outside the bundle directory", name)
 	}
 	if rest == "" {
 		return "", nil
 	}
 	clean := path.Clean(rest)
 	if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("update: %q escapes the bundle", name)
+		return "", fmt.Errorf("%q escapes the bundle", name)
 	}
 	return clean, nil
 }
@@ -50,7 +50,7 @@ func unpackBundle(tarball, dir string) (*release.Bundle, error) {
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return nil, fmt.Errorf("update: not a gzip file: %w", err)
+		return nil, fmt.Errorf("not a gzip file: %w", err)
 	}
 	defer gz.Close()
 
@@ -63,7 +63,7 @@ func unpackBundle(tarball, dir string) (*release.Bundle, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("update: the bundle is damaged: %w", err)
+			return nil, fmt.Errorf("the bundle is damaged: %w", err)
 		}
 		rel, err := bundleEntry(h.Name)
 		if err != nil {
@@ -81,13 +81,13 @@ func unpackBundle(tarball, dir string) (*release.Bundle, error) {
 			continue
 		case tar.TypeReg:
 		default:
-			return nil, fmt.Errorf("update: %s is not a plain file", rel)
+			return nil, fmt.Errorf("%s is not a plain file", rel)
 		}
 		if len(sums) >= maxBundleFiles {
-			return nil, errors.New("update: the bundle has too many files")
+			return nil, errors.New("the bundle has too many files")
 		}
 		if total += h.Size; total > maxUnpacked {
-			return nil, errors.New("update: the bundle unpacks too large")
+			return nil, errors.New("the bundle unpacks too large")
 		}
 		sum, err := writeEntry(dest, tr, h.Size, os.FileMode(h.Mode)&0o755)
 		if err != nil {
@@ -102,12 +102,12 @@ func unpackBundle(tarball, dir string) (*release.Bundle, error) {
 	}
 	for rel, want := range b.Files {
 		if got, ok := sums[rel]; !ok || !strings.EqualFold(got, want) {
-			return nil, fmt.Errorf("update: %s doesn't match the signed bundle", rel)
+			return nil, fmt.Errorf("%s doesn't match the signed bundle", rel)
 		}
 	}
 	for rel := range sums {
 		if _, ok := b.Files[rel]; !ok && !unsignedBundleFile(rel) {
-			return nil, fmt.Errorf("update: %s isn't in the signed bundle", rel)
+			return nil, fmt.Errorf("%s isn't in the signed bundle", rel)
 		}
 	}
 	return b, nil
@@ -131,7 +131,7 @@ func writeEntry(dest string, r io.Reader, size int64, mode os.FileMode) (string,
 		err = cerr
 	}
 	if err == nil && n != size {
-		err = fmt.Errorf("update: %s is cut short", dest)
+		err = fmt.Errorf("%s is cut short", dest)
 	}
 	return hex.EncodeToString(h.Sum(nil)), err
 }
@@ -139,11 +139,11 @@ func writeEntry(dest string, r io.Reader, size int64, mode os.FileMode) (string,
 func readUnpackedBundle(dir string) (*release.Bundle, error) {
 	data, err := os.ReadFile(filepath.Join(dir, release.BundleName))
 	if err != nil {
-		return nil, errors.New("update: the bundle has no bundle.json; it is older than in-panel updates")
+		return nil, errors.New("the bundle has no bundle.json; it is older than in-panel updates")
 	}
 	sig, err := os.ReadFile(filepath.Join(dir, release.BundleName+release.SigSuffix))
 	if err != nil {
-		return nil, errors.New("update: the bundle has no signature")
+		return nil, errors.New("the bundle has no signature")
 	}
 	return release.ParseBundle(data, sig)
 }
@@ -157,7 +157,7 @@ func peekBundle(tarball string) (*release.Bundle, error) {
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return nil, errors.New("update: that's not an offline bundle (.tar.gz)")
+		return nil, errors.New("that's not an offline bundle (.tar.gz)")
 	}
 	defer gz.Close()
 	var data, sig []byte
@@ -168,7 +168,7 @@ func peekBundle(tarball string) (*release.Bundle, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("update: the bundle is damaged: %w", err)
+			return nil, fmt.Errorf("the bundle is damaged: %w", err)
 		}
 		rel, err := bundleEntry(h.Name)
 		if err != nil {
@@ -185,10 +185,10 @@ func peekBundle(tarball string) (*release.Bundle, error) {
 		}
 	}
 	if data == nil {
-		return nil, errors.New("update: the bundle has no bundle.json; it is older than in-panel updates")
+		return nil, errors.New("the bundle has no bundle.json; it is older than in-panel updates")
 	}
 	if sig == nil {
-		return nil, errors.New("update: the bundle has no signature")
+		return nil, errors.New("the bundle has no signature")
 	}
 	return release.ParseBundle(data, sig)
 }

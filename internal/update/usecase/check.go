@@ -127,7 +127,7 @@ func (c *Checker) manifest(ctx context.Context, tag string) (*release.Manifest, 
 		return nil, "", err
 	}
 	if tag != "" && m.Version != tag {
-		return nil, "", fmt.Errorf("update: %s carries the manifest of %s", tag, m.Version)
+		return nil, "", fmt.Errorf("%s carries the manifest of %s", tag, m.Version)
 	}
 	return m, route, nil
 }

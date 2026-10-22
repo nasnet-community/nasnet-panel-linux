@@ -98,7 +98,7 @@ func (f *RouteFetcher) Get(ctx context.Context, url string, limit int64) ([]byte
 		}
 		errs = append(errs, r.name+": "+err.Error())
 	}
-	return nil, "", fmt.Errorf("update: %s is unreachable (%s)", url, strings.Join(errs, "; "))
+	return nil, "", fmt.Errorf("%s is unreachable (%s)", url, strings.Join(errs, "; "))
 }
 
 func getBody(ctx context.Context, c *http.Client, url string, limit int64) ([]byte, error) {
@@ -151,7 +151,7 @@ func (f *RouteFetcher) Download(ctx context.Context, url, dest string, size int6
 		}
 		errs = append(errs, r.name+": "+err.Error())
 	}
-	return "", fmt.Errorf("update: the download failed (%s)", strings.Join(errs, "; "))
+	return "", fmt.Errorf("the download failed (%s)", strings.Join(errs, "; "))
 }
 
 func download(ctx context.Context, c *http.Client, url, part string, size int64, progress func(int64)) error {
@@ -236,7 +236,7 @@ func checkFile(path string, size int64, sum string) error {
 		return err
 	}
 	if n != size || !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), sum) {
-		return errors.New("update: the download doesn't match the signed release")
+		return errors.New("the download doesn't match the signed release")
 	}
 	return nil
 }

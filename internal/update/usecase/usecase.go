@@ -109,6 +109,7 @@ type Status struct {
 	Check        *Check               `json:"check,omitempty"`
 	Available    *Offer               `json:"available,omitempty"`
 	Job          *domain.Job          `json:"job,omitempty"`
+	Schedule     *Schedule            `json:"schedule,omitempty"`
 	Rollback     *RollbackWindow      `json:"rollback,omitempty"`
 	History      []domain.PanelUpdate `json:"history"`
 }
@@ -131,6 +132,7 @@ func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 		return nil, err
 	}
 	st.Job = job
+	st.Schedule = u.schedule(ctx)
 	if !(job != nil && !job.Finished()) {
 		st.Rollback = u.rollbackWindow()
 	}
@@ -196,6 +198,12 @@ func (u *Usecase) CheckNow(ctx context.Context) (*Check, error) {
 // MaybeRun is the scheduler's minute tick.
 func (u *Usecase) MaybeRun(ctx context.Context) {
 	u.settleJob(ctx)
+	u.runSchedule(ctx)
+	keep := ""
+	if s := u.schedule(ctx); s != nil {
+		keep = s.UploadID
+	}
+	u.pruneUploads(keep)
 	u.mu.Lock()
 	due := !u.checking && !u.now().Before(u.nextCheck)
 	if due {

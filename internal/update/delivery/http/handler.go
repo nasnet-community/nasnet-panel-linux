@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +34,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g.GET("", h.Status)
 	g.POST("/check", h.Check)
 	g.POST("/apply", h.Apply)
+	g.DELETE("/schedule", h.CancelSchedule)
+	g.POST("/upload", h.Upload)
 	g.POST("/rollback", h.Rollback)
 	g.GET("/jobs/:id/stream", h.StreamJob)
 }
@@ -66,27 +69,99 @@ func (h *Handler) Check(c *gin.Context) {
 	httputil.OK(c, res)
 }
 
-// POST /updates/apply {version} or {upload_id}
+// POST /updates/apply {version} or {upload_id}, with at to schedule it
 func (h *Handler) Apply(c *gin.Context) {
-	var req usecase.Request
+	var req struct {
+		usecase.Request
+		At *time.Time `json:"at"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httputil.Error(c, http.StatusBadRequest, "Send a version or an upload_id.")
 		return
 	}
-	job, err := h.uc.Apply(c.Request.Context(), req)
+	if req.At != nil {
+		s, err := h.uc.ScheduleUpdate(c.Request.Context(), req.Request, *req.At)
+		if err != nil {
+			httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+			return
+		}
+		h.log(c, auditDomain.AuditPanelUpdateSchedule, map[string]string{"to": s.Version, "at": s.At.Format(time.RFC3339)})
+		httputil.OK(c, gin.H{"schedule": s})
+		return
+	}
+	job, err := h.uc.Apply(c.Request.Context(), req.Request)
 	if err != nil {
-		httputil.Error(c, http.StatusConflict, err.Error())
+		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
 		return
 	}
 	h.log(c, auditDomain.AuditPanelUpdate, map[string]string{"from": job.From, "to": job.To, "source": job.Source})
 	httputil.JSON(c, http.StatusAccepted, gin.H{"job_id": job.ID})
 }
 
+// DELETE /updates/schedule
+func (h *Handler) CancelSchedule(c *gin.Context) {
+	s, err := h.uc.CancelSchedule(c.Request.Context())
+	if err != nil {
+		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+		return
+	}
+	h.log(c, auditDomain.AuditPanelUpdateCancel, map[string]string{"to": s.Version, "at": s.At.Format(time.RFC3339)})
+	httputil.OK(c, gin.H{"schedule": s})
+}
+
+// POST /updates/upload, multipart "file": an offline bundle, streamed to
+// disk. It answers with what its signed bundle.json says.
+func (h *Handler) Upload(c *gin.Context) {
+	// a big bundle over a slow link outlasts the server's 5 minute read timeout
+	rc := http.NewResponseController(c.Writer)
+	_ = rc.SetReadDeadline(time.Now().Add(time.Hour))
+	_ = rc.SetWriteDeadline(time.Now().Add(time.Hour))
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, usecase.MaxUpload+1<<20)
+
+	mr, err := c.Request.MultipartReader()
+	if err != nil {
+		httputil.Error(c, http.StatusBadRequest, "Send the bundle as a file.")
+		return
+	}
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			httputil.Error(c, http.StatusBadRequest, "Send the bundle in a field named file.")
+			return
+		}
+		if part.FormName() != "file" {
+			part.Close()
+			continue
+		}
+		up, err := h.uc.SaveUpload(part)
+		part.Close()
+		var tooBig *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooBig):
+			httputil.Error(c, http.StatusRequestEntityTooLarge, "The file is over 300 MB.")
+			return
+		case err != nil:
+			httputil.Error(c, http.StatusUnprocessableEntity, capitalize(err.Error()))
+			return
+		}
+		h.log(c, auditDomain.AuditPanelUpdateUpload, map[string]string{"version": up.Version, "upload_id": up.ID})
+		httputil.OK(c, up)
+		return
+	}
+}
+
+func capitalize(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 // POST /updates/rollback
 func (h *Handler) Rollback(c *gin.Context) {
 	job, err := h.uc.Rollback(c.Request.Context())
 	if err != nil {
-		httputil.Error(c, http.StatusConflict, err.Error())
+		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
 		return
 	}
 	h.log(c, auditDomain.AuditPanelRollback, map[string]string{"from": job.From, "to": job.To})

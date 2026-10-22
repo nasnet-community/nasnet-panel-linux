@@ -45,7 +45,7 @@ func (s *fileSet) save(dir string, lives ...string) error {
 			f.Existed = true
 			f.Saved = filepath.Join(dir, fmt.Sprintf("%02d-%s", len(s.Files), filepath.Base(live)))
 			if err := copyFile(live, f.Saved); err != nil {
-				return fmt.Errorf("update: save %s: %w", live, err)
+				return fmt.Errorf("save %s: %w", live, err)
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -61,7 +61,7 @@ func (s *fileSet) saveAt(live, saved string) error {
 	if _, err := os.Stat(live); err == nil {
 		f.Existed, f.Saved = true, saved
 		if err := copyFile(live, saved); err != nil {
-			return fmt.Errorf("update: save %s: %w", live, err)
+			return fmt.Errorf("save %s: %w", live, err)
 		}
 	}
 	s.Files = append(s.Files, f)

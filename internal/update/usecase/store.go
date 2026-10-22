@@ -57,7 +57,7 @@ func (s *Store) load() (*domain.Job, error) {
 	}
 	var j domain.Job
 	if err := json.Unmarshal(data, &j); err != nil {
-		return nil, fmt.Errorf("update: %s is unreadable: %w", s.paths.StateFile(), err)
+		return nil, fmt.Errorf("%s is unreadable: %w", s.paths.StateFile(), err)
 	}
 	return &j, nil
 }
