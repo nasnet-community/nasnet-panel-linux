@@ -797,3 +797,18 @@ func TestAFinishedJobIsAnnouncedOnce(t *testing.T) {
 		t.Fatalf("announced %d times", len(got))
 	}
 }
+
+func TestTheBackupFolderIsMadeWhenMissing(t *testing.T) {
+	h := newHarness(t)
+	h.backups.dir = filepath.Join(h.root, "data", "never-made")
+	up := h.upload("v1.1.0")
+	if _, err := h.panel.Apply(context.Background(), Request{UploadID: up.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if j := h.wait(h.panel); j.Result != domain.ResultOK {
+		t.Fatalf("job = %+v", j)
+	}
+	if dumps, _ := filepath.Glob(filepath.Join(h.backups.dir, "pre_update_*")); len(dumps) != 1 {
+		t.Fatalf("dumps: %v", dumps)
+	}
+}

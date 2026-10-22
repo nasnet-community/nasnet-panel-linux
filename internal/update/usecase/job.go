@@ -370,6 +370,10 @@ func (u *Usecase) backup(ctx context.Context, job *domain.Job) (string, error) {
 	}
 	defer b.Unlock()
 	name := fmt.Sprintf("pre_update_%s_to_%s_%s.sql", job.From, job.To, u.now().UTC().Format("20060102_150405"))
+	// an install whose scheduled backups never ran has no folder yet
+	if err := os.MkdirAll(b.BackupDir(), 0o700); err != nil {
+		return "", fmt.Errorf("the database backup failed: %w", err)
+	}
 	if err := b.RunPgDump(ctx, filepath.Join(b.BackupDir(), name)); err != nil {
 		return "", fmt.Errorf("the database backup failed: %w", err)
 	}
