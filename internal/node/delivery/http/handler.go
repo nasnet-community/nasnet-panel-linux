@@ -17,6 +17,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	xrayUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray"
@@ -3129,5 +3130,8 @@ func (h *Handler) GetXrayRoutes(c *gin.Context) {
 		"binary_download":        f.RouteFor(httpclient.FeatureXrayBinary, "https://github.com"),
 		"release_checks_egress":  f.EgressLabel(httpclient.EgressForeign),
 		"binary_download_egress": f.EgressLabel(httpclient.EgressForeign),
+		// the version this panel was tested with, and the built-in node's pick ("" follows it)
+		"tested":       pin.Version,
+		"builtin_pick": h.nodeUsecase.BuiltinXray(c.Request.Context()),
 	}})
 }

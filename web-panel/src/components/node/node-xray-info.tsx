@@ -8,6 +8,7 @@ import { getNodeRecentLogs, getNodeStats, pushNodeConfig, restartXrayProcess, st
 import type { LogEntry } from "@/lib/api/nodes"
 import { queryKeys } from "@/lib/queries"
 import type { Node, NodeOverview, NodeStats } from "@/lib/types"
+import { isLocalNode } from "@/lib/node-kind"
 import { cn, formatUptime } from "@/lib/utils"
 import { OverviewCard } from "./overview/overview-card"
 import { XrayLogo } from "./xray-logo"
@@ -166,7 +167,7 @@ export function NodeXrayInfo({ node, stats, configState, isLoading, compact }: N
             aside={
                 <div className="flex items-center gap-1.5">
                     {(isLoading || busy) && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-hidden />}
-                    <XrayVersionDialog nodeId={nodeId} currentVersion={version ? `v${version}` : "Unknown"} isOnline={online} onRefresh={() => void refreshNow()} />
+                    <XrayVersionDialog nodeId={nodeId} currentVersion={version ? `v${version}` : "Unknown"} isOnline={online} isLocal={isLocalNode(node)} onRefresh={() => void refreshNow()} />
                 </div>
             }
             className="group"

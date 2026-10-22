@@ -12,6 +12,10 @@ export interface XrayRoutes {
     /** Router mode: the uplink group the request leaves through ("" otherwise). */
     release_checks_egress?: string
     binary_download_egress?: string
+    /** the Xray this panel was tested with */
+    tested?: string
+    /** the built-in node's pick; empty while it follows the panel */
+    builtin_pick?: string
 }
 export interface XrayUpdateProgress {
     stage: "preparing" | "downloading" | "installing" | "verifying" | "succeeded" | "failed"

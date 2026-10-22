@@ -11,6 +11,16 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
 )
 
+// BuiltinXray is the version picked for the built-in node; empty while it
+// follows the panel.
+func (u *nodeUsecase) BuiltinXray(ctx context.Context) string {
+	if u.settingUC == nil {
+		return ""
+	}
+	v, _ := u.settingUC.GetByKey(ctx, settingDomain.BuiltinXrayKey)
+	return v
+}
+
 // switchBuiltinXray runs the built-in node on a cached build and remembers
 // the pick. Picking the tested version goes back to following the panel.
 // Nothing outside the cache is written.

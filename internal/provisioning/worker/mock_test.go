@@ -666,6 +666,7 @@ func (m *mockNodeUsecase) AgentUpdates(context.Context) (map[uint]bool, error) {
 func (m *mockNodeUsecase) XrayVersions(context.Context) ([]nodeUC.NodeXrayVersion, error) {
 	return nil, nil
 }
+func (m *mockNodeUsecase) BuiltinXray(context.Context) string { return "" }
 func (m *mockNodeUsecase) ObserveNodeHealth(context.Context, *nodeDomain.Node, bool, string, string) {
 }
 func (m *mockNodeUsecase) ObserveNodeMaintenance(context.Context, uint, bool) {}

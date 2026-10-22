@@ -299,6 +299,8 @@ type NodeUsecase interface {
 	AgentUpdates(ctx context.Context) (map[uint]bool, error)
 	// XrayVersions are the nodes' Xray versions from the last stats sweep.
 	XrayVersions(ctx context.Context) ([]NodeXrayVersion, error)
+	// BuiltinXray is the version picked for the built-in node, "" = follow the panel.
+	BuiltinXray(ctx context.Context) string
 	SetCertWatch(w *certwatch.Watch)
 	EvictAllAgentClients()
 	CertificateOverview(ctx context.Context, refreshDomains bool) (*CertOverview, error)
