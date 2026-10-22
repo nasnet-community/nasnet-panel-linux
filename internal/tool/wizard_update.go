@@ -508,15 +508,9 @@ func ActionAutoUpdate(cfg *Config) {
 	teeCmd.Stdin = strings.NewReader(latestVersion + "\n")
 	teeCmd.Run() //nolint:errcheck
 
-	// Fix ownership.
-	runUser := os.Getenv("SUDO_USER")
-	if runUser == "" {
-		whoamiOut, _ := exec.Command("whoami").Output()
-		runUser = strings.TrimSpace(string(whoamiOut))
-	}
-	if runUser != "" {
-		exec.Command("sudo", "chown", "-R", runUser+":"+runUser, cfg.InstallDir).Run() //nolint:errcheck
-	}
+	// The panel runs as root and updates its own files.
+	exec.Command("sudo", "chown", "-R", "root:root", cfg.InstallDir).Run() //nolint:errcheck
+	repairService(cfg)
 
 	// ── Start services ─────────────────────────────────────────────────────
 	ui.DrawHeader("Starting Services")
@@ -755,4 +749,21 @@ func performPreUpdateBackup(cfg *Config, deployMode, backupPrefix string) error 
 	}
 	ui.StepOk("Backup: " + backupFile)
 	return nil
+}
+
+// repairService switches a unit from before v1.1.0, which ran the panel as
+// the login user, to root. The bash tool owns the unit's text.
+func repairService(cfg *Config) {
+	exe, _ := os.Executable()
+	script, err := installerScript(cfg, exe)
+	if err != nil {
+		ui.StepWarn("Couldn't check the service user: " + err.Error())
+		return
+	}
+	cmd := exec.Command("sudo", "bash", script, "repair-service")
+	cmd.Dir = filepath.Dir(script)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		ui.StepWarn("The panel still runs as the login user; updates from the panel stay off")
+	}
 }

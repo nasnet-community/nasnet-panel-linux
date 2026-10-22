@@ -76,8 +76,23 @@ func refreshInstalledConfig(cfg *Config, scriptDir string) {
 // Go binary must be accompanied by the installer from the same release; never
 // download and execute an unverified script as an implicit fallback.
 func installerCommand(cfg *Config, executable string) (*exec.Cmd, error) {
+	script, err := installerScript(cfg, executable)
+	if err != nil {
+		return nil, err
+	}
+	arg := "install"
+	if cfg.OfflineMode {
+		arg = "--offline"
+	}
+	cmd := exec.Command("bash", script, arg)
+	cmd.Dir = filepath.Dir(script)
+	cmd.Env = os.Environ()
+	return cmd, nil
+}
+
+func installerScript(cfg *Config, executable string) (string, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("installation configuration is missing")
+		return "", fmt.Errorf("installation configuration is missing")
 	}
 	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
 		executable = resolved
@@ -101,14 +116,7 @@ func installerCommand(cfg *Config, executable string) (*exec.Cmd, error) {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		arg := "install"
-		if cfg.OfflineMode {
-			arg = "--offline"
-		}
-		cmd := exec.Command("bash", script, arg)
-		cmd.Dir = filepath.Dir(script)
-		cmd.Env = os.Environ()
-		return cmd, nil
+		return script, nil
 	}
-	return nil, fmt.Errorf("nasnet-tool.sh was not found; place the installer from the same release beside nasnet-tool, or run nasnet-tool.sh from the repository or installed bundle")
+	return "", fmt.Errorf("nasnet-tool.sh was not found; place the installer from the same release beside nasnet-tool, or run nasnet-tool.sh from the repository or installed bundle")
 }
