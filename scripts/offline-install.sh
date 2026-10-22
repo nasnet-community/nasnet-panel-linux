@@ -203,10 +203,6 @@ install_postgresql() {
 deploy_artifacts() {
     header "Deploying Artifacts to ${INSTALL_DIR}"
 
-    local run_user="${SUDO_USER:-root}"
-    local run_group
-    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
-
     # Create directory structure
     mkdir -p "$INSTALL_DIR"/{bin/xray,bin/agent,data/{backups,acme}}
 
@@ -261,8 +257,8 @@ deploy_artifacts() {
     # Bundle manifest (for future reference / offline mode detection)
     cp "$SCRIPT_DIR/.bundle-manifest" "$INSTALL_DIR/.bundle-manifest"
 
-    # Set ownership
-    chown -R "$run_user:$run_group" "$INSTALL_DIR"
+    # The panel runs as root and updates these files itself.
+    chown -R root:root "$INSTALL_DIR"
 
     ok "All artifacts deployed to ${INSTALL_DIR}"
 }
@@ -521,7 +517,7 @@ do_install() {
     info "Bundle: ${BUNDLE_VERSION} (${BUNDLE_ARCH})"
     info "Panel binaries and management tools: ${INSTALL_DIR}"
     info "PostgreSQL runtime: ${PGSQL_INSTALL_DIR} (existing data is kept)"
-    info "File owner and panel service user: ${SUDO_USER:-root}"
+    info "File owner and panel service user: root"
     info "Next: review the panel configuration in the setup wizard before services are configured"
     echo ""
     local confirm=""

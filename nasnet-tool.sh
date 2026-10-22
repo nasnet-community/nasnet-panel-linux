@@ -23,6 +23,7 @@ SYSTEMD_SERVICE="nasnet-panel"
 SYSTEMD_UNIT_FILE="/etc/systemd/system/${SYSTEMD_SERVICE}.service"
 # Wizard-created services (bare-metal deploy)
 BACKEND_SERVICE="nasnet-panel"
+BACKEND_UNIT_FILE="/etc/systemd/system/${BACKEND_SERVICE}.service"
 INSTALL_DIR="/usr/local/nasnet-panel"
 BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"
 
@@ -669,6 +670,16 @@ _deploy_mode() {
     echo "${DEPLOY_MODE:-docker}"
 }
 
+# Wizard answers win over the saved .env.
+is_router_mode() {
+    [[ "${WIZ_ROUTER_MODE:-${ROUTER_MODE:-false}}" == "true" ]]
+}
+
+# The panel runs as root and owns INSTALL_DIR. A router rewrites
+# /etc/systemd/network and drives systemctl, which capabilities alone
+# can't grant, and every install updates itself in place.
+PANEL_USER=root
+
 # Sync .env to INSTALL_DIR when in systemd mode
 _sync_env_to_install_dir() {
     if [[ "$(_deploy_mode)" == "systemd" ]] && [[ -d "$INSTALL_DIR" ]]; then
@@ -677,8 +688,8 @@ _sync_env_to_install_dir() {
             sudo cp "$ENV_FILE" "$INSTALL_DIR/.env" || return 1
         fi
         sudo chmod 600 "$INSTALL_DIR/.env" || return 1
-        local run_user="${SUDO_USER:-$(whoami)}"
-        sudo chown "$run_user:" "$INSTALL_DIR/.env" 2>/dev/null || true
+        # wizard_write_env may have taken the directory for the invoking user.
+        sudo chown "$PANEL_USER:" "$INSTALL_DIR" "$INSTALL_DIR/.env" 2>/dev/null || true
     fi
 }
 
@@ -1777,12 +1788,10 @@ install_xray_core() {
 }
 
 wizard_prepare_xray_dirs() {
-    local run_user="${SUDO_USER:-$(whoami)}" run_group
-    run_group=$(id -gn "$run_user") || return 1
     local dir
     for dir in "$XRAY_CONFIG_DIR" "$XRAY_LOG_DIR" "$XRAY_STATE_DIR"; do
         sudo mkdir -p "$dir" || return 1
-        sudo chown -R "$run_user:$run_group" "$dir" || return 1
+        sudo chown -R "$PANEL_USER:$PANEL_USER" "$dir" || return 1
         sudo chmod 750 "$dir" || return 1
     done
 }
@@ -1980,9 +1989,6 @@ deploy_agent_binaries() {
 wizard_deploy_release() {
     local arch
     arch=$(detect_arch)
-    local run_user="${SUDO_USER:-$(whoami)}"
-    local run_group
-    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
     step_info "Deploying ${RELEASE_VERSION} to ${INSTALL_DIR}..."
     sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}} || return 1
@@ -2005,7 +2011,8 @@ wizard_deploy_release() {
         sudo chmod +x "$INSTALL_DIR/nasnet-tool.sh" 2>/dev/null || true
     fi
 
-    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
+    sudo chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_DIR" || return 1
+    ensure_root_service || return 1
     rm -rf "$RELEASE_TMP_DIR"
 
     step_ok "Deployed ${RELEASE_VERSION} to ${INSTALL_DIR}"
@@ -2013,9 +2020,6 @@ wizard_deploy_release() {
 }
 
 wizard_deploy_artifacts() {
-    local run_user="${SUDO_USER:-$(whoami)}"
-    local run_group
-    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
 
     # Offline mode: artifacts already deployed by install.sh — only sync .env
     if [[ "$OFFLINE_MODE" == "true" ]]; then
@@ -2029,8 +2033,8 @@ wizard_deploy_artifacts() {
             sudo chmod 600 "$INSTALL_DIR/.env" || return 1
         fi
 
-        # Set ownership
-        sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
+        sudo chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_DIR" || return 1
+        ensure_root_service || return 1
 
         step_ok "Configuration synced to ${INSTALL_DIR}"
         return 0
@@ -2062,8 +2066,8 @@ wizard_deploy_artifacts() {
     _deploy_version=$(cd "$PROJECT_DIR" && git describe --tags --always 2>/dev/null || echo "unknown")
     echo "$_deploy_version" | sudo tee "$INSTALL_DIR/.version" >/dev/null || return 1
 
-    # Set ownership
-    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR" || return 1
+    sudo chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_DIR" || return 1
+    ensure_root_service || return 1
 
     # A repo checkout drives itself; only standalone installs need the
     # tool copied out of the source tree and onto PATH.
@@ -2151,6 +2155,88 @@ ROLLTMR
 }
 
 
+# Writes the panel unit from the wizard answers, or from .env on updates.
+write_backend_unit() {
+    step_info "Creating ${BACKEND_SERVICE}.service..."
+
+    local svc_after="network-online.target"
+    local svc_requires=""
+    if ! is_sqlite; then
+        local pg_svc_name="${WIZ_PGSQL_SERVICE_NAME:-${PGSQL_SERVICE_NAME:-postgresql}}"
+        if [[ "$pg_svc_name" != "external" ]]; then
+            pg_svc_name="${pg_svc_name%.service}.service"
+            svc_after="network-online.target ${pg_svc_name}"
+            svc_requires="Requires=${pg_svc_name}"
+        fi
+    fi
+
+    # ACME (:80) and privileged proxy inbounds need CAP_NET_BIND_SERVICE.
+    # Router mode adds netlink, nft and SO_MARK; xray inherits these.
+    local svc_caps="CAP_NET_BIND_SERVICE"
+    local svc_router_env=""
+    if is_router_mode; then
+        svc_caps="CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE"
+        svc_router_env="Environment=NASNET_ROUTER_MODE=1"
+    fi
+
+    sudo tee "$BACKEND_UNIT_FILE" > /dev/null << SVCEOF || return 1
+[Unit]
+Description=nasnet-panel-linux Backend API
+Documentation=https://github.com/nasnet-community/nasnet-panel-linux
+After=${svc_after}
+${svc_requires}
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${PANEL_USER}
+Group=${PANEL_USER}
+WorkingDirectory=${INSTALL_DIR}
+EnvironmentFile=${INSTALL_DIR}/.env
+ExecStart=${INSTALL_DIR}/bin/nasnet-panel serve
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+AmbientCapabilities=${svc_caps}
+CapabilityBoundingSet=${svc_caps}
+NoNewPrivileges=yes
+${svc_router_env}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${BACKEND_SERVICE}
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+    step_ok "${BACKEND_SERVICE}.service created (runs as ${PANEL_USER})"
+}
+
+# Units from v1.0.0 and before ran the panel as the login user: router
+# applies failed with "permission denied" and the panel couldn't update itself.
+root_service_stale() {
+    local unit="$BACKEND_UNIT_FILE"
+    [[ "$(_deploy_mode)" == "systemd" && -f "$unit" ]] || return 1
+    ! grep -qx 'User=root' "$unit" && return 0
+    is_router_mode && ! grep -qx 'Environment=NASNET_ROUTER_MODE=1' "$unit"
+}
+
+# Rewrites a stale unit and hands the install to root. The caller restarts the panel.
+ensure_root_service() {
+    root_service_stale || return 0
+    if write_backend_unit && sudo chown -R root:root "$INSTALL_DIR" \
+        && sudo chmod 600 "$INSTALL_DIR/.env" && wizard_prepare_xray_dirs \
+        && { ! is_router_mode || install_netrollback_units; } && sudo systemctl daemon-reload; then
+        step_ok "${BACKEND_SERVICE} now runs as root"
+        return 0
+    fi
+    step_warn "Could not switch ${BACKEND_SERVICE}.service to root; updates from the panel stay off"
+    return 1
+}
+
+
 wizard_build_start_systemd() {
     local app_port="${1:-9761}"
 
@@ -2226,71 +2312,9 @@ wizard_build_start_systemd() {
     # ── Create systemd services ───────────────────────────────────────────
     draw_header "Installing Systemd Services"
 
-    # Determine the user to run services as (current user or SUDO_USER)
-    local run_user="${SUDO_USER:-$(whoami)}"
-    local run_group
-    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
+    write_backend_unit || return 1
 
-    # Backend service
-    step_info "Creating ${BACKEND_SERVICE}.service..."
-
-    local svc_after="network-online.target"
-    local svc_requires=""
-    local svc_env_db=""
-    if ! is_sqlite; then
-        local pg_svc_name="${WIZ_PGSQL_SERVICE_NAME:-${PGSQL_SERVICE_NAME:-postgresql}}"
-        if [[ "$pg_svc_name" != "external" ]]; then
-            pg_svc_name="${pg_svc_name%.service}.service"
-            svc_after="network-online.target ${pg_svc_name}"
-            svc_requires="Requires=${pg_svc_name}"
-        fi
-    fi
-
-    # ACME (:80) and privileged proxy inbounds need CAP_NET_BIND_SERVICE.
-    # Router mode adds netlink, nft and SO_MARK; xray inherits these.
-    local svc_caps="CAP_NET_BIND_SERVICE"
-    local svc_router_env=""
-    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
-        svc_caps="CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE"
-        svc_router_env="Environment=NASNET_ROUTER_MODE=1"
-    fi
-
-    sudo tee "/etc/systemd/system/${BACKEND_SERVICE}.service" > /dev/null << SVCEOF || return 1
-[Unit]
-Description=nasnet-panel-linux Backend API
-Documentation=https://github.com/nasnet-community/nasnet-panel-linux
-After=${svc_after}
-${svc_requires}
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=${run_user}
-Group=${run_group}
-WorkingDirectory=${INSTALL_DIR}
-EnvironmentFile=${INSTALL_DIR}/.env
-${svc_env_db}
-ExecStart=${INSTALL_DIR}/bin/nasnet-panel serve
-Restart=always
-RestartSec=5
-LimitNOFILE=65536
-
-AmbientCapabilities=${svc_caps}
-CapabilityBoundingSet=${svc_caps}
-NoNewPrivileges=yes
-${svc_router_env}
-
-# Logging
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=${BACKEND_SERVICE}
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-    step_ok "${BACKEND_SERVICE}.service created"
-
-    if [[ "${WIZ_ROUTER_MODE:-false}" == "true" ]]; then
+    if is_router_mode; then
         install_netrollback_units || return 1
     else
         step_info "Server mode — network apply dead-man not installed"
@@ -3698,10 +3722,6 @@ action_auto_update() {
     # ── Deploy artifacts ──────────────────────────────────────────────────
     draw_header "Deploying ${latest_version}"
 
-    local run_user="${SUDO_USER:-$(whoami)}"
-    local run_group
-    run_group=$(id -gn "$run_user" 2>/dev/null || echo "$run_user")
-
     sudo mkdir -p "$INSTALL_DIR"/{bin/xray,data/{backups,acme}}
 
     # Hub binary
@@ -3725,8 +3745,8 @@ action_auto_update() {
         fi
     fi
 
-    # Set ownership
-    sudo chown -R "$run_user:$run_group" "$INSTALL_DIR"
+    sudo chown -R "$PANEL_USER:$PANEL_USER" "$INSTALL_DIR"
+    ensure_root_service || true
 
     # ── Restart services ──────────────────────────────────────────────────
     draw_header "Starting Services"
@@ -6715,6 +6735,12 @@ USAGE
 }
 
 main() {
+    # The install belongs to root, like its panel; manage it as root.
+    local self="$SCRIPT_DIR/${BASH_SOURCE[0]##*/}"
+    if [[ $EUID -ne 0 && -d "$INSTALL_DIR/data" && ! -w "$INSTALL_DIR/data" && -f "$self" ]] \
+        && command -v sudo &>/dev/null; then
+        exec sudo bash "$self" "$@"
+    fi
     trap cleanup EXIT
 
     # CLI subcommand support
@@ -6741,6 +6767,12 @@ main() {
         auto-update)
             load_env
             action_auto_update
+            exit 0
+            ;;
+        repair-service)
+            # used by nasnet-tool and the panel's updater; the caller restarts
+            load_env
+            ensure_root_service || exit 1
             exit 0
             ;;
         config|view-config)
@@ -6776,6 +6808,17 @@ main() {
 
     # Load environment
     load_env
+
+    # Installs before v1.1.0 ran the panel as the login user.
+    if root_service_stale && confirm_action \
+        "The panel needs to run as root to change network settings and update itself. Switch it now?" yes; then
+        if ensure_root_service && sudo systemctl restart "$BACKEND_SERVICE"; then
+            step_ok "${BACKEND_SERVICE} restarted as root"
+        else
+            step_fail "Switching to root failed"
+        fi
+        press_any_key
+    fi
 
     # Check current version and available updates
     if [[ -f "$INSTALL_DIR/.version" ]]; then

@@ -528,6 +528,48 @@ test_navigation_menu_keys() {
     wizard_navigation_menu 'Example' key_result 'First' < /dev/null > /dev/null || status=$?
     [[ $status -eq 3 ]]
 }
-for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency; do
+test_unit_runs_as_root() {
+    answers; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    sudo() { if [[ "$1" == tee ]]; then cat > "$2"; else echo "$*" >> "$EVENT_LOG"; fi; }
+    write_backend_unit > /dev/null || return 1
+    contains 'User=root' "$BACKEND_UNIT_FILE" || return 1
+    contains 'Group=root' "$BACKEND_UNIT_FILE" || return 1
+    contains 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' "$BACKEND_UNIT_FILE" || return 1
+    absent 'NASNET_ROUTER_MODE' "$BACKEND_UNIT_FILE"
+}
+test_router_unit_caps() {
+    answers; WIZ_ROUTER_MODE=true; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    sudo() { if [[ "$1" == tee ]]; then cat > "$2"; else echo "$*" >> "$EVENT_LOG"; fi; }
+    write_backend_unit > /dev/null || return 1
+    contains 'User=root' "$BACKEND_UNIT_FILE" || return 1
+    contains 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE' "$BACKEND_UNIT_FILE" || return 1
+    contains 'Environment=NASNET_ROUTER_MODE=1' "$BACKEND_UNIT_FILE"
+}
+test_old_unit_switched_to_root() {
+    answers; DEPLOY_MODE=systemd; WIZ_ROUTER_MODE=true; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    printf '[Service]\nUser=ubuntu\nEnvironment=NASNET_ROUTER_MODE=1\n' > "$BACKEND_UNIT_FILE"
+    sudo() { if [[ "$1" == tee ]]; then cat > "$2"; else echo "$*" >> "$EVENT_LOG"; fi; }
+    wizard_prepare_xray_dirs() { echo xray-dirs >> "$EVENT_LOG"; }
+    install_netrollback_units() { echo netrollback >> "$EVENT_LOG"; }
+    root_service_stale || { fail 'login-user unit not seen as stale'; return 1; }
+    ensure_root_service > /dev/null || return 1
+    contains 'User=root' "$BACKEND_UNIT_FILE" || return 1
+    contains "chown -R root:root $INSTALL_DIR" "$EVENT_LOG" || return 1
+    contains "chmod 600 $INSTALL_DIR/.env" "$EVENT_LOG" || return 1
+    contains xray-dirs "$EVENT_LOG" && contains netrollback "$EVENT_LOG" && contains 'systemctl daemon-reload' "$EVENT_LOG"
+}
+test_root_unit_left_alone() {
+    answers; DEPLOY_MODE=systemd; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    printf '[Service]\nUser=root\n' > "$BACKEND_UNIT_FILE"
+    if root_service_stale; then fail 'root unit seen as stale'; return 1; fi
+    ensure_root_service || return 1
+    [[ ! -s "$EVENT_LOG" ]]
+}
+test_docker_unit_ignored() {
+    answers; DEPLOY_MODE=docker; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    printf '[Service]\nUser=ubuntu\n' > "$BACKEND_UNIT_FILE"
+    if root_service_stale; then fail 'docker wrapper unit seen as stale'; return 1; fi
+}
+for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done
