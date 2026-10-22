@@ -2,16 +2,16 @@
 package pin
 
 // Version is the pinned release (no "v"); bump it here with both hash tables.
-const Version = "26.10.10"
+const Version = "26.10.21"
 
 // ZipSHA256 is each release zip's hash, as XTLS publishes it in the .dgst files.
 var ZipSHA256 = map[string]string{
-	"amd64": "72a5fde819713a103c6fc26a87aa025c1518c918a34eba4bc38d64dc0728e5d9", // Xray-linux-64.zip
-	"arm64": "58e339e67827220175b3a1c6f66f48ccd086b79209f30ba1c0bcb47885d4c22a", // Xray-linux-arm64-v8a.zip
+	"amd64": "0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978", // Xray-linux-64.zip
+	"arm64": "d1304946c486d98e6b886e9b931eaaaebb23835b30e217638037b7f2721d4e9c", // Xray-linux-arm64-v8a.zip
 }
 
 // BinarySHA256 is the hash of the xray binary inside each zip, what a node checks before running it.
 var BinarySHA256 = map[string]string{
-	"amd64": "4cca4de3ab8c16b3803a70e9ebe0570d2a72480c716d89aa91603ec568bf0f44",
-	"arm64": "fadf8d792889536a9410686f3d5c4df76ec7865b7aa2297495365759ffeb424c",
+	"amd64": "a27e3f95ab6ce270956d0cecd32eda4686a811afc71c64a6a734a3dede14883e",
+	"arm64": "dc3324f437132d70d29ddadea19b202949c2d1230b5d90dac469b03f68829c8b",
 }
