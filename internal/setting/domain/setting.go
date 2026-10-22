@@ -33,6 +33,21 @@ func AdminPasswordHashSetting(hash string) *Setting {
 	}
 }
 
+// BuiltinXrayKey is the Xray version picked for the built-in node; empty follows the panel.
+const BuiltinXrayKey = "builtin_xray_version"
+
+// BuiltinXraySetting is the row the seed and the node's Xray dialog write.
+func BuiltinXraySetting(version string) *Setting {
+	return &Setting{
+		Key:         BuiltinXrayKey,
+		Value:       version,
+		Type:        "string",
+		Category:    "admin",
+		Description: "The Xray version picked for the built-in node. Empty runs the version this panel was tested with.",
+		Label:       "Built-in Node Xray",
+	}
+}
+
 // ImportResult says what an import changed and what it left out.
 type ImportResult struct {
 	Applied []string `json:"applied"`

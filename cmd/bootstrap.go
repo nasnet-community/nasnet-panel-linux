@@ -325,6 +325,11 @@ func initUsecases(
 	// we plumb via setter to break the ordering dependency.
 	nodeUsecase.SetAuditUsecase(auditUsecase)
 
+	// Ahead of the seed, which would add the row empty.
+	if os.Getenv("XRAY_BINARY_PATH") == "" {
+		adoptInstalledXray(context.Background(), repos.Setting, installedXray())
+	}
+
 	// Seed default settings
 	if err := settingUsecase.SeedDefaults(context.Background()); err != nil {
 		log.WithError(err).Warn("Failed to seed default settings")

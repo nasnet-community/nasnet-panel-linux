@@ -369,6 +369,8 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Non-standard installs (and local test runs) can move xray's files.
 	if v := os.Getenv("XRAY_BINARY_PATH"); v != "" {
 		agentCfg.Xray.BinaryPath = v
+	} else {
+		agentCfg.Xray.BinaryPath = builtinXrayPath(context.Background(), uc.Setting, installedXray())
 	}
 	if v := os.Getenv("XRAY_CONFIG_PATH"); v != "" {
 		agentCfg.Xray.ConfigPath = v

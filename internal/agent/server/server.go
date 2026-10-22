@@ -1663,6 +1663,47 @@ func (s *Server) UpdateXrayBinary(ctx context.Context, req *pb.UpdateXrayRequest
 	return s.updateXrayFromGitHub(ctx, req, version)
 }
 
+// XrayBinaryPath is the build xray starts from.
+func (s *Server) XrayBinaryPath() string { return s.xrayMgr.BinaryPath() }
+
+// SwitchXray moves the built-in node onto another xray binary and returns
+// the version it reports. A build that won't run puts the old one back.
+func (s *Server) SwitchXray(path string) (string, error) {
+	s.xrayUpdateMu.Lock()
+	defer s.xrayUpdateMu.Unlock()
+
+	old := s.xrayMgr.BinaryPath()
+	wasRunning := s.xrayMgr.IsRunning()
+	if wasRunning {
+		if err := s.xrayMgr.Stop(10 * time.Second); err != nil {
+			return "", fmt.Errorf("stop xray: %w", err)
+		}
+	}
+	s.xrayMgr.SetBinaryPath(path)
+	s.mu.Lock()
+	s.xrayVersion = ""
+	s.mu.Unlock()
+
+	version := s.fetchXrayVersion()
+	var err error
+	if version == "" || version == "unknown" {
+		err = fmt.Errorf("%s did not report a version", path)
+	} else if wasRunning {
+		err = s.xrayMgr.Start()
+	}
+	if err != nil {
+		s.xrayMgr.SetBinaryPath(old)
+		if wasRunning {
+			if rerr := s.xrayMgr.Start(); rerr != nil {
+				logrus.WithError(rerr).Error("[SwitchXray] Old xray build did not start again")
+			}
+		}
+		return "", err
+	}
+	logrus.WithFields(logrus.Fields{"path": path, "version": version}).Info("[SwitchXray] Built-in xray switched")
+	return version, nil
+}
+
 // updateXrayFromHub performs a hub-mediated atomic update with full rollback.
 // Caller must hold xrayUpdateMu.
 func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayRequest, version string) (*pb.CommandResponse, error) {

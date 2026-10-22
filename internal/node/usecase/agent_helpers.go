@@ -1227,6 +1227,9 @@ func (u *nodeUsecase) UpdateXrayVersion(ctx context.Context, nodeID uint, versio
 	}
 	if node.IsLocal() {
 		reportXrayUpdate(ctx, "preparing", "Checking the release.")
+		if u.embeddedSrv != nil && u.xrayBM != nil {
+			return u.switchBuiltinXray(ctx, nodeID, version)
+		}
 	} else {
 		reportXrayUpdate(ctx, "preparing", "Connecting to the node and checking its architecture.")
 	}

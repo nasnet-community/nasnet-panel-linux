@@ -7,6 +7,7 @@ import "context"
 var protectedKeys = map[string]bool{
 	"agent_cert_strict_mode": true,
 	SelfSignedCertKey:        true,
+	BuiltinXrayKey:           true,
 }
 
 // SelfSignedCertKey holds the panel's self-signed certificate and key as

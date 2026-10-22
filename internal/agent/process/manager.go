@@ -23,6 +23,7 @@ import (
 // XrayManager manages the xray-core process lifecycle
 type XrayManager struct {
 	binPath    string
+	pathMu     sync.RWMutex // binPath only; the built-in node can switch builds
 	configPath string
 	apiAddr    string
 	dataDir    string // Directory containing geoip.dat/geosite.dat (falls back to config dir)
@@ -210,8 +211,9 @@ func (m *XrayManager) startLocked() error {
 	}
 
 	// Verify binary exists
-	if _, err := os.Stat(m.binPath); os.IsNotExist(err) {
-		return fmt.Errorf("xray binary not found at %s", m.binPath)
+	binPath := m.BinaryPath()
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return fmt.Errorf("xray binary not found at %s", binPath)
 	}
 
 	// Verify config exists
@@ -219,7 +221,7 @@ func (m *XrayManager) startLocked() error {
 		return fmt.Errorf("xray config not found at %s", m.configPath)
 	}
 
-	m.cmd = exec.Command(m.binPath, "run", "-c", m.configPath)
+	m.cmd = exec.Command(binPath, "run", "-c", m.configPath)
 	// Set working directory to config directory so relative paths in config work
 	configDir := filepath.Dir(m.configPath)
 	m.cmd.Dir = configDir
@@ -545,7 +547,7 @@ func (m *XrayManager) Restart(ctx context.Context, validateFirst bool, timeout t
 // xrayCmd runs the xray binary the way Xray itself runs: from the config
 // directory, with the same geodata.
 func (m *XrayManager) xrayCmd(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, m.binPath, args...)
+	cmd := exec.CommandContext(ctx, m.BinaryPath(), args...)
 	cmd.Dir = filepath.Dir(m.configPath)
 	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+m.assetDir())
 	return cmd
@@ -762,7 +764,7 @@ func (m *XrayManager) UpdateConfig(content string) error {
 		logger.WithError(err).WithField("output", string(output)).Error("Config validation failed")
 		// No output at all means the binary never ran.
 		if len(bytes.TrimSpace(output)) == 0 {
-			return fmt.Errorf("could not run %s to validate the config: %w", m.binPath, err)
+			return fmt.Errorf("could not run %s to validate the config: %w", m.BinaryPath(), err)
 		}
 		return fmt.Errorf("config validation failed: %s", string(output))
 	}
@@ -884,7 +886,16 @@ func (m *XrayManager) LogChannel() <-chan string {
 
 // BinaryPath returns the path to the xray binary
 func (m *XrayManager) BinaryPath() string {
+	m.pathMu.RLock()
+	defer m.pathMu.RUnlock()
 	return m.binPath
+}
+
+// SetBinaryPath takes effect on the next start.
+func (m *XrayManager) SetBinaryPath(p string) {
+	m.pathMu.Lock()
+	m.binPath = p
+	m.pathMu.Unlock()
 }
 
 // ConfigPath returns the path to the config file
