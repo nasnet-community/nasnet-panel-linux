@@ -359,17 +359,29 @@ func TestAnUploadedUpdateSwapsRestartsAndPassesItsTrial(t *testing.T) {
 	if len(dumps) != 1 {
 		t.Fatalf("pre-update backups: %v", dumps)
 	}
-	if left, _ := os.ReadDir(h.panel.deps.Paths.Staging()); len(left) != 0 {
-		t.Fatal("staging was left behind")
-	}
-	if _, err := h.panel.upload(up.ID); err == nil {
-		t.Fatal("the installed upload was kept")
-	}
+	// the runner cleans up just after it records the result
+	eventually(t, "staging was left behind", func() bool {
+		left, _ := os.ReadDir(h.panel.deps.Paths.Staging())
+		return len(left) == 0
+	})
+	eventually(t, "the installed upload was kept", func() bool {
+		_, err := h.panel.upload(up.ID)
+		return err != nil
+	})
 	if got := drain(h.sub); len(got) != 1 || got[0].Type != events.EventPanelUpdated {
 		t.Fatalf("events = %+v", got)
 	}
 	if w := h.usecase("v1.1.0", nil).rollbackWindow(); w == nil || w.Version != "v1.0.0" {
 		t.Fatalf("rollback window = %+v", w)
+	}
+}
+
+func eventually(t *testing.T, msg string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(2 * time.Second); !ok(); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal(msg)
+		}
 	}
 }
 
@@ -396,9 +408,10 @@ func TestADownloadedUpdateIsCheckedAgainstItsRelease(t *testing.T) {
 	if j := h.wait(h.panel); j.Result != domain.ResultOK || stepStatus(j, domain.StepDownload) != domain.StepDone {
 		t.Fatalf("job = %+v", j)
 	}
-	if left, _ := os.ReadDir(h.panel.deps.Paths.Downloads()); len(left) != 0 {
-		t.Fatal("the download was left behind")
-	}
+	eventually(t, "the download was left behind", func() bool {
+		left, _ := os.ReadDir(h.panel.deps.Paths.Downloads())
+		return len(left) == 0
+	})
 
 	// a mirror serving another file than the release lists
 	h = newHarness(t)
