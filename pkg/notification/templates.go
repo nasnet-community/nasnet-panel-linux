@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/utils"
 )
 
 // templateFunc builds a NotificationMessage from an event.
@@ -40,6 +41,12 @@ var templateRegistry = map[events.EventType]templateFunc{
 
 	// Chat
 	events.EventChatNewMessage: templateChatNewMessage,
+
+	// Panel updates
+	events.EventPanelUpdateAvailable: templatePanelUpdateAvailable,
+	events.EventPanelUpdated:         templatePanelUpdated,
+	events.EventPanelUpdateFailed:    templatePanelUpdateFailed,
+	events.EventPanelUpdateSkipped:   templatePanelUpdateSkipped,
 }
 
 // getTemplate returns the template function for the given event type, or nil.
@@ -414,4 +421,90 @@ func usernameOrID(username string, userID uint) string {
 // eventTypeToSettingKey converts "node.offline" → "node_offline"
 func eventTypeToSettingKey(eventType string) string {
 	return strings.ReplaceAll(eventType, ".", "_")
+}
+
+// --- Panel update templates ---
+
+// panelMessage builds the four panel update messages: a title, a line or
+// two, and the way to Settings → Updates.
+func panelMessage(e events.Event, level, icon, title, text string, fields map[string]string) *NotificationMessage {
+	p, _ := e.Payload.(events.PanelUpdatePayload)
+	md := utils.EscapeMarkdown
+	body := fmt.Sprintf("%s *%s*\n\n%s", icon, md(title), md(text))
+	plain := title + ". " + text
+	if p.Link != "" {
+		body += "\n\nSettings → Updates: " + md(p.Link)
+		plain += " " + p.Link
+	}
+	return &NotificationMessage{EventType: string(e.Type), Title: title, Body: body, PlainBody: plain, Fields: fields, Level: level}
+}
+
+func templatePanelUpdateAvailable(e events.Event) *NotificationMessage {
+	p, ok := e.Payload.(events.PanelUpdatePayload)
+	if !ok {
+		return nil
+	}
+	text := "Running " + p.From + "."
+	if notes := noteLines(p.Notes, 3); notes != "" {
+		text += "\n\n" + notes
+	}
+	return panelMessage(e, "info", "⬆️", "Panel "+p.Version+" is available", text,
+		map[string]string{"Version": p.Version, "Running": p.From})
+}
+
+func templatePanelUpdated(e events.Event) *NotificationMessage {
+	p, ok := e.Payload.(events.PanelUpdatePayload)
+	if !ok {
+		return nil
+	}
+	fields := map[string]string{"Version": p.Version, "From": p.From}
+	if p.Kind == "rollback" {
+		return panelMessage(e, "warning", "↩️", "Panel rolled back to "+p.Version,
+			"From "+p.From+". The database was left as it is; the pre-update backup is in Backups.", fields)
+	}
+	return panelMessage(e, "success", "✅", "Panel updated to "+p.Version, "From "+p.From+".", fields)
+}
+
+func templatePanelUpdateFailed(e events.Event) *NotificationMessage {
+	p, ok := e.Payload.(events.PanelUpdatePayload)
+	if !ok {
+		return nil
+	}
+	title := "Panel update to " + p.Version + " failed"
+	if p.Kind == "rollback" {
+		title = "Rolling the panel back to " + p.Version + " failed"
+	}
+	return panelMessage(e, "error", "⚠️", title, p.Reason,
+		map[string]string{"Version": p.Version, "From": p.From, "Reason": p.Reason})
+}
+
+func templatePanelUpdateSkipped(e events.Event) *NotificationMessage {
+	p, ok := e.Payload.(events.PanelUpdatePayload)
+	if !ok {
+		return nil
+	}
+	return panelMessage(e, "warning", "⏭", "Scheduled panel update skipped",
+		p.Version+" wasn't installed. "+p.Reason+" Pick a time again in Settings.",
+		map[string]string{"Version": p.Version, "Reason": p.Reason})
+}
+
+// noteLines is the first few lines of release notes with Markdown marks
+// taken off: they go out as plain text.
+func noteLines(notes string, n int) string {
+	var out []string
+	for _, line := range strings.Split(notes, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "#"))
+		if line == "" || strings.HasPrefix(line, "<!--") {
+			continue
+		}
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			line = "• " + line[2:]
+		}
+		line = strings.NewReplacer("**", "", "`", "").Replace(line)
+		out = append(out, line)
+		if len(out) == n {
+			break
+		}
+	}
+	return strings.Join(out, "\n")
 }

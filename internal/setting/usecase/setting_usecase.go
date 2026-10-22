@@ -460,6 +460,18 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "notification_telegram_chat_new_message", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when a new chat message is received", Label: "New Chat Message"},
 		{Key: "notification_discord_chat_new_message", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when a new chat message is received", Label: "New Chat Message"},
 		{Key: "notification_webhook_chat_new_message", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when a new chat message is received", Label: "New Chat Message"},
+		{Key: "notification_telegram_panel_update_available", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when a new panel version is available", Label: "Panel Update Available"},
+		{Key: "notification_telegram_panel_updated", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when the panel was updated or rolled back", Label: "Panel Updated"},
+		{Key: "notification_telegram_panel_update_failed", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when a panel update failed or was rolled back on its own", Label: "Panel Update Failed"},
+		{Key: "notification_telegram_panel_update_skipped", Value: "true", Type: "bool", Category: "notification", Description: "Send Telegram notification when a scheduled panel update couldn't run", Label: "Panel Update Skipped"},
+		{Key: "notification_discord_panel_update_available", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when a new panel version is available", Label: "Panel Update Available"},
+		{Key: "notification_discord_panel_updated", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when the panel was updated or rolled back", Label: "Panel Updated"},
+		{Key: "notification_discord_panel_update_failed", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when a panel update failed or was rolled back on its own", Label: "Panel Update Failed"},
+		{Key: "notification_discord_panel_update_skipped", Value: "false", Type: "bool", Category: "notification", Description: "Send Discord notification when a scheduled panel update couldn't run", Label: "Panel Update Skipped"},
+		{Key: "notification_webhook_panel_update_available", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when a new panel version is available", Label: "Panel Update Available"},
+		{Key: "notification_webhook_panel_updated", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when the panel was updated or rolled back", Label: "Panel Updated"},
+		{Key: "notification_webhook_panel_update_failed", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when a panel update failed or was rolled back on its own", Label: "Panel Update Failed"},
+		{Key: "notification_webhook_panel_update_skipped", Value: "false", Type: "bool", Category: "notification", Description: "Send webhook notification when a scheduled panel update couldn't run", Label: "Panel Update Skipped"},
 
 		// Xray Monitoring
 		{Key: "xray_crash_loop_threshold", Value: "3", Type: "int", Category: "xray_monitoring", Description: "Number of crashes before switching to summary notification mode", Label: "Crash Loop Threshold"},

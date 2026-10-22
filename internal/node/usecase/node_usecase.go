@@ -297,6 +297,8 @@ type NodeUsecase interface {
 	AutoUpdateAgent(ctx context.Context, nodeID uint, progress chan<- UpdateProgress) error
 	BulkUpdateAgent(ctx context.Context, ids []uint) map[uint]*NodeBulkActionResult
 	AgentUpdates(ctx context.Context) (map[uint]bool, error)
+	// XrayVersions are the nodes' Xray versions from the last stats sweep.
+	XrayVersions(ctx context.Context) ([]NodeXrayVersion, error)
 	SetCertWatch(w *certwatch.Watch)
 	EvictAllAgentClients()
 	CertificateOverview(ctx context.Context, refreshDomains bool) (*CertOverview, error)

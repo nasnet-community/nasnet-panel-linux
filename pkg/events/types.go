@@ -205,6 +205,7 @@ type PanelUpdatePayload struct {
 	Notes   string `json:"notes,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 	Kind    string `json:"kind,omitempty"` // update or rollback
+	Link    string `json:"link,omitempty"` // Settings → Updates
 }
 
 // SystemAlertPayload contains data for system alerts

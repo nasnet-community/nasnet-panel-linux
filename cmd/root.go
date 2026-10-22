@@ -662,6 +662,14 @@ func runServe(cmd *cobra.Command, args []string) {
 		NotifyReady: func() bool {
 			return runtimeStatus.Snapshot().Bot.State != runtimestatus.BotStarting
 		},
+		Nodes:   updateNodes{uc.Node},
+		BuiltAt: buildTime(),
+		UpdatesURL: func(context.Context) string {
+			if cfg.App.BaseURL == "" {
+				return ""
+			}
+			return strings.TrimRight(cfg.App.BaseURL, "/") + cfg.App.PanelBasePath + "/settings/updates"
+		},
 	})
 
 	if cfg.Telegram.Enabled {

@@ -61,6 +61,9 @@ type Deps struct {
 	NotifyReady func() bool                      // the bot can send
 	System      System
 	SystemFiles []string
+	Nodes       Nodes
+	BuiltAt     time.Time                        // when this binary and its geofiles were built
+	UpdatesURL  func(ctx context.Context) string // Settings → Updates, for notifications
 }
 
 type Usecase struct {
@@ -112,6 +115,7 @@ type Status struct {
 	Schedule     *Schedule            `json:"schedule,omitempty"`
 	Rollback     *RollbackWindow      `json:"rollback,omitempty"`
 	History      []domain.PanelUpdate `json:"history"`
+	Parts        Parts                `json:"parts"`
 }
 
 func (u *Usecase) Status(ctx context.Context) (*Status, error) {
@@ -139,6 +143,7 @@ func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 	if st.History, err = u.History(ctx, 20); err != nil {
 		return nil, err
 	}
+	st.Parts = u.parts(ctx)
 	return st, nil
 }
 
@@ -248,9 +253,13 @@ func (u *Usecase) announce(ctx context.Context, o *Offer) {
 }
 
 func (u *Usecase) publish(t events.EventType, p events.PanelUpdatePayload) {
-	if u.deps.Events != nil {
-		u.deps.Events.Publish(events.Event{Type: t, Payload: p})
+	if u.deps.Events == nil {
+		return
 	}
+	if u.deps.UpdatesURL != nil {
+		p.Link = u.deps.UpdatesURL(context.Background())
+	}
+	u.deps.Events.Publish(events.Event{Type: t, Payload: p})
 }
 
 func (u *Usecase) channel(ctx context.Context) string {
