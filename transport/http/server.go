@@ -193,6 +193,11 @@ func NewServer(deps ServerDeps) *Server {
 		}
 	}
 
+	// /health under the base path too, for whatever only knows the panel's URL
+	if basePath := deps.Config.AppConfig.PanelBasePath; basePath != "" {
+		engine.GET(basePath+"/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+	}
+
 	// the update runner's trial boot asks this over loopback
 	if deps.Admin.PanelUpdates != nil {
 		updateHttp.NewHandler(deps.Admin.PanelUpdates, nil).RegisterHealth(engine)

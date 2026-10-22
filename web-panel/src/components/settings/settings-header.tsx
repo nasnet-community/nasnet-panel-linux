@@ -7,15 +7,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { restartServer } from "@/lib/api/backup"
-import { getApiBaseUrl } from "@/lib/config"
+import { settingsApi } from "@/lib/api/settings"
 import { useExportSettings } from "@/lib/queries/use-settings"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { pendingCards, since, when, type Ctx } from "./catalog"
 import { ImportSettingsDialog } from "./import-settings-dialog"
 
-/** Restarts the panel, then reloads the page once it answers again. */
-function useRestartPanel(waiting: string[]) {
+/** Restarts the panel, then reloads the page once a new process answers. */
+function useRestartPanel(waiting: string[], startedAt?: string) {
     const confirm = useConfirm()
     const [restarting, setRestarting] = useState(false)
     const timer = useRef<ReturnType<typeof setInterval>>(undefined)
@@ -43,8 +43,9 @@ function useRestartPanel(waiting: string[]) {
         clearInterval(timer.current)
         timer.current = setInterval(async () => {
             try {
-                const resp = await fetch(`${getApiBaseUrl()}/health`, { cache: "no-store" })
-                if (resp.ok && Date.now() - started > 3000) {
+                // the old process may still answer for a moment; a new start time is the new one
+                const st = await settingsApi.getStatus()
+                if (st.hub.started_at !== startedAt) {
                     clearInterval(timer.current)
                     window.location.reload()
                 }
@@ -63,7 +64,7 @@ function useRestartPanel(waiting: string[]) {
 export function SettingsHeader({ ctx, phone }: { ctx: Ctx; phone: boolean }) {
     const s = ctx.status
     const waiting = pendingCards(s).map(c => c.title)
-    const { restart, restarting } = useRestartPanel(waiting)
+    const { restart, restarting } = useRestartPanel(waiting, s?.hub.started_at)
     const exportSettings = useExportSettings()
     const [importOpen, setImportOpen] = useState(false)
 
