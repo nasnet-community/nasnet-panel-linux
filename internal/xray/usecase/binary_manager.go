@@ -20,6 +20,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
+// CacheDir holds every downloaded xray build, relative to the install root.
+const CacheDir = "bin/xray"
+
 var versionRegex = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*(-[a-z0-9]+)*$`)
 
 // PlatformInfo contains information about a cached binary for a specific platform.
@@ -200,6 +203,62 @@ func (bm *BinaryManager) EnsureAndLoad(version, arch string) ([]byte, string, er
 		return nil, "", fmt.Errorf("xray: the cached %s %s build does not match its checksum", version, arch)
 	}
 	return data, sha256Hex(data), nil
+}
+
+// VerifiedPath is the absolute path of a cached build that still matches its hash.
+func (bm *BinaryManager) VerifiedPath(version, arch string) (string, error) {
+	if err := bm.checkVersion(version, arch); err != nil {
+		return "", err
+	}
+	mu := bm.getMutex(version, arch)
+	mu.Lock()
+	defer mu.Unlock()
+
+	p := bm.binaryPath(version, arch)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", fmt.Errorf("xray %s %s is not cached: %w", version, arch, err)
+	}
+	if want := bm.expectedBinary(version, arch); want == "" || sha256Hex(data) != want {
+		return "", fmt.Errorf("xray: the cached %s %s build does not match its checksum", version, arch)
+	}
+	return filepath.Abs(p)
+}
+
+// PruneCache removes every cached version except keep and the tested one.
+func (bm *BinaryManager) PruneCache(keep ...string) ([]string, error) {
+	entries, err := os.ReadDir(bm.baseDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]bool{bm.pin.Version: true}
+	for _, v := range keep {
+		want[strings.TrimPrefix(v, "v")] = true
+	}
+	var removed []string
+	for _, e := range entries {
+		v, ok := strings.CutPrefix(e.Name(), "v")
+		if !e.IsDir() || !ok || !IsValidVersion(v) || want[v] {
+			continue
+		}
+		if err := bm.removeVersion(v); err != nil {
+			return removed, err
+		}
+		removed = append(removed, v)
+	}
+	return removed, nil
+}
+
+func (bm *BinaryManager) removeVersion(version string) error {
+	for _, arch := range []string{"amd64", "arm64"} {
+		mu := bm.getMutex(version, arch)
+		mu.Lock()
+		defer mu.Unlock()
+	}
+	return os.RemoveAll(filepath.Join(bm.baseDir, "v"+version))
 }
 
 // expectedBinary is the pinned hash for the pinned release, else the sidecar written when it was verified.

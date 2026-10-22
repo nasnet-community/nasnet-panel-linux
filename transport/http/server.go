@@ -486,7 +486,7 @@ func NewServer(deps ServerDeps) *Server {
 		}
 
 		// Xray Binary Distribution
-		xrayBM := xrayUsecase.NewBinaryManager("bin/xray", deps.Infra.HTTPClientFactory)
+		xrayBM := xrayUsecase.NewBinaryManager(xrayUsecase.CacheDir, deps.Infra.HTTPClientFactory)
 		xrayH := xrayHandler.NewXrayHandler(xrayBM, deps.Infra.TokenManager)
 		xrayH.RegisterPublicRoutes(publicAPI.Group("/deploy/xray"))
 

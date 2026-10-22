@@ -350,3 +350,72 @@ func TestTheShippedPinIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifiedPathOnlyServesAnUntouchedBuild(t *testing.T) {
+	elf := validELF()
+	dir := t.TempDir()
+	bm := NewPinnedBinaryManager(dir, nil, "26.9.30", map[string]string{"amd64": "x"}, map[string]string{"amd64": sha256Hex(elf)})
+	if _, err := bm.VerifiedPath("26.9.30", "amd64"); err == nil {
+		t.Fatal("a version that isn't cached got a path")
+	}
+	for _, v := range []string{"26.9.30", "26.11.1"} {
+		if err := bm.storeRaw(v, "amd64", elf); err != nil {
+			t.Fatal(err)
+		}
+		p, err := bm.VerifiedPath(v, "amd64")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !filepath.IsAbs(p) || filepath.Base(filepath.Dir(p)) != "v"+v {
+			t.Fatalf("path = %s", p)
+		}
+	}
+
+	// the pinned build is checked against the hash in code, not its sidecar
+	tampered := append(validELF(), 'x')
+	if err := bm.storeRaw("26.9.30", "amd64", tampered); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bm.VerifiedPath("26.9.30", "amd64"); err == nil {
+		t.Fatal("a changed pinned build got a path")
+	}
+	// any other build is checked against its sidecar
+	if err := os.WriteFile(bm.binaryPath("26.11.1", "amd64"), tampered, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bm.VerifiedPath("26.11.1", "amd64"); err == nil {
+		t.Fatal("a build that no longer matches its sidecar got a path")
+	}
+}
+
+func TestPruneCacheKeepsTheTestedAndTheKeptVersions(t *testing.T) {
+	dir := t.TempDir()
+	bm := NewPinnedBinaryManager(dir, nil, "26.10.10", map[string]string{}, map[string]string{})
+	for _, v := range []string{"26.9.30", "26.10.10", "26.11.1", "25.1.1"} {
+		if err := bm.storeRaw(v, "amd64", validELF()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := bm.PruneCache("v26.9.30", "26.11.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 1 || removed[0] != "25.1.1" {
+		t.Fatalf("removed %v", removed)
+	}
+	for _, v := range []string{"26.9.30", "26.10.10", "26.11.1"} {
+		if !bm.IsCached(v, "amd64") {
+			t.Fatalf("%s was pruned", v)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notes")); err != nil {
+		t.Fatal("a directory that isn't a version was removed")
+	}
+	if removed, err := NewBinaryManager(filepath.Join(dir, "missing"), nil).PruneCache(); err != nil || len(removed) != 0 {
+		t.Fatalf("missing cache: %v, %v", removed, err)
+	}
+}
