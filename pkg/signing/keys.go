@@ -12,7 +12,9 @@ import (
 
 // PublicKeys are the release keys this build trusts. Two overlap during a rotation.
 // Add one with the line `go run ./cmd/release-sign keygen` prints.
-var PublicKeys = []ed25519.PublicKey{}
+var PublicKeys = []ed25519.PublicKey{
+	mustKey("CZ4YjZukhQtDUIjbEgoV5uM8/dt7l2A+CHrd8PiU3HI="), // ff3612b6
+}
 
 func mustKey(s string) ed25519.PublicKey {
 	k, err := ParsePublicKey(s)
@@ -21,8 +23,6 @@ func mustKey(s string) ed25519.PublicKey {
 	}
 	return k
 }
-
-var _ = mustKey // used once a key is listed
 
 // extraKey lets a drill build trust a test key: -ldflags "-X …/pkg/signing.extraKey=<base64>".
 var extraKey string

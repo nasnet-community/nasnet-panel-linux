@@ -45,6 +45,7 @@ GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 # Ed25519 keys releases are signed with, as base64 DER: "release-sign keygen"
 # prints the line. Keep them in step with pkg/signing; a test checks.
 RELEASE_KEYS=(
+    "MCowBQYDK2VwAyEACZ4YjZukhQtDUIjbEgoV5uM8/dt7l2A+CHrd8PiU3HI="
 )
 
 # Offline mode (set by --offline flag or detected from .bundle-manifest)
