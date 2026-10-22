@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -115,7 +116,7 @@ func (u *Usecase) dropUpload(id string) {
 }
 
 // pruneUploads drops uploads nobody installed within a day.
-func (u *Usecase) pruneUploads(keep string) {
+func (u *Usecase) pruneUploads(keep ...string) {
 	entries, err := os.ReadDir(u.deps.Paths.Uploads())
 	if err != nil {
 		return
@@ -123,7 +124,7 @@ func (u *Usecase) pruneUploads(keep string) {
 	for _, e := range entries {
 		id, _, _ := strings.Cut(e.Name(), ".")
 		info, err := e.Info()
-		if err != nil || id == keep || u.now().Sub(info.ModTime()) < uploadTTL {
+		if err != nil || slices.Contains(keep, id) || u.now().Sub(info.ModTime()) < uploadTTL {
 			continue
 		}
 		_ = os.Remove(filepath.Join(u.deps.Paths.Uploads(), e.Name()))

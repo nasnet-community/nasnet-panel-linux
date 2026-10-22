@@ -94,6 +94,7 @@ func (u *Usecase) Apply(ctx context.Context, req Request) (*domain.Job, error) {
 		unlock()
 		return nil, err
 	}
+	u.running.Store(true)
 	go u.runPanelSteps(context.WithoutCancel(ctx), job, unlock)
 	return job, nil
 }
@@ -151,6 +152,7 @@ func (u *Usecase) runPanelSteps(ctx context.Context, job *domain.Job, unlock fun
 	r := &run{u: u, job: job}
 	handedOff := false
 	defer func() {
+		u.running.Store(false)
 		if !handedOff {
 			unlock()
 			u.cleanup(job)
@@ -187,9 +189,11 @@ func (u *Usecase) runPanelSteps(ctx context.Context, job *domain.Job, unlock fun
 			return
 		}
 		manifest, size, job.Route = m, a.Size, route
-		tarball = filepath.Join(u.deps.Paths.Downloads(), release.BundleAsset(runtime.GOARCH))
-		if !release.AllowsFrom(m.MinFrom, release.MustParse(u.deps.Version)) {
-			r.fail(domain.StepGuards, fmt.Errorf("%s needs %s or later first", job.To, m.MinFrom))
+		// a part file only resumes the same release
+		tarball = filepath.Join(u.deps.Paths.Downloads(), job.To, release.BundleAsset(runtime.GOARCH))
+		// refuse what can't install before downloading it
+		if err := u.checkRelease(m.Version, m.MinFrom, runtime.GOARCH); err != nil {
+			r.fail(domain.StepGuards, err)
 			return
 		}
 	}
@@ -203,7 +207,8 @@ func (u *Usecase) runPanelSteps(ctx context.Context, job *domain.Job, unlock fun
 	if job.Source == domain.SourceDownload {
 		a := manifest.Assets[release.BundleAsset(runtime.GOARCH)]
 		r.begin(domain.StepDownload, "")
-		if err := os.MkdirAll(u.deps.Paths.Downloads(), 0o700); err != nil {
+		u.dropOtherDownloads(job.To)
+		if err := os.MkdirAll(filepath.Dir(tarball), 0o700); err != nil {
 			r.fail(domain.StepDownload, err)
 			return
 		}
@@ -260,7 +265,9 @@ func (u *Usecase) runPanelSteps(ctx context.Context, job *domain.Job, unlock fun
 	r.done(domain.StepTest, "")
 
 	// the rest runs in the runner unit, which outlives the restart
-	job.Phase, job.HealthAddr = domain.PhaseRunner, u.deps.HealthAddr
+	// counts as a heartbeat, so nobody takes the lock before the runner does
+	handoff := u.now().UTC()
+	job.Phase, job.HealthAddr, job.RunnerSeen = domain.PhaseRunner, u.deps.HealthAddr, &handoff
 	if u.deps.XrayRunning != nil {
 		job.XrayRan = u.deps.XrayRunning()
 	}
@@ -452,6 +459,16 @@ func lastLine(out []byte, err error) string {
 		return l
 	}
 	return err.Error()
+}
+
+// dropOtherDownloads removes part files of releases other than version.
+func (u *Usecase) dropOtherDownloads(version string) {
+	entries, _ := os.ReadDir(u.deps.Paths.Downloads())
+	for _, e := range entries {
+		if e.Name() != version {
+			_ = os.RemoveAll(filepath.Join(u.deps.Paths.Downloads(), e.Name()))
+		}
+	}
 }
 
 // cleanup drops the job's staging and, unless a resume can use it, the

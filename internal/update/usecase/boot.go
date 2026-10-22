@@ -104,6 +104,14 @@ func (u *Usecase) record(ctx context.Context, job *domain.Job) {
 	if job.Recorded || u.deps.Events == nil {
 		return
 	}
+	// a second caller (boot, the tick, a watcher) finds this one at it
+	if !u.recordMu.TryLock() {
+		return
+	}
+	defer u.recordMu.Unlock()
+	if cur, err := u.store.Load(); err != nil || cur == nil || cur.ID != job.ID || cur.Recorded {
+		return
+	}
 	if u.deps.NotifyReady != nil {
 		u.waitReady(ctx)
 	}

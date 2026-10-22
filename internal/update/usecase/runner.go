@@ -48,10 +48,14 @@ func (r *run) heartbeat() func() {
 	stop := make(chan struct{})
 	beat := func() {
 		r.mu.Lock()
+		done := r.job.Phase == domain.PhaseDone
 		now := r.u.now().UTC()
 		r.job.RunnerSeen = &now
 		r.mu.Unlock()
-		r.save()
+		// once it's done the panel owns the file: it marks the job recorded
+		if !done {
+			r.save()
+		}
 	}
 	beat()
 	go func() {
@@ -161,16 +165,19 @@ func (u *Usecase) runUpdate(ctx context.Context, r *run) {
 	r.begin(domain.StepSystem, "")
 	if err := set.save(filepath.Join(prev, "system"), u.systemFiles()...); err != nil {
 		r.fail(domain.StepSystem, err)
+		u.cleanup(job)
 		return
 	}
 	if err := set.write(u.setFile()); err != nil {
 		r.fail(domain.StepSystem, err)
+		u.cleanup(job)
 		return
 	}
 	if err := sys.UpdateSystem(ctx, filepath.Join(staging, "nasnet-tool.sh")); err != nil {
 		_ = u.putBack(ctx, set)
 		u.dropPrev()
 		r.fail(domain.StepSystem, err)
+		u.cleanup(job)
 		return
 	}
 	r.done(domain.StepSystem, "")
@@ -201,6 +208,7 @@ func (u *Usecase) runUpdate(ctx context.Context, r *run) {
 		_ = u.putBack(ctx, set)
 		u.dropPrev()
 		r.fail(domain.StepSwap, err)
+		u.cleanup(job)
 		return
 	}
 	r.done(domain.StepSwap, "")

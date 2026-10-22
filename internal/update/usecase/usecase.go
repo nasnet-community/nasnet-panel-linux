@@ -79,6 +79,8 @@ type Usecase struct {
 	pollEvery  time.Duration
 	runnerGone time.Duration
 	watching   atomic.Bool
+	running    atomic.Bool // this process runs a job's panel steps
+	recordMu   sync.Mutex
 
 	mu        sync.Mutex
 	checking  bool
@@ -214,11 +216,14 @@ func (u *Usecase) CheckNow(ctx context.Context) (*Check, error) {
 func (u *Usecase) MaybeRun(ctx context.Context) {
 	u.settleJob(ctx)
 	u.runSchedule(ctx)
-	keep := ""
+	var keep []string
 	if s := u.schedule(ctx); s != nil {
-		keep = s.UploadID
+		keep = append(keep, s.UploadID)
 	}
-	u.pruneUploads(keep)
+	if j, err := u.store.Load(); err == nil && j != nil && !j.Finished() {
+		keep = append(keep, j.UploadID)
+	}
+	u.pruneUploads(keep...)
 	u.mu.Lock()
 	due := !u.checking && !u.now().Before(u.nextCheck)
 	if due {
@@ -235,7 +240,7 @@ func (u *Usecase) MaybeRun(ctx context.Context) {
 // settleJob catches a job that ended, or runs, with nobody following it:
 // one the CLI started, say.
 func (u *Usecase) settleJob(ctx context.Context) {
-	if u.deps.Events == nil || u.watching.Load() {
+	if u.deps.Events == nil || u.watching.Load() || u.running.Load() {
 		return
 	}
 	job, err := u.store.Load()

@@ -716,3 +716,84 @@ func TestPreUpdateBackupsKeepTheNewestThree(t *testing.T) {
 		t.Fatal("a scheduled backup was rotated")
 	}
 }
+
+func TestTheTickLeavesAJobThisProcessRunsAlone(t *testing.T) {
+	h := newHarness(t)
+	h.panel.running.Store(true)
+	_ = h.panel.Store().Save(&domain.Job{ID: "x", Phase: domain.PhasePanel})
+	h.panel.settleJob(context.Background())
+	time.Sleep(20 * time.Millisecond)
+	if h.panel.watching.Load() {
+		t.Fatal("the tick started watching a job this process runs")
+	}
+}
+
+func TestARunningJobsUploadIsNotPruned(t *testing.T) {
+	h := newHarness(t)
+	up := h.upload("v1.1.0")
+	stale := time.Now().Add(-2 * uploadTTL)
+	for _, ext := range []string{".tar.gz", ".json"} {
+		_ = os.Chtimes(filepath.Join(h.panel.deps.Paths.Uploads(), up.ID+ext), stale, stale)
+	}
+	_ = h.panel.Store().Save(&domain.Job{ID: "x", Phase: domain.PhasePanel, UploadID: up.ID})
+	h.panel.MaybeRun(context.Background())
+	if _, err := h.panel.upload(up.ID); err != nil {
+		t.Fatal("the running job's upload was pruned")
+	}
+}
+
+func TestADownloadOnlyResumesItsOwnRelease(t *testing.T) {
+	h := newHarness(t)
+	b := h.bundle("v1.1.0", nil)
+	asset := release.BundleAsset(runtime.GOARCH)
+	h.net.publish(t, h.key, "v1.1.0", release.Manifest{Version: "v1.1.0",
+		Assets: map[string]release.Asset{asset: {SHA256: hexSum(b), Size: int64(len(b))}}})
+	h.net.files[ReleaseURL("v1.1.0", asset)] = b
+	old := filepath.Join(h.panel.deps.Paths.Downloads(), "v1.0.9", asset+".part")
+	writeTestFile(t, old, "half of another release")
+
+	if _, err := h.panel.Apply(context.Background(), Request{Version: "v1.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if j := h.wait(h.panel); j.Result != domain.ResultOK {
+		t.Fatalf("job = %+v", j)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("another release's part file stayed")
+	}
+}
+
+func TestATargetThatIsNotNewerIsRefusedBeforeTheDownload(t *testing.T) {
+	h := newHarness(t)
+	asset := release.BundleAsset(runtime.GOARCH)
+	h.net.publish(t, h.key, "v1.0.0", release.Manifest{Version: "v1.0.0",
+		Assets: map[string]release.Asset{asset: {SHA256: strings.Repeat("a", 64), Size: 10}}})
+	if _, err := h.panel.Apply(context.Background(), Request{Version: "v1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	j := h.wait(h.panel)
+	if j.Result != domain.ResultFailed || stepStatus(j, domain.StepGuards) != domain.StepFailed || stepStatus(j, domain.StepDownload) != domain.StepWaiting {
+		t.Fatalf("job = %+v", j)
+	}
+}
+
+func TestAFinishedJobIsAnnouncedOnce(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	job := &domain.Job{ID: "j", Kind: domain.KindUpdate, From: "v1.0.0", To: "v1.1.0", Phase: domain.PhaseDone, Result: domain.ResultOK, StartedAt: now, FinishedAt: &now}
+	_ = h.panel.Store().Save(job)
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			j, _ := h.panel.Store().Load()
+			h.panel.record(context.Background(), j)
+		}()
+	}
+	wg.Wait()
+	h.panel.settleJob(context.Background())
+	if got := drain(h.sub); len(got) != 1 {
+		t.Fatalf("announced %d times", len(got))
+	}
+}
