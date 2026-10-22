@@ -812,3 +812,15 @@ func TestTheBackupFolderIsMadeWhenMissing(t *testing.T) {
 		t.Fatalf("dumps: %v", dumps)
 	}
 }
+
+func TestAnUploadForAnotherArchSaysSoFirst(t *testing.T) {
+	h := newHarness(t)
+	other := "arm64"
+	if runtime.GOARCH == "arm64" {
+		other = "amd64"
+	}
+	// the same version as the running one, for the other arch
+	if err := h.panel.checkRelease("v1.0.0", "", other); err == nil || !strings.Contains(err.Error(), "for "+other) {
+		t.Fatalf("err = %v", err)
+	}
+}

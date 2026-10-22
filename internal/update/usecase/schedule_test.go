@@ -119,3 +119,13 @@ func TestUnusedUploadsGoAfterADay(t *testing.T) {
 		}
 	}
 }
+
+func TestSentenceLeavesAVersionAlone(t *testing.T) {
+	for in, want := range map[string]string{
+		"v1.0.5 isn't newer": "v1.0.5 isn't newer", "pick a time": "Pick a time", "": "", "Already": "Already",
+	} {
+		if got := Sentence(in); got != want {
+			t.Errorf("Sentence(%q) = %q", in, got)
+		}
+	}
+}

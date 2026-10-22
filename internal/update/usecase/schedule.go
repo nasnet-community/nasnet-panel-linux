@@ -111,9 +111,10 @@ func (u *Usecase) skip(s *Schedule, reason string) {
 	})
 }
 
-// Sentence starts s with a capital, for errors shown as messages.
+// Sentence starts s with a capital, for errors shown as messages. A version
+// leads as it is: "v1.0.5 isn't newer", never "V1.0.5".
 func Sentence(s string) string {
-	if s == "" || s[0] < 'a' || s[0] > 'z' {
+	if s == "" || s[0] < 'a' || s[0] > 'z' || (s[0] == 'v' && len(s) > 1 && s[1] >= '0' && s[1] <= '9') {
 		return s
 	}
 	return string(s[0]-'a'+'A') + s[1:]

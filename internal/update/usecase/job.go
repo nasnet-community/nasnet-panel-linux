@@ -346,14 +346,15 @@ func (u *Usecase) checkRelease(version, minFrom, arch string) error {
 	if err != nil {
 		return ErrNoVersion
 	}
+	// the arch first: no version of the wrong build would ever do
+	if arch != runtime.GOARCH {
+		return fmt.Errorf("that bundle is for %s; this server is %s", arch, runtime.GOARCH)
+	}
 	if !v.Newer(running) {
 		return fmt.Errorf("%s isn't newer than %s; updates never go back", version, u.deps.Version)
 	}
 	if !release.AllowsFrom(minFrom, running) {
 		return fmt.Errorf("%s needs %s or later first", version, minFrom)
-	}
-	if arch != runtime.GOARCH {
-		return fmt.Errorf("that bundle is for %s; this server is %s", arch, runtime.GOARCH)
 	}
 	return nil
 }
