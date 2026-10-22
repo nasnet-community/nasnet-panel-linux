@@ -178,8 +178,8 @@ func TestLiveClient_FollowsUpdates(t *testing.T) {
 
 func TestAllFeatures_CoversAll(t *testing.T) {
 	got := AllFeatures()
-	if len(got) != 9 {
-		t.Fatalf("expected 9 features, got %d", len(got))
+	if len(got) != 10 {
+		t.Fatalf("expected 10 features, got %d", len(got))
 	}
 	seen := map[Feature]bool{}
 	for _, f := range got {
@@ -187,5 +187,19 @@ func TestAllFeatures_CoversAll(t *testing.T) {
 			t.Fatalf("duplicate feature %q", f)
 		}
 		seen[f] = true
+	}
+}
+
+func TestDirectClientIgnoresTheProxyToggle(t *testing.T) {
+	f := NewFactory()
+	f.Update(Config{ProxyURL: "socks5://127.0.0.1:1080", Enabled: map[Feature]bool{FeaturePanelUpdate: true}})
+	if f.ProxyClient(FeaturePanelUpdate, EgressForeign, time.Second) == nil {
+		t.Fatal("no proxy route with the toggle on")
+	}
+	if c := f.DirectClient(EgressForeign, time.Second); c.Transport != http.DefaultTransport {
+		t.Fatal("the direct client went through the proxy")
+	}
+	if f.ProxyClient(FeatureGeofiles, EgressForeign, time.Second) != nil {
+		t.Fatal("a proxy route for a feature whose toggle is off")
 	}
 }

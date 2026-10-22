@@ -117,6 +117,12 @@ type BackupRunner interface {
 	MaybeRun(ctx context.Context)
 }
 
+// PanelUpdater checks for panel releases and starts scheduled updates.
+// MaybeRun is cheap when nothing is due.
+type PanelUpdater interface {
+	MaybeRun(ctx context.Context)
+}
+
 type NodeRepository interface {
 	CleanupOldNodeStats(ctx context.Context, olderThanDays int) (int64, error)
 	CleanupOldAccessLogSummaries(ctx context.Context, before time.Time) (int64, error)

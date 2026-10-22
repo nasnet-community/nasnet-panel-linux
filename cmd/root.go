@@ -94,6 +94,7 @@ import (
 
 	// Setting packages
 	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
+	updateUC "github.com/nasnet-community/nasnet-panel-linux/internal/update/usecase"
 
 	// Audit packages
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
@@ -123,6 +124,7 @@ var serveCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(newNetCmd())
+	rootCmd.AddCommand(newUpdateCmd())
 }
 
 // WebFS holds the embedded SPA filesystem. Set by main before Execute().
@@ -633,6 +635,15 @@ func runServe(cmd *cobra.Command, args []string) {
 	// Scheduled backups run with the bot off too (dump + rotation); the bot
 	// becomes the sender once it exists.
 	backupRunner := adminUC.NewScheduledBackupRunner(backupSvc, repos.Setting, nil, cfg.Admin.InitialAdminIDs)
+	installRoot, _ := os.Getwd()
+	panelUpdates := updateUC.New(updateUC.Deps{
+		Paths:    updateUC.Paths{Root: installRoot},
+		Version:  Version,
+		Settings: repos.Setting,
+		DB:       db,
+		HTTP:     httpFactory,
+		Events:   eventBus,
+	})
 
 	if cfg.Telegram.Enabled {
 		runtimeStatus.SetBot(func(b *runtimestatus.Bot) {
@@ -832,6 +843,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		JWTBlacklistCleanupFn:         blacklist.Cleanup,
 		UsedTokenRepo:                 repos.UsedToken,
 		BackupRunner:                  backupRunner,
+		PanelUpdater:                  panelUpdates,
 		OnlineUsersSnapshotRecorder:   uc.Admin,
 		OnlineUsersSnapshotCleaner:    repos.OnlineUsersSnapshot,
 		AlertEventCleaner:             repos.Alert,
@@ -966,6 +978,7 @@ func runServe(cmd *cobra.Command, args []string) {
 			CertificateUsecase: uc.Certificate,
 			AuditUsecase:       uc.Audit,
 			BackupService:      backupSvc,
+			PanelUpdates:       panelUpdates,
 			AlertUsecase:       uc.Alert,
 			MaintenanceUsecase: uc.Maintenance,
 			NetworkUsecase:     networkUC,

@@ -47,6 +47,8 @@ import (
 	subHttp "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/delivery/http"
 	subRepo "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/repository"
 	subUC "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/usecase"
+	updateHttp "github.com/nasnet-community/nasnet-panel-linux/internal/update/delivery/http"
+	updateUC "github.com/nasnet-community/nasnet-panel-linux/internal/update/usecase"
 	userHttp "github.com/nasnet-community/nasnet-panel-linux/internal/user/delivery/http"
 	userRepo "github.com/nasnet-community/nasnet-panel-linux/internal/user/repository"
 	userUCPkg "github.com/nasnet-community/nasnet-panel-linux/internal/user/usecase"
@@ -105,6 +107,7 @@ type AdminDeps struct {
 	CertificateUsecase nodeUCPkg.CertificateUsecase
 	AuditUsecase       auditDomain.AuditLogUsecase
 	BackupService      *adminUC.BackupService
+	PanelUpdates       *updateUC.Usecase
 	AlertUsecase       alertUC.AlertUsecase
 	MaintenanceUsecase mntUC.Usecase
 	NetworkUsecase     networkUC.NetworkUsecase
@@ -381,6 +384,9 @@ func NewServer(deps ServerDeps) *Server {
 		}
 
 		// Database backup
+		if deps.Admin.PanelUpdates != nil {
+			updateHttp.NewHandler(deps.Admin.PanelUpdates, deps.Admin.AuditUsecase).RegisterRoutes(adminAPI)
+		}
 		if deps.Admin.BackupService != nil {
 			backupHandler := adminHttp.NewBackupHandler(deps.Admin.BackupService, deps.Admin.AuditUsecase, deps.Admin.SettingUsecase)
 			backupHandler.RegisterRoutes(adminAPI)
@@ -448,6 +454,9 @@ func NewServer(deps ServerDeps) *Server {
 		if deps.Admin.SettingUsecase != nil {
 			settingHandler := settingHttp.NewSettingHandler(deps.Admin.SettingUsecase)
 			statusDeps := settingHttp.StatusDeps{Runtime: deps.Infra.RuntimeStatus}
+			if deps.Admin.PanelUpdates != nil {
+				statusDeps.Update = deps.Admin.PanelUpdates.Available
+			}
 			if deps.Infra.DB != nil {
 				q := settingRepo.NewStatusQueries(deps.Infra.DB)
 				statusDeps.ActiveReach, statusDeps.DBSize = q.ActiveReach, q.DBSize

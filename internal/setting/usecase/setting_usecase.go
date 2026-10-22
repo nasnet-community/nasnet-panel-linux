@@ -349,6 +349,11 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "agent_cert_strict_mode", Value: "false", Type: "bool", Category: "admin", Description: "Refuse revoked node certificates and certificates that belong to another node. Changed from the Certificates page only.", Label: "Certificate Strict Mode"},
 		domain.BuiltinXraySetting(""),
 
+		// Panel updates
+		{Key: "update_check_enabled", Value: "true", Type: "bool", Category: "updates", Description: "Look for a new panel version every 6 hours. Check now works either way.", Label: "Check for Updates"},
+		{Key: "update_channel", Value: "stable", Type: "string", Category: "updates", Description: "stable, or beta to also get prereleases. Turning beta off never goes back a version.", Label: "Update Channel"},
+		{Key: "update_mirror_url", Value: "", Type: "string", Category: "updates", Description: "A GitHub mirror prefix (ghproxy style), tried when github.com can't be reached.", Label: "Update Mirror URL"},
+
 		// Subscription
 		{Key: "max_active_subscriptions", Value: "3", Type: "int", Category: "subscription", Description: "Maximum active subscriptions per user", Label: "Max Active Subscriptions"},
 		{Key: "sub_panel_auth_enabled", Value: "false", Type: "bool", Category: "subscription", Description: "Require a password to access subscription panel pages", Label: "Panel Authentication"},
@@ -483,6 +488,10 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 		{Key: "proxy_use_core_binaries", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route tunnel binary downloads via proxy",
 			Description:     "When enabled, the MTProto proxy (telemt) download from GitHub uses outbound_proxy_url.",
+			RequiresRestart: false},
+		{Key: "proxy_use_panel_update", Value: "false", Type: "bool", Category: "server",
+			Label:           "Route panel updates via proxy",
+			Description:     "When enabled, the panel's update check and download try outbound_proxy_url after a direct connection fails.",
 			RequiresRestart: false},
 		{Key: "proxy_use_github_api", Value: "false", Type: "bool", Category: "server",
 			Label:           "Route GitHub API via proxy",

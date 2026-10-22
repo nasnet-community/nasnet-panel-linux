@@ -70,18 +70,29 @@ func (f *Factory) Update(cfg Config) {
 // client is returned. timeout is applied to the returned client.
 func (f *Factory) ClientFor(feat Feature, group EgressGroup, timeout time.Duration) *http.Client {
 	st := f.s.Load()
-	useProxy := st.enabled[feat] && st.transport != nil
-
 	if st.enabled[feat] && st.transport == nil {
 		logger.GetLogger().WithField("feature", string(feat)).
 			Warn("[httpclient] feature toggled to use proxy, but outbound_proxy_url is unset/invalid; using direct connection")
 	}
-
-	if useProxy {
-		// Reaching the proxy is itself an egress, so mark that dial too.
-		return &http.Client{Transport: f.proxyTransport(st, group), Timeout: timeout}
+	if c := f.ProxyClient(feat, group, timeout); c != nil {
+		return c
 	}
+	return f.DirectClient(group, timeout)
+}
 
+// ProxyClient is feat's proxy route, or nil while its toggle is off or no
+// proxy is set.
+func (f *Factory) ProxyClient(feat Feature, group EgressGroup, timeout time.Duration) *http.Client {
+	st := f.s.Load()
+	if !st.enabled[feat] || st.transport == nil {
+		return nil
+	}
+	// Reaching the proxy is itself an egress, so mark that dial too.
+	return &http.Client{Transport: f.proxyTransport(st, group), Timeout: timeout}
+}
+
+// DirectClient never goes through the proxy, whatever the toggles say.
+func (f *Factory) DirectClient(group EgressGroup, timeout time.Duration) *http.Client {
 	if dial := f.markingDialer(group); dial != nil {
 		return &http.Client{Timeout: timeout, Transport: &http.Transport{
 			DialContext:           dial,

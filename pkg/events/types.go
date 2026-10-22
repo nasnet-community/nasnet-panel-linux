@@ -102,6 +102,12 @@ const (
 	EventVPNTunnelRehomed EventType = "vpn.tunnel_rehomed"
 	// Failover, failback, or a faster tunnel winning the election.
 	EventVPNCarrierSwitched EventType = "vpn.carrier_switched"
+
+	// Panel self-update. Available fires once per version.
+	EventPanelUpdateAvailable EventType = "panel.update_available"
+	EventPanelUpdated         EventType = "panel.updated"
+	EventPanelUpdateFailed    EventType = "panel.update_failed"  // failed, or rolled back on its own
+	EventPanelUpdateSkipped   EventType = "panel.update_skipped" // a scheduled update couldn't run
 )
 
 // IsNetworkEvent is the recorder filter for the flow page's timeline.
@@ -190,6 +196,15 @@ type SubscriptionEventPayload struct {
 	Username       string `json:"username,omitempty"`
 	PlanName       string `json:"plan_name"`
 	ExpiresAt      string `json:"expires_at,omitempty"`
+}
+
+// PanelUpdatePayload is a panel update's versions and outcome.
+type PanelUpdatePayload struct {
+	Version string `json:"version"` // the one offered or installed
+	From    string `json:"from,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+	Kind    string `json:"kind,omitempty"` // update or rollback
 }
 
 // SystemAlertPayload contains data for system alerts

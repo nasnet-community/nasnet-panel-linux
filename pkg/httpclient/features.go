@@ -17,6 +17,8 @@ const (
 	FeatureWizard     Feature = "wizard"
 	// FeatureCoreBinaries is the tunnel binary (telemt) download.
 	FeatureCoreBinaries Feature = "core_binaries"
+	// FeaturePanelUpdate is the panel's own update check and download.
+	FeaturePanelUpdate Feature = "panel_update"
 )
 
 // AllFeatures lists every known feature in display order.
@@ -31,5 +33,6 @@ func AllFeatures() []Feature {
 		FeatureACME,
 		FeatureWizard,
 		FeatureCoreBinaries,
+		FeaturePanelUpdate,
 	}
 }

@@ -24,6 +24,8 @@ type StatusDeps struct {
 	// them a Telegram broadcast can reach.
 	ActiveReach func(ctx context.Context) (total, telegram int64, err error)
 	DBSize      func(ctx context.Context) (int64, error)
+	// Update is the panel version the last check offered, if any.
+	Update func(ctx context.Context) (version string, ok bool)
 }
 
 func (h *SettingHandler) SetStatusDeps(d StatusDeps) { h.status = d }
@@ -44,6 +46,11 @@ type statusResponse struct {
 		StartedAt time.Time `json:"started_at"`
 		Version   string    `json:"version"`
 		Port      int       `json:"port"`
+		// Update drives the Settings dot and the header chip.
+		Update struct {
+			Available bool   `json:"available"`
+			Version   string `json:"version,omitempty"`
+		} `json:"update"`
 	} `json:"hub"`
 	// RestartPending lists restart-only keys whose saved value differs from
 	// the one this process booted with.
@@ -104,6 +111,9 @@ func (h *SettingHandler) Status(c *gin.Context) {
 	if rt := h.status.Runtime; rt != nil {
 		snap := rt.Snapshot()
 		out.Hub.StartedAt, out.Hub.Version, out.Hub.Port = snap.StartedAt, snap.Version, snap.Port
+		if h.status.Update != nil {
+			out.Hub.Update.Version, out.Hub.Update.Available = h.status.Update(ctx)
+		}
 
 		// without a settings read nothing can be compared; claim nothing
 		for key, boot := range snap.BootValues {

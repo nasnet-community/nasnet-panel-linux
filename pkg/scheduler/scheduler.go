@@ -154,6 +154,8 @@ type Config struct {
 	// BackupRunner performs scheduled DB backups. Optional (nil disables);
 	// due-checking is internal to the runner.
 	BackupRunner BackupRunner
+	// PanelUpdater runs the update check and scheduled updates. Optional.
+	PanelUpdater PanelUpdater
 
 	// Additional retention cleaners (all optional — nil disables the task).
 	AlertEventCleaner             AlertEventCleaner
@@ -605,6 +607,9 @@ func (s *Scheduler) runReconcileChecks(ctx context.Context) {
 	// reports its own outcome, so there is nothing here for observeTask.
 	if s.cfg.BackupRunner != nil {
 		s.cfg.BackupRunner.MaybeRun(ctx)
+	}
+	if s.cfg.PanelUpdater != nil {
+		go s.cfg.PanelUpdater.MaybeRun(ctx) // a check can take a while on a slow route
 	}
 }
 
