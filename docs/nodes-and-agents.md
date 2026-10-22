@@ -10,7 +10,7 @@ NasNet Panel runs on a **single server** and manages a local **Xray-core** proce
 
 ## Xray version management
 
-From the **Xray Binaries** page you can download, switch, and update the Xray-core binary. The panel caches binaries and can fetch a requested version on demand, so you can pin or upgrade the core without touching the host by hand.
+Each node's Xray dialog installs another Xray-core release; the panel fetches it once into its cache and hands it to the node. The release this panel was tested with is marked **Tested**. The built-in node runs that version and moves with panel updates, until you pick another one; **Follow the panel** goes back. See [Updates](./updates.md).
 
 ## Server operations
 

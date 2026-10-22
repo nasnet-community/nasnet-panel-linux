@@ -92,7 +92,7 @@ nasnet config       # show panel URL, login, and current settings
 nasnet auto-update  # update to the latest release
 ```
 
-`nasnet auto-update` refreshes the command itself alongside the binaries. Uninstalling removes it.
+`nasnet auto-update` runs the panel's own updater, the same one as **Settings → Updates** (see [Updates](./updates.md)), and the release refreshes the command itself. Uninstalling removes it.
 
 The installer opens the panel's port in `ufw` or `firewalld` when either is active, and asks for `sudo` once at the start rather than midway through.
 
@@ -164,11 +164,11 @@ See the [Development guide](./development.md) for the full toolchain, protobuf g
 
 ## Updating
 
+- **systemd installs:** **Settings → Updates** in the panel, or `sudo nasnet` → *Auto-Update*. Both back up the database, check the release's signature and put the old version back if the new one isn't healthy. See [Updates](./updates.md).
 - **Docker:** `git pull` (or pull new images) and `docker compose up -d --build`.
-- **systemd / binary:** replace the binary with the new release and restart the service.
-- **Either:** use `nasnet-tool.sh` → *Update*.
+- **Source builds:** `sudo nasnet` → *Update*.
 
-Database schema migrations run automatically on startup. **Always take a backup first.**
+Database schema migrations run automatically on startup.
 
 ## Uninstalling
 

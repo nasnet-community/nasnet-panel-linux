@@ -20,6 +20,7 @@ If you are new here, read the pages in this order:
 ### Operate the server
 - [Architecture](./architecture.md) — single-binary design, layering, event bus, database
 - [Server & Xray](./nodes-and-agents.md) — supervising the local Xray-core process, version updates, server operations
+- [Updates](./updates.md) — updating the panel from Settings, schedules, rollback, servers without GitHub
 - [Protocols & Routing](./protocols-and-routing.md) — inbounds, outbounds, REALITY, WireGuard, routing & balancing rules
 
 ### Serve subscribers
