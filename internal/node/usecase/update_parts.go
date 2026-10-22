@@ -29,15 +29,16 @@ func (u *nodeUsecase) XrayVersions(ctx context.Context) ([]NodeXrayVersion, erro
 		if !ok {
 			continue
 		}
-		if v := xrayVersionNumber(snap.XrayVersion); v != "" {
+		if v := XrayVersionNumber(snap.XrayVersion); v != "" {
 			out = append(out, NodeXrayVersion{ID: n.ID, Name: n.Name, Version: v, Local: n.IsLocal()})
 		}
 	}
 	return out, nil
 }
 
-// xrayVersionNumber reads "Xray 26.10.10 (Xray, Penetrates Everything.) …".
-func xrayVersionNumber(reported string) string {
+// XrayVersionNumber reads "Xray 26.10.10 (Xray, Penetrates Everything.) …"
+// as 26.10.10.
+func XrayVersionNumber(reported string) string {
 	fields := strings.Fields(reported)
 	if len(fields) > 1 && strings.EqualFold(fields[0], "Xray") {
 		return strings.TrimPrefix(fields[1], "v")

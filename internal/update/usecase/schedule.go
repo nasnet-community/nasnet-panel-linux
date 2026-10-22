@@ -97,11 +97,11 @@ func (u *Usecase) runSchedule(ctx context.Context) {
 		return
 	}
 	if err := u.guard(ctx, s.Size); err != nil {
-		u.skip(s, capitalize(err.Error())+".")
+		u.skip(s, Sentence(err.Error())+".")
 		return
 	}
 	if _, err := u.Apply(ctx, Request{Version: s.Version, UploadID: s.UploadID}); err != nil {
-		u.skip(s, capitalize(err.Error())+".")
+		u.skip(s, Sentence(err.Error())+".")
 	}
 }
 
@@ -111,7 +111,8 @@ func (u *Usecase) skip(s *Schedule, reason string) {
 	})
 }
 
-func capitalize(s string) string {
+// Sentence starts s with a capital, for errors shown as messages.
+func Sentence(s string) string {
 	if s == "" || s[0] < 'a' || s[0] > 'z' {
 		return s
 	}

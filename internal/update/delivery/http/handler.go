@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -82,7 +81,7 @@ func (h *Handler) Apply(c *gin.Context) {
 	if req.At != nil {
 		s, err := h.uc.ScheduleUpdate(c.Request.Context(), req.Request, *req.At)
 		if err != nil {
-			httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+			httputil.Error(c, http.StatusConflict, usecase.Sentence(err.Error()))
 			return
 		}
 		h.log(c, auditDomain.AuditPanelUpdateSchedule, map[string]string{"to": s.Version, "at": s.At.Format(time.RFC3339)})
@@ -91,7 +90,7 @@ func (h *Handler) Apply(c *gin.Context) {
 	}
 	job, err := h.uc.Apply(c.Request.Context(), req.Request)
 	if err != nil {
-		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+		httputil.Error(c, http.StatusConflict, usecase.Sentence(err.Error()))
 		return
 	}
 	h.log(c, auditDomain.AuditPanelUpdate, map[string]string{"from": job.From, "to": job.To, "source": job.Source})
@@ -102,7 +101,7 @@ func (h *Handler) Apply(c *gin.Context) {
 func (h *Handler) CancelSchedule(c *gin.Context) {
 	s, err := h.uc.CancelSchedule(c.Request.Context())
 	if err != nil {
-		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+		httputil.Error(c, http.StatusConflict, usecase.Sentence(err.Error()))
 		return
 	}
 	h.log(c, auditDomain.AuditPanelUpdateCancel, map[string]string{"to": s.Version, "at": s.At.Format(time.RFC3339)})
@@ -141,7 +140,7 @@ func (h *Handler) Upload(c *gin.Context) {
 			httputil.Error(c, http.StatusRequestEntityTooLarge, "The file is over 300 MB.")
 			return
 		case err != nil:
-			httputil.Error(c, http.StatusUnprocessableEntity, capitalize(err.Error()))
+			httputil.Error(c, http.StatusUnprocessableEntity, usecase.Sentence(err.Error()))
 			return
 		}
 		h.log(c, auditDomain.AuditPanelUpdateUpload, map[string]string{"version": up.Version, "upload_id": up.ID})
@@ -150,18 +149,11 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 }
 
-func capitalize(s string) string {
-	if s == "" || s[0] < 'a' || s[0] > 'z' {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
-
 // POST /updates/rollback
 func (h *Handler) Rollback(c *gin.Context) {
 	job, err := h.uc.Rollback(c.Request.Context())
 	if err != nil {
-		httputil.Error(c, http.StatusConflict, capitalize(err.Error()))
+		httputil.Error(c, http.StatusConflict, usecase.Sentence(err.Error()))
 		return
 	}
 	h.log(c, auditDomain.AuditPanelRollback, map[string]string{"from": job.From, "to": job.To})

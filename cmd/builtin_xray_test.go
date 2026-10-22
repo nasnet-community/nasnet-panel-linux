@@ -86,10 +86,12 @@ func fakeInstalledXray(t *testing.T, version string) string {
 }
 
 func TestAnInstalledXrayNewerThanTheTestedOneIsKept(t *testing.T) {
-	repo := fakeSettingRepo{}
-	adoptInstalledXray(context.Background(), repo, fakeInstalledXray(t, "99.1.0"))
-	if s := repo[settingDomain.BuiltinXrayKey]; s == nil || s.Value != "99.1.0" || s.Category != "admin" {
-		t.Fatalf("row = %+v", s)
+	for _, printed := range []string{"99.1.0", "v99.1.0"} {
+		repo := fakeSettingRepo{}
+		adoptInstalledXray(context.Background(), repo, fakeInstalledXray(t, printed))
+		if s := repo[settingDomain.BuiltinXrayKey]; s == nil || s.Value != "99.1.0" || s.Category != "admin" {
+			t.Fatalf("%s: row = %+v", printed, s)
+		}
 	}
 }
 

@@ -4,10 +4,10 @@ import (
 	"context"
 	"os/exec"
 	"runtime"
-	"strings"
 	"time"
 
 	agentconfig "github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
+	nodeUC "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	xrayUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
@@ -50,7 +50,7 @@ func adoptInstalledXray(ctx context.Context, repo interface {
 	if err != nil {
 		return
 	}
-	v := xrayVersionOf(string(out))
+	v := nodeUC.XrayVersionNumber(string(out))
 	have, err := release.Parse("v" + v)
 	if err != nil || !have.Newer(release.MustParse("v"+pin.Version)) {
 		return
@@ -64,12 +64,3 @@ func adoptInstalledXray(ctx context.Context, repo interface {
 
 // installedXray is where the installer puts xray.
 func installedXray() string { return agentconfig.DefaultConfig().Xray.BinaryPath }
-
-// xrayVersionOf reads "Xray 26.10.10 (Xray, Penetrates Everything.) …".
-func xrayVersionOf(out string) string {
-	fields := strings.Fields(out)
-	if len(fields) > 1 && strings.EqualFold(fields[0], "Xray") {
-		return fields[1]
-	}
-	return ""
-}
