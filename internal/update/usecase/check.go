@@ -93,19 +93,30 @@ func (c *Checker) Check(ctx context.Context, running release.Version, channel st
 	}
 	res.Route = route
 	res.Latest = c.offer(best)
+	judge(&res, running, c.arch)
+	return res
+}
 
-	if !release.MustParse(best.Version).Newer(running) {
-		return res
+// judge says whether the check's release is on offer to running. A stored
+// check is judged again on every read: it may come from the version before
+// an update, or the one a rollback just left.
+func judge(c *Check, running release.Version, arch string) {
+	c.Available, c.Blocked = false, ""
+	if c.Latest == nil {
+		return
+	}
+	v, err := release.Parse(c.Latest.Version)
+	if err != nil || !v.Newer(running) {
+		return
 	}
 	switch {
-	case !release.AllowsFrom(best.MinFrom, running):
-		res.Blocked = fmt.Sprintf("%s needs %s or later first.", best.Version, best.MinFrom)
-	case res.Latest.SHA256 == "":
-		res.Blocked = fmt.Sprintf("%s has no %s build.", best.Version, c.arch)
+	case !release.AllowsFrom(c.Latest.MinFrom, running):
+		c.Blocked = fmt.Sprintf("%s needs %s or later first.", c.Latest.Version, c.Latest.MinFrom)
+	case c.Latest.SHA256 == "":
+		c.Blocked = fmt.Sprintf("%s has no %s build.", c.Latest.Version, arch)
 	default:
-		res.Available = true
+		c.Available = true
 	}
-	return res
 }
 
 // Manifest fetches and verifies one release's release.json ("" = latest).

@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -193,5 +194,27 @@ func drain(sub events.Subscriber) []events.Event {
 		case <-time.After(50 * time.Millisecond):
 			return got
 		}
+	}
+}
+
+func TestAStoredCheckIsJudgedForTheVersionNowRunning(t *testing.T) {
+	key := testKey(t)
+	f := &fakeFetcher{files: map[string][]byte{}}
+	f.publish(t, key, "", release.Manifest{Version: "v1.2.0", Assets: map[string]release.Asset{release.BundleAsset(runtime.GOARCH): {SHA256: "a", Size: 1}}})
+	settings := newMemSettings()
+	before, _ := testUsecase(t, "v1.1.0", f, settings)
+	before.checker = NewChecker(f, runtime.GOARCH)
+	if _, err := before.CheckNow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// after the update to v1.2.0 the same row offers nothing
+	after, _ := testUsecase(t, "v1.2.0", f, settings)
+	if _, ok := after.Available(context.Background()); ok {
+		t.Fatal("v1.2.0 is offered to v1.2.0")
+	}
+	// and after a rollback to v1.0.0 it's on offer again
+	back, _ := testUsecase(t, "v1.0.0", f, settings)
+	if v, ok := back.Available(context.Background()); !ok || v != "v1.2.0" {
+		t.Fatalf("available = %s %v", v, ok)
 	}
 }

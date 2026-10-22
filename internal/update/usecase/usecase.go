@@ -298,6 +298,9 @@ func (u *Usecase) lastCheck(ctx context.Context) *Check {
 	if json.Unmarshal([]byte(raw), &c) != nil {
 		return nil
 	}
+	if running, err := release.Parse(u.deps.Version); err == nil {
+		judge(&c, running, runtime.GOARCH)
+	}
 	return &c
 }
 
