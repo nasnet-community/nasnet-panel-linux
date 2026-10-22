@@ -104,11 +104,14 @@ func (u *Usecase) Kind() Kind { return u.kind }
 // Status is the Updates section.
 type Status struct {
 	Current      string               `json:"current"`
+	Arch         string               `json:"arch"`
 	Kind         Kind                 `json:"kind"`
 	Channel      string               `json:"channel"`
 	CheckEnabled bool                 `json:"check_enabled"`
 	Mirror       string               `json:"mirror_url"`
 	TestedXray   string               `json:"tested_xray"`
+	BuiltAt      *time.Time           `json:"built_at,omitempty"`
+	NetPending   bool                 `json:"net_pending,omitempty"` // updates wait for a network change to be kept or reverted
 	Check        *Check               `json:"check,omitempty"`
 	Available    *Offer               `json:"available,omitempty"`
 	Job          *domain.Job          `json:"job,omitempty"`
@@ -121,12 +124,18 @@ type Status struct {
 func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 	st := &Status{
 		Current:      u.deps.Version,
+		Arch:         runtime.GOARCH,
 		Kind:         u.kind,
 		Channel:      u.channel(ctx),
 		CheckEnabled: u.setting(ctx, keyCheckEnabled) != "false",
 		Mirror:       u.setting(ctx, keyMirror),
 		TestedXray:   pin.Version,
 		Check:        u.lastCheck(ctx),
+		NetPending:   u.deps.NetPending != nil && u.deps.NetPending(),
+	}
+	if !u.deps.BuiltAt.IsZero() {
+		t := u.deps.BuiltAt
+		st.BuiltAt = &t
 	}
 	if st.Check != nil && st.Check.Available {
 		st.Available = st.Check.Latest

@@ -114,6 +114,7 @@ export const queryKeys = {
     settings: ['settings'] as const,
     retentionStats: () => ['settings', 'retention-stats'] as const,
     settingsStatus: () => ['settings', 'status'] as const,
+    updates: () => ['settings', 'updates'] as const,
 
     // Certificates
     certificates: ['certificates'] as const,

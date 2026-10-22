@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/providers/theme-provider"
 import { SETTINGS_ITEM, isItemActive } from "@/components/layouts/nav-config"
+import { useNavBadges } from "@/components/layouts/use-nav-badges"
 import { NavLinkRow, RailLink } from "./sidebar-nav"
 
 type ThemeChoice = "system" | "light" | "dark"
@@ -19,6 +20,7 @@ export interface SidebarFooterProps {
 
 export function SidebarFooter({ collapsed, username, onLogout, onOpenShortcuts }: SidebarFooterProps) {
     const { pathname } = useLocation()
+    const badge = useNavBadges().settings
     const display = username || "Admin"
     const avatar = (
         <span className="size-[30px] shrink-0 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary">
@@ -29,7 +31,7 @@ export function SidebarFooter({ collapsed, username, onLogout, onOpenShortcuts }
     if (collapsed) {
         return (
             <div className="border-t border-border/50 mt-auto py-2 flex flex-col items-center gap-1.5">
-                <RailLink item={SETTINGS_ITEM} pathname={pathname} />
+                <RailLink item={SETTINGS_ITEM} pathname={pathname} badge={badge} />
                 <AccountMenu display={display} side="right" onLogout={onLogout} onOpenShortcuts={onOpenShortcuts}>
                     <button type="button" aria-label={`Account menu, ${display}`} className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         {avatar}
@@ -41,7 +43,7 @@ export function SidebarFooter({ collapsed, username, onLogout, onOpenShortcuts }
 
     return (
         <div className="border-t border-border/50 mt-auto px-3 pt-2 pb-2.5 space-y-1.5">
-            <NavLinkRow item={SETTINGS_ITEM} active={isItemActive(SETTINGS_ITEM, pathname)} />
+            <NavLinkRow item={SETTINGS_ITEM} active={isItemActive(SETTINGS_ITEM, pathname)} badge={badge} />
             <div className="flex items-center gap-2.5 pl-1.5">
                 {avatar}
                 <div className="flex-1 min-w-0">

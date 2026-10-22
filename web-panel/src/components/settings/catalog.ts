@@ -4,8 +4,8 @@
  * the ⌘K palette all read from here.
  */
 import {
-    Activity, Archive, Bell, BellRing, Clock, Cpu, Database, FileClock, Fingerprint, Globe, Headphones,
-    History, KeyRound, LifeBuoy, Link2, Lock, Network, Radio, Route, Router, Send, Server, Shield, Split, Users, Wrench,
+    Activity, Archive, Bell, BellRing, CircleArrowUp, Clock, CloudDownload, Cpu, Database, FileClock, FileText, Fingerprint, Globe, Headphones,
+    History, KeyRound, LifeBuoy, Link2, Lock, Network, Package, Radio, Route, Router, Send, Server, Shield, SlidersHorizontal, Split, Users, Wrench,
     type LucideIcon,
 } from "lucide-react"
 import type { SettingsStatus } from "@/lib/api/settings"
@@ -13,7 +13,7 @@ import { formatBytes } from "@/lib/utils"
 import { strategyLabel } from "@/lib/vpn-labels"
 import type { PoolStrategy } from "@/lib/types/network"
 
-export type SectionId = "service" | "telegram" | "panel" | "router" | "nodes" | "security" | "data"
+export type SectionId = "service" | "telegram" | "panel" | "updates" | "router" | "nodes" | "security" | "data"
 
 export interface SectionDef {
     id: SectionId
@@ -26,6 +26,7 @@ export const SECTIONS: SectionDef[] = [
     { id: "service", title: "Service", icon: Users, description: "Maintenance, the subscription page and how customers reach you" },
     { id: "telegram", title: "Telegram & alerts", icon: Send, description: "The bot, and where admin alerts go" },
     { id: "panel", title: "Panel", icon: Server, description: "Addresses, HTTPS, reverse connections and the outbound proxy" },
+    { id: "updates", title: "Updates", icon: CircleArrowUp, description: "This panel's version, and the parts that update with it" },
     { id: "router", title: "Router", icon: Router, description: "Failover, and where uplink checks and the VPN pool are set" },
     { id: "nodes", title: "Nodes", icon: Cpu, description: "How the panel talks to nodes and watches Xray" },
     { id: "security", title: "Security", icon: Shield, description: "The admin login and how long it lasts" },
@@ -92,6 +93,7 @@ export interface Effect {
 }
 
 export type CardKind = "fields" | "maintenance" | "https" | "events" | "retention" | "password"
+    | "update-panel" | "update-notes" | "update-parts" | "update-history"
 
 export interface CardDef {
     id: string
@@ -157,6 +159,7 @@ export const EVENTS: { group: string; items: readonly (readonly [string, string]
     { group: "Servers", items: [["node_online", "Server online"], ["node_offline", "Server offline"], ["node_created", "Server created"], ["node_deleted", "Server deleted"]] },
     { group: "Xray", items: [["xray_down", "Xray down"], ["xray_up", "Xray recovered"], ["xray_crash_loop", "Crash loop"]] },
     { group: "Subscriptions", items: [["subscription_created", "Subscription created"], ["subscription_renewed", "Renewed"], ["subscription_cancelled", "Cancelled"], ["subscription_expired", "Expired"]] },
+    { group: "Panel", items: [["panel_update_available", "Update available"], ["panel_updated", "Updated or rolled back"], ["panel_update_failed", "Update failed"], ["panel_update_skipped", "Scheduled update skipped"]] },
     { group: "Other", items: [["user_registered", "User registered"], ["system_alert", "System alert"], ["chat_new_message", "New chat message"]] },
 ]
 
@@ -369,7 +372,7 @@ export const CARDS: CardDef[] = [
                 label: "Used for", type: "multi", items: [
                     ["proxy_use_telegram", "Telegram"], ["proxy_use_geofiles", "Geo files"], ["proxy_use_xray_binary", "Xray downloads"],
                     ["proxy_use_core_binaries", "Tunnel downloads"], ["proxy_use_geoip", "GeoIP lookups"], ["proxy_use_github_api", "GitHub API"],
-                    ["proxy_use_webhooks", "Webhooks"], ["proxy_use_acme", "Let's Encrypt"],
+                    ["proxy_use_webhooks", "Webhooks"], ["proxy_use_acme", "Let's Encrypt"], ["proxy_use_panel_update", "Panel updates"],
                 ],
             },
         ],
@@ -396,6 +399,43 @@ export const CARDS: CardDef[] = [
     },
 
     // ---------- Router ----------
+    {
+        id: "update-panel", section: "updates", title: "Panel version", icon: CloudDownload, kind: "update-panel",
+        description: "Looks for new releases every 6 hours",
+        keywords: "update upgrade version release check roll back rollback upload offline bundle schedule",
+    },
+    {
+        id: "update-notes", section: "updates", title: "What's new", icon: FileText, kind: "update-notes",
+        description: "From the signed release", keywords: "release notes changelog",
+    },
+    {
+        id: "update-parts", section: "updates", title: "Other parts", icon: Package, kind: "update-parts",
+        description: "Updated from their own pages", keywords: "node agents xray geofiles tested",
+    },
+    {
+        id: "update-settings", section: "updates", title: "Update settings", icon: SlidersHorizontal,
+        description: "How the panel looks for releases", keywords: "update check channel beta stable prerelease mirror ghproxy",
+        fields: [
+            { key: "update_check_enabled", label: "Check automatically", type: "bool", hint: "Every 6 hours. Check now always works." },
+            {
+                key: "update_channel", label: "Channel", type: "select", options: [["stable", "Stable"], ["beta", "Beta · includes prereleases"]],
+                hint: "Beta also offers prereleases such as v1.2.0-rc.1. Turning it off never goes back a version.",
+            },
+            { key: "update_mirror_url", label: "Mirror", type: "text", mono: true, placeholder: "https://ghproxy.example", hint: "A GitHub URL prefix, tried when github.com and the proxy fail." },
+            { label: "Download route", type: "readonly", text: ({ values }) => updateRoute(values), goto: "outbound-proxy" },
+        ],
+        validate: d => {
+            const e: Record<string, string> = {}
+            const bad = urlError(d.update_mirror_url ?? "")
+            if (bad) e.update_mirror_url = bad
+            return e
+        },
+        effect: () => ({ text: "Used from the next check." }),
+    },
+    {
+        id: "update-history", section: "updates", title: "History", icon: History, kind: "update-history",
+        description: "Updates on this server", keywords: "updated rolled back failed",
+    },
     {
         id: "failover", section: "router", title: "Failover", icon: Split,
         description: "What happens to domestic traffic when the domestic line is down.", keywords: "failover domestic vpn iran isp",
@@ -562,9 +602,18 @@ export function sectionNote(id: SectionId, ctx: Ctx): string | undefined {
     }
     if (id === "telegram" && s && (s.bot.state === "rejected" || s.bot.state === "starting")) return "The bot isn't running"
     if (id === "service" && on(ctx.values.maintenance_mode_enabled)) return "Maintenance is on"
+    if (id === "updates" && s?.hub.update?.available) return `${s.hub.update.version} available`
     const elsewhere = pendingCards(s).filter(c => c.section === id)
     if (elsewhere.length) return `Restart pending · ${elsewhere.map(c => c.title).join(", ")}`
     return undefined
+}
+
+/** How the update check and download get out, in order. */
+export function updateRoute(v: Values): string {
+    const parts = ["github.com"]
+    if (on(v.proxy_use_panel_update)) parts.push("the outbound proxy")
+    if (v.update_mirror_url) parts.push("the mirror")
+    return parts.join(", then ")
 }
 
 /** The tail a masked secret keeps, or "" when unset. */

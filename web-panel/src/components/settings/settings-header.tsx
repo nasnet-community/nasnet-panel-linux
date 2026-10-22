@@ -114,6 +114,17 @@ export function SettingsHeader({ ctx, phone }: { ctx: Ctx; phone: boolean }) {
                             {!phone && <><span aria-hidden className="opacity-50">·</span><span>since {when(s.hub.started_at)}</span></>}
                             <span aria-hidden className="opacity-50">·</span>
                             <span>build <span className="font-mono text-[13px]">{s.hub.version}</span></span>
+                            {s.hub.update?.available && (
+                                <>
+                                    <span aria-hidden className="opacity-50">·</span>
+                                    <Link
+                                        to="/settings/updates"
+                                        className="inline-flex h-6 items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 text-xs font-medium text-amber-600 hover:bg-amber-500/15 dark:text-amber-500"
+                                    >
+                                        <span className="size-1.5 rounded-full bg-current" aria-hidden />Update to {s.hub.update.version}
+                                    </Link>
+                                </>
+                            )}
                         </p>
                     )}
                 </div>

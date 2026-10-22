@@ -49,7 +49,7 @@ export interface BackupRunResult {
 
 /** What the running panel has in effect, as opposed to what is saved. */
 export interface SettingsStatus {
-    hub: { started_at: string; version: string; port: number }
+    hub: { started_at: string; version: string; port: number; update?: { available: boolean; version?: string } }
     /** restart-only keys whose saved value differs from the one the panel booted with */
     restart_pending: string[]
     bot: {

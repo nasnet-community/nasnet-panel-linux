@@ -5,6 +5,7 @@ import { HttpsCard } from "./https-card"
 import { AlertEventsCard } from "./alert-events-card"
 import { RetentionCard } from "./retention-card"
 import { PasswordCard } from "./password-card"
+import { UpdateHistoryCard, UpdateNotesCard, UpdatePanelCard, UpdatePartsCard } from "./updates-cards"
 
 /** The right card for a catalog entry. match narrows a fields card to the rows a search found. */
 export function CardView({ card, match }: { card: CardDef; match: "all" | Set<string> }) {
@@ -14,6 +15,10 @@ export function CardView({ card, match }: { card: CardDef; match: "all" | Set<st
         case "events": return <AlertEventsCard card={card} />
         case "retention": return <RetentionCard card={card} />
         case "password": return <PasswordCard card={card} />
+        case "update-panel": return <UpdatePanelCard card={card} />
+        case "update-notes": return <UpdateNotesCard card={card} />
+        case "update-parts": return <UpdatePartsCard card={card} />
+        case "update-history": return <UpdateHistoryCard card={card} />
         default: return <SettingsCard card={card} match={match} />
     }
 }

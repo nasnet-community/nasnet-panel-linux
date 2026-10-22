@@ -43,10 +43,10 @@ export function MobileNav({ badges, username, onLogout }: MobileNavProps) {
     const badgeFor = (item: NavItem) => (item.badgeKey ? badges[item.badgeKey] : undefined)
     const inMore = !MOBILE_TABS.some((t) => isItemActive(t, pathname))
     const alertCount = badges.alerts?.count ?? 0
-    const moreBadge: NavBadgeValue = {
-        count: alertCount,
-        tone: badges.alerts?.tone === "danger" && alertCount > 0 ? "danger" : "warning",
-    }
+    // Settings sits under More; its dot shows there when no alert count does
+    const moreBadge: NavBadgeValue = alertCount > 0 || !badges.settings?.count
+        ? { count: alertCount, tone: badges.alerts?.tone === "danger" && alertCount > 0 ? "danger" : "warning" }
+        : badges.settings
     const display = username || "Admin"
     const themeLabel = resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
     const close = () => setOpen(false)
@@ -106,7 +106,7 @@ export function MobileNav({ badges, username, onLogout }: MobileNavProps) {
                         ))}
                     </div>
                     <div className="border-t border-border/50 px-4 pt-2 space-y-1" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-                        <SheetCell item={SETTINGS_ITEM} active={isItemActive(SETTINGS_ITEM, pathname)} onNavigate={close} wide />
+                        <SheetCell item={SETTINGS_ITEM} active={isItemActive(SETTINGS_ITEM, pathname)} badge={badgeFor(SETTINGS_ITEM)} onNavigate={close} wide />
                         <div className="flex items-center gap-3 h-12 pl-2">
                             <span className="size-9 shrink-0 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
                                 {display.charAt(0).toUpperCase()}

@@ -3,7 +3,7 @@ import {
     Link as LinkIcon, Router, Server, Settings, ShieldCheck, Users, Waypoints, type LucideIcon,
 } from "lucide-react"
 
-export type NavBadgeKey = "alerts"
+export type NavBadgeKey = "alerts" | "settings"
 
 export interface NavItem {
     label: string
@@ -67,7 +67,7 @@ export const NAV_SECTIONS: NavSection[] = [
 ]
 
 export const SETTINGS_ITEM: NavItem = {
-    label: "Settings", href: "/settings", icon: Settings, also: ["/backup"],
+    label: "Settings", href: "/settings", icon: Settings, also: ["/backup"], badgeKey: "settings",
 }
 
 // Reached from Settings and ⌘K rather than the sidebar.
