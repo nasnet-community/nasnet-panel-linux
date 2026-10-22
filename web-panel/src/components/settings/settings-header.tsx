@@ -27,6 +27,11 @@ function useRestartPanel(waiting: string[], startedAt?: string) {
             confirmLabel: "Restart",
         })
         if (!ok) return
+        // the start time to wait past; read it now if the page hasn't yet
+        let before = startedAt
+        if (!before) {
+            try { before = (await settingsApi.getStatus()).hub.started_at } catch { /* the poll below still waits for an answer */ }
+        }
         try {
             const res = await restartServer()
             if (!res.success) {
@@ -45,7 +50,7 @@ function useRestartPanel(waiting: string[], startedAt?: string) {
             try {
                 // the old process may still answer for a moment; a new start time is the new one
                 const st = await settingsApi.getStatus()
-                if (st.hub.started_at !== startedAt) {
+                if (before ? st.hub.started_at !== before : Date.now() - started > 5000) {
                     clearInterval(timer.current)
                     window.location.reload()
                 }
