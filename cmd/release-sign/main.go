@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -69,6 +70,11 @@ func keygen(w io.Writer) error {
 	}
 	fmt.Fprintf(w, "Private key, for the %s secret (keep an offline copy):\n%s\n\n", keyEnv, base64.StdEncoding.EncodeToString(priv.Seed()))
 	fmt.Fprintf(w, "Public key %s, for PublicKeys in pkg/signing/keys.go:\n\tmustKey(%q),\n", signing.KeyID(pub), base64.StdEncoding.EncodeToString(pub))
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "\nThe same key for RELEASE_KEYS in nasnet-tool.sh (OpenSSL checks with it):\n    %q\n", base64.StdEncoding.EncodeToString(der))
 	return nil
 }
 

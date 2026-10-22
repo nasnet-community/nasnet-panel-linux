@@ -582,6 +582,77 @@ test_update_system_writes_units() {
     contains 'systemctl daemon-reload' "$EVENT_LOG" || return 1
     absent 'restart' "$EVENT_LOG"
 }
-for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored update_system_writes_units; do
+fake_panel() {
+    BACKEND_BINARY="$PROJECT_DIR/nasnet-panel"
+    cat > "$BACKEND_BINARY" <<FAKE
+#!/usr/bin/env bash
+echo "panel \$*" >> "$EVENT_LOG"
+[[ "\$1 \$2" == "update status" ]] && printf '{\n  "current": "v1.1.0",\n  "available": {\n    "version": "v1.2.0",\n    "notes": "a } b"\n  }\n}\n'
+exit 0
+FAKE
+    chmod +x "$BACKEND_BINARY"
+}
+test_auto_update_delegates() {
+    fake_panel; echo v1.1.0 > "$INSTALL_DIR/.version"
+    sudo() { "$@"; }
+    action_auto_update > /dev/null || return 1
+    contains 'panel update apply' "$EVENT_LOG" || return 1
+    absent 'unexpected' "$EVENT_LOG"
+}
+test_menu_reads_the_panel_check() {
+    fake_panel
+    [[ "$(panel_offered_update)" == v1.2.0 ]] || { fail "offered: $(panel_offered_update)"; return 1; }
+    absent 'update check' "$EVENT_LOG"
+}
+test_release_manifest_fields() {
+    printf '{\n  "schema": 1,\n  "version": "v1.2.0",\n  "assets": {\n    "nasnet-panel-offline-linux-amd64.tar.gz": {\n      "sha256": "%s",\n      "size": 5\n    },\n    "nasnet-tool.sh": {\n      "sha256": "%s",\n      "size": 7\n    }\n  }\n}\n' \
+        "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" > "$PROJECT_DIR/release.json"
+    [[ "$(manifest_field "$PROJECT_DIR/release.json" version)" == v1.2.0 ]] || { fail version; return 1; }
+    [[ "$(manifest_sha "$PROJECT_DIR/release.json" nasnet-tool.sh)" == "$(printf 'b%.0s' {1..64})" ]] || { fail tool; return 1; }
+    [[ "$(manifest_sha "$PROJECT_DIR/release.json" nasnet-panel-offline-linux-amd64.tar.gz)" == "$(printf 'a%.0s' {1..64})" ]] || { fail bundle; return 1; }
+    [[ -z "$(manifest_sha "$PROJECT_DIR/release.json" nasnet-panel-offline-linux-arm64.tar.gz)" ]]
+}
+test_unverifiable_signature_is_said() {
+    RELEASE_KEYS=()
+    : > "$PROJECT_DIR/f"; : > "$PROJECT_DIR/f.sig"
+    local rc=0
+    verify_release_sig "$PROJECT_DIR/f" "$PROJECT_DIR/f.sig" || rc=$?
+    [[ $rc -eq 2 ]] || { fail "rc $rc"; return 1; }
+}
+test_release_signature_checked() {
+    openssl version 2>/dev/null | grep -q '^OpenSSL 3' || { echo "  (no OpenSSL 3 here, skipped)"; return 0; }
+    local d="$PROJECT_DIR"
+    openssl genpkey -algorithm ed25519 -out "$d/k.pem" 2>/dev/null || return 1
+    RELEASE_KEYS=("$(openssl pkey -in "$d/k.pem" -pubout -outform DER 2>/dev/null | base64 | tr -d '\n')")
+    echo release > "$d/f"
+    openssl pkeyutl -sign -inkey "$d/k.pem" -rawin -in "$d/f" 2>/dev/null | base64 > "$d/f.sig" || return 1
+    verify_release_sig "$d/f" "$d/f.sig" || { fail 'good signature refused'; return 1; }
+    echo tampered > "$d/f"
+    if verify_release_sig "$d/f" "$d/f.sig"; then fail 'bad signature accepted'; return 1; fi
+}
+test_cli_fetch_takes_the_release_copy() {
+    RELEASE_KEYS=()
+    local tool="$PROJECT_DIR/tool.sh" sha
+    printf '#!/usr/bin/env bash\necho new\n' > "$tool"
+    sha=$(sha256sum "$tool" | awk '{print $1}')
+    printf '{"version":"v1.2.0","assets":{"nasnet-tool.sh":{"sha256":"%s","size":1}}}' "$sha" > "$PROJECT_DIR/rel.json"
+    curl() {
+        local out="" url="${*: -1}"
+        while [[ $# -gt 0 ]]; do [[ "$1" == -o ]] && out="$2"; shift; done
+        echo "curl $url" >> "$EVENT_LOG"
+        case "$url" in
+            */releases/latest/download/release.json) cp "$PROJECT_DIR/rel.json" "$out" ;;
+            */releases/latest/download/release.json.sig) echo sig > "$out" ;;
+            */releases/latest/download/nasnet-tool.sh) cp "$tool" "$out" ;;
+            *) return 22 ;;
+        esac
+    }
+    fetch_release_tool "$PROJECT_DIR/got" || { fail 'release copy refused'; return 1; }
+    contains 'echo new' "$PROJECT_DIR/got" || return 1
+    absent 'raw.githubusercontent.com' "$EVENT_LOG" || return 1
+    printf '#!/usr/bin/env bash\necho evil\n' > "$tool"
+    if fetch_release_tool "$PROJECT_DIR/got"; then fail 'a copy that does not match was taken'; return 1; fi
+}
+for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored update_system_writes_units auto_update_delegates menu_reads_the_panel_check release_manifest_fields unverifiable_signature_is_said release_signature_checked cli_fetch_takes_the_release_copy; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done

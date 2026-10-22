@@ -140,8 +140,9 @@ func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 	if !(job != nil && !job.Finished()) {
 		st.Rollback = u.rollbackWindow()
 	}
+	// before the panel's first boot on this version the table may not exist
 	if st.History, err = u.History(ctx, 20); err != nil {
-		return nil, err
+		st.History = []domain.PanelUpdate{}
 	}
 	st.Parts = u.parts(ctx)
 	return st, nil
@@ -241,7 +242,8 @@ func (u *Usecase) settleJob(ctx context.Context) {
 
 // announce tells the admins about a version once.
 func (u *Usecase) announce(ctx context.Context, o *Offer) {
-	if u.setting(ctx, keyNotified) == o.Version {
+	// the CLI checks too, but only the panel can send the news
+	if u.deps.Events == nil || u.setting(ctx, keyNotified) == o.Version {
 		return
 	}
 	if err := u.saveRaw(ctx, keyNotified, o.Version); err != nil {

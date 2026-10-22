@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -110,4 +112,31 @@ func TestCheckRefusesUntrustedKey(t *testing.T) {
 
 func signingSeed(k ed25519.PrivateKey) string {
 	return base64.StdEncoding.EncodeToString(k.Seed())
+}
+
+// The bash tool checks a release with OpenSSL before the panel can, so it
+// has to trust exactly the keys the panel does.
+func TestToolScriptTrustsTheReleaseKeys(t *testing.T) {
+	script, err := os.ReadFile("../../nasnet-tool.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?s)\nRELEASE_KEYS=\(([^)]*)\)`).FindSubmatch(script)
+	if m == nil {
+		t.Fatal("nasnet-tool.sh has no RELEASE_KEYS")
+	}
+	var got []string
+	for _, f := range strings.Fields(string(m[1])) {
+		if !strings.HasPrefix(f, "#") {
+			got = append(got, strings.Trim(f, `"'`))
+		}
+	}
+	var want []string
+	for _, k := range signing.PublicKeys {
+		der, _ := x509.MarshalPKIXPublicKey(k)
+		want = append(want, base64.StdEncoding.EncodeToString(der))
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("RELEASE_KEYS in nasnet-tool.sh = %v, pkg/signing trusts %v", got, want)
+	}
 }

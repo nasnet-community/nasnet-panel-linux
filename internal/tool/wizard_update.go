@@ -278,6 +278,19 @@ type githubRelease struct {
 
 // ActionAutoUpdate downloads and installs the latest GitHub release of nasnet-panel.
 func ActionAutoUpdate(cfg *Config) {
+	if bin, ok := panelUpdater(cfg.InstallDir); ok {
+		ui.ClearScreen()
+		ui.DrawBox("nasnet-panel Auto-Update")
+		// the panel's own updater: checks, a backup, the swap, and a trial
+		// boot that puts this version back if the new one doesn't come up
+		cmd := exec.Command("sudo", bin, "update", "apply")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			ui.StepFail("The update didn't finish; the reason is above")
+		}
+		ui.PressAnyKey()
+		return
+	}
 	ui.ClearScreen()
 	ui.DrawBox("nasnet-panel Auto-Update (GitHub Release)")
 
@@ -671,11 +684,22 @@ func deployAgentBinaries(srcDir, installDir, version string) bool {
 	return found
 }
 
-// findAssetURL returns the browser_download_url for the first asset whose name
-// contains the given substring, or "" if not found.
-func findAssetURL(rel *githubRelease, nameContains string) string {
+// panelUpdater is the installed panel binary when it updates itself
+// (v1.1.0 and later).
+func panelUpdater(installDir string) (string, bool) {
+	bin := filepath.Join(installDir, "bin", "nasnet-panel")
+	if exec.Command(bin, "update", "apply", "--help").Run() != nil {
+		return "", false
+	}
+	return bin, true
+}
+
+// findAssetURL returns the browser_download_url of the asset with exactly
+// this name. A substring match would take nasnet-panel-linux-amd64.sig for
+// nasnet-panel-linux-amd64.
+func findAssetURL(rel *githubRelease, name string) string {
 	for _, a := range rel.Assets {
-		if strings.Contains(a.Name, nameContains) {
+		if a.Name == name {
 			return a.BrowserDownloadURL
 		}
 	}

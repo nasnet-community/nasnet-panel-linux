@@ -22,12 +22,15 @@ import (
 	xrayUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/database"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
 )
 
 func newUpdateCmd() *cobra.Command {
 	update := &cobra.Command{
 		Use:   "update",
 		Short: "Check for, install and roll back panel releases",
+		// stdout is for the answer (--json is read by nasnet-tool.sh)
+		PersistentPreRun: func(*cobra.Command, []string) { logger.GetLogger().SetOutput(os.Stderr) },
 	}
 	quiet := func(cmds ...*cobra.Command) {
 		for _, c := range cmds {

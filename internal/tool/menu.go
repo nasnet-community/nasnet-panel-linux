@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,10 +30,10 @@ func Run(cfg *Config) {
 		ui.DrawHeader("nasnet-panel Admin Tool")
 
 		version := detectVersion(cfg)
-		behind := detectUpdateBehind(cfg)
-
 		ui.StepInfo(fmt.Sprintf("Version: %s", version))
-		if behind > 0 {
+		if offered := panelOfferedUpdate(cfg); offered != "" {
+			ui.StepWarn(offered + " is available")
+		} else if behind := detectUpdateBehind(cfg); behind > 0 {
 			ui.StepWarn(fmt.Sprintf("%d update(s) available", behind))
 		}
 		ui.DrawSeparator()
@@ -326,10 +327,33 @@ func detectVersion(cfg *Config) string {
 	return ""
 }
 
-// detectUpdateBehind returns how many commits the local branch is behind remote.
+// panelOfferedUpdate is the version the panel's last check offered. It reads
+// the stored result, so the menu never waits on the network.
+func panelOfferedUpdate(cfg *Config) string {
+	bin, ok := panelUpdater(cfg.InstallDir)
+	if !ok {
+		return ""
+	}
+	out, err := exec.Command(bin, "update", "status", "--json").Output()
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		Available *struct {
+			Version string `json:"version"`
+		} `json:"available"`
+	}
+	if json.Unmarshal(out, &st) != nil || st.Available == nil {
+		return ""
+	}
+	return st.Available.Version
+}
+
+// detectUpdateBehind returns how many commits the local branch is behind
+// remote: the check for source installs, whose panel can't check itself.
 // Returns 0 on error or when offline.
 func detectUpdateBehind(cfg *Config) int {
-	if cfg.OfflineMode {
+	if _, ok := panelUpdater(cfg.InstallDir); cfg.OfflineMode || ok {
 		return 0
 	}
 	branchOut, err := exec.Command("git", "-C", cfg.ProjectDir, "branch", "--show-current").Output()

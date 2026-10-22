@@ -42,6 +42,10 @@ XRAY_PINNED_ZIP_SHA256_arm64="58e339e67827220175b3a1c6f66f48ccd086b79209f30ba1c0
 # GitHub release auto-update settings
 GITHUB_REPO="${GITHUB_REPO:-nasnet-community/nasnet-panel-linux}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+# Ed25519 keys releases are signed with, as base64 DER: "release-sign keygen"
+# prints the line. Keep them in step with pkg/signing; a test checks.
+RELEASE_KEYS=(
+)
 
 # Offline mode (set by --offline flag or detected from .bundle-manifest)
 OFFLINE_MODE="${OFFLINE_MODE:-false}"
@@ -1069,10 +1073,28 @@ wizard_open_firewall() {
 # A copy, not a symlink: standalone runs live wherever the user curl'd the
 # script, and that path may not survive. Written via temp+mv so replacing
 # it under a running copy of itself can't corrupt the read.
+# fetch_release_tool DEST: the latest release's nasnet-tool.sh, checked
+# against its release.json, or checksums.txt for an older release. Never
+# main: what's on main may not match the binaries.
+fetch_release_tool() {
+    local dest="$1" dir sha="" rc=0
+    dir=$(mktemp -d)
+    release_manifest "$dir" >/dev/null 2>&1 || rc=$?
+    if [[ $rc -eq 0 ]]; then
+        sha=$(manifest_sha "$dir/release.json" nasnet-tool.sh)
+    elif [[ $rc -eq 1 ]] && curl -fsSL --max-time 20 -o "$dir/checksums.txt" "$(release_url "" checksums.txt)" 2>/dev/null; then
+        sha=$(awk '$2 == "nasnet-tool.sh" {print $1}' "$dir/checksums.txt")
+    fi
+    rm -rf "$dir"
+    [[ -n "$sha" ]] || return 1
+    curl -fsSL --max-time 20 -o "$dest" "$(release_url "" nasnet-tool.sh)" 2>/dev/null || return 1
+    [[ "$(sha256sum "$dest" | awk '{print $1}')" == "$sha" ]] && bash -n "$dest" 2>/dev/null
+}
+
 # install_cli_command [--fetch]
 # Default installs the script that is running, so what you ran is what you
-# get. --fetch pulls a fresh copy first (used by auto-update, so the CLI
-# moves forward with the binaries) and falls back to the local copy.
+# get. --fetch takes the latest release's copy first (used by auto-update,
+# so the CLI moves forward with the binaries) and falls back to the local one.
 install_cli_command() {
     local target="/usr/local/bin/nasnet"
     local tmp="/usr/local/bin/.nasnet-new.$$"
@@ -1080,11 +1102,8 @@ install_cli_command() {
     local downloaded=""
 
     if [[ "${1:-}" == "--fetch" && "$OFFLINE_MODE" != "true" ]]; then
-        local raw_url="https://raw.githubusercontent.com/${GITHUB_REPO}/main/nasnet-tool.sh"
         downloaded=$(mktemp)
-        if curl -fsSL --max-time 20 -o "$downloaded" "$raw_url" 2>/dev/null \
-            && [[ -s "$downloaded" ]] && head -1 "$downloaded" | grep -q '^#!' \
-            && bash -n "$downloaded" 2>/dev/null; then
+        if fetch_release_tool "$downloaded"; then
             src="$downloaded"
         else
             rm -f "$downloaded"
@@ -3537,7 +3556,198 @@ wizard_reconfigure() {
     press_any_key
 }
 
+# release_url TAG NAME: a release asset; an empty TAG is the latest release.
+release_url() {
+    if [[ -z "$1" ]]; then
+        echo "https://github.com/${GITHUB_REPO}/releases/latest/download/$2"
+    else
+        echo "https://github.com/${GITHUB_REPO}/releases/download/$1/$2"
+    fi
+}
+
+# verify_release_sig FILE SIG: 0 when a release key signed FILE, 1 when none
+# did, 2 when it can't be checked here (no keys yet, or no OpenSSL 3).
+verify_release_sig() {
+    local file="$1" sig="$2" key raw pem rc=1
+    [[ ${#RELEASE_KEYS[@]} -gt 0 ]] || return 2
+    openssl version 2>/dev/null | grep -q '^OpenSSL 3' || return 2
+    raw=$(mktemp) && pem=$(mktemp) || return 2
+    if base64 -d < "$sig" > "$raw" 2>/dev/null; then
+        for key in "${RELEASE_KEYS[@]}"; do
+            printf -- '-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n' "$key" > "$pem"
+            if openssl pkeyutl -verify -pubin -inkey "$pem" -rawin -in "$file" -sigfile "$raw" >/dev/null 2>&1; then
+                rc=0
+                break
+            fi
+        done
+    fi
+    rm -f "$raw" "$pem"
+    return $rc
+}
+
+# release_manifest DIR [TAG]: fetches release.json into DIR and checks its
+# signature. 1: the release has none (it predates them). 3: it doesn't
+# verify. Where it can't be checked it goes on with a warning; the hashes
+# inside still have to match.
+release_manifest() {
+    local dir="$1" tag="${2:-}"
+    curl -fsSL --max-time 30 -o "$dir/release.json" "$(release_url "$tag" release.json)" 2>/dev/null || return 1
+    curl -fsSL --max-time 30 -o "$dir/release.json.sig" "$(release_url "$tag" release.json.sig)" 2>/dev/null || return 1
+    verify_release_sig "$dir/release.json" "$dir/release.json.sig"
+    case $? in
+        0) step_ok "Release signature verified" ;;
+        2) step_warn "Release signature not checked here (needs OpenSSL 3); checking hashes only" ;;
+        *) step_fail "release.json isn't signed by a key this tool trusts"; return 3 ;;
+    esac
+}
+
+# manifest_field FILE KEY: a top-level string in release.json.
+manifest_field() {
+    tr -d '\n' < "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"/\1/'
+}
+
+# manifest_sha FILE ASSET: an asset's sha256 in release.json.
+manifest_sha() {
+    tr -d '\n' < "$1" | grep -o "\"${2//./\\.}\"[[:space:]]*:[[:space:]]*{[^}]*}" | grep -o '[0-9a-f]\{64\}' | head -1
+}
+
+release_arch() {
+    case "$(uname -m)" in
+        x86_64) echo amd64 ;;
+        aarch64|arm64) echo arm64 ;;
+        *) return 1 ;;
+    esac
+}
+
+# panel_has_updater: the installed panel updates itself (v1.1.0 and later).
+panel_has_updater() {
+    [[ -x "$BACKEND_BINARY" ]] && "$BACKEND_BINARY" update apply --help >/dev/null 2>&1
+}
+
+# panel_offered_update: the version the panel's last check offered, if any.
+# It reads the stored result, so the menu never waits on the network.
+panel_offered_update() {
+    panel_has_updater || return 0
+    "$BACKEND_BINARY" update status --json 2>/dev/null | tr -d '\n' \
+        | grep -o '"available":[[:space:]]*{[[:space:]]*"version":[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/'
+}
+
 action_auto_update() {
+    if ! panel_has_updater; then
+        _auto_update_legacy
+        return
+    fi
+    clear
+    draw_box "nasnet-panel-linux Auto-Update"
+    # the panel's own updater: checks, a backup, the swap, and a trial boot
+    # that puts this version back if the new one doesn't come up
+    local before after
+    before=$(cat "$INSTALL_DIR/.version" 2>/dev/null)
+    if sudo "$BACKEND_BINARY" update apply; then
+        after=$(cat "$INSTALL_DIR/.version" 2>/dev/null)
+        if [[ "$after" != "$before" ]]; then
+            _UPDATE_RELEASE=""
+            step_info "The nasnet command was updated too; restart it to pick up changes"
+        fi
+    else
+        step_fail "The update didn't finish; the reason is above"
+    fi
+    press_any_key
+}
+
+# _auto_update_legacy updates a panel from before in-panel updates from the
+# release's offline bundle, then hands the install to root so the next
+# update can come from the panel itself.
+_auto_update_legacy() {
+    clear
+    draw_box "nasnet-panel-linux Auto-Update (GitHub Release)"
+    local current="unknown"
+    [[ -f "$INSTALL_DIR/.version" ]] && current=$(cat "$INSTALL_DIR/.version")
+    step_info "Current version: ${BOLD}${current}${RESET}"
+    local arch
+    if ! arch=$(release_arch); then
+        step_fail "Unsupported architecture: $(uname -m)"
+        press_any_key
+        return
+    fi
+
+    draw_header "Checking GitHub Releases"
+    local tmp_dir rc=0
+    tmp_dir=$(mktemp -d)
+    trap "rm -rf '$tmp_dir'" RETURN
+    release_manifest "$tmp_dir" || rc=$?
+    if [[ $rc -eq 1 ]]; then
+        _auto_update_binaries   # the latest release predates release.json
+        return
+    elif [[ $rc -ne 0 ]]; then
+        press_any_key
+        return
+    fi
+
+    local latest asset sha
+    latest=$(manifest_field "$tmp_dir/release.json" version)
+    asset="nasnet-panel-offline-linux-${arch}.tar.gz"
+    sha=$(manifest_sha "$tmp_dir/release.json" "$asset")
+    if [[ -z "$latest" || -z "$sha" ]]; then
+        step_fail "The release lists no ${asset}"
+        press_any_key
+        return
+    fi
+    step_info "Latest release: ${BOLD}${latest}${RESET}"
+    if [[ "$current" == "$latest" ]]; then
+        step_ok "Already up to date!"
+        press_any_key
+        return
+    fi
+    echo ""
+    echo -e "  ${BOLD}${current}${RESET} → ${GREEN}${BOLD}${latest}${RESET}"
+    echo ""
+    if ! confirm_action "Download and install ${latest}?"; then
+        step_info "Cancelled"
+        press_any_key
+        return
+    fi
+
+    draw_header "Downloading ${asset}"
+    local dl_args=(-fL --retry 3)
+    [[ -n "$GITHUB_TOKEN" ]] && dl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    if ! run_logged "Downloading ${asset}" curl "${dl_args[@]}" -o "$tmp_dir/$asset" "$(release_url "$latest" "$asset")"; then
+        step_fail "Download failed"
+        press_any_key
+        return
+    fi
+    if [[ "$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')" != "$sha" ]]; then
+        step_fail "${asset} doesn't match the release"
+        press_any_key
+        return
+    fi
+    step_ok "${asset} matches the release"
+
+    draw_header "Installing ${latest}"
+    if ! tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"; then
+        step_fail "The bundle is damaged"
+        press_any_key
+        return
+    fi
+    # install.sh checks every file, backs up the database and the old
+    # binaries, swaps them and waits for the panel to answer
+    if ! sudo bash "$tmp_dir/nasnet-panel-offline-linux-${arch}/install.sh" --update; then
+        step_fail "The update failed; install.sh --rollback in the bundle puts the old files back"
+        press_any_key
+        return
+    fi
+    if root_service_stale && ensure_root_service; then
+        sudo systemctl restart "$BACKEND_SERVICE" 2>/dev/null || step_warn "Restart ${BACKEND_SERVICE} to finish switching to root"
+    fi
+    install_cli_command
+    _UPDATE_RELEASE=""
+    step_ok "Updated to ${latest}; the next update can run from Settings → Updates"
+    press_any_key
+}
+
+# _auto_update_binaries is the update for releases without release.json:
+# the bare binaries, checked against checksums.txt.
+_auto_update_binaries() {
     clear
     draw_box "nasnet-panel-linux Auto-Update (GitHub Release)"
 
@@ -3616,7 +3826,7 @@ action_auto_update() {
     all_urls=$(echo "$release_json" | grep '"browser_download_url"' | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 
     _get_asset_url() {
-        echo "$all_urls" | grep "$1" | head -1
+        echo "$all_urls" | grep "/${1}\$" | head -1
     }
 
     local hub_url checksums_url
@@ -6845,7 +7055,8 @@ main() {
         _CURRENT_VERSION=$(cd "$PROJECT_DIR" && git describe --tags --always 2>/dev/null || echo "")
     fi
     _UPDATE_BEHIND=0
-    if [[ "$OFFLINE_MODE" != "true" ]]; then
+    _UPDATE_RELEASE=$(panel_offered_update)
+    if [[ -z "$_UPDATE_RELEASE" && "$OFFLINE_MODE" != "true" ]] && ! panel_has_updater; then
         local _ub
         _ub=$(cd "$PROJECT_DIR" && git branch --show-current 2>/dev/null || echo "")
         if [[ -n "$_ub" ]]; then
@@ -6879,7 +7090,9 @@ main() {
         local menu_title=""
         if [[ -n "$_CURRENT_VERSION" ]]; then
             menu_title="v${_CURRENT_VERSION}"
-            if [[ $_UPDATE_BEHIND -gt 0 ]]; then
+            if [[ -n "$_UPDATE_RELEASE" ]]; then
+                menu_title="${menu_title}  ·  ${_UPDATE_RELEASE} available"
+            elif [[ $_UPDATE_BEHIND -gt 0 ]]; then
                 menu_title="${menu_title}  ·  ${_UPDATE_BEHIND} update(s) available"
             fi
         fi
@@ -6894,7 +7107,9 @@ main() {
         local items=() actions=()
         items+=("Setup Wizard");      actions+=("menu_setup_wizard")
         items+=("$update_label");     actions+=("wizard_update")
-        items+=("Auto-Update (Release)"); actions+=("action_auto_update")
+        local auto_label="Auto-Update (Release)"
+        [[ -n "$_UPDATE_RELEASE" ]] && auto_label="Auto-Update  (${_UPDATE_RELEASE})"
+        items+=("$auto_label"); actions+=("action_auto_update")
 
         if [[ "$deploy_mode" == "docker" ]]; then
             items+=("Docker Services"); actions+=("menu_services")

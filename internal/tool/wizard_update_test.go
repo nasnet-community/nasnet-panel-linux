@@ -2,6 +2,8 @@ package tool
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,35 @@ func TestReleaseUpdateAssets_RequiresPanelAndChecksums(t *testing.T) {
 				t.Fatalf("download set = %+v, err = %v", assets, err)
 			}
 		})
+	}
+}
+
+func TestAssetsAreMatchedByExactName(t *testing.T) {
+	rel := &githubRelease{Assets: []githubReleaseAsset{
+		{Name: "nasnet-panel-linux-amd64.sig", BrowserDownloadURL: "https://example.test/sig"},
+		{Name: "nasnet-panel-linux-amd64", BrowserDownloadURL: "https://example.test/panel"},
+	}}
+	if got := findAssetURL(rel, "nasnet-panel-linux-amd64"); got != "https://example.test/panel" {
+		t.Fatalf("got %s", got)
+	}
+	if got := findAssetURL(rel, "nasnet-panel"); got != "" {
+		t.Fatalf("a partial name matched %s", got)
+	}
+}
+
+func TestPanelUpdaterNeedsTheUpdateCommand(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := panelUpdater(dir); ok {
+		t.Fatal("no binary, yet an updater")
+	}
+	bin := filepath.Join(dir, "bin", "nasnet-panel")
+	_ = os.MkdirAll(filepath.Dir(bin), 0o755)
+	_ = os.WriteFile(bin, []byte("#!/bin/sh\n[ \"$1 $2\" = \"update apply\" ]\n"), 0o755)
+	if got, ok := panelUpdater(dir); !ok || got != bin {
+		t.Fatalf("updater = %s %v", got, ok)
+	}
+	_ = os.WriteFile(bin, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	if _, ok := panelUpdater(dir); ok {
+		t.Fatal("a panel without the update command counts as one")
 	}
 }
