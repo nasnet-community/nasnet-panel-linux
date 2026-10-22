@@ -19,6 +19,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/logger"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/signing"
 )
 
 // LogEntryDTO is the structured log entry sent to the frontend via SSE.
@@ -553,7 +554,12 @@ func (u *nodeUsecase) AutoUpdateAgent(ctx context.Context, nodeID uint, progress
 	log.WithFields(map[string]interface{}{"path": binaryPath, "checksum": checksum}).Info("[AutoUpdateAgent] Located update binary")
 
 	var signature []byte
-	if sig, err := os.ReadFile(binaryPath + ".sig"); err == nil {
+	if raw, err := os.ReadFile(binaryPath + ".sig"); err == nil {
+		sig, err := signing.ParseSig(raw)
+		if err != nil {
+			sendProgress("prep_binary", "The agent's signature file is unreadable", "error", err)
+			return fmt.Errorf("agent signature %s.sig: %w", binaryPath, err)
+		}
 		signature = sig
 	}
 	sendProgress("prep_binary", "Binary verified", "success", nil)

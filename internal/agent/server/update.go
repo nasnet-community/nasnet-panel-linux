@@ -71,8 +71,8 @@ func (s *Server) SelfUpdate(ctx context.Context, req *pb.UpdateRequest) (*pb.Upd
 	}
 	log.WithField("checksum", actualChecksum).Debug("[SelfUpdate] Checksum verified")
 
-	// Verify Ed25519 signature if a public key is configured
-	if len(signing.PublicKey) > 0 {
+	// Verify Ed25519 signature if this build trusts a release key
+	if len(signing.Trusted()) > 0 {
 		if len(req.Signature) == 0 {
 			log.Error("[SelfUpdate] Signature missing: update rejected")
 			return &pb.UpdateResponse{
@@ -81,7 +81,7 @@ func (s *Server) SelfUpdate(ctx context.Context, req *pb.UpdateRequest) (*pb.Upd
 				OldVersion: Version,
 			}, nil
 		}
-		if !signing.Verify(binaryContent, req.Signature, signing.PublicKey) {
+		if !signing.VerifyAny(binaryContent, req.Signature) {
 			log.Error("[SelfUpdate] Signature verification failed: update rejected")
 			return &pb.UpdateResponse{
 				Success:    false,
