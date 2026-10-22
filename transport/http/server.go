@@ -193,6 +193,11 @@ func NewServer(deps ServerDeps) *Server {
 		}
 	}
 
+	// the update runner's trial boot asks this over loopback
+	if deps.Admin.PanelUpdates != nil {
+		updateHttp.NewHandler(deps.Admin.PanelUpdates, nil).RegisterHealth(engine)
+	}
+
 	// Health check (liveness)
 	engine.GET("/health", func(c *gin.Context) {
 		body := gin.H{"status": "ok"}

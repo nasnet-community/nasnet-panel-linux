@@ -33,6 +33,13 @@ type route struct {
 	prefix string
 }
 
+// Transport fetches release files and bundles; RouteFetcher in production.
+type Transport interface {
+	Fetcher
+	Download(ctx context.Context, url, dest string, size int64, sum, first string, progress func(done int64, route string)) (string, error)
+	RouteLabel(route string) string
+}
+
 // RouteFetcher tries github.com directly, then the outbound proxy when its
 // panel_update toggle is on, then the mirror prefix when one is set.
 type RouteFetcher struct {

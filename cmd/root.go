@@ -94,7 +94,10 @@ import (
 
 	// Setting packages
 	settingDomain "github.com/nasnet-community/nasnet-panel-linux/internal/setting/domain"
+	settingRepo "github.com/nasnet-community/nasnet-panel-linux/internal/setting/repository"
+	updateDomain "github.com/nasnet-community/nasnet-panel-linux/internal/update/domain"
 	updateUC "github.com/nasnet-community/nasnet-panel-linux/internal/update/usecase"
+	xrayUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/xray/usecase"
 
 	// Audit packages
 	auditDomain "github.com/nasnet-community/nasnet-panel-linux/internal/audit/domain"
@@ -242,6 +245,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		&coreDomain.NodeCoreSetting{},
 		&mtprotonode.LiteNode{},
 		&mtprotonode.UsageBaseline{},
+		&updateDomain.PanelUpdate{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
 	}
@@ -637,12 +641,27 @@ func runServe(cmd *cobra.Command, args []string) {
 	backupRunner := adminUC.NewScheduledBackupRunner(backupSvc, repos.Setting, nil, cfg.Admin.InitialAdminIDs)
 	installRoot, _ := os.Getwd()
 	panelUpdates := updateUC.New(updateUC.Deps{
-		Paths:    updateUC.Paths{Root: installRoot},
-		Version:  Version,
-		Settings: repos.Setting,
-		DB:       db,
-		HTTP:     httpFactory,
-		Events:   eventBus,
+		Paths:       updateUC.Paths{Root: installRoot},
+		Version:     Version,
+		Settings:    repos.Setting,
+		DB:          db,
+		HTTP:        httpFactory,
+		Events:      eventBus,
+		Backups:     backupSvc,
+		DBSize:      settingRepo.NewStatusQueries(db).DBSize,
+		NetPending:  netApplyPending,
+		XrayRunning: embeddedSrv.XrayRunning,
+		XrayCache:   xrayUsecase.NewBinaryManager(xrayUsecase.CacheDir, httpFactory),
+		BuiltinXray: func(ctx context.Context) string {
+			if s, err := repos.Setting.GetByKey(ctx, settingDomain.BuiltinXrayKey); err == nil {
+				return s.Value
+			}
+			return ""
+		},
+		HealthAddr: fmt.Sprintf("127.0.0.1:%d", cfg.App.Port),
+		NotifyReady: func() bool {
+			return runtimeStatus.Snapshot().Bot.State != runtimestatus.BotStarting
+		},
 	})
 
 	if cfg.Telegram.Enabled {
@@ -930,6 +949,8 @@ func runServe(cmd *cobra.Command, args []string) {
 	webhookCh := notifPkg.NewWebhookChannel(uc.Setting, httpFactory)
 	dispatcher := notifPkg.NewDispatcher(eventBus, uc.Setting, telegramCh, discordCh, webhookCh)
 	dispatcher.Start(bgCtx)
+	// a job that ended across the restart is announced now that the bus has listeners
+	go panelUpdates.Resume(bgCtx)
 
 	// Alert engine: seed defaults (idempotent), then start. Engine after
 	// dispatcher so first fires route in order (bus buffers events either way).

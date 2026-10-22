@@ -419,3 +419,20 @@ func TestPruneCacheKeepsTheTestedAndTheKeptVersions(t *testing.T) {
 		t.Fatalf("missing cache: %v, %v", removed, err)
 	}
 }
+
+func TestImportOnlyTakesTheBuildItWasToldAbout(t *testing.T) {
+	bm := NewPinnedBinaryManager(t.TempDir(), nil, "26.10.10", map[string]string{}, map[string]string{})
+	elf := validELF()
+	if err := bm.Import("26.11.1", "amd64", elf, sha256Hex([]byte("other"))); err == nil {
+		t.Fatal("a build with another hash was imported")
+	}
+	if err := bm.Import("26.11.1", "amd64", []byte("not elf"), sha256Hex([]byte("not elf"))); err == nil {
+		t.Fatal("a non-ELF file was imported")
+	}
+	if err := bm.Import("26.11.1", "amd64", elf, strings.ToUpper(sha256Hex(elf))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bm.VerifiedPath("26.11.1", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+}

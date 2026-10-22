@@ -2223,6 +2223,18 @@ root_service_stale() {
     is_router_mode && ! grep -qx 'Environment=NASNET_ROUTER_MODE=1' "$unit"
 }
 
+# Writes this release's units and nasnet command. The panel's updater saved
+# the old files first and restarts the panel itself.
+update_system_files() {
+    local tmp="/usr/local/bin/.nasnet-new.$$"
+    write_backend_unit || return 1
+    if is_router_mode; then
+        install_netrollback_units || return 1
+    fi
+    sudo install -m 755 "${BASH_SOURCE[0]}" "$tmp" && sudo mv -f "$tmp" /usr/local/bin/nasnet || return 1
+    sudo systemctl daemon-reload
+}
+
 # Rewrites a stale unit and hands the install to root. The caller restarts the panel.
 ensure_root_service() {
     root_service_stale || return 0
@@ -6773,6 +6785,12 @@ main() {
             # used by nasnet-tool and the panel's updater; the caller restarts
             load_env
             ensure_root_service || exit 1
+            exit 0
+            ;;
+        update-system)
+            # run by the panel's updater from the new release; the caller restarts
+            load_env
+            update_system_files || exit 1
             exit 0
             ;;
         config|view-config)

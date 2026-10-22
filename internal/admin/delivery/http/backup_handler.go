@@ -21,7 +21,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/maintenance"
 )
 
-var backupFilenameRe = regexp.MustCompile(`^(backup|pre_restore)_\d{8}_\d{6}(_\d{4})?\.sql$`)
+var backupFilenameRe = regexp.MustCompile(`^((backup|pre_restore)_\d{8}_\d{6}(_\d{4})?|pre_update_v[0-9A-Za-z.-]+_to_v[0-9A-Za-z.-]+_\d{8}_\d{6})\.sql$`)
 
 const maxUploadSize = 500 << 20 // 500 MB
 

@@ -570,6 +570,18 @@ test_docker_unit_ignored() {
     printf '[Service]\nUser=ubuntu\n' > "$BACKEND_UNIT_FILE"
     if root_service_stale; then fail 'docker wrapper unit seen as stale'; return 1; fi
 }
-for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored; do
+test_update_system_writes_units() {
+    answers; DEPLOY_MODE=systemd; WIZ_ROUTER_MODE=true; BACKEND_UNIT_FILE="$PROJECT_DIR/unit"
+    sudo() { if [[ "$1" == tee ]]; then cat > "$2"; else echo "$*" >> "$EVENT_LOG"; fi; }
+    install_netrollback_units() { echo netrollback >> "$EVENT_LOG"; }
+    update_system_files > /dev/null || return 1
+    contains 'User=root' "$BACKEND_UNIT_FILE" || return 1
+    contains 'Environment=NASNET_ROUTER_MODE=1' "$BACKEND_UNIT_FILE" || return 1
+    contains netrollback "$EVENT_LOG" || return 1
+    contains "mv -f /usr/local/bin/.nasnet-new" "$EVENT_LOG" || return 1
+    contains 'systemctl daemon-reload' "$EVENT_LOG" || return 1
+    absent 'restart' "$EVENT_LOG"
+}
+for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored update_system_writes_units; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done

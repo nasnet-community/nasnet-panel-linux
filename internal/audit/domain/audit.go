@@ -75,6 +75,13 @@ const (
 
 	// Server management
 	AuditServerRestart AuditAction = "server.restart"
+
+	// Panel updates
+	AuditPanelUpdate         AuditAction = "panel.update"
+	AuditPanelRollback       AuditAction = "panel.rollback"
+	AuditPanelUpdateSchedule AuditAction = "panel.update_schedule"
+	AuditPanelUpdateCancel   AuditAction = "panel.update_cancel"
+	AuditPanelUpdateUpload   AuditAction = "panel.update_upload"
 )
 
 // AuditLog represents an audit log entry

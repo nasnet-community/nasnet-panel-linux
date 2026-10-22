@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -41,23 +42,40 @@ const (
 )
 
 // Deps are what the updater works with. Only Paths, Version and Settings
-// are required.
+// are required; the rest switch a step off when nil.
 type Deps struct {
 	Paths    Paths
 	Version  string
 	Settings settingDomain.SettingRepository
 	DB       *gorm.DB
 	HTTP     *httpclient.Factory
-	Events   *events.EventBus
+	Events   *events.EventBus // nil in the CLI, which never announces
+
+	Backups     Backups
+	DBSize      func(ctx context.Context) (int64, error)
+	NetPending  func() bool // a network apply waits for confirmation
+	XrayRunning func() bool // the built-in node's Xray
+	XrayCache   XrayCache
+	BuiltinXray func(ctx context.Context) string // the version picked for the built-in node
+	HealthAddr  string                           // loopback host:port of /health/update
+	NotifyReady func() bool                      // the bot can send
+	System      System
+	SystemFiles []string
 }
 
 type Usecase struct {
 	deps    Deps
 	store   *Store
-	fetch   *RouteFetcher
+	fetch   Transport
 	checker *Checker
 	kind    Kind
 	now     func() time.Time
+	started time.Time
+
+	trialFor   time.Duration
+	pollEvery  time.Duration
+	runnerGone time.Duration
+	watching   atomic.Bool
 
 	mu        sync.Mutex
 	checking  bool
@@ -65,7 +83,8 @@ type Usecase struct {
 }
 
 func New(d Deps) *Usecase {
-	u := &Usecase{deps: d, store: NewStore(d.Paths), now: time.Now}
+	u := &Usecase{deps: d, store: NewStore(d.Paths), now: time.Now, started: time.Now().UTC(),
+		trialFor: trialTime, pollEvery: 2 * time.Second, runnerGone: runnerTimeout}
 	u.fetch = NewRouteFetcher(d.HTTP, func() string { return u.setting(context.Background(), keyMirror) })
 	u.checker = NewChecker(u.fetch, runtime.GOARCH)
 	u.kind = kindOf(thisHost(d.Version, d.Paths.Root))
@@ -81,15 +100,17 @@ func (u *Usecase) Kind() Kind { return u.kind }
 
 // Status is the Updates section.
 type Status struct {
-	Current      string      `json:"current"`
-	Kind         Kind        `json:"kind"`
-	Channel      string      `json:"channel"`
-	CheckEnabled bool        `json:"check_enabled"`
-	Mirror       string      `json:"mirror_url"`
-	TestedXray   string      `json:"tested_xray"`
-	Check        *Check      `json:"check,omitempty"`
-	Available    *Offer      `json:"available,omitempty"`
-	Job          *domain.Job `json:"job,omitempty"`
+	Current      string               `json:"current"`
+	Kind         Kind                 `json:"kind"`
+	Channel      string               `json:"channel"`
+	CheckEnabled bool                 `json:"check_enabled"`
+	Mirror       string               `json:"mirror_url"`
+	TestedXray   string               `json:"tested_xray"`
+	Check        *Check               `json:"check,omitempty"`
+	Available    *Offer               `json:"available,omitempty"`
+	Job          *domain.Job          `json:"job,omitempty"`
+	Rollback     *RollbackWindow      `json:"rollback,omitempty"`
+	History      []domain.PanelUpdate `json:"history"`
 }
 
 func (u *Usecase) Status(ctx context.Context) (*Status, error) {
@@ -110,7 +131,22 @@ func (u *Usecase) Status(ctx context.Context) (*Status, error) {
 		return nil, err
 	}
 	st.Job = job
+	if !(job != nil && !job.Finished()) {
+		st.Rollback = u.rollbackWindow()
+	}
+	if st.History, err = u.History(ctx, 20); err != nil {
+		return nil, err
+	}
 	return st, nil
+}
+
+// Job is the current or last job, if id matches.
+func (u *Usecase) Job(id string) (*domain.Job, bool) {
+	j, err := u.store.Load()
+	if err != nil || j == nil || j.ID != id {
+		return nil, false
+	}
+	return j, true
 }
 
 // Available is the version the sidebar dot and the header chip point at.
@@ -159,6 +195,7 @@ func (u *Usecase) CheckNow(ctx context.Context) (*Check, error) {
 
 // MaybeRun is the scheduler's minute tick.
 func (u *Usecase) MaybeRun(ctx context.Context) {
+	u.settleJob(ctx)
 	u.mu.Lock()
 	due := !u.checking && !u.now().Before(u.nextCheck)
 	if due {
@@ -170,6 +207,23 @@ func (u *Usecase) MaybeRun(ctx context.Context) {
 			_, _ = u.CheckNow(ctx)
 		}
 	}
+}
+
+// settleJob catches a job that ended, or runs, with nobody following it:
+// one the CLI started, say.
+func (u *Usecase) settleJob(ctx context.Context) {
+	if u.deps.Events == nil || u.watching.Load() {
+		return
+	}
+	job, err := u.store.Load()
+	if err != nil || job == nil || job.Recorded {
+		return
+	}
+	if job.Finished() {
+		u.record(ctx, job)
+		return
+	}
+	go u.watchRunner(ctx)
 }
 
 // announce tells the admins about a version once.

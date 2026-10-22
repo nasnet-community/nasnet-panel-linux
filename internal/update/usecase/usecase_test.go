@@ -83,6 +83,7 @@ func TestKinds(t *testing.T) {
 		{"git describe", func(h *host) { h.version = "v1.0.0-3-gabcdef1" }, KindSource},
 		{"not root", func(h *host) { h.euid = 1000 }, KindNotRoot},
 		{"run by hand", func(h *host) { h.invocation = "" }, KindSource},
+		{"the CLI next to the unit", func(h *host) { h.invocation, h.unit = "", true }, KindSystemd},
 		{"another binary", func(h *host) { h.exe = "/tmp/nasnet-panel" }, KindSource},
 	}
 	for _, c := range cases {

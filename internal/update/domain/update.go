@@ -75,7 +75,9 @@ type Job struct {
 	Result     string     `json:"result,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	Steps      []Step     `json:"steps"`
-	XrayRan    bool       `json:"xray_ran,omitempty"` // the trial checks Xray only if it ran before
+	XrayRan    bool       `json:"xray_ran,omitempty"`    // the trial checks Xray only if it ran before
+	HealthAddr string     `json:"health_addr,omitempty"` // loopback host:port of /health/update
+	RunnerSeen *time.Time `json:"runner_seen,omitempty"` // the runner's heartbeat
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	Recorded   bool       `json:"recorded,omitempty"` // copied into history and announced

@@ -29,6 +29,7 @@ type host struct {
 	version    string
 	euid       int
 	invocation string // INVOCATION_ID, set by systemd
+	unit       bool   // the panel's unit exists, for the CLI run from a shell
 	exe        string
 	root       string
 }
@@ -44,6 +45,7 @@ func thisHost(version, root string) host {
 		version:    version,
 		euid:       os.Geteuid(),
 		invocation: os.Getenv("INVOCATION_ID"),
+		unit:       exists("/etc/systemd/system/" + panelUnit),
 		exe:        exe,
 		root:       root,
 	}
@@ -65,7 +67,7 @@ func kindOf(h host) Kind {
 	if p, err := filepath.EvalSymlinks(want); err == nil {
 		want = p
 	}
-	if h.invocation == "" || h.exe != want {
+	if (h.invocation == "" && !h.unit) || h.exe != want {
 		return Kind{Name: KindSource, Why: "This panel isn't running from its systemd service.", Command: "sudo nasnet"}
 	}
 	return Kind{Name: KindSystemd}

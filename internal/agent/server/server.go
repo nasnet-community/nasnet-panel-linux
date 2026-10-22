@@ -1663,6 +1663,9 @@ func (s *Server) UpdateXrayBinary(ctx context.Context, req *pb.UpdateXrayRequest
 	return s.updateXrayFromGitHub(ctx, req, version)
 }
 
+// XrayRunning reports the node's own Xray process.
+func (s *Server) XrayRunning() bool { return s.xrayMgr.IsRunning() }
+
 // XrayBinaryPath is the build xray starts from.
 func (s *Server) XrayBinaryPath() string { return s.xrayMgr.BinaryPath() }
 

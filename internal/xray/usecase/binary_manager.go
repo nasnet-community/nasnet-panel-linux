@@ -225,6 +225,24 @@ func (bm *BinaryManager) VerifiedPath(version, arch string) (string, error) {
 	return filepath.Abs(p)
 }
 
+// Import caches a build checked somewhere else, like an update bundle whose
+// signature lists its hash.
+func (bm *BinaryManager) Import(version, arch string, data []byte, sum string) error {
+	if err := bm.checkVersion(version, arch); err != nil {
+		return err
+	}
+	if !strings.EqualFold(sha256Hex(data), sum) {
+		return fmt.Errorf("xray: the %s %s build doesn't match its hash", version, arch)
+	}
+	if !isELF(data) {
+		return fmt.Errorf("xray: the %s %s build is not an ELF file", version, arch)
+	}
+	mu := bm.getMutex(version, arch)
+	mu.Lock()
+	defer mu.Unlock()
+	return bm.storeRaw(version, arch, data)
+}
+
 // PruneCache removes every cached version except keep and the tested one.
 func (bm *BinaryManager) PruneCache(keep ...string) ([]string, error) {
 	entries, err := os.ReadDir(bm.baseDir)

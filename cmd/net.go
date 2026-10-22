@@ -55,6 +55,13 @@ func statePaths() system.Paths {
 	return p
 }
 
+// netApplyPending: a network apply waits for confirmation, so an update
+// must wait too.
+func netApplyPending() bool {
+	m, err := system.ReadMarker(statePaths())
+	return err == nil && m != nil
+}
+
 func runNetRollback(ifExpired bool) error {
 	paths := statePaths()
 
