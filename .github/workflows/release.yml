@@ -23,6 +23,14 @@ jobs:
         with:
           go-version: "1.27.1"
 
+      - name: Check the signing key
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          # panels refuse a release no trusted key signed, so stop before building one
+          go build -o release-sign ./cmd/release-sign
+          ./release-sign check
+
       - name: Set up Node
         uses: actions/setup-node@v7.0.0
         with:
@@ -77,6 +85,11 @@ jobs:
           ./scripts/build-agent.sh
           cp bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64 .
 
+      - name: Sign nasnet-agent binaries
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: ./release-sign sign bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64
+
       - name: Download PostgreSQL standalone
         id: pgsql_dl
         run: |
@@ -107,6 +120,8 @@ jobs:
           chmod +x xray-linux-amd64 xray-linux-arm64
 
       - name: Package offline bundles
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
           PG_VERSION="${{ steps.pgsql_dl.outputs.pg_version }}"
           XRAY_VERSION="${{ steps.xray_dl.outputs.xray_version }}"
@@ -121,9 +136,9 @@ jobs:
             cp "nasnet-panel-linux-${arch}" "$dir/bin/nasnet-panel"
             cp "nasnet-tool-linux-${arch}" "$dir/bin/nasnet-tool"
             chmod +x "$dir/bin/nasnet-panel" "$dir/bin/nasnet-tool"
-            # Remote node agents for both arches: the panel deploys either.
-            cp bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64 bin/agent/VERSION "$dir/bin/agent/"
-            chmod +x "$dir"/bin/agent/nasnet-agent-*
+            # Remote node agents for both arches: the panel deploys either, with their signatures.
+            cp bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64 bin/agent/*.sig bin/agent/VERSION "$dir/bin/agent/"
+            chmod +x "$dir/bin/agent/nasnet-agent-linux-amd64" "$dir/bin/agent/nasnet-agent-linux-arm64"
             cp xray-linux-amd64 "$dir/bin/xray/"
             cp xray-linux-arm64 "$dir/bin/xray/"
             chmod +x "$dir"/bin/xray/*
@@ -144,14 +159,30 @@ jobs:
               "${XRAY_VERSION}" \
               > "$dir/.bundle-manifest"
 
+            # Signed list of every file, so an uploaded bundle checks itself
+            ./release-sign bundle --version "${{ steps.meta.outputs.version }}" --arch "$arch" \
+              --notes "docs/releases/${GITHUB_REF_NAME}.md" --built-at "${{ steps.meta.outputs.build_time }}" "$dir"
+
             # Checksums (inside bundle)
             cd "$dir"
-            sha256sum install.sh nasnet-tool.sh bin/nasnet-panel bin/nasnet-tool bin/agent/* bin/xray/* runtime/* .bundle-manifest > checksums.txt
+            sha256sum install.sh nasnet-tool.sh bin/nasnet-panel bin/nasnet-tool bin/agent/* bin/xray/* runtime/* .bundle-manifest bundle.json bundle.json.sig > checksums.txt
             cd ..
 
             # Create tarball
             tar -czf "${dir}.tar.gz" "$dir"
           done
+
+      - name: Sign the release
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          ./release-sign release --version "${{ steps.meta.outputs.version }}" \
+            --notes "docs/releases/${GITHUB_REF_NAME}.md" --built-at "${{ steps.meta.outputs.build_time }}" --out . \
+            nasnet-panel-linux-amd64 nasnet-panel-linux-arm64 \
+            nasnet-tool-linux-amd64 nasnet-tool-linux-arm64 \
+            nasnet-agent-linux-amd64 nasnet-agent-linux-arm64 \
+            nasnet-tool.sh \
+            nasnet-panel-offline-linux-amd64.tar.gz nasnet-panel-offline-linux-arm64.tar.gz
 
       - name: Generate checksums
         run: |
@@ -162,6 +193,10 @@ jobs:
             nasnet-tool-linux-arm64 \
             nasnet-agent-linux-amd64 \
             nasnet-agent-linux-arm64 \
+            nasnet-tool.sh \
+            nasnet-panel-offline-linux-amd64.tar.gz \
+            nasnet-panel-offline-linux-arm64.tar.gz \
+            release.json \
             > checksums.txt
 
       - name: Create GitHub Release
@@ -179,6 +214,8 @@ jobs:
             nasnet-agent-linux-amd64
             nasnet-agent-linux-arm64
             checksums.txt
+            release.json
+            release.json.sig
             nasnet-tool.sh
             nasnet-panel-offline-linux-amd64.tar.gz
             nasnet-panel-offline-linux-arm64.tar.gz
