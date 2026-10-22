@@ -102,7 +102,8 @@ fi
 # /etc/profile.d/ scripts are only sourced by login shells, so non-login
 # sub-shells spawned by run_logged/bash -c won't see them.
 [[ -d /usr/local/go/bin ]] && export PATH="/usr/local/go/bin:$PATH"
-[[ -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
+# HOME is unset under the panel's update runner, a bare systemd unit
+[[ -n "${HOME:-}" && -d "$HOME/.local/bin" ]] && export PATH="$HOME/.local/bin:$PATH"
 
 # Colors
 RESET='\033[0m'

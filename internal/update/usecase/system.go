@@ -54,6 +54,8 @@ func (s systemd) StartRunner(ctx context.Context, jobID string) error {
 func (s systemd) UpdateSystem(ctx context.Context, script string) error {
 	cmd := exec.CommandContext(ctx, "bash", script, "update-system")
 	cmd.Dir = s.root
+	// the runner is a bare unit: give the script the root shell it was written for
+	cmd.Env = append(os.Environ(), "HOME=/root", "TERM=dumb")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("nasnet-tool.sh update-system: %s", lastLine(out, err))
 	}
