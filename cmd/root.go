@@ -446,6 +446,8 @@ func runServe(cmd *cobra.Command, args []string) {
 		// An inbound edit has to reach the firewall and the mapper at once, or
 		// an armed filter_in silently drops the inbound that was just added.
 		uc.Node.SetInboundsChangedHook(networkUC.OnInboundsChanged)
+		// Domestic nodes are dialed over the domestic lines, like the LAN split.
+		uc.Node.SetDomesticAddrSource(networkUC.IsDomesticAddr)
 		// Read per config build, so the outbounds follow role changes.
 		uc.Node.SetRouterWANSource(func(ctx context.Context) []xray.RouterWAN {
 			views := networkUC.RouterWANs(ctx)

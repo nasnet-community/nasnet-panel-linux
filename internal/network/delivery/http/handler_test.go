@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"syscall"
 	"testing"
@@ -253,6 +254,7 @@ func (s *stubUsecase) DeletePortForward(_ context.Context, id uint) error {
 
 func (s *stubUsecase) OnInboundsChanged(context.Context) error               { return nil }
 func (s *stubUsecase) RefreshDomesticRanges(context.Context) error           { return nil }
+func (s *stubUsecase) IsDomesticAddr(context.Context, netip.Addr) bool       { return false }
 func (s *stubUsecase) StartRangesRefreshLoop(context.Context, time.Duration) {}
 
 func stubVerdictErr(vs []domain.Verdict, confirmed bool) error {

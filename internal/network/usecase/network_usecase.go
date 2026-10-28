@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -117,6 +118,8 @@ type NetworkUsecase interface {
 	UpdatePortMapRule(ctx context.Context, r domain.PortMapRule, confirmed bool) ([]domain.Verdict, error)
 	DeletePortMapRule(ctx context.Context, id uint) error
 	RefreshDomesticRanges(ctx context.Context) error
+	// IsDomesticAddr reports whether addr falls in the LAN split's domestic ranges.
+	IsDomesticAddr(ctx context.Context, addr netip.Addr) bool
 	SetLabel(ctx context.Context, key, label string) error
 	IngressUplinkIfName() string
 	RouterWANs(ctx context.Context) []RouterWANView
@@ -246,6 +249,8 @@ type networkUsecase struct {
 	lanSets   []nft.Set
 	nftSetOK  bool
 	setsBuilt bool
+	// domesticPrefixes is lanSets' geoip ranges, parsed for IsDomesticAddr.
+	domesticPrefixes []netip.Prefix
 
 	// lastRolledBack is the revert this process has already reacted to.
 	lastRolledBack uint
@@ -522,6 +527,7 @@ func (u *networkUsecase) domesticSets(ctx context.Context) ([]nft.Set, bool, err
 		return nil, false, err
 	}
 	u.lanSets, u.setsBuilt = sets, true
+	u.domesticPrefixes = parseDomesticPrefixes(sets)
 	return sets, u.nftSetOK, nil
 }
 
