@@ -3,10 +3,12 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/nft"
 )
 
 // rangesCacheFile holds the last accepted fetch, so a restart need not refetch.
@@ -56,6 +58,43 @@ func (u *networkUsecase) RefreshDomesticRanges(ctx context.Context) error {
 	u.setsMu.Unlock()
 
 	return u.reapplyDomesticSets(ctx)
+}
+
+// IsDomesticAddr checks addr against the ranges the LAN split uses, so the
+// box's own dials can follow the same split.
+func (u *networkUsecase) IsDomesticAddr(ctx context.Context, addr netip.Addr) bool {
+	if _, _, err := u.domesticSets(ctx); err != nil {
+		return false
+	}
+	u.setsMu.Lock()
+	prefixes := u.domesticPrefixes
+	u.setsMu.Unlock()
+
+	addr = addr.Unmap()
+	for _, p := range prefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseDomesticPrefixes keeps the geoip sets in a form Go can look up.
+func parseDomesticPrefixes(sets []nft.Set) []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range sets {
+		if s.Name != DomesticSetV4 && s.Name != DomesticSetV6 {
+			continue
+		}
+		for _, e := range s.Elements {
+			if p, err := netip.ParsePrefix(e); err == nil {
+				out = append(out, p.Masked())
+			} else if a, err := netip.ParseAddr(e); err == nil {
+				out = append(out, netip.PrefixFrom(a, a.BitLen()))
+			}
+		}
+	}
+	return out
 }
 
 // Pushes fresh sets into the table. Nothing references them with no LAN.

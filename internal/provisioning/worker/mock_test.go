@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -441,6 +442,7 @@ func (m *mockNodeUsecase) SetWGPeerSource(nodeUC.WGPeerSource)      {}
 func (m *mockNodeUsecase) SetRouterMode(bool)                       {}
 func (m *mockNodeUsecase) SetRouterWANSource(func(context.Context) []xray.RouterWAN) {
 }
+func (m *mockNodeUsecase) SetDomesticAddrSource(func(context.Context, netip.Addr) bool) {}
 func (m *mockNodeUsecase) SetIngressUplinkSource(func() string)                         {}
 func (m *mockNodeUsecase) SetPanelHTTPS(nodeUC.PanelHTTPS)                              {}
 func (m *mockNodeUsecase) SetInboundsChangedHook(func(context.Context) error)           {}

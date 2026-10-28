@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -56,6 +57,11 @@ func (u *nodeUsecase) SetRouterMode(enabled bool) { u.routerMode = enabled }
 
 func (u *nodeUsecase) SetRouterWANSource(fn func(context.Context) []xray.RouterWAN) {
 	u.routerWANs = fn
+}
+
+// SetDomesticAddrSource wires the router-mode check that picks a node's uplink.
+func (u *nodeUsecase) SetDomesticAddrSource(fn func(context.Context, netip.Addr) bool) {
+	u.domesticAddr = fn
 }
 
 // routerModeFor: router mode shapes the built-in node only. Remote nodes
@@ -258,10 +264,7 @@ func (u *nodeUsecase) dialDirectAgent(node *domain.Node, target string) (*agent.
 	}
 	var opts []grpc.DialOption
 	if u.routerMode {
-		// The box's own egress must not ride the VPN pool's policy routing.
-		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			return httpclient.MarkedDialer(httpclient.EgressForeign.Mark(), 10*time.Second).DialContext(ctx, "tcp", addr)
-		}))
+		opts = append(opts, grpc.WithContextDialer(u.dialAgentConn))
 	}
 	client, err := agent.NewClient(target, tlsCfg, 10*time.Second, opts...)
 	if err != nil {
@@ -281,15 +284,73 @@ func (u *nodeUsecase) dialDirectAgentAs(node *domain.Node, target, name string) 
 	as.ServerName = name
 	var opts []grpc.DialOption
 	if u.routerMode {
-		opts = append(opts, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			return httpclient.MarkedDialer(httpclient.EgressForeign.Mark(), 10*time.Second).DialContext(ctx, "tcp", addr)
-		}))
+		opts = append(opts, grpc.WithContextDialer(u.dialAgentConn))
 	}
 	client, err := agent.NewClient(target, &as, 10*time.Second, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to agent at %s: %w", target, err)
 	}
 	return client, nil
+}
+
+const agentDialTimeout = 10 * time.Second
+
+// dialAgentConn picks the uplink by the node's address, like the LAN split:
+// domestic nodes use the domestic lines, the rest the tunnel or nothing.
+func (u *nodeUsecase) dialAgentConn(ctx context.Context, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := resolveAgentHost(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for _, ip := range ips {
+		target := net.JoinHostPort(ip.String(), port)
+		marks := u.agentMarks(ctx, ip)
+		for i, mark := range marks {
+			timeout := agentDialTimeout
+			if i < len(marks)-1 {
+				timeout /= 2 // leave the fallback time to run
+			}
+			conn, err := httpclient.MarkedDialer(mark, timeout).DialContext(ctx, "tcp", target)
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+			if ctx.Err() != nil {
+				return nil, lastErr
+			}
+		}
+	}
+	return nil, lastErr
+}
+
+// agentMarks: a domestic node falls back to the foreign group, which still
+// reaches it the long way round when no domestic line is up. A foreign node
+// never falls back, or a dead tunnel would put it on a domestic line.
+func (u *nodeUsecase) agentMarks(ctx context.Context, ip netip.Addr) []uint32 {
+	foreign := httpclient.EgressForeign.Mark()
+	if u.domesticAddr != nil && u.domesticAddr(ctx, ip) {
+		return []uint32{httpclient.EgressDomestic.Mark(), foreign}
+	}
+	return []uint32{foreign}
+}
+
+func resolveAgentHost(ctx context.Context, host string) ([]netip.Addr, error) {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return []netip.Addr{ip}, nil
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%s resolved to no address", host)
+	}
+	return ips, nil
 }
 
 // getAgentClientUnpooled bypasses the connection pool: direct-mode dials

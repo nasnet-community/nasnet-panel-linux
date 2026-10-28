@@ -6,6 +6,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/hub"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/certwatch"
 	"math"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -313,6 +314,7 @@ type NodeUsecase interface {
 	SetWGPeerSource(s WGPeerSource)
 	SetRouterMode(enabled bool)
 	SetRouterWANSource(fn func(context.Context) []xray.RouterWAN)
+	SetDomesticAddrSource(fn func(context.Context, netip.Addr) bool)
 	SetIngressUplinkSource(fn func() string)
 	// SetPanelHTTPS tells the usecase how the panel's own port serves.
 	SetPanelHTTPS(p PanelHTTPS)
@@ -554,6 +556,9 @@ type nodeUsecase struct {
 
 	// Names the secondaries the per-WAN outbounds cover
 	routerWANs func(context.Context) []xray.RouterWAN
+
+	// Sends agent dials to domestic nodes out the domestic lines
+	domesticAddr func(context.Context, netip.Addr) bool
 
 	// Resolves the shaped interface
 	ingressUplinkFn func() string
