@@ -99,9 +99,8 @@ type SystemStats struct {
 type Collector struct {
 	diskPath string
 
-	// Cache for network delta calculation
-	lastNetRecv uint64
-	lastNetSent uint64
+	// Cache for network delta calculation, keyed by interface name
+	lastNet     map[string]NICCounters
 	lastNetTime time.Time
 
 	mu sync.RWMutex
@@ -267,7 +266,11 @@ func (c *Collector) CollectQuick(ctx context.Context) (*SystemStats, error) {
 	return stats, nil
 }
 
-// GetNetworkDelta returns network bytes transferred since last call
+// GetNetworkDelta returns network bytes transferred since last call.
+// Deltas are taken per interface and then summed. On the all-interface
+// total, a tunnel torn down and recreated (wg-quick down/up) shrinks the
+// sum, and the reset fallback then counted the host's whole since-boot
+// traffic as one interval's worth.
 func (c *Collector) GetNetworkDelta(ctx context.Context) (recv, sent uint64, duration time.Duration, err error) {
 	per, err := collectPerNIC(ctx)
 	if err != nil || len(per) == 0 {
@@ -278,27 +281,35 @@ func (c *Collector) GetNetworkDelta(ctx context.Context) (recv, sent uint64, dur
 	defer c.mu.Unlock()
 
 	now := time.Now()
-	currentRecv, currentSent := sumNICs(per)
 
 	if c.lastNetTime.IsZero() {
 		// First call, just store values
-		c.lastNetRecv = currentRecv
-		c.lastNetSent = currentSent
+		c.lastNet = per
 		c.lastNetTime = now
 		return 0, 0, 0, nil
 	}
 
-	// Calculate delta
-	recv = computeNetDelta(currentRecv, c.lastNetRecv)
-	sent = computeNetDelta(currentSent, c.lastNetSent)
+	recv, sent = netDelta(c.lastNet, per)
 	duration = now.Sub(c.lastNetTime)
 
-	// Update last values
-	c.lastNetRecv = currentRecv
-	c.lastNetSent = currentSent
+	c.lastNet = per
 	c.lastNetTime = now
 
 	return recv, sent, duration, nil
+}
+
+// netDelta sums each interface's delta. An interface missing from the last
+// read is new: its counters started at zero, so all of it is this interval's.
+func netDelta(last, cur map[string]NICCounters) (recv, sent uint64) {
+	for name, c := range cur {
+		if name == "lo" {
+			continue
+		}
+		l := last[name]
+		recv += computeNetDelta(c.BytesRecv, l.BytesRecv)
+		sent += computeNetDelta(c.BytesSent, l.BytesSent)
+	}
+	return recv, sent
 }
 
 // sockstatCounts returns system-wide TCP and UDP socket counts from
@@ -384,10 +395,10 @@ func getFDCount() uint64 {
 	return count
 }
 
-// computeNetDelta returns current - last, treating any decrease as a
-// counter reset (NIC replug, interface reset, or rare 64-bit wrap) by
-// returning the current value directly rather than an enormous
-// underflowed delta.
+// computeNetDelta returns one interface's current - last, treating any
+// decrease as a counter reset (interface recreated, NIC replug, or a 32-bit
+// driver counter wrapping) by returning the current value directly rather
+// than an enormous underflowed delta.
 func computeNetDelta(current, last uint64) uint64 {
 	if current < last {
 		return current
