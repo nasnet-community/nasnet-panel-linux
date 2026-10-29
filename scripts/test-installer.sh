@@ -657,6 +657,248 @@ test_sources_without_home() {
     # the panel's update runner is a bare systemd unit: no HOME
     ( unset HOME; set -u; source "$ROOT/nasnet-tool.sh" ) >/dev/null 2>&1 || { fail 'the script needs HOME'; return 1; }
 }
-for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored update_system_writes_units auto_update_delegates menu_reads_the_panel_check release_manifest_fields unverifiable_signature_is_said release_signature_checked cli_fetch_takes_the_release_copy sources_without_home; do
+RESET_HASH='$2a$10$YN/ZfhKoWOGMv98B.8KvTO.q6TzrGFve34zI9kEwTQ42lCcaobdC2'
+# Default install: systemd + SQLite. The fake panel binary logs how it was run.
+reset_fixture() {
+    DEPLOY_MODE=systemd; DB_DRIVER=sqlite; DB_PATH="$INSTALL_DIR/data/nasnet_panel.db"
+    BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"; mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/bin"
+    printf '%s\n' 'ADMIN_USERNAME=admin' "ADMIN_PASSWORD_HASH='\$2a\$10\$old-hash'" 'OTHER=kept' > "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    printf 'ADMIN_USERNAME=admin\nADMIN_PASSWORD="generated-at-install"\n' > "$INSTALL_DIR/admin-credentials.env"
+    wizard_gen_bcrypt() { [[ "$1" == new-password-1 ]] && printf '%s' "$RESET_HASH"; }
+    _sync_env_to_install_dir() { echo synced >> "$EVENT_LOG"; }
+}
+fake_panel_binary() {
+    {
+        echo '#!/usr/bin/env bash'
+        echo '{ echo "args=$*"; echo "cwd=$PWD"; echo "driver=${DB_DRIVER:-} path=${DB_PATH:-} dbpass=${DB_PASSWORD:-}"; echo "stdin=$(cat)"; } >> "'"$EVENT_LOG"'"'
+        [[ -z "${2:-}" ]] || printf 'echo %q >&2\n' "$2"
+        echo "exit ${1:-0}"
+    } > "$BACKEND_BINARY"
+    chmod +x "$BACKEND_BINARY"
+}
+reset_password() {
+    action_reset_admin_password > "$PROJECT_DIR/reset-screen" 2>&1 <<'INPUT'
+new-password-1
+new-password-1
+INPUT
+}
+reset_env_hash() { (set +u; source "$ENV_FILE"; printf '%s' "$ADMIN_PASSWORD_HASH"); }
+logged_before() {
+    local first second
+    first=$(grep -Fn -m1 -- "$1" "$3" | cut -d: -f1); second=$(grep -Fn -m1 -- "$2" "$3" | cut -d: -f1)
+    [[ -n "$first" && -n "$second" && $first -lt $second ]] || fail "$1 not before $2 in $3"
+}
+env_value() { (set +u; source "$ENV_FILE"; printf '%s' "${!1:-}"); }
+# An install whose password was later changed in the panel: that settings row
+# wins over .env, so a password chosen in the wizard must reach it too.
+# $1 deploy mode, $2 database; RERUN_CHOICE picks the existing-config menu entry.
+wizard_rerun_fixture() {
+    answers; WIZ_DEPLOY_MODE="$1"; WIZ_DB_DRIVER="$2"; WIZ_ADMIN_HASH='$2a$10$old-hash'
+    RERUN_DEPLOY="$1"; RERUN_DRIVER="$2"; RERUN_CHOICE=1; RERUN_ROUTER=false
+    [[ "$1" == systemd ]] || WIZ_INSTALL_METHOD=source
+    wizard_write_env "$1" test > /dev/null || return 1
+    BACKEND_BINARY="$INSTALL_DIR/bin/nasnet-panel"; mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/bin"
+    : > "$INSTALL_DIR/data/nasnet_panel.db"; fake_panel_binary 0
+    wizard_prereqs_systemd() { :; }; wizard_prereqs_docker() { :; }; wizard_setup_postgres() { :; }
+    wizard_clone_repo() { :; }; wizard_open_firewall() { :; }; _sync_env_to_install_dir() { :; }
+    wizard_gen_secret() { echo fixture-jwt; }; wizard_gen_password() { echo fixture-generated-password; }
+    wizard_gen_bcrypt() { [[ "$1" == new-password-1 || "$1" == fixture-generated-password ]] && printf '%s' "$RESET_HASH"; }
+    wizard_build_start_systemd() { WIZ_PROVISIONED=true; echo started >> "$EVENT_LOG"; }
+    wizard_build_start_docker() { WIZ_PROVISIONED=true; echo started >> "$EVENT_LOG"; }
+    sudo() { case "$1" in -v) return 0 ;; mkdir|install) command "$@" ;; *) echo "sudo $*" >> "$EVENT_LOG" ;; esac; }
+    docker() {
+        case "$1" in
+            ps) echo nasnet_panel_backend ;;
+            exec) echo "docker $* stdin=$(cat)" >> "$EVENT_LOG" ;;
+        esac
+    }
+    # "Choose new settings" asks for the password again; saved settings start at review.
+    wizard_collect_install_settings() {
+        [[ "${1:-}" != review ]] || return 0
+        answers; WIZ_DEPLOY_MODE="$RERUN_DEPLOY"; WIZ_DB_DRIVER="$RERUN_DRIVER"; WIZ_ROUTER_MODE="$RERUN_ROUTER"
+        WIZ_JWT_SECRET=''; WIZ_ADMIN_HASH=''; WIZ_ADMIN_PASS=new-password-1
+        [[ "$RERUN_ROUTER" != true ]] || WIZ_ADMIN_PASS=''
+    }
+    arrow_menu() {
+        case "$1" in
+            'Existing configuration at'*) printf -v "$2" %s "$RERUN_CHOICE" ;;
+            'Retry installation') printf -v "$2" 2 ;;
+            *) fail "unexpected menu $1"; exit 1 ;;
+        esac
+    }
+}
+rerun_wizard() { wizard_install < /dev/null > "$PROJECT_DIR/wizard-screen" 2>&1; }
+test_reset_password_takes_effect() {
+    reset_fixture; fake_panel_binary 0; : > "$DB_PATH"
+    reset_password || return 1
+    # The panel binary writes the row login reads on every request.
+    contains 'args=set-admin-password-hash' "$EVENT_LOG" && contains "cwd=$INSTALL_DIR" "$EVENT_LOG" || return 1
+    contains "driver=sqlite path=$DB_PATH" "$EVENT_LOG" && contains "stdin=$RESET_HASH" "$EVENT_LOG" || return 1
+    [[ "$(reset_env_hash)" == "$RESET_HASH" ]] || return 1
+    [[ $(grep -c '^ADMIN_PASSWORD_HASH=' "$ENV_FILE") -eq 1 ]] && contains 'OTHER=kept' "$ENV_FILE" || return 1
+    [[ ! -e "$ENV_FILE.bak" && ! -e "$INSTALL_DIR/admin-credentials.env" ]] && contains synced "$EVENT_LOG" || return 1
+    local mode
+    mode=$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null) || mode=$(stat -c '%a' "$ENV_FILE")
+    [[ "$mode" == 600 ]] || return 1
+    contains 'It works now, no restart needed' "$PROJECT_DIR/reset-screen" || return 1
+    absent 'Restart the backend' "$PROJECT_DIR/reset-screen" && absent 'Could not' "$PROJECT_DIR/reset-screen" || return 1
+    absent new-password-1 "$PROJECT_DIR/reset-screen"
+}
+test_reset_password_failure_changes_nothing() {
+    reset_fixture; fake_panel_binary 1 'Error: connect to database: disk I/O error'; : > "$DB_PATH"
+    local before; before=$(cat "$ENV_FILE")
+    reset_password || return 1
+    contains 'Could not save the new password in the panel database: Error: connect to database: disk I/O error' "$PROJECT_DIR/reset-screen" || return 1
+    contains 'The password was not changed' "$PROJECT_DIR/reset-screen" || return 1
+    [[ "$(cat "$ENV_FILE")" == "$before" && -f "$INSTALL_DIR/admin-credentials.env" ]] && absent synced "$EVENT_LOG"
+}
+test_reset_password_before_first_start() {
+    reset_fixture; fake_panel_binary 0
+    reset_password || return 1
+    # No database yet: .env is all the panel will read, and nothing creates the file.
+    absent args= "$EVENT_LOG" && [[ ! -e "$DB_PATH" ]] || return 1
+    [[ "$(reset_env_hash)" == "$RESET_HASH" ]] || return 1
+    contains 'the panel uses it when it starts' "$PROJECT_DIR/reset-screen"
+}
+# Older panel binaries lack the subcommand: fall back to SQL on the real schema
+# (GORM's DDL for settings), replacing a password set earlier in the panel.
+test_reset_password_sql_fallback_sqlite() {
+    command -v sqlite3 > /dev/null || { echo 'SKIP: sqlite3 not installed'; return 0; }
+    reset_fixture; fake_panel_binary 1 'Error: unknown command "set-admin-password-hash" for "nasnet-panel"'
+    sqlite3 "$DB_PATH" 'CREATE TABLE `settings` (`key` text,`value` text,`type` text,`category` text,`description` text,`label` text,`sensitive` numeric DEFAULT false,`requires_restart` numeric DEFAULT false,PRIMARY KEY (`key`));' || return 1
+    sqlite3 "$DB_PATH" "INSERT INTO settings VALUES ('admin_password_hash', 'panel-set-hash', 'string', 'admin', 'd', 'l', 0, 0);" || return 1
+    reset_password || return 1
+    [[ "$(sqlite3 "$DB_PATH" "SELECT value FROM settings WHERE key = 'admin_password_hash';")" == "$RESET_HASH" ]] || return 1
+    contains 'It works now' "$PROJECT_DIR/reset-screen" || return 1
+    # No row yet (password never changed in the panel): insert one.
+    sqlite3 "$DB_PATH" "DELETE FROM settings;" && : > "$EVENT_LOG" || return 1
+    reset_password || return 1
+    [[ "$(sqlite3 "$DB_PATH" "SELECT value || '|' || category || '|' || sensitive FROM settings;")" == "$RESET_HASH|admin|0" ]]
+}
+test_reset_password_postgres_systemd() {
+    reset_fixture; fake_panel_binary 0; DB_DRIVER=postgres; DB_PASSWORD='db-s3cret'
+    reset_password || return 1
+    contains 'driver=postgres path=' "$EVENT_LOG" && contains 'dbpass=db-s3cret' "$EVENT_LOG" || return 1
+    # Passed in the environment, never as an argument visible in ps.
+    contains 'args=set-admin-password-hash' "$EVENT_LOG" && absent 'args=set-admin-password-hash db-s3cret' "$EVENT_LOG" || return 1
+    contains 'It works now' "$PROJECT_DIR/reset-screen"
+}
+test_reset_password_docker() {
+    reset_fixture; DEPLOY_MODE=docker; DB_DRIVER=postgres
+    local running="nasnet_panel_backend" panel_binary=new
+    docker() {
+        case "$1" in
+            ps) printf '%s\n' $running ;;
+            exec)
+                echo "docker $* stdin=$(cat)" >> "$EVENT_LOG"
+                if [[ "$*" == *' ./main '* && "$panel_binary" == old ]]; then
+                    echo 'Error: unknown command "set-admin-password-hash" for "nasnet-panel"' >&2; return 1
+                fi ;;
+        esac
+    }
+    reset_password || return 1
+    contains "docker exec -i nasnet_panel_backend ./main set-admin-password-hash stdin=$RESET_HASH" "$EVENT_LOG" || return 1
+    contains 'It works now' "$PROJECT_DIR/reset-screen" || return 1
+    # Old image: the same upsert through psql in the database container.
+    : > "$EVENT_LOG"; panel_binary=old; running="nasnet_panel_backend nasnet_panel_db"
+    reset_password || return 1
+    contains 'docker exec -i nasnet_panel_db psql -U postgres -d nasnet_panel -v ON_ERROR_STOP=1 -q -c INSERT INTO settings' "$EVENT_LOG" || return 1
+    contains "'admin_password_hash', '$RESET_HASH'" "$EVENT_LOG" && contains 'ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value";' "$EVENT_LOG" || return 1
+    contains 'It works now' "$PROJECT_DIR/reset-screen" || return 1
+    # Stopped container: say so and change nothing.
+    : > "$EVENT_LOG"; running=''; local before; before=$(cat "$ENV_FILE")
+    reset_password || return 1
+    contains 'is not running; start it and retry' "$PROJECT_DIR/reset-screen" && [[ "$(cat "$ENV_FILE")" == "$before" ]]
+}
+# Panel login is a single admin; users.is_admin only marks Telegram bot admins,
+# and the old action could not create a login (it was PostgreSQL-only, too).
+test_security_menu_has_no_create_admin() {
+    local items=''
+    arrow_menu() { items="$*"; printf -v "$2" %s -1; }
+    menu_security || return 1
+    [[ "$items" == *'Reset Admin Password'* && "$items" != *'Create Admin User'* ]] || return 1
+    if declare -F action_create_admin_user > /dev/null; then fail 'action_create_admin_user still defined'; return 1; fi
+}
+test_wizard_new_password_systemd_sqlite() {
+    wizard_rerun_fixture systemd sqlite || return 1
+    rerun_wizard || return 1
+    # Stored by the panel binary once the service runs, then recorded as done.
+    logged_before started 'args=set-admin-password-hash' "$EVENT_LOG" || return 1
+    contains "driver=sqlite path=$INSTALL_DIR/data/nasnet_panel.db" "$EVENT_LOG" && contains "stdin=$RESET_HASH" "$EVENT_LOG" || return 1
+    [[ "$(env_value ADMIN_PASSWORD_HASH)" == "$RESET_HASH" && "$(env_value ADMIN_PASSWORD_PENDING)" == false ]] || return 1
+    absent new-password-1 "$PROJECT_DIR/wizard-screen"
+}
+test_wizard_new_password_systemd_postgres() {
+    wizard_rerun_fixture systemd postgres || return 1
+    rerun_wizard || return 1
+    logged_before started 'args=set-admin-password-hash' "$EVENT_LOG" || return 1
+    contains 'driver=postgres path=' "$EVENT_LOG" && contains 'dbpass=existing-password' "$EVENT_LOG" || return 1
+    contains "stdin=$RESET_HASH" "$EVENT_LOG" && [[ "$(env_value ADMIN_PASSWORD_PENDING)" == false ]]
+}
+test_wizard_new_password_docker() {
+    local driver
+    for driver in postgres sqlite; do
+        (
+            wizard_rerun_fixture docker "$driver" || exit 1
+            rerun_wizard || exit 1
+            logged_before started "docker exec -i nasnet_panel_backend ./main set-admin-password-hash stdin=$RESET_HASH" "$EVENT_LOG" || exit 1
+            [[ "$(env_value ADMIN_PASSWORD_PENDING)" == false ]]
+        ) || { fail "docker $driver"; return 1; }
+        rm -rf "$INSTALL_DIR" && mkdir -p "$INSTALL_DIR" && : > "$EVENT_LOG"
+    done
+}
+# A router's "Choose new settings" shows a generated password; it must work.
+test_wizard_generated_password_router() {
+    wizard_rerun_fixture systemd sqlite || return 1
+    RERUN_ROUTER=true
+    rerun_wizard || return 1
+    contains 'Password: fixture-generated-password' "$PROJECT_DIR/wizard-screen" || return 1
+    logged_before started "stdin=$RESET_HASH" "$EVENT_LOG"
+}
+# A fresh install has no row yet; the panel reads .env until one is saved.
+test_wizard_password_fresh_install() {
+    wizard_rerun_fixture systemd sqlite || return 1
+    rm -f "$ENV_FILE" "$INSTALL_DIR/data/nasnet_panel.db"
+    rerun_wizard || return 1
+    contains started "$EVENT_LOG" && absent 'args=' "$EVENT_LOG" || return 1
+    [[ "$(env_value ADMIN_PASSWORD_HASH)" == "$RESET_HASH" && "$(env_value ADMIN_PASSWORD_PENDING)" == false ]] || return 1
+    # Once the panel has created its database, the same hash goes there too.
+    rm -f "$ENV_FILE"; : > "$EVENT_LOG"
+    wizard_build_start_systemd() { WIZ_PROVISIONED=true; : > "$INSTALL_DIR/data/nasnet_panel.db"; echo started >> "$EVENT_LOG"; }
+    rerun_wizard || return 1
+    logged_before started "stdin=$RESET_HASH" "$EVENT_LOG"
+}
+# Keeping the saved password must not undo a change made in the panel since.
+test_wizard_saved_settings_keep_panel_password() {
+    wizard_rerun_fixture systemd sqlite || return 1
+    RERUN_CHOICE=0
+    rerun_wizard || return 1
+    contains started "$EVENT_LOG" && absent 'args=' "$EVENT_LOG" || return 1
+    [[ "$(env_value ADMIN_PASSWORD_HASH)" == '$2a$10$old-hash' && "$(env_value ADMIN_PASSWORD_PENDING)" == false ]]
+}
+# A failed save is retried in the same run, or on the next run with saved settings.
+test_wizard_password_store_retry() {
+    wizard_rerun_fixture systemd sqlite || return 1
+    fake_panel_binary 1 'Error: connect to database: disk I/O error'
+    if rerun_wizard; then fail 'unsaved password reported complete'; return 1; fi
+    contains 'not saved in the panel database: Error: connect to database: disk I/O error' "$PROJECT_DIR/wizard-screen" || return 1
+    [[ "$(env_value ADMIN_PASSWORD_HASH)" == "$RESET_HASH" && "$(env_value ADMIN_PASSWORD_PENDING)" == true ]] || return 1
+    : > "$EVENT_LOG"; fake_panel_binary 0; RERUN_CHOICE=0
+    rerun_wizard || return 1
+    logged_before started "stdin=$RESET_HASH" "$EVENT_LOG" && [[ "$(env_value ADMIN_PASSWORD_PENDING)" == false ]] || return 1
+    # "Retry access checks only" also saves it once the panel answers.
+    : > "$EVENT_LOG"; fake_panel_binary 1 'Error: database is locked'; RERUN_CHOICE=1
+    arrow_menu() {
+        case "$1" in
+            'Existing configuration at'*) printf -v "$2" %s "$RERUN_CHOICE" ;;
+            'Retry installation') : > "$EVENT_LOG"; fake_panel_binary 0; printf -v "$2" 1 ;;
+        esac
+    }
+    wizard_verify_install() { echo verified >> "$EVENT_LOG"; }
+    rerun_wizard || return 1
+    logged_before verified "stdin=$RESET_HASH" "$EVENT_LOG" && [[ "$(env_value ADMIN_PASSWORD_PENDING)" == false ]]
+}
+for case_name in first_run_default_yes router_address_detection router_review_back router_defaults_and_credentials password_masking password_validation_visible navigation_access_preserves_urls navigation_install_after_review navigation_role_back navigation_docker_back navigation_offline_back navigation_review_back navigation_text_commands navigation_access_back navigation_access_tls navigation_access_cancel navigation_saved_back navigation_menu_keys root_sudo tls_probe panel_marker readiness_failure path_validation config_roundtrip config_failure cancel_before_changes template_rejected prereq_stops_install write_stops_install start_failure deploy_failure no_access_bypass xray_dirs offline_xray pg_preserves_role existing_pg_dependency unit_runs_as_root router_unit_caps old_unit_switched_to_root root_unit_left_alone docker_unit_ignored update_system_writes_units auto_update_delegates menu_reads_the_panel_check release_manifest_fields unverifiable_signature_is_said release_signature_checked cli_fetch_takes_the_release_copy sources_without_home reset_password_takes_effect reset_password_failure_changes_nothing reset_password_before_first_start reset_password_sql_fallback_sqlite reset_password_postgres_systemd reset_password_docker security_menu_has_no_create_admin wizard_new_password_systemd_sqlite wizard_new_password_systemd_postgres wizard_new_password_docker wizard_generated_password_router wizard_password_fresh_install wizard_saved_settings_keep_panel_password wizard_password_store_retry; do
     if (setup; "test_$case_name"); then echo "PASS $case_name"; else echo "FAIL $case_name" >&2; exit 1; fi
 done
