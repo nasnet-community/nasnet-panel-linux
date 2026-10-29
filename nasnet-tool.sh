@@ -2472,6 +2472,7 @@ LOG_FORMAT=text
 ADMIN_IDS='${WIZ_ADMIN_IDS}'
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD_HASH='${WIZ_ADMIN_HASH}'
+ADMIN_PASSWORD_PENDING=${WIZ_ADMIN_PENDING:-${ADMIN_PASSWORD_PENDING:-false}}
 
 # TLS (optional — leave empty for auto ACME, or set paths for custom certs)
 TLS_CERT_FILE=$(wizard_env_quote "${WIZ_TLS_CERT_FILE-${TLS_CERT_FILE:-}}")
@@ -2923,6 +2924,7 @@ wizard_restore_saved_config() {
     WIZ_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
     WIZ_ADMIN_IDS="${ADMIN_IDS:-}"
     WIZ_ADMIN_HASH="${ADMIN_PASSWORD_HASH:-}"
+    WIZ_ADMIN_PENDING="${ADMIN_PASSWORD_PENDING:-false}"
     WIZ_JWT_SECRET="${JWT_SECRET_KEY:-}"
     WIZ_DB_PASSWORD="${DB_PASSWORD:-}"
     WIZ_DB_USER="${DB_USER:-nasnet_panel}"
@@ -2987,6 +2989,11 @@ wizard_apply_install() {
         fi
         WIZ_ADMIN_HASH=$(wizard_gen_bcrypt "$WIZ_ADMIN_PASS") || return 1
         [[ -n "$WIZ_ADMIN_HASH" ]] || { step_fail "Could not hash the admin password"; return 1; }
+        WIZ_ADMIN_PENDING=true
+        # A typed password makes an earlier generated one wrong; don't point users at it.
+        if [[ "${WIZ_ADMIN_GENERATED:-false}" != true && -f "$INSTALL_DIR/admin-credentials.env" ]]; then
+            sudo rm -f "$INSTALL_DIR/admin-credentials.env" || true
+        fi
     fi
     if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
         wizard_save_admin_credentials || return 1
@@ -3086,6 +3093,24 @@ wizard_save_admin_credentials() {
         return 1
     fi
     rm -f "$credentials_tmp"
+}
+
+# A password changed in the panel lives in its database and beats .env, so a
+# password chosen here must replace it. Runs once the panel is up.
+wizard_store_admin_password() {
+    [[ "${WIZ_ADMIN_PENDING:-false}" == true ]] || return 0
+    local store_status=0
+    WIZ_ADMIN_STORE_ERROR=$(admin_password_store_db "$WIZ_ADMIN_HASH") || store_status=$?
+    # 3: no database yet, so the panel reads the new hash from .env.
+    if [[ $store_status -ne 0 && $store_status -ne 3 ]]; then
+        WIZ_ADMIN_STORE_ERROR="${WIZ_ADMIN_STORE_ERROR:-unknown error}"
+        return 1
+    fi
+    WIZ_ADMIN_STORE_ERROR=""; WIZ_ADMIN_PENDING=false
+    # Left true, a later retry with saved settings would undo a password changed in the panel.
+    { _env_set_line ADMIN_PASSWORD_PENDING false && _sync_env_to_install_dir; } ||
+        step_warn "Could not clear ADMIN_PASSWORD_PENDING in ${ENV_FILE}"
+    [[ $store_status -ne 0 ]] || step_ok "Admin password saved in the panel database"
 }
 
 # Collect answers without changing the host. The history contains only steps
@@ -3274,7 +3299,7 @@ wizard_install() {
     local WIZ_DB_USER="nasnet_panel" WIZ_DB_NAME="nasnet_panel" WIZ_DB_HOST="localhost" WIZ_DB_PORT="5432"
     local WIZ_DB_SSL_MODE="disable" WIZ_DB_PATH="" WIZ_PGSQL_SERVICE_NAME="postgresql" WIZ_INSTALL_STATUS="pending"
     local saved=false choice=-1 WIZ_PROVISIONED=false WIZ_NAVIGATION=true
-    local WIZ_ROUTER_IP="" WIZ_ADMIN_GENERATED=false
+    local WIZ_ROUTER_IP="" WIZ_ADMIN_GENERATED=false WIZ_ADMIN_PENDING=false WIZ_ADMIN_STORE_ERROR=""
     local WIZ_API_DOMAIN="" WIZ_PANEL_DOMAIN="" WIZ_IP="" WIZ_PATH_GENERATED=false
     local WIZ_DERIVED_API="" WIZ_DERIVED_PANEL="" WIZ_ACCESS_PROTO=https
 
@@ -3315,8 +3340,12 @@ wizard_install() {
 
     local complete=false
     while true; do
-        if wizard_apply_install; then complete=true; break; fi
+        WIZ_ADMIN_STORE_ERROR=""
+        if wizard_apply_install && wizard_store_admin_password; then complete=true; break; fi
         step_fail "Installation is incomplete; your saved settings will be reused"
+        if [[ -n "$WIZ_ADMIN_STORE_ERROR" ]]; then
+            step_fail "New admin password not saved in the panel database: ${WIZ_ADMIN_STORE_ERROR}"
+        fi
         if [[ "${WIZ_ADMIN_GENERATED:-false}" == true ]]; then
             step_info "Generated login details: ${INSTALL_DIR}/admin-credentials.env"
         fi
@@ -3324,7 +3353,9 @@ wizard_install() {
         case "$choice" in
             0) ;;
             1)
-                if [[ "$WIZ_PROVISIONED" == "true" ]] && wizard_verify_install; then complete=true; break; fi
+                if [[ "$WIZ_PROVISIONED" == "true" ]] && wizard_verify_install && wizard_store_admin_password; then
+                    complete=true; break
+                fi
                 step_info "Complete installation and service startup before retrying access checks"
                 ;;
             *) step_info "Resume with: nasnet install (or bash nasnet-tool.sh install)"; return 1 ;;
@@ -5670,148 +5701,159 @@ action_disk_usage() {
 # Section 11: Security Actions
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Login checks the admin_password_hash setting on every request and only falls
+# back to ADMIN_PASSWORD_HASH (read once at startup), so a reset writes the
+# setting. The panel binary owns that schema; raw SQL covers older binaries.
+# Prints the error and returns 1 on failure, 3 if the database was never created.
+admin_password_store_db() {
+    local hash="$1" output="" status=0 db_path=""
+    if [[ "$(_deploy_mode)" == "docker" ]]; then
+        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER_BACKEND"; then
+            echo "The panel container (${CONTAINER_BACKEND}) is not running; start it and retry"
+            return 1
+        fi
+        output=$(docker exec -i "$CONTAINER_BACKEND" ./main set-admin-password-hash <<< "$hash" 2>&1) || status=$?
+    elif [[ ! -x "$BACKEND_BINARY" ]]; then
+        admin_password_store_sql "$hash"
+        return
+    elif is_sqlite; then
+        db_path=$(get_db_path)
+        [[ -f "$db_path" ]] || return 3
+        if [[ -w "$db_path" && -w "$(dirname "$db_path")" ]]; then
+            output=$(cd "$INSTALL_DIR" && DB_DRIVER=sqlite DB_PATH="$db_path" \
+                "$BACKEND_BINARY" set-admin-password-hash <<< "$hash" 2>&1) || status=$?
+        else
+            output=$(cd "$INSTALL_DIR" && sudo env DB_DRIVER=sqlite DB_PATH="$db_path" \
+                "$BACKEND_BINARY" set-admin-password-hash <<< "$hash" 2>&1) || status=$?
+        fi
+    else
+        # Env assignments, not arguments, so the DB password stays out of ps.
+        output=$(cd "$INSTALL_DIR" && DB_DRIVER=postgres DB_HOST="$(get_db_host)" DB_PORT="$(get_db_port)" \
+            DB_USER="$(get_db_user)" DB_PASSWORD="$(get_db_password)" DB_NAME="$(get_db_name)" \
+            DB_SSL_MODE="${DB_SSL_MODE:-disable}" "$BACKEND_BINARY" set-admin-password-hash <<< "$hash" 2>&1) || status=$?
+    fi
+    if [[ $status -ne 0 && "$output" == *'unknown command'* ]]; then
+        admin_password_store_sql "$hash"
+        return
+    fi
+    [[ $status -eq 0 || $status -eq 3 ]] || echo "${output##*$'\n'}"
+    return "$status"
+}
+
+# Same row as the panel's change-password. Both Postgres and SQLite 3.24+ take
+# this upsert; sqlite3 wants the SQL as an argument (it has no -c option).
+admin_password_store_sql() {
+    local hash="$1" output="" status=0 db_path="" sql
+    sql="INSERT INTO settings (\"key\", \"value\", \"type\", category, description, label)"
+    sql+=" VALUES ('admin_password_hash', '${hash}', 'string', 'admin', 'Hashed admin password (managed by change-password)', 'Admin Password Hash')"
+    sql+=" ON CONFLICT (\"key\") DO UPDATE SET \"value\" = excluded.\"value\";"
+    if is_sqlite && [[ "$(_deploy_mode)" == "systemd" ]]; then
+        db_path=$(get_db_path)
+        [[ -f "$db_path" ]] || return 3
+        if ! command -v sqlite3 &>/dev/null; then
+            echo "sqlite3 is not installed (apt install sqlite3), and this panel binary is too old to do it itself"
+            return 1
+        fi
+        if [[ -w "$db_path" && -w "$(dirname "$db_path")" ]]; then
+            output=$(sqlite3 -bail "$db_path" "$sql" 2>&1) || status=$?
+        else
+            output=$(sudo sqlite3 -bail "$db_path" "$sql" 2>&1) || status=$?
+        fi
+    elif is_sqlite; then
+        output=$(psql_exec -bail "$sql" 2>&1) || status=$?
+    else
+        output=$(psql_exec -v ON_ERROR_STOP=1 -q -c "$sql" 2>&1) || status=$?
+    fi
+    if [[ $status -ne 0 && ( "$output" == *'no such table: settings'* || "$output" == *'relation "settings" does not exist'* ) ]]; then
+        return 3
+    fi
+    [[ $status -eq 0 ]] || echo "${output##*$'\n'}"
+    return "$status"
+}
+
+# Keep .env in step with the database so a restart or a fresh database agrees.
+# Single quotes stop `source` and Compose from expanding the hash's $ signs.
+_env_set_admin_password_hash() { _env_set_line ADMIN_PASSWORD_HASH "'$1'"; }
+
+# Replaces KEY's line in .env, or appends it.
+_env_set_line() {
+    local key="$1" value="$2" env_tmp
+    [[ -f "$ENV_FILE" ]] || return 0
+    env_tmp=$(mktemp) || return 1
+    awk -v key="$key" -v line="${key}=${value}" '
+        index($0, key "=") == 1 { if (!done) print line; done = 1; next }
+        { print }
+        END { if (!done) print line }' "$ENV_FILE" > "$env_tmp" || { rm -f "$env_tmp"; return 1; }
+    # cp onto an existing file keeps its owner and 600 mode.
+    if [[ -w "$ENV_FILE" ]]; then
+        cp "$env_tmp" "$ENV_FILE" || { rm -f "$env_tmp"; return 1; }
+    else
+        sudo cp "$env_tmp" "$ENV_FILE" || { rm -f "$env_tmp"; return 1; }
+    fi
+    rm -f "$env_tmp"
+}
+
 action_reset_admin_password() {
     clear
     draw_header "Reset Admin Password"
 
-    if ! command -v htpasswd &>/dev/null; then
-        # Try to use docker/openssl as fallback
-        if ! command -v openssl &>/dev/null; then
-            step_fail "Neither htpasswd nor openssl found - cannot hash password"
-            step_info "Install apache2-utils: apt install apache2-utils"
-            press_any_key
-            return
-        fi
-    fi
-
+    local password="" password2="" hash="" store_error="" store_status=0
+    local bcrypt_pattern='^\$2[abxy]?\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+    local credentials_file="$INSTALL_DIR/admin-credentials.env"
     while true; do
-        echo -ne "  ${CYAN}New password: ${RESET}"
-        read -rs password
-        echo ""
-
+        echo -ne "  ${CYAN}New password (at least 6 characters): ${RESET}"
+        if ! wizard_read_masked password; then
+            step_info "Cancelled; the password was not changed"; press_any_key; return 0
+        fi
         if [[ ${#password} -lt 6 ]]; then
             step_fail "Password must be at least 6 characters — try again"
             continue
         fi
-
         echo -ne "  ${CYAN}Confirm password: ${RESET}"
-        read -rs password2
-        echo ""
-
+        if ! wizard_read_masked password2; then
+            step_info "Cancelled; the password was not changed"; press_any_key; return 0
+        fi
         if [[ "$password" != "$password2" ]]; then
             step_fail "Passwords do not match — try again"
             continue
         fi
-
         break
     done
 
-    # Generate bcrypt hash
-    local hash
-    if command -v htpasswd &>/dev/null; then
-        hash=$(htpasswd -nbBC 10 "" "$password" | tr -d ':\n' | sed 's/$2y/$2a/')
-    else
-        step_fail "htpasswd not available for bcrypt hashing"
-        step_info "Install apache2-utils: apt install apache2-utils"
+    hash=$(wizard_gen_bcrypt "$password") || hash=""
+    if [[ ! "$hash" =~ $bcrypt_pattern ]]; then
+        step_fail "Could not hash the password; install apache2-utils (htpasswd) and retry"
         press_any_key
-        return
+        return 0
     fi
 
-    # Update .env file (single-quote hash to prevent bash $-expansion on source)
-    if [[ -f "$ENV_FILE" ]]; then
-        if grep -q "^ADMIN_PASSWORD_HASH=" "$ENV_FILE"; then
-            # Escape special chars in hash for sed
-            local escaped_hash
-            escaped_hash=$(printf '%s\n' "$hash" | sed 's/[&/\]/\\&/g')
-            sed -i.bak "s|^ADMIN_PASSWORD_HASH=.*|ADMIN_PASSWORD_HASH='${escaped_hash}'|" "$ENV_FILE"
-            step_ok "Updated ADMIN_PASSWORD_HASH in .env"
-        else
-            echo "ADMIN_PASSWORD_HASH='${hash}'" >> "$ENV_FILE"
-            step_ok "Added ADMIN_PASSWORD_HASH to .env"
-        fi
+    store_error=$(admin_password_store_db "$hash") || store_status=$?
+    if [[ $store_status -ne 0 && $store_status -ne 3 ]]; then
+        step_fail "Could not save the new password in the panel database: ${store_error:-unknown error}"
+        step_info "The password was not changed"
+        press_any_key
+        return 0
     fi
-
-    # Sync .env to install directory if systemd mode
-    _sync_env_to_install_dir
-
-    # Update database if running (mode-aware, driver-aware)
-    local deploy_mode db_accessible=false
-    deploy_mode=$(_deploy_mode)
-    if is_sqlite; then
-        if [[ "$deploy_mode" == "systemd" ]]; then
-            [[ -f "$(get_db_path)" ]] && db_accessible=true
-        else
-            docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_BACKEND}$" && db_accessible=true
+    if ! _env_set_admin_password_hash "$hash" || ! _sync_env_to_install_dir; then
+        if [[ $store_status -eq 3 ]]; then
+            step_fail "Could not write ADMIN_PASSWORD_HASH to ${ENV_FILE}; the password was not changed"
+            press_any_key
+            return 0
         fi
-    else
-        if [[ "$deploy_mode" == "systemd" ]]; then
-            PGPASSWORD="$(get_db_password)" pg_isready -h "$(get_db_host)" -U "$(get_db_user)" &>/dev/null && db_accessible=true
-        else
-            docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_DB}$" && db_accessible=true
-        fi
+        step_warn "Could not update ADMIN_PASSWORD_HASH in ${ENV_FILE}; the panel uses the new password anyway"
     fi
-
-    if $db_accessible; then
-        local escaped_db_hash
-        escaped_db_hash=$(printf '%s' "$hash" | sed "s/'/''/g")
-        if psql_exec -c "UPDATE admin_credentials SET password_hash = '${escaped_db_hash}' WHERE username = '$(grep "^ADMIN_USERNAME=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo admin)';" &>/dev/null; then
-            step_ok "Updated password in database"
-        else
-            step_warn "Could not update database (table may not exist yet)"
-        fi
+    # A generated password saved at install time no longer works.
+    if [[ -f "$credentials_file" ]] && { rm -f "$credentials_file" 2>/dev/null || sudo rm -f "$credentials_file"; }; then
+        step_info "Removed the outdated generated login details (${credentials_file})"
     fi
 
     echo ""
-    step_warn "Restart the backend for changes to take effect"
-    press_any_key
-}
-
-action_create_admin_user() {
-    clear
-    draw_header "Create Admin User"
-    require_db || return 0
-
-    echo -ne "  ${CYAN}Username: ${RESET}"
-    read -r username
-
-    if [[ -z "$username" ]]; then
-        step_fail "Username is required"
-        press_any_key
-        return
-    fi
-
-    echo -ne "  ${CYAN}Telegram ID (or 0 for none): ${RESET}"
-    read -r telegram_id
-    telegram_id="${telegram_id:-0}"
-
-    # Validate telegram_id is numeric
-    if ! [[ "$telegram_id" =~ ^[0-9]+$ ]]; then
-        step_fail "Telegram ID must be a number"
-        press_any_key
-        return
-    fi
-
-    # If telegram_id is 0, use negative timestamp as placeholder
-    local db_telegram_id="$telegram_id"
-    if [[ "$telegram_id" == "0" ]]; then
-        db_telegram_id="-$(date +%s%N | head -c 15)"
-    fi
-
-    step_info "Creating admin user: ${username} (telegram_id: ${telegram_id})"
-
-    local sql="INSERT INTO users (telegram_id, username, first_name, is_admin, created_at, updated_at)
-VALUES (${db_telegram_id}, '${username}', '${username}', true, NOW(), NOW())
-ON CONFLICT DO NOTHING
-RETURNING id;"
-
-    local result
-    result=$(psql_exec -tAc "$sql" 2>&1)
-
-    if [[ -n "$result" && "$result" =~ ^[0-9]+$ ]]; then
-        step_ok "Admin user created with ID: ${result}"
+    if [[ $store_status -eq 3 ]]; then
+        step_ok "Password saved. The panel database is not created yet; the panel uses it when it starts"
     else
-        step_fail "Failed to create user: ${result}"
+        step_ok "Password changed. It works now, no restart needed"
     fi
+    step_info "Username: ${ADMIN_USERNAME:-admin}"
     press_any_key
 }
 
@@ -6805,17 +6847,17 @@ menu_monitoring() {
     done
 }
 
+# Panel login is one admin, so there are no admin users to create here;
+# Telegram bot admins come from ADMIN_IDS or the panel's Users page.
 menu_security() {
     while true; do
         local choice
         arrow_menu "Security" choice \
             "Reset Admin Password" \
-            "Create Admin User" \
             "← Back"
 
         case $choice in
             0) action_reset_admin_password ;;
-            1) action_create_admin_user ;;
             *) return ;;
         esac
     done
