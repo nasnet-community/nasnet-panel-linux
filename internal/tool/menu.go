@@ -250,25 +250,29 @@ func menuMonitoring(cfg *Config) {
 	}
 }
 
+// Panel login is one admin, so there are no admin users to create here;
+// Telegram bot admins come from ADMIN_IDS or the panel's Users page.
+var securityMenu = []struct {
+	label string
+	run   func(*Config)
+}{
+	{"Reset Admin Password", ActionResetAdminPassword},
+}
+
 func menuSecurity(cfg *Config) {
+	labels := make([]string, len(securityMenu))
+	for i, item := range securityMenu {
+		labels[i] = item.label
+	}
 	for {
 		ui.ClearScreen()
 		ui.DrawBox("Security")
 
-		choice, err := ui.Menu("Security", []string{
-			"Reset Admin Password",
-			"Create Admin User",
-		})
-		if err != nil || choice < 0 {
+		choice, err := ui.Menu("Security", labels)
+		if err != nil || choice < 0 || choice >= len(securityMenu) {
 			return
 		}
-
-		switch choice {
-		case 0:
-			ActionResetAdminPassword(cfg)
-		case 1:
-			ActionCreateAdminUser(cfg)
-		}
+		securityMenu[choice].run(cfg)
 	}
 }
 
