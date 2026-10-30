@@ -15,8 +15,9 @@ import (
 // reach the browser by being added there.
 //
 // The live parts (tunnel, agent, usage, events, installing, updates and the
-// router's entry gate) stay empty until the manager fills them. Where a field
-// takes one of a few words, they carry the word for "nothing running".
+// router's entry gate) come from Config.Live, field by field in the same way.
+// With none they stay empty, and where a field takes one of a few words they
+// carry the word for "nothing running".
 
 const (
 	linkMissing   = "missing"
@@ -94,8 +95,10 @@ type Node struct {
 	Cert              Cert        `json:"cert"`
 	Updates           Updates     `json:"updates"`
 	Usage             NodeUsage   `json:"usage"`
-	Events            []NodeEvent `json:"events,omitempty"`
-	Installing        *Installing `json:"installing,omitempty"` // present while the install job runs
+	// Events is only in the view of one node. A pointer, so that a node with
+	// none says "events": [] and a list of nodes leaves the key out.
+	Events     *[]NodeEvent `json:"events,omitempty"`
+	Installing *Installing  `json:"installing,omitempty"` // present while the install job runs
 }
 
 type TunnelState struct {
@@ -195,7 +198,7 @@ type SubscriptionNode struct {
 }
 
 func configView(cfg Config, st model.State) AppConfig {
-	return AppConfig{
+	v := AppConfig{
 		Version:           cfg.Version,
 		Commit:            cfg.Commit,
 		MaxNodes:          model.MaxNodes,
@@ -204,56 +207,127 @@ func configView(cfg Config, st model.State) AppConfig {
 		SubscriptionCount: len(st.Subscriptions),
 		Entry:             Entry{Domestic: linkMissing, VPN: VPN{State: linkMissing}, Bridge: bridgeStopped, Routes: []Route{}},
 		Backup:            Backup{LastExportAt: utc(st.LastBackupAt)},
-		// Xray stays empty until the build carries the version it installs
+		// Xray stays empty without a manager to say which version it installs
 	}
+	if cfg.Live != nil {
+		v.Entry = cfg.Live.Entry()
+		if v.Entry.Routes == nil {
+			v.Entry.Routes = []Route{} // JSON gets [], never null
+		}
+		v.Xray = cfg.Live.Xray()
+	}
+	return v
 }
 
-func nodeViews(st model.State, now time.Time) []Node {
+func nodeViews(st model.State, now time.Time, live Live) []Node {
+	on := enabledCounts(st)
+	out := make([]Node, 0, len(st.Nodes))
+	for _, n := range st.Nodes {
+		out = append(out, nodeView(n, on[n.ID], now, live))
+	}
+	return out
+}
+
+// enabledCounts is how many subscriptions are switched on at each node.
+func enabledCounts(st model.State) map[uint]int {
 	on := map[uint]int{}
 	for _, e := range st.Enablements {
 		if e.Enabled {
 			on[e.NodeID]++
 		}
 	}
-	out := make([]Node, 0, len(st.Nodes))
-	for _, n := range st.Nodes {
-		out = append(out, Node{
-			ID:                n.ID,
-			Name:              n.Name,
-			Host:              n.Host,
-			SSHPort:           n.SSHPort,
-			SSHUser:           n.SSHUser,
-			Registered:        n.State == model.NodeRegistered,
-			CreatedAt:         n.CreatedAt.UTC(),
-			EntryPort:         n.EntryPort,
-			HandshakeTarget:   n.RealityTarget,
-			SNI:               n.RealitySNI,
-			SNICustom:         n.RealitySNI != "" && n.RealitySNI != hostOf(n.RealityTarget),
-			PublicKey:         n.RealityPublicKey,
-			ShortID:           n.RealityShortID,
-			Arch:              n.Arch,
-			AgentVersion:      n.AgentVersion,
-			XrayVersion:       n.XrayVersion,
-			SubscriptionCount: on[n.ID],
-			Tunnel:            TunnelState{State: tunnelOff},
-			Cert:              certView(n, now),
-		})
-	}
-	return out
+	return on
 }
 
-func subscriptionViews(st model.State) []Subscription {
+func nodeView(n model.Node, enabled int, now time.Time, live Live) Node {
+	v := Node{
+		ID:                n.ID,
+		Name:              n.Name,
+		Host:              n.Host,
+		SSHPort:           n.SSHPort,
+		SSHUser:           n.SSHUser,
+		Registered:        n.State == model.NodeRegistered,
+		CreatedAt:         n.CreatedAt.UTC(),
+		EntryPort:         n.EntryPort,
+		HandshakeTarget:   n.RealityTarget,
+		SNI:               n.RealitySNI,
+		SNICustom:         n.RealitySNI != "" && n.RealitySNI != hostOf(n.RealityTarget),
+		PublicKey:         n.RealityPublicKey,
+		ShortID:           n.RealityShortID,
+		Arch:              n.Arch,
+		AgentVersion:      n.AgentVersion,
+		XrayVersion:       n.XrayVersion,
+		SubscriptionCount: enabled,
+		Tunnel:            TunnelState{State: tunnelOff},
+		Cert:              certView(n, now),
+	}
+	if live != nil {
+		l := live.NodeLive(n.ID)
+		v.LastSeenAt, v.Agent, v.Updates, v.Usage, v.Installing = l.LastSeenAt, l.Agent, l.Updates, l.Usage, l.Installing
+		if l.Tunnel.State != "" {
+			v.Tunnel = l.Tunnel
+		}
+	}
+	return v
+}
+
+func subscriptionViews(st model.State, live Live) []Subscription {
 	out := make([]Subscription, 0, len(st.Subscriptions))
 	for _, sub := range st.Subscriptions {
 		v := Subscription{ID: sub.ID, Name: sub.Name, CreatedAt: sub.CreatedAt.UTC(), Nodes: []SubscriptionNode{}}
+		// Where it is switched on, a node that answers says whether it is
+		// connected; one that doesn't leaves it unknown.
+		connected, unknown := false, false
 		for _, n := range st.Nodes {
 			if n.State != model.NodeRegistered {
 				continue
 			}
 			e := st.FindEnablement(sub.ID, n.ID)
-			v.Nodes = append(v.Nodes, SubscriptionNode{NodeID: n.ID, Enabled: e != nil && e.Enabled})
+			row := SubscriptionNode{NodeID: n.ID, Enabled: e != nil && e.Enabled}
+			if live != nil {
+				u := live.SubscriptionOn(sub.ID, n.ID)
+				row.LastSeenAt = u.LastSeenAt
+				row.TodayUp, row.TodayDown, row.MonthUp, row.MonthDown = u.TodayUp, u.TodayDown, u.MonthUp, u.MonthDown
+				if row.Enabled {
+					if u.Live {
+						row.Online, row.Connections = &u.Online, &u.Connections
+						connected = connected || u.Online
+					} else {
+						unknown = true
+					}
+				}
+			}
+			v.Nodes = append(v.Nodes, row)
+		}
+		if live != nil {
+			t := live.SubscriptionTotal(sub.ID)
+			v.LastSeenAt = t.LastSeenAt
+			v.TodayUp, v.TodayDown, v.MonthUp, v.MonthDown = t.TodayUp, t.TodayDown, t.MonthUp, t.MonthDown
+			if connected || !unknown {
+				v.Online = &connected
+			}
 		}
 		out = append(out, v)
+	}
+	return out
+}
+
+// nodeSubscriptionViews is a node's list: every subscription, switched on
+// there or not.
+func nodeSubscriptionViews(st model.State, nodeID uint, live Live) []NodeSubscription {
+	out := make([]NodeSubscription, 0, len(st.Subscriptions))
+	for _, sub := range st.Subscriptions {
+		e := st.FindEnablement(sub.ID, nodeID)
+		row := NodeSubscription{ID: sub.ID, Name: sub.Name, Enabled: e != nil && e.Enabled}
+		if live != nil {
+			u := live.SubscriptionOn(sub.ID, nodeID)
+			row.LastSeenAt = u.LastSeenAt
+			row.TodayUp, row.TodayDown, row.MonthUp, row.MonthDown = u.TodayUp, u.TodayDown, u.MonthUp, u.MonthDown
+			if row.Enabled && u.Live {
+				row.Online, row.Connections = &u.Online, &u.Connections
+			}
+		}
+		out = append(out, row)
 	}
 	return out
 }

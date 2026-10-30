@@ -20,6 +20,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/store"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/ui"
 )
@@ -34,9 +35,41 @@ const (
 	hostKeyPin = "SHA256:MARKER-HOST-KEY-PIN"
 	uuidA      = "6f1c1c1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f"
 	uuidB      = "0b9a8f7e-6d5c-4b3a-9281-706f5e4d3c2b"
+	bridgeUUID = "3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a"
 )
 
-var secrets = []string{privateKey, hostKeyPin, uuidA, uuidB}
+// testCA is the CA the test hub holds, key and all.
+var testCA = func() *pki.CA {
+	ca, err := pki.NewCA(now)
+	if err != nil {
+		panic(err)
+	}
+	return ca
+}()
+
+// pemBody is the base64 of a PEM block without its lines, so that it is
+// looked for as one run of text, and a header on its own is not mistaken for it.
+func pemBody(b []byte) string {
+	var body []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if line != "" && !strings.HasPrefix(line, "-----") {
+			body = append(body, line)
+		}
+	}
+	return strings.Join(body, "")
+}
+
+// secrets is everything the test hub holds that no body may carry: the REALITY
+// key, the pinned host key, the clients' ids, the bridge's, and the CA.
+func secrets() []string {
+	return []string{
+		privateKey, hostKeyPin, uuidA, uuidB, bridgeUUID,
+		"BEGIN EC PRIVATE KEY", "BEGIN CERTIFICATE",
+		pemBody(testCA.KeyPEM()), pemBody(testCA.CertPEM()),
+		// the same text a line at a time, which is how a PEM would be copied out of a log
+		strings.Split(string(testCA.KeyPEM()), "\n")[1],
+	}
+}
 
 type syncBuf struct {
 	mu sync.Mutex
@@ -152,10 +185,12 @@ func (r *rig) populate() {
 			RealityPublicKey: "PUBLICKEY", RealityShortID: "0123abcd", RealityPrivateKey: privateKey,
 			AgentVersion: "1.3.0", XrayVersion: "26.10.21",
 			CertNotBefore: now.AddDate(0, 0, -10), CertNotAfter: now.AddDate(0, 0, 355), SSHHostKey: hostKeyPin,
+			BridgeUUID: bridgeUUID,
 		})
 		if err != nil {
 			return err
 		}
+		s.CACert, s.CAKey = string(testCA.CertPEM()), string(testCA.KeyPEM())
 		// a node whose install has not finished
 		if _, err := s.AddNode(model.Node{Name: "second", Host: "node2.example.com", SSHPort: 2222, AgentPort: 9091, EntryPort: 8443, State: model.NodeInstalling, CreatedAt: now}); err != nil {
 			return err
@@ -412,7 +447,7 @@ func jsonNames(typ reflect.Type, path string, into map[string]string) {
 // particular response happens to fill it.
 func TestNoViewTypeHasASecretField(t *testing.T) {
 	names := map[string]string{}
-	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, jobs.Job{}, errorBody{}} {
+	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, NodeSubscription{}, Traffic{}, jobs.Job{}, errorBody{}} {
 		jsonNames(reflect.TypeOf(v), reflect.TypeOf(v).Name(), names)
 	}
 	if len(names) < 50 {
@@ -432,12 +467,16 @@ func TestNoSecretReachesABrowser(t *testing.T) {
 		r := newRig(t, b)
 		r.populate()
 		held := r.st.Read()
-		if held.Nodes[0].RealityPrivateKey != privateKey || held.Nodes[0].SSHHostKey != hostKeyPin || held.Enablements[0].ClientUUID != uuidA {
+		if held.Nodes[0].RealityPrivateKey != privateKey || held.Nodes[0].SSHHostKey != hostKeyPin || held.Enablements[0].ClientUUID != uuidA ||
+			held.Nodes[0].BridgeUUID != bridgeUUID || held.CACert == "" || held.CAKey == "" {
 			t.Fatal("the test hub does not hold the secrets it is meant to hide")
 		}
 
 		bodies := map[string][]byte{}
-		for _, p := range []string{"/api/config", "/api/nodes", "/api/subscriptions"} {
+		for _, p := range []string{
+			"/api/config", "/api/nodes", "/api/subscriptions",
+			"/api/nodes/1", "/api/nodes/2", "/api/nodes/1/subscriptions", "/api/nodes/1/traffic", "/api/jobs",
+		} {
 			bodies[b+p] = r.get(b + p)
 		}
 		_, _, bodies[b+"/health"] = r.call("GET", b+"/health", nil)
@@ -449,7 +488,7 @@ func TestNoSecretReachesABrowser(t *testing.T) {
 			t.Fatal("the public key should be shown: it is part of every link anyway")
 		}
 		for what, body := range bodies {
-			for _, s := range secrets {
+			for _, s := range secrets() {
 				if bytes.Contains(body, []byte(s)) {
 					t.Errorf("%s carries %q", what, s)
 				}
@@ -509,7 +548,7 @@ func TestUnknownPathsAnswerInJSON(t *testing.T) {
 	r := newRig(t, base)
 	for _, c := range []struct{ method, path string }{
 		{"GET", "/api/nothing"}, {"GET", base + "/api/nothing"}, {"GET", "/api"}, {"GET", "/nothing"},
-		{"GET", base + "/nothing"}, {"POST", "/health"}, {"DELETE", "/"}, {"GET", "/api/nodes/1"},
+		{"GET", base + "/nothing"}, {"POST", "/health"}, {"DELETE", "/"}, {"GET", "/api/nodes/1/nothing"},
 	} {
 		code, hdr, body := r.call(c.method, c.path, map[string]string{UIHeader: "1"})
 		got := decode[map[string]any](t, body)
