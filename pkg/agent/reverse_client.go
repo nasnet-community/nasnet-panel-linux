@@ -263,7 +263,7 @@ func (rc *ReverseClient) GetSystemStats(ctx context.Context) (*SystemStats, erro
 	if err := rc.sendUnary(ctx, pb.NodeAgent_GetSystemStats_FullMethodName, &pb.Empty{}, &resp); err != nil {
 		return nil, err
 	}
-	return systemStatsFromPB(&resp), nil
+	return SystemStatsFromPB(&resp), nil
 }
 
 func (rc *ReverseClient) GetXrayStats(ctx context.Context, reset bool) (*XrayStats, error) {
@@ -583,10 +583,10 @@ func (rc *ReverseClient) UpdateXrayBinary(ctx context.Context, version string, r
 
 func (rc *ReverseClient) TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error) {
 	var resp pb.OutboundTestResponse
-	if err := rc.sendUnary(ctx, pb.NodeAgent_TestOutbound_FullMethodName, outboundTestRequest(spec), &resp); err != nil {
+	if err := rc.sendUnary(ctx, pb.NodeAgent_TestOutbound_FullMethodName, OutboundTestRequestToPB(spec), &resp); err != nil {
 		return nil, err
 	}
-	return outboundTestResult(&resp), nil
+	return OutboundTestResultFromPB(&resp), nil
 }
 
 // ===== Online user detection =====
@@ -612,7 +612,7 @@ func (rc *ReverseClient) GetOnlineIPSnapshot(ctx context.Context) (*OnlineIPSnap
 	if err := rc.sendUnary(ctx, pb.NodeAgent_GetAllUsersOnlineIPs_FullMethodName, &pb.Empty{}, &resp); err != nil {
 		return nil, err
 	}
-	return &OnlineIPSnapshot{Users: onlineIPsFromPB(&resp), CollectedAtUnixMs: resp.CollectedAtUnixMs}, nil
+	return &OnlineIPSnapshot{Users: OnlineIPsFromPB(&resp), CollectedAtUnixMs: resp.CollectedAtUnixMs}, nil
 }
 
 // ===== Buffered traffic =====
@@ -624,7 +624,7 @@ func (rc *ReverseClient) GetBufferedTraffic(ctx context.Context) (*BufferedTraff
 	}
 	// Shared mapper also carries CoreUsage — the old inline mapping dropped
 	// it, starving per-tunnel core attribution on reverse-mode nodes.
-	return bufferedTrafficFromPB(&resp), nil
+	return BufferedTrafficFromPB(&resp), nil
 }
 
 // GetStatsBundle mirrors (*Client).GetStatsBundle over the reverse channel.
@@ -635,10 +635,10 @@ func (rc *ReverseClient) GetStatsBundle(ctx context.Context, includeOnlineIPs bo
 		return nil, err
 	}
 	return &StatsBundle{
-		System:                     systemStatsFromPB(resp.System),
+		System:                     SystemStatsFromPB(resp.System),
 		Status:                     resp.Status,
-		Buffered:                   bufferedTrafficFromPB(resp.BufferedTraffic),
-		OnlineIPs:                  onlineIPsFromPB(resp.OnlineIps),
+		Buffered:                   BufferedTrafficFromPB(resp.BufferedTraffic),
+		OnlineIPs:                  OnlineIPsFromPB(resp.OnlineIps),
 		OnlineIPsCollectedAtUnixMs: resp.OnlineIps.GetCollectedAtUnixMs(),
 	}, nil
 }

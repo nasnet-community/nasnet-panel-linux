@@ -15,6 +15,7 @@ import (
 	nodeUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/node/usecase"
 	subDomain "github.com/nasnet-community/nasnet-panel-linux/internal/subscription/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/embedded"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -156,10 +157,10 @@ func newTunnelInstaller(d tunnelDeps) *coreUsecase.InstallUsecase {
 // tunnelClient resolves a node's agent: the in-process one for the built-in
 // node, the pooled or reverse client otherwise.
 func tunnelClient(d tunnelDeps) func(ctx context.Context, nodeID uint) (agent.NodeClient, error) {
-	embedded := agent.NewEmbeddedClient(d.Embedded)
+	builtin := embedded.New(d.Embedded)
 	return func(ctx context.Context, nodeID uint) (agent.NodeClient, error) {
 		if nodeID != 0 && nodeID == d.NodeUC.LocalNodeID() {
-			return embedded, nil
+			return builtin, nil
 		}
 		return d.NodeUC.GetNodeClient(ctx, nodeID)
 	}

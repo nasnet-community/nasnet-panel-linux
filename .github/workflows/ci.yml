@@ -58,6 +58,20 @@ jobs:
       - name: deps guard
         run: make deps-guard
 
+      - name: pkg/agent deps guard
+        # The hub plugin imports pkg/agent and must not get the Xray core with
+        # it. Code that needs the agent server goes in pkg/agent/embedded.
+        run: |
+          deps=$(go list -deps ./pkg/agent)
+          if echo "$deps" | grep -E 'xtls/xray-core|sagernet|gvisor'; then
+            echo
+            echo "pkg/agent links the Xray core again (packages above). It may only"
+            echo "import light packages; the in-process client lives in pkg/agent/embedded."
+            echo "Our own packages it pulls in:"
+            echo "$deps" | grep nasnet-panel-linux
+            exit 1
+          fi
+
       - name: go test (race)
         # Root package embeds the frontend dist; skip it here (the web
         # job covers the SPA build). All real coverage lives in sub-

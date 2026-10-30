@@ -45,6 +45,7 @@ import (
 	networkSystem "github.com/nasnet-community/nasnet-panel-linux/internal/network/system"
 	networkUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/network/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/embedded"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/dohboot"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/events"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/geoip"
@@ -423,7 +424,7 @@ func runServe(cmd *cobra.Command, args []string) {
 		var rmErr error
 		networkUC, rmErr = startRouterMode(bgCtx, routerModeDeps{
 			DB: db, NftMgr: embeddedSrv.NftManager(),
-			Agent: agent.NewEmbeddedClient(embeddedSrv), Bus: eventBus,
+			Agent: embedded.New(embeddedSrv), Bus: eventBus,
 			NetEvents: netEvents, Log: log,
 			PanelPort: cfg.App.Port, HubPort: firewallHubPort, NodeRepo: repos.Node, Tunnels: coreRepo, LocalNodeID: uc.Node.LocalNodeID, HTTPFactory: httpFactory,
 			PoolSettings: poolSettings{uc: uc.Setting},

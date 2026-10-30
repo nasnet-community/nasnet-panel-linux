@@ -797,7 +797,7 @@ func (u *nodeUsecase) resetPushState(nodeID uint) {
 }
 
 // SetEmbeddedServer injects the in-process node-agent server. Once set,
-// getAgentClient routes node operations through an in-process EmbeddedClient.
+// getAgentClient routes node operations through the in-process embedded client.
 func (u *nodeUsecase) SetEmbeddedServer(srv *agentserver.Server) {
 	u.embeddedSrv = srv
 }

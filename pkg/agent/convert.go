@@ -25,9 +25,9 @@ func coreUsageEntries(recs []*pb.CoreUsageRecord) []CoreUsageEntry {
 	return out
 }
 
-// systemStatsFromPB maps the wire SystemStats to the package struct.
-// Shared by the direct and reverse clients and by the bundle path.
-func systemStatsFromPB(resp *pb.SystemStats) *SystemStats {
+// SystemStatsFromPB maps the wire SystemStats to the package struct.
+// Shared by the direct, reverse and embedded clients and by the bundle path.
+func SystemStatsFromPB(resp *pb.SystemStats) *SystemStats {
 	if resp == nil {
 		return nil
 	}
@@ -52,9 +52,9 @@ func systemStatsFromPB(resp *pb.SystemStats) *SystemStats {
 	}
 }
 
-// bufferedTrafficFromPB maps the wire BufferedTrafficStats (CoreUsage
-// included) to the package struct. Shared by both clients and the bundle.
-func bufferedTrafficFromPB(resp *pb.BufferedTrafficStats) *BufferedTrafficStats {
+// BufferedTrafficFromPB maps the wire BufferedTrafficStats (CoreUsage
+// included) to the package struct. Shared by every client and the bundle.
+func BufferedTrafficFromPB(resp *pb.BufferedTrafficStats) *BufferedTrafficStats {
 	if resp == nil {
 		return nil
 	}
@@ -80,9 +80,9 @@ func bufferedTrafficFromPB(resp *pb.BufferedTrafficStats) *BufferedTrafficStats 
 	}
 }
 
-// onlineIPsFromPB maps the wire AllOnlineIPsResponse to the plain
+// OnlineIPsFromPB maps the wire AllOnlineIPsResponse to the plain
 // email → IP → first-seen map. Inner maps are non-nil even when empty.
-func onlineIPsFromPB(resp *pb.AllOnlineIPsResponse) map[string]map[string]int64 {
+func OnlineIPsFromPB(resp *pb.AllOnlineIPsResponse) map[string]map[string]int64 {
 	if resp == nil {
 		return nil
 	}
@@ -95,4 +95,43 @@ func onlineIPsFromPB(resp *pb.AllOnlineIPsResponse) map[string]map[string]int64 
 		out[email] = entry.Ips
 	}
 	return out
+}
+
+// OutboundTestRequestToPB maps a spec onto the wire message. TimeoutSeconds is
+// kept populated so an agent predating the option fields still gets a sane
+// timeout.
+func OutboundTestRequestToPB(spec *OutboundTestSpec) *pb.OutboundTestRequest {
+	maxDelay := spec.MaxDelayMs
+	if maxDelay <= 0 {
+		maxDelay = 5000
+	}
+	return &pb.OutboundTestRequest{
+		ConfigLink:     spec.ConfigLink,
+		TestUrl:        spec.TestURL,
+		TimeoutSeconds: (maxDelay + 999) / 1000,
+		MaxDelayMs:     maxDelay,
+		Retries:        spec.Retries,
+		InsecureTls:    spec.InsecureTLS,
+		Speedtest:      spec.Speedtest,
+		SpeedtestKb:    spec.SpeedtestKb,
+		DirectProbe:    spec.DirectProbe,
+	}
+}
+
+// OutboundTestResultFromPB maps the wire response back to the package struct.
+func OutboundTestResultFromPB(resp *pb.OutboundTestResponse) *OutboundTestResult {
+	return &OutboundTestResult{
+		Success:      resp.Success,
+		Status:       resp.Status,
+		LatencyMs:    resp.LatencyMs,
+		TTFBMs:       resp.TtfbMs,
+		ConnectMs:    resp.ConnectTimeMs,
+		StatusCode:   resp.StatusCode,
+		IP:           resp.Ip,
+		Country:      resp.Country,
+		DownloadMbps: resp.DownloadMbps,
+		UploadMbps:   resp.UploadMbps,
+		Error:        resp.Error,
+		Message:      resp.Message,
+	}
 }

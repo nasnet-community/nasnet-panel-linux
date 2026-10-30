@@ -421,7 +421,7 @@ func (c *Client) GetSystemStats(ctx context.Context) (*SystemStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	return systemStatsFromPB(resp), nil
+	return SystemStatsFromPB(resp), nil
 }
 
 // GetXrayStats retrieves Xray traffic statistics from the remote node
@@ -668,11 +668,11 @@ func (c *Client) UpdateXrayBinary(ctx context.Context, version string, restartAf
 
 // TestOutbound tests outbound connectivity via the agent using xray-knife
 func (c *Client) TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error) {
-	resp, err := c.client.TestOutbound(ctx, outboundTestRequest(spec))
+	resp, err := c.client.TestOutbound(ctx, OutboundTestRequestToPB(spec))
 	if err != nil {
 		return nil, err
 	}
-	return outboundTestResult(resp), nil
+	return OutboundTestResultFromPB(resp), nil
 }
 
 // ===== Online User Detection Methods =====
@@ -703,7 +703,7 @@ func (c *Client) GetOnlineIPSnapshot(ctx context.Context) (*OnlineIPSnapshot, er
 	if err != nil {
 		return nil, err
 	}
-	return &OnlineIPSnapshot{Users: onlineIPsFromPB(resp), CollectedAtUnixMs: resp.GetCollectedAtUnixMs()}, nil
+	return &OnlineIPSnapshot{Users: OnlineIPsFromPB(resp), CollectedAtUnixMs: resp.GetCollectedAtUnixMs()}, nil
 }
 
 // ===== Buffered Traffic Methods =====
@@ -714,7 +714,7 @@ func (c *Client) GetBufferedTraffic(ctx context.Context) (*BufferedTrafficStats,
 	if err != nil {
 		return nil, err
 	}
-	return bufferedTrafficFromPB(resp), nil
+	return BufferedTrafficFromPB(resp), nil
 }
 
 // GetStatsBundle fetches system stats, node status, buffered traffic and
@@ -727,10 +727,10 @@ func (c *Client) GetStatsBundle(ctx context.Context, includeOnlineIPs bool) (*St
 		return nil, err
 	}
 	return &StatsBundle{
-		System:                     systemStatsFromPB(resp.System),
+		System:                     SystemStatsFromPB(resp.System),
 		Status:                     resp.Status,
-		Buffered:                   bufferedTrafficFromPB(resp.BufferedTraffic),
-		OnlineIPs:                  onlineIPsFromPB(resp.OnlineIps),
+		Buffered:                   BufferedTrafficFromPB(resp.BufferedTraffic),
+		OnlineIPs:                  OnlineIPsFromPB(resp.OnlineIps),
 		OnlineIPsCollectedAtUnixMs: resp.OnlineIps.GetCollectedAtUnixMs(),
 	}, nil
 }
