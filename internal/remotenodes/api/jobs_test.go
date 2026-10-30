@@ -574,7 +574,7 @@ func TestTheListAndAJobAreTheContractsJobs(t *testing.T) {
 // whichever way the job tried to say it.
 func TestNoJobBodyHoldsASecret(t *testing.T) {
 	r := newRig(t, "")
-	done := r.finished(jobs.Spec{Kind: jobs.KindInstall, NodeID: 1, Steps: []string{"a", "b", "c"}, Secrets: secrets}, func(run *jobs.Run) error {
+	done := r.finished(jobs.Spec{Kind: jobs.KindInstall, NodeID: 1, Steps: []string{"a", "b", "c"}, Secrets: secrets()}, func(run *jobs.Run) error {
 		run.Begin("a")
 		run.Detail("a", "using "+privateKey)
 		run.Set("b", jobs.StepRunning, "pinned "+hostKeyPin)
@@ -591,7 +591,7 @@ func TestNoJobBodyHoldsASecret(t *testing.T) {
 		if !strings.Contains(string(body), "…") {
 			t.Errorf("%s shows no sign that a secret was hidden: %s", what, body)
 		}
-		for _, s := range secrets {
+		for _, s := range secrets() {
 			if strings.Contains(string(body), s) {
 				t.Errorf("%s carries %q: %s", what, s, body)
 			}

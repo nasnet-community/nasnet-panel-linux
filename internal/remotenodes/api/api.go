@@ -9,8 +9,10 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,7 @@ type Store interface {
 type Config struct {
 	Store    Store
 	Jobs     Jobs // where jobs are read from; nil means there are none
+	Live     Live // what the manager knows of the nodes and the router; nil means nothing is running
 	Version  string
 	Commit   string
 	BasePath string       // "" or "/a/b", already cleaned by ui.BasePath
@@ -74,6 +77,9 @@ func New(cfg Config) http.Handler {
 	route("GET /api/jobs/{id}", a.getJob)
 	handle("GET /api/jobs/{id}/events", a.guardedStream(a.jobEvents))
 	route("GET /api/nodes", a.nodes)
+	route("GET /api/nodes/{id}", a.node)
+	route("GET /api/nodes/{id}/subscriptions", a.nodeSubscriptions)
+	route("GET /api/nodes/{id}/traffic", a.nodeTraffic)
 	route("GET /api/subscriptions", a.subscriptions)
 	mux.HandleFunc("/", a.noRoute)
 	if cfg.Index != nil {
@@ -107,9 +113,72 @@ func (a *API) config(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *API) nodes(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, nodeViews(a.cfg.Store.Read(), a.cfg.Now()))
+	writeJSON(w, http.StatusOK, nodeViews(a.cfg.Store.Read(), a.cfg.Now(), a.cfg.Live))
 }
 
 func (a *API) subscriptions(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, subscriptionViews(a.cfg.Store.Read()))
+	writeJSON(w, http.StatusOK, subscriptionViews(a.cfg.Store.Read(), a.cfg.Live))
+}
+
+// nodeParam is the node a path names, with the state it was found in. An id
+// that isn't a number names no node, the same as one nobody has.
+func (a *API) nodeParam(r *http.Request) (model.State, model.Node, error) {
+	st := a.cfg.Store.Read()
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 32)
+	if err == nil {
+		if n := st.FindNode(uint(id)); n != nil {
+			return st, *n, nil
+		}
+	}
+	return st, model.Node{}, fmt.Errorf("%w: node %q", model.ErrNotFound, r.PathValue("id"))
+}
+
+// node is one node with its recent events, which the list leaves out.
+func (a *API) node(w http.ResponseWriter, r *http.Request) {
+	st, n, err := a.nodeParam(r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	events := []NodeEvent{}
+	if a.cfg.Live != nil {
+		if got := a.cfg.Live.NodeEvents(n.ID); got != nil {
+			events = got
+		}
+	}
+	v := nodeView(n, enabledCounts(st)[n.ID], a.cfg.Now(), a.cfg.Live)
+	v.Events = &events
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (a *API) nodeSubscriptions(w http.ResponseWriter, r *http.Request) {
+	st, n, err := a.nodeParam(r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, nodeSubscriptionViews(st, n.ID, a.cfg.Live))
+}
+
+// defaultStepSec is the spacing of the chart's samples when there is no
+// manager to say: the collector's own step.
+const defaultStepSec = 5
+
+func (a *API) nodeTraffic(w http.ResponseWriter, r *http.Request) {
+	_, n, err := a.nodeParam(r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	t := Traffic{StepSec: defaultStepSec}
+	if a.cfg.Live != nil {
+		t = a.cfg.Live.Traffic(n.ID)
+		if t.StepSec == 0 {
+			t.StepSec = defaultStepSec
+		}
+	}
+	if t.Samples == nil {
+		t.Samples = []TrafficSample{} // JSON gets [], never null
+	}
+	writeJSON(w, http.StatusOK, t)
 }
