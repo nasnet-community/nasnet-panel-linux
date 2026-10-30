@@ -1,0 +1,2 @@
+# the built page, packed: the image build copies it in (see Dockerfile.remote-nodes)
+index.html.br

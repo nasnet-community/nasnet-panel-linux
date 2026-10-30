@@ -102,13 +102,17 @@ func main() {
 // run serves until ctx ends, then lets requests in flight finish. listening,
 // if set, is told the address once the port is open.
 func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.Addr)) error {
+	index, err := ui.New(s.basePath)
+	if err != nil {
+		return err
+	}
 	st, err := store.Open(s.dataDir)
 	if err != nil {
 		return err
 	}
 	handler := api.New(api.Config{
 		Store: st, Version: version, Commit: commit,
-		BasePath: s.basePath, Index: ui.New(s.basePath), Log: log,
+		BasePath: s.basePath, Index: index, Log: log,
 	})
 	ln, err := net.Listen("tcp", s.listen)
 	if err != nil {

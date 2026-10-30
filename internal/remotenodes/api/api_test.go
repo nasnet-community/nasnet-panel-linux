@@ -66,9 +66,13 @@ func newRig(t *testing.T, basePath string) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
+	index, err := ui.New(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	r := &rig{t: t, st: st, log: &syncBuf{}}
 	h := New(Config{
-		Store: st, Version: "1.2.3", Commit: "abc1234", BasePath: basePath, Index: ui.New(basePath),
+		Store: st, Version: "1.2.3", Commit: "abc1234", BasePath: basePath, Index: index,
 		Log: slog.New(slog.NewTextHandler(r.log, nil)), Now: func() time.Time { return now },
 	})
 	r.srv = httptest.NewServer(h)

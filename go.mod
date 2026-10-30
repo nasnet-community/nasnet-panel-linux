@@ -6,6 +6,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	filippo.io/age v1.3.2
+	github.com/andybalholm/brotli v1.2.3
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/creack/pty v1.1.24
 	github.com/gin-gonic/gin v1.12.0
@@ -48,7 +49,6 @@ require (
 	charm.land/bubbletea/v2 v2.0.2 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/ajg/form v1.5.1 // indirect
-	github.com/andybalholm/brotli v1.2.3 // indirect
 	github.com/anytls/sing-anytls v0.0.11 // indirect
 	github.com/apernet/quic-go v0.61.1-0.20260806010916-184d081eef3e // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect

@@ -31,20 +31,54 @@ package ui
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/andybalholm/brotli"
 )
 
-// page is a placeholder until the real single-file app takes its place.
+// The image build adds index.html.br, the built page packed with brotli. A
+// checkout has only the placeholder.
 //
-//go:embed index.html
-var page []byte
+//go:embed index.html*
+var files embed.FS
 
-// New serves the embedded page for base.
-func New(base string) http.Handler { return NewHandler(page, base) }
+// Page is the embedded page, unpacked.
+func Page() ([]byte, error) { return pick(files) }
+
+// pick prefers the brotli build to the placeholder. A build that won't
+// unpack is an error, not a reason to serve the placeholder.
+func pick(fsys fs.FS) ([]byte, error) {
+	br, err := fs.ReadFile(fsys, "index.html.br")
+	if errors.Is(err, fs.ErrNotExist) {
+		return fs.ReadFile(fsys, "index.html")
+	}
+	if err != nil {
+		return nil, err
+	}
+	page, err := io.ReadAll(brotli.NewReader(bytes.NewReader(br)))
+	if err != nil {
+		return nil, fmt.Errorf("ui: the embedded page is corrupt: %w", err)
+	}
+	return page, nil
+}
+
+// New serves the embedded page for base. The page is unpacked here, once.
+func New(base string) (http.Handler, error) { return newFS(files, base) }
+
+func newFS(fsys fs.FS, base string) (http.Handler, error) {
+	page, err := pick(fsys)
+	if err != nil {
+		return nil, err
+	}
+	return NewHandler(page, base), nil
+}
 
 // NewHandler serves html with the base tag added.
 func NewHandler(html []byte, base string) http.Handler {
