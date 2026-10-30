@@ -15,6 +15,7 @@ func TestDeadlineFor_KnownMethods(t *testing.T) {
 		{"/nodeagent.NodeAgent/GetStatus", 5 * time.Second},
 		{"RestartXray", 45 * time.Second},
 		{"UpdateXrayBinary", 5 * time.Minute},
+		{"PushXrayBinary", 5 * time.Minute},
 		{"Unknown_ZZ", DefaultRPCDeadline},
 	}
 	for _, c := range cases {

@@ -579,6 +579,12 @@ func (rc *ReverseClient) UpdateXrayBinary(ctx context.Context, version string, r
 	})
 }
 
+// PushXrayBinary needs a client stream and the reverse channel only carries
+// unary calls, so the caller gets what an agent without the call would say.
+func (rc *ReverseClient) PushXrayBinary(context.Context, string, string, io.Reader, bool, bool) error {
+	return status.Error(codes.Unimplemented, "pushing an xray build is not supported over the reverse channel")
+}
+
 // ===== Outbound testing =====
 
 func (rc *ReverseClient) TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error) {
