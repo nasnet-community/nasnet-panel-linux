@@ -164,9 +164,27 @@ func (e *NotManagedError) Is(target error) bool { return target == ErrNotManaged
 // tidyCause is an error's text without the prefixes that only say which
 // package made it.
 func tidyCause(err error) string {
-	s := err.Error()
+	s := reasonTail(err.Error())
 	for _, p := range []string{"installer: connect: ", "installer: ", "agentops: "} {
 		s = strings.TrimPrefix(s, p)
+	}
+	return s
+}
+
+// sentence is a message as a sentence: it starts with a capital and a
+// single-line one ends with a full stop.
+func sentence(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	if r[0] >= 'a' && r[0] <= 'z' {
+		r[0] -= 'a' - 'A'
+	}
+	s = string(r)
+	if !strings.Contains(s, "\n") && !strings.HasSuffix(s, ".") && !strings.HasSuffix(s, "!") && !strings.HasSuffix(s, "?") {
+		s += "."
 	}
 	return s
 }

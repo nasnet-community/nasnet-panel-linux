@@ -39,6 +39,9 @@ type Env struct {
 	Now func() time.Time
 	// Log gets what happened to a node, never a login. Nil is slog.Default.
 	Log *slog.Logger
+	// DialTimeout is how long one connection to an agent may take to come up.
+	// Zero is 15 seconds.
+	DialTimeout time.Duration
 
 	dialOnce sync.Once
 	dial     *net.Dialer
@@ -52,6 +55,13 @@ func (e *Env) now() time.Time {
 		return e.Now()
 	}
 	return time.Now()
+}
+
+func (e *Env) dialTimeout() time.Duration {
+	if e.DialTimeout > 0 {
+		return e.DialTimeout
+	}
+	return defaultDialTimeout
 }
 
 func (e *Env) log() *slog.Logger {
