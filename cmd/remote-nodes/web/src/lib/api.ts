@@ -1,6 +1,8 @@
 // Typed calls to the plugin's API. URLs are relative, so they resolve against
 // the <base href> the server injects (the panel's plugin path).
 
+import { backupFileName } from './backup'
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -25,17 +27,22 @@ export class ApiError extends Error {
 // Every call carries it except the job event stream (see followJob).
 const OWN = { 'X-RemoteNodes-UI': '1' }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`api/${path}`, {
+function failure(status: number, data: Record<string, unknown> | null) {
+  const message = typeof data?.error === 'string' && data.error ? data.error : undefined
+  return new ApiError(message ?? `Request failed (${status})`, status, data ?? {})
+}
+
+const call = (method: string, path: string, body?: unknown) =>
+  fetch(`api/${path}`, {
     method,
     headers: body === undefined ? OWN : { ...OWN, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await call(method, path, body)
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const message = typeof data?.error === 'string' && data.error ? data.error : undefined
-    throw new ApiError(message ?? `Request failed (${res.status})`, res.status, data ?? {})
-  }
+  if (!res.ok) throw failure(res.status, data)
   return data as T
 }
 
@@ -195,6 +202,8 @@ export interface Node {
   entryPort: number
   /** host:port the REALITY handshake borrows */
   handshakeTarget: string
+  /** how the hub's last look at the target went. Not in the contract yet: the Settings tab shows the badge only when it is here. */
+  handshakeCheck?: { ok: boolean; checkedAt: string }
   sni: string
   /** false: the same as the handshake target's host */
   sniCustom: boolean
@@ -324,6 +333,22 @@ export const subscriptions = {
   link: (id: number, nodeId: number) => request<Link>('GET', `${sub(id)}/nodes/${nodeId}/link`),
   /** a new id: the old link stops working */
   replaceLink: (id: number, nodeId: number) => request<Link>('POST', `${sub(id)}/nodes/${nodeId}/replace-link`),
+}
+
+export interface BackupFile {
+  name: string
+  blob: Blob
+}
+
+export const backup = {
+  /** The encrypted file, named as the hub names it. */
+  async export(passphrase: string): Promise<BackupFile> {
+    const res = await call('POST', 'backup/export', { passphrase })
+    if (!res.ok) throw failure(res.status, await res.json().catch(() => ({})))
+    return { name: backupFileName(res.headers.get('Content-Disposition')), blob: await res.blob() }
+  },
+  /** Only an empty install takes one. `data` is the file, base64. */
+  import: (passphrase: string, data: string) => request<{ ok: boolean; nodes: number }>('POST', 'backup/import', { passphrase, data }),
 }
 
 /** The error of a job the plugin no longer knows; the page words it itself. */
