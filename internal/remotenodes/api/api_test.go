@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/store"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/ui"
@@ -54,13 +56,17 @@ func (s *syncBuf) String() string {
 }
 
 type rig struct {
-	t   *testing.T
-	st  *store.Store
-	srv *httptest.Server
-	log *syncBuf
+	t    *testing.T
+	st   *store.Store
+	srv  *httptest.Server
+	log  *syncBuf
+	jobs *jobs.Engine
 }
 
-func newRig(t *testing.T, basePath string) *rig {
+func newRig(t *testing.T, basePath string) *rig { return newRigWith(t, basePath, nil) }
+
+// newRigWith is newRig with a say in the config, once the job engine exists.
+func newRigWith(t *testing.T, basePath string, mod func(*Config, *jobs.Engine)) *rig {
 	t.Helper()
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -71,12 +77,27 @@ func newRig(t *testing.T, basePath string) *rig {
 		t.Fatal(err)
 	}
 	r := &rig{t: t, st: st, log: &syncBuf{}}
-	h := New(Config{
-		Store: st, Version: "1.2.3", Commit: "abc1234", BasePath: basePath, Index: index,
-		Log: slog.New(slog.NewTextHandler(r.log, nil)), Now: func() time.Time { return now },
+	logger := slog.New(slog.NewTextHandler(r.log, nil))
+	r.jobs = jobs.New(jobs.Config{Now: func() time.Time { return now }, Log: logger})
+	cfg := Config{
+		Store: st, Jobs: r.jobs, Version: "1.2.3", Commit: "abc1234", BasePath: basePath, Index: index,
+		Log: logger, Now: func() time.Time { return now },
+	}
+	if mod != nil {
+		mod(&cfg, r.jobs)
+	}
+	r.srv = httptest.NewServer(New(cfg))
+	// An event stream ends with its job, and Close waits for the streams, so
+	// the engine is closed first. Whatever is still connected is let go.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := r.jobs.Close(ctx); err != nil {
+			t.Errorf("closing the job engine: %v", err)
+		}
+		r.srv.CloseClientConnections()
+		r.srv.Close()
 	})
-	r.srv = httptest.NewServer(h)
-	t.Cleanup(r.srv.Close)
 	return r
 }
 
@@ -391,7 +412,7 @@ func jsonNames(typ reflect.Type, path string, into map[string]string) {
 // particular response happens to fill it.
 func TestNoViewTypeHasASecretField(t *testing.T) {
 	names := map[string]string{}
-	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, errorBody{}} {
+	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, jobs.Job{}, errorBody{}} {
 		jsonNames(reflect.TypeOf(v), reflect.TypeOf(v).Name(), names)
 	}
 	if len(names) < 50 {

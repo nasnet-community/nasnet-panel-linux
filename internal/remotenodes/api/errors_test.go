@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
 
@@ -130,6 +132,50 @@ func TestTheLimitSentencesSayTheNumbers(t *testing.T) {
 	}
 	if classify(errors.New("x")) != nil {
 		t.Error("an unknown error was given a code")
+	}
+}
+
+// A handler passes the error of Engine.Start on as it is, and the page gets
+// the busy code. The job's id is in the sentence and nowhere else: the
+// contract has no field for it.
+func TestASecondJobOnANodeIsTheBusyCode(t *testing.T) {
+	e := jobs.New(jobs.Config{Log: slog.New(slog.NewTextHandler(&syncBuf{}, nil))})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release); _ = e.Close(context.Background()) })
+	first, err := e.Start(jobs.Spec{Kind: jobs.KindInstall, NodeID: 3}, func(ctx context.Context, _ *jobs.Run) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, fromStart := e.Start(jobs.Spec{Kind: jobs.KindUpdateAgent, NodeID: 3}, func(context.Context, *jobs.Run) error { return nil })
+	if fromStart == nil {
+		t.Fatal("the engine took a second job for the node")
+	}
+
+	for name, err := range map[string]error{
+		"as Start gives it": fromStart,
+		"wrapped":           fmt.Errorf("updating node 3: %w", fromStart),
+	} {
+		rec := httptest.NewRecorder()
+		(&API{cfg: Config{Log: slog.New(slog.NewTextHandler(&syncBuf{}, nil))}}).fail(rec, err)
+		body := decode[map[string]any](t, rec.Body.Bytes())
+		msg, _ := body["error"].(string)
+		if rec.Code != http.StatusConflict || body["code"] != "busy" || len(body) != 2 || !strings.HasSuffix(msg, ".") || msg[0] != 'A' ||
+			!strings.Contains(msg, first.ID) {
+			t.Errorf("%s: %d %s, want 409 busy naming job %s", name, rec.Code, rec.Body, first.ID)
+		}
+	}
+	// without the job's id, in a bare ErrBusy, it still says busy
+	rec := httptest.NewRecorder()
+	(&API{cfg: Config{}}).fail(rec, jobs.ErrBusy)
+	body := decode[map[string]any](t, rec.Body.Bytes())
+	if rec.Code != http.StatusConflict || body["code"] != "busy" || body["error"] != "A job is already running on that node." {
+		t.Errorf("a bare ErrBusy: %d %s", rec.Code, rec.Body)
 	}
 }
 
