@@ -1,0 +1,172 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "none",
+    "dnsLog": false
+  },
+  "api": {
+    "tag": "api",
+    "services": [
+      "HandlerService",
+      "LoggerService",
+      "StatsService",
+      "RoutingService"
+    ]
+  },
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "api"
+        ],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "ruleTag": "block-private",
+        "ip": [
+          "0.0.0.0/8",
+          "10.0.0.0/8",
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "169.254.0.0/16",
+          "172.16.0.0/12",
+          "192.0.0.0/24",
+          "192.0.2.0/24",
+          "192.88.99.0/24",
+          "192.168.0.0/16",
+          "198.18.0.0/15",
+          "198.51.100.0/24",
+          "203.0.113.0/24",
+          "224.0.0.0/3",
+          "::/127",
+          "fc00::/7",
+          "fe80::/10",
+          "ff00::/8"
+        ],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "ruleTag": "domestic-direct",
+        "ip": [
+          "5.22.0.0/17",
+          "2.176.0.0/12",
+          "2a01:5ec0::/32"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ruleTag": "to-tunnel",
+        "inboundTag": [
+          "entry"
+        ],
+        "outboundTag": "rvs-to-node-7"
+      }
+    ]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "statsUserOnline": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "inbounds": [
+    {
+      "tag": "api",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      }
+    },
+    {
+      "tag": "entry",
+      "listen": "0.0.0.0",
+      "port": 8443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "2f8e3f0b-3a38-4d27-9b0e-5c1d6a7e8f01",
+            "flow": "xtls-rprx-vision",
+            "email": "sub-1@remote-nodes",
+            "level": 0
+          },
+          {
+            "id": "9c4b7a52-61de-4f3a-a8c7-0d2e1b3f4a65",
+            "flow": "xtls-rprx-vision",
+            "email": "sub-2@remote-nodes",
+            "level": 0
+          },
+          {
+            "id": "d0b6f1c8-7e25-4a9d-b4f3-8a1c2e5d6b70",
+            "flow": "xtls-rprx-vision",
+            "email": "rvs-t7@reverse",
+            "level": 0,
+            "reverse": {
+              "tag": "rvs-to-node-7"
+            }
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.example.com:443",
+          "serverNames": [
+            "www.example.com",
+            "example.com"
+          ],
+          "privateKey": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+          "shortIds": [
+            "a1b2c3d4e5f60718",
+            "0f1e"
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls"
+        ],
+        "metadataOnly": false,
+        "routeOnly": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "blocked",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "none"
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {}
+    }
+  ],
+  "stats": {}
+}
