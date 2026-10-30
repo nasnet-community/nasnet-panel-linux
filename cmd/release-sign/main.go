@@ -2,6 +2,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -251,9 +252,16 @@ func releaseCmd(args []string) error {
 	return writeRelease(*out, fl.Args(), m, priv)
 }
 
+// writeRelease lists the files in release.json. An agent-linux-ARCH.gz goes
+// under agents_gz instead of assets.
 func writeRelease(out string, paths []string, m meta, priv ed25519.PrivateKey) error {
 	assets := map[string]release.Asset{}
+	var gzPaths []string
 	for _, p := range paths {
+		if _, ok := release.AgentGzArch(filepath.Base(p)); ok {
+			gzPaths = append(gzPaths, p) // set aside until the plain agents are hashed
+			continue
+		}
 		sum, size, err := hashFile(p)
 		if err != nil {
 			return err
@@ -268,9 +276,46 @@ func writeRelease(out string, paths []string, m meta, priv ed25519.PrivateKey) e
 		}
 		assets[filepath.Base(p)] = a
 	}
+	agentsGz, err := agentGzEntries(gzPaths, assets)
+	if err != nil {
+		return err
+	}
 	r := release.Manifest{Schema: release.Schema, Version: m.version, Prerelease: prerelease(m.version), MinFrom: m.minFrom,
-		Xray: pin.Version, BuiltAt: m.builtAt, Notes: m.notes, Assets: assets}
+		Xray: pin.Version, BuiltAt: m.builtAt, Notes: m.notes, Assets: assets, AgentsGz: agentsGz}
 	return writeSigned(filepath.Join(out, release.ManifestName), r, priv)
+}
+
+// agentGzEntries lists each gzipped agent beside the plain one it came from.
+// A node checks the unpacked bytes against that agent's signed checksum, so a
+// file that doesn't unpack to exactly it must stop the release here.
+func agentGzEntries(paths []string, assets map[string]release.Asset) (map[string]release.AgentGz, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	entries := map[string]release.AgentGz{}
+	for _, p := range paths {
+		name := filepath.Base(p)
+		arch, _ := release.AgentGzArch(name)
+		plainName := release.AgentAsset(arch)
+		plain, ok := assets[plainName]
+		if !ok {
+			return nil, fmt.Errorf("%s is listed without %s", name, plainName)
+		}
+		sum, size, err := hashFile(p)
+		if err != nil {
+			return nil, err
+		}
+		plainSum, plainSize, err := hashUnpacked(p)
+		if err != nil {
+			return nil, err
+		}
+		if plainSum != plain.SHA256 || plainSize != plain.Size {
+			return nil, fmt.Errorf("%s doesn't unpack to %s", name, plainName)
+		}
+		entries[arch] = release.AgentGz{Name: name, Size: size, SHA256: sum,
+			PlainSize: plain.Size, PlainSHA256: plain.SHA256, Sig: plain.Sig}
+	}
+	return entries, nil
 }
 
 func writeSigned(path string, v any, priv ed25519.PrivateKey) error {
@@ -295,6 +340,26 @@ func hashFile(p string) (string, int64, error) {
 	h := sha256.New()
 	n, err := io.Copy(h, f)
 	return hex.EncodeToString(h.Sum(nil)), n, err
+}
+
+// hashUnpacked is the sha256 and size of what a gzip file unpacks to. Reading
+// to the end also checks the file's own CRC, so a truncated copy fails here.
+func hashUnpacked(p string) (string, int64, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return "", 0, fmt.Errorf("%s: %w", filepath.Base(p), err)
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, zr)
+	if err != nil {
+		return "", 0, fmt.Errorf("%s: %w", filepath.Base(p), err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
 // sortedKeys keeps output stable in tests.

@@ -15,7 +15,7 @@ Every release is signed with an Ed25519 key, and panels refuse files no trusted 
 
 - **Set up once:** run `go run ./cmd/release-sign keygen`. Put the private key in the repository secret `RELEASE_SIGNING_KEY` and keep an offline copy: losing it means every panel needs a manual `sudo nasnet` update to trust a new key. Add the printed `mustKey(…)` line to `PublicKeys` in `pkg/signing/keys.go`, and the quoted line under it to `RELEASE_KEYS` in `nasnet-tool.sh`, which checks releases with OpenSSL before the panel can. A test fails while the two lists differ.
 - **Rotate:** ship a release, signed by the old key, that lists both keys; switch the secret in the next one; drop the old key in the one after.
-- **What is signed:** `release.json` lists every asset with its SHA-256 and carries the notes; `bundle.json` inside each offline bundle lists every file in it, so an uploaded bundle checks itself; each agent binary has a `.sig` its nodes verify.
+- **What is signed:** `release.json` lists every asset with its SHA-256 and carries the notes; its `agents_gz` key lists each agent's gzipped copy with the checksum and signature of the plain binary it unpacks to; `bundle.json` inside each offline bundle lists every file in it, so an uploaded bundle checks itself; each agent binary has a `.sig` its nodes verify. A gzipped agent has no signature of its own: a node unpacks it and checks the plain binary.
 
 ## Upgrade steps
 
