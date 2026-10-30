@@ -1,13 +1,15 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { mockApi } from './mock-api'
 
 // One self-contained index.html: the Go binary embeds it (brotli-packed, see scripts/pack.mjs).
 // The code is written against React's API and types, but runs on Preact: a
 // fraction of the size, which the binary's size cap needs.
 export default defineConfig({
   base: './',
-  plugins: [viteSingleFile()],
+  // MOCK=1 (npm run dev:mock) serves the API from sample data, MOCK=fresh from a first run
+  plugins: [viteSingleFile(), ...(process.env.MOCK ? [mockApi()] : [])],
   resolve: {
     alias: [
       { find: /^react-dom\/client$/, replacement: 'preact/compat/client' },
