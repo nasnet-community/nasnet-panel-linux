@@ -13,10 +13,10 @@ import (
 const module = "github.com/nasnet-community/nasnet-panel-linux"
 
 // The hub imports this package and runs in a router's container, where size
-// counts. It takes the standard library and three light packages of the
-// module (the release manifest, its signing keys and the Xray pin), so the Xray
-// core, sing-box, the agent client, the panel's database and its geoip data
-// can't come in through it.
+// counts. It takes the standard library and four light packages of the
+// module (the release manifest, its signing keys, the Xray pin and the bound
+// dialer), so the Xray core, sing-box, the agent client, the panel's database
+// and its geoip data can't come in through it.
 func TestArtifactsImportOnlyWhatItIsAllowed(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -24,6 +24,7 @@ func TestArtifactsImportOnlyWhatItIsAllowed(t *testing.T) {
 	}
 	want := []string{
 		module + "/internal/remotenodes/artifacts",
+		module + "/internal/remotenodes/netbind",
 		module + "/internal/xray/pin",
 		module + "/pkg/release",
 		module + "/pkg/signing",

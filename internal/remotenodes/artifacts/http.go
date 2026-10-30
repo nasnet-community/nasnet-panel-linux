@@ -11,16 +11,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
-	"strings"
 	"time"
+
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netbind"
 )
 
 const (
-	dialTimeout   = 15 * time.Second
 	tlsTimeout    = 15 * time.Second
 	headerTimeout = 30 * time.Second
 	// A download may take as long as the link needs, but not go quiet. Nothing
@@ -44,7 +43,7 @@ const (
 func NewClient(local netip.Addr) *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		Proxy:       nil,
-		DialContext: dialerFor(local).DialContext,
+		DialContext: netbind.Dialer(local).DialContext,
 		// a TLS config of our own also keeps HTTP/2 off, which one download at a time doesn't need
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout:   tlsTimeout,
@@ -55,29 +54,6 @@ func NewClient(local netip.Addr) *http.Client {
 		MaxIdleConnsPerHost:   2,
 		DisableCompression:    true,
 	}}
-}
-
-func dialerFor(local netip.Addr) *net.Dialer {
-	d := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
-	if local = local.Unmap(); local.IsValid() && !local.IsUnspecified() {
-		d.LocalAddr = &net.TCPAddr{IP: local.AsSlice(), Zone: local.Zone()}
-		// the system's resolver would ask from whichever address it likes
-		d.Resolver = &net.Resolver{PreferGo: true, Dial: boundDial(local)}
-	}
-	return d
-}
-
-// boundDial dials from local, as the resolver wants for UDP and for TCP.
-func boundDial(local netip.Addr) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		d := net.Dialer{Timeout: dialTimeout}
-		if strings.HasPrefix(network, "udp") {
-			d.LocalAddr = &net.UDPAddr{IP: local.AsSlice(), Zone: local.Zone()}
-		} else {
-			d.LocalAddr = &net.TCPAddr{IP: local.AsSlice(), Zone: local.Zone()}
-		}
-		return d.DialContext(ctx, network, address)
-	}
 }
 
 // checkRedirect follows a few redirects, which is how GitHub hands out
