@@ -82,6 +82,12 @@
     line-height: 1.5;
   }
 
+  /* No font is fetched: Vazirmatn is used when the device has it, else the system's Persian font. */
+  html[lang='fa'] body {
+    font-family: Vazirmatn, theme('fontFamily.sans');
+    line-height: 1.7;
+  }
+
   input,
   select,
   textarea,

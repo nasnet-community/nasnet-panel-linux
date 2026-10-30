@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-/** Loads `fn` now and every `intervalMs` while the tab is visible. */
+/** Loads `fn` now and every `intervalMs` while the tab is visible. `error` is what the last load threw. */
 export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
   const [loading, setLoading] = useState(true)
   const fnRef = useRef(fn)
   fnRef.current = fn
@@ -19,7 +19,7 @@ export function usePoll<T>(fn: () => Promise<T>, intervalMs: number, deps: unkno
       setError(null)
     } catch (e) {
       if (mine !== generation.current) return
-      setError(e instanceof Error ? e.message : String(e))
+      setError(e)
     } finally {
       if (mine === generation.current) setLoading(false)
     }
