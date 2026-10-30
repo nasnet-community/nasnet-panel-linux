@@ -39,7 +39,8 @@ func (e *ConfigRejectedError) Is(target error) bool { return target == ErrConfig
 // A port that doesn't answer, with Xray running and the entry in it, is the
 // server's firewall, or the provider's, and is ErrUnreachable and says to
 // open TCP <port>.
-func (e *Env) PushConfig(ctx context.Context, c *agent.Client, in nodecfg.Input) error {
+func (e *Env) PushConfig(ctx context.Context, c *agent.Client, in nodecfg.Input) (err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	cfg, err := nodecfg.Build(in)
 	if err != nil {
 		return err

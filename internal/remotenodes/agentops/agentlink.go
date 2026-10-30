@@ -151,7 +151,8 @@ func proveManaged(ctx context.Context, c *agent.Client, version string) error {
 // profile. The manager keeps the client open to poll and to call the other
 // operations, and closes it. An agent that doesn't prove managed is refused
 // with ErrNotManaged, and one that can't be reached with ErrUnreachable.
-func (e *Env) Connect(ctx context.Context, node model.Node) (*agent.Client, error) {
+func (e *Env) Connect(ctx context.Context, node model.Node) (_ *agent.Client, err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	c, err := e.dialAgent(ctx, node, e.dialTimeout(), nil)
 	if err != nil {
 		return nil, err

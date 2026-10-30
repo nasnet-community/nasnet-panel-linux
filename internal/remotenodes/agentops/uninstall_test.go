@@ -358,6 +358,7 @@ func TestAnInstallThatDiesAnywhereCanBeUninstalled(t *testing.T) {
 	}
 	for n := 1; n <= total; n++ {
 		t.Run(fmt.Sprintf("dies at command %d", n), func(t *testing.T) {
+			t.Parallel() // each has a server of its own
 			r := newInstallRig(t)
 			r.sb.decoys()
 			r.sb.withUFW(true, 22)

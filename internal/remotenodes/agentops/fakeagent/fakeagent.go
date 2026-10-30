@@ -79,9 +79,10 @@ type Agent struct {
 	// restart is how long the agent stays down when it restarts.
 	restartDown time.Duration
 
-	calls  []string
-	peers  []string
-	pushes []Push
+	calls   []string
+	peers   []string
+	pushes  []Push
+	updates []*pb.UpdateRequest
 
 	t     testing.TB
 	addr  string
@@ -96,6 +97,13 @@ type Push struct {
 	Chunks   int    // the data messages
 	MaxChunk int    // the largest of them, in bytes
 	Build    []byte // what came out of them, unpacked when the header said gzip
+}
+
+// Updates are the agent updates sent so far, in order.
+func (a *Agent) Updates() []*pb.UpdateRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]*pb.UpdateRequest(nil), a.updates...)
 }
 
 // Pushes are the builds sent so far, in order.
@@ -308,6 +316,7 @@ func (a *Agent) PushXrayBinary(stream pb.NodeAgent_PushXrayBinaryServer) error {
 
 func (a *Agent) SelfUpdate(_ context.Context, r *pb.UpdateRequest) (*pb.UpdateResponse, error) {
 	a.mu.Lock()
+	a.updates = append(a.updates, r)
 	hook, old, down := a.OnSelfUpdate, a.AgentVersion, a.restartDown
 	a.mu.Unlock()
 	if hook != nil {

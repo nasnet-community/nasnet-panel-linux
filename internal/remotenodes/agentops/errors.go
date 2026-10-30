@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/nasnet-community/mtproto-remote-plugin/installer"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // What can go wrong with a node, as errors.Is sees it. The manager maps these
@@ -162,9 +164,20 @@ func (e *NotManagedError) Error() string {
 }
 func (e *NotManagedError) Is(target error) bool { return target == ErrNotManaged }
 
-// ctxDone says whether err is the context ending, which is no one's fault but the caller's.
+// ctxDone says whether err is a context ending, which is no one's fault but
+// the caller's. gRPC says a cancelled call as a status, not as the context's own error.
 func ctxDone(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.Canceled
+}
+
+// ctxErr is the context's own error when the caller's context has ended and
+// err is what that did to a call: the caller asked for it, and a gRPC status
+// or a "doesn't answer" would only blur that.
+func ctxErr(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // tidyCause is an error's text without the prefixes that only say which
