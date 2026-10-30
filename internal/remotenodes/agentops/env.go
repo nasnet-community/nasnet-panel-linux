@@ -45,6 +45,10 @@ type Env struct {
 	// DialTimeout is how long one connection to an agent may take to come up.
 	// Zero is 15 seconds.
 	DialTimeout time.Duration
+	// Settle is how long a node has to settle after a change: to report the
+	// Xray that was sent, to run it, to answer on the entry port. Zero is each
+	// wait's own, 15 to 30 seconds.
+	Settle time.Duration
 
 	// What a test puts in the place of the real thing. Nil is the real one.
 	connectSSH func(context.Context, installer.Target) (Shell, error)
@@ -71,6 +75,15 @@ func (e *Env) dialTimeout() time.Duration {
 		return e.DialTimeout
 	}
 	return defaultDialTimeout
+}
+
+// settleTime is how long to wait for a node to settle after a change: the
+// wait's own, unless a test shortens them all.
+func (e *Env) settleTime(own time.Duration) time.Duration {
+	if e.Settle > 0 {
+		return e.Settle
+	}
+	return own
 }
 
 func (e *Env) log() *slog.Logger {

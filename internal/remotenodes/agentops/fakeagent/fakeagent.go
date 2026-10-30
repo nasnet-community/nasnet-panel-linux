@@ -70,20 +70,39 @@ type Agent struct {
 	OnStatus func() *pb.NodeStatus
 	// OnUsers answers ListUsers. Nil says there are none.
 	OnUsers func(tag string) (*pb.UserList, error)
+	// NoProbe makes ProbeRealityDest Unimplemented, as on an agent that
+	// predates it.
+	NoProbe bool
 	// OnProbe answers ProbeRealityDest. Nil fails every name.
 	OnProbe func(r *pb.RealityDestProbeRequest) *pb.RealityDestProbeResponse
 
 	// restart is how long the agent stays down when it restarts.
 	restartDown time.Duration
 
-	calls []string
-	peers []string
+	calls  []string
+	peers  []string
+	pushes []Push
 
 	t     testing.TB
 	addr  string
 	creds credentials.TransportCredentials
 	gs    *grpc.Server
 	done  chan struct{}
+}
+
+// Push is one build the agent was sent.
+type Push struct {
+	Header   *pb.XrayBinaryHeader
+	Chunks   int    // the data messages
+	MaxChunk int    // the largest of them, in bytes
+	Build    []byte // what came out of them, unpacked when the header said gzip
+}
+
+// Pushes are the builds sent so far, in order.
+func (a *Agent) Pushes() []Push {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]Push(nil), a.pushes...)
 }
 
 // Start serves an agent on a loopback port, with a certificate for host (an IP
@@ -249,6 +268,7 @@ func (a *Agent) PushXrayBinary(stream pb.NodeAgent_PushXrayBinaryServer) error {
 		return status.Error(codes.InvalidArgument, "the first message must be the header")
 	}
 	var data bytes.Buffer
+	var chunks, biggest int
 	for {
 		m, err := stream.Recv()
 		if err == io.EOF {
@@ -260,6 +280,8 @@ func (a *Agent) PushXrayBinary(stream pb.NodeAgent_PushXrayBinaryServer) error {
 		if len(m.GetData()) > 1<<20 {
 			return status.Error(codes.InvalidArgument, "a data message is over 1 MiB")
 		}
+		chunks++
+		biggest = max(biggest, len(m.GetData()))
 		data.Write(m.GetData())
 	}
 	build := data.Bytes()
@@ -272,6 +294,9 @@ func (a *Agent) PushXrayBinary(stream pb.NodeAgent_PushXrayBinaryServer) error {
 			return status.Errorf(codes.InvalidArgument, "the data is not a complete gzip stream: %v", err)
 		}
 	}
+	a.mu.Lock()
+	a.pushes = append(a.pushes, Push{Header: h, Chunks: chunks, MaxChunk: biggest, Build: build})
+	a.mu.Unlock()
 	if hook != nil {
 		return stream.SendAndClose(hook(h, build))
 	}
@@ -343,8 +368,11 @@ func (a *Agent) ListUsers(_ context.Context, r *pb.InboundSelector) (*pb.UserLis
 
 func (a *Agent) ProbeRealityDest(_ context.Context, r *pb.RealityDestProbeRequest) (*pb.RealityDestProbeResponse, error) {
 	a.mu.Lock()
-	hook := a.OnProbe
+	hook, no := a.OnProbe, a.NoProbe
 	a.mu.Unlock()
+	if no {
+		return nil, status.Error(codes.Unimplemented, "method ProbeRealityDest not implemented")
+	}
 	if hook != nil {
 		return hook(r), nil
 	}
