@@ -6,6 +6,7 @@ import { AttentionList } from './Attention'
 import { EntryCard, entryAttention } from './Entry'
 import { NodesScreen } from './NodesScreen'
 import { Soon } from './Soon'
+import { SubscriptionsScreen } from './SubscriptionsScreen'
 
 /** The first page: whether entry works, what needs attention, then the Nodes, Subscriptions and Settings tabs. */
 export function RootScreen({ tab, config, onConfigChanged }: { tab: RootTab; config: AppConfig | null; onConfigChanged: () => void }) {
@@ -21,7 +22,13 @@ export function RootScreen({ tab, config, onConfigChanged }: { tab: RootTab; con
       {config && <AttentionList list={entryAttention(config.entry, t)} />}
       <Tabs label={t('tabs.sections')} idBase="root" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'root', tab: next })} />
       <div role="tabpanel" id="root-panel" aria-labelledby={`root-${tab}`}>
-        {tab === 'nodes' ? <NodesScreen config={config} onChanged={onConfigChanged} /> : <Soon title={tabs.find(([key]) => key === tab)![1]} />}
+        {tab === 'nodes' ? (
+          <NodesScreen config={config} onChanged={onConfigChanged} />
+        ) : tab === 'subscriptions' ? (
+          <SubscriptionsScreen config={config} onChanged={onConfigChanged} />
+        ) : (
+          <Soon title={tabs.find(([key]) => key === tab)![1]} />
+        )}
       </div>
     </div>
   )
