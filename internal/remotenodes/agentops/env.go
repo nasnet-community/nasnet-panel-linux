@@ -10,7 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nasnet-community/mtproto-remote-plugin/installer"
+
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/artifacts"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netbind"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 )
@@ -42,6 +45,12 @@ type Env struct {
 	// DialTimeout is how long one connection to an agent may take to come up.
 	// Zero is 15 seconds.
 	DialTimeout time.Duration
+
+	// What a test puts in the place of the real thing. Nil is the real one.
+	connectSSH func(context.Context, installer.Target) (Shell, error)
+	probeSSH   func(context.Context, installer.Target) (string, error)
+	verify     func(context.Context, model.Node, *artifacts.Agent) (Versions, error)
+	startWait  time.Duration // how long a started agent has to listen; 0 is 30 s
 
 	dialOnce sync.Once
 	dial     *net.Dialer

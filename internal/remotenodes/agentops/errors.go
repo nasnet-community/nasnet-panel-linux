@@ -3,6 +3,7 @@
 package agentops
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -160,6 +161,11 @@ func (e *NotManagedError) Error() string {
 	return "This agent isn't running the managed profile" + v + ". Agents before 1.3.0 don't have it, and a node set up by hand may run the full one. Install the agent again with this plugin."
 }
 func (e *NotManagedError) Is(target error) bool { return target == ErrNotManaged }
+
+// ctxDone says whether err is the context ending, which is no one's fault but the caller's.
+func ctxDone(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
 
 // tidyCause is an error's text without the prefixes that only say which
 // package made it.
