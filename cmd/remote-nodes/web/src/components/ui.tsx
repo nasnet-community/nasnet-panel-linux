@@ -16,6 +16,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import qrcode from 'qrcode-generator'
+import { useLang } from '../i18n'
 import { Check, ChevronDown, Copy, Info, Loader, TriangleAlert, X } from './icons'
 
 export function cx(...classes: (string | false | null | undefined)[]) {
@@ -216,7 +217,7 @@ export function Dialog({
   footer,
   wide,
   alert,
-  closeLabel = 'Close',
+  closeLabel,
 }: {
   open?: boolean
   onClose: () => void
@@ -229,6 +230,7 @@ export function Dialog({
   alert?: boolean
   closeLabel?: string
 }) {
+  const { t } = useLang()
   const panel = useRef<HTMLDivElement>(null)
   // a new onClose every parent render must not re-run the focus effect
   const close = useRef(onClose)
@@ -299,7 +301,7 @@ export function Dialog({
             </h2>
             {description && <p className="mt-1 text-[13px] text-muted">{description}</p>}
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label={closeLabel} data-close className="-me-2 -mt-1">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={closeLabel ?? t('common.close')} data-close className="-me-2 -mt-1">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -332,6 +334,7 @@ export function Confirm({
   onConfirm: () => Promise<unknown> | void
   onClose: () => void
 }) {
+  const { t } = useLang()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   return (
@@ -341,7 +344,7 @@ export function Confirm({
       title={title}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button
             variant={danger ? 'danger' : 'primary'}
             busy={busy}
@@ -429,9 +432,11 @@ export function Menu({
     const height = items.reduce((h, i) => h + (i.hint ? 56 : 40) + (i.divide ? 9 : 0), 10)
     const up = r.bottom + height + 8 > window.innerHeight && r.top > height + 8
     const width = 248
+    // lined up with the trigger's end edge: its right edge, or its left one when the page runs right to left
+    const rtl = document.documentElement.dir === 'rtl'
     setPos({
       top: up ? r.top - 4 : r.bottom + 4,
-      left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)),
+      left: Math.max(8, Math.min(rtl ? r.left : r.right - width, window.innerWidth - width - 8)),
       up,
       anchorTop: r.top,
       anchorLeft: r.left,
@@ -567,12 +572,13 @@ const ToastContext = createContext<Push>(() => {})
 
 /** Toasts sit top right under the header on desktops, above the bottom edge on phones; errors stay until closed. */
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useLang()
   const [toasts, setToasts] = useState<Toast[]>([])
-  const drop = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
+  const drop = useCallback((id: number) => setToasts((list) => list.filter((x) => x.id !== id)), [])
   const push = useCallback<Push>(
     (text, tone = 'ok', action) => {
       const id = Date.now() + Math.random()
-      setToasts((t) => [...t.slice(-3), { id, text, tone, action }])
+      setToasts((list) => [...list.slice(-3), { id, text, tone, action }])
       if (tone === 'ok') setTimeout(() => drop(id), 3500)
     },
     [drop],
@@ -581,32 +587,32 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={push}>
       {children}
       <div data-toasts className="pointer-events-none fixed inset-x-4 bottom-[calc(16px+env(safe-area-inset-bottom)+var(--toast-lift,0px))] z-50 flex flex-col gap-2 sm:bottom-auto sm:end-4 sm:start-auto sm:top-[68px] sm:w-[380px]">
-        {toasts.map((t) => (
+        {toasts.map((toast) => (
           <div
-            key={t.id}
+            key={toast.id}
             data-toast
-            role={t.tone === 'error' ? 'alert' : 'status'}
+            role={toast.tone === 'error' ? 'alert' : 'status'}
             className={cx(
               'pointer-events-auto flex items-start gap-3 rounded-md border bg-surface px-4 py-3 text-[13px] shadow-lg',
-              t.tone === 'error' ? 'border-bad text-foreground' : 'border-border-strong text-foreground',
+              toast.tone === 'error' ? 'border-bad text-foreground' : 'border-border-strong text-foreground',
             )}
           >
-            {t.tone === 'error' && <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-bad-text" />}
-            <span className="min-w-0 flex-1 break-words">{t.text}</span>
-            {t.action && (
+            {toast.tone === 'error' && <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-bad-text" />}
+            <span className="min-w-0 flex-1 break-words">{toast.text}</span>
+            {toast.action && (
               <button
                 type="button"
                 className="-my-1 shrink-0 rounded px-1.5 py-1 font-medium underline underline-offset-2"
                 onClick={() => {
-                  drop(t.id)
-                  t.action!.run()
+                  drop(toast.id)
+                  toast.action!.run()
                 }}
               >
-                {t.action.label}
+                {toast.action.label}
               </button>
             )}
-            {t.tone === 'error' && (
-              <button type="button" aria-label="Dismiss" onClick={() => drop(t.id)} className="-m-1 shrink-0 rounded p-1 text-muted hover:text-foreground">
+            {toast.tone === 'error' && (
+              <button type="button" aria-label={t('common.dismiss')} onClick={() => drop(toast.id)} className="-m-1 shrink-0 rounded p-1 text-muted hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
             )}
@@ -635,7 +641,7 @@ export async function copyText(text: string) {
 
 export function CopyButton({
   text,
-  label = 'Copy',
+  label,
   name,
   variant,
   size = 'sm',
@@ -649,6 +655,7 @@ export function CopyButton({
   size?: keyof typeof SIZES
   className?: string
 }) {
+  const { t } = useLang()
   const [copied, setCopied] = useState(false)
   return (
     <Button
@@ -663,9 +670,9 @@ export function CopyButton({
       }}
     >
       {copied ? <Check className="h-4 w-4 text-ok-text" /> : <Copy className="h-4 w-4" />}
-      {copied ? 'Copied' : label}
+      {copied ? t('common.copied') : (label ?? t('common.copy'))}
       <span className="sr-only" aria-live="polite">
-        {copied ? 'Copied' : ''}
+        {copied ? t('common.copied') : ''}
       </span>
     </Button>
   )
@@ -830,9 +837,11 @@ export function Tabs<T extends string>({
     const all = [...list.current!.querySelectorAll<HTMLElement>('[role="tab"]')]
     const at = all.indexOf(document.activeElement as HTMLElement)
     const i = at >= 0 ? at : tabs.findIndex(([t]) => t === value)
+    // the next tab is on the left when the page runs right to left
+    const [forward, back] = document.documentElement.dir === 'rtl' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowRight', 'ArrowLeft']
     const next =
-      e.key === 'ArrowRight' ? (i + 1) % tabs.length
-      : e.key === 'ArrowLeft' ? (i - 1 + tabs.length) % tabs.length
+      e.key === forward ? (i + 1) % tabs.length
+      : e.key === back ? (i - 1 + tabs.length) % tabs.length
       : e.key === 'Home' ? 0
       : e.key === 'End' ? tabs.length - 1
       : -1
