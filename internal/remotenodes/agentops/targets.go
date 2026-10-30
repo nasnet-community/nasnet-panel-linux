@@ -62,7 +62,7 @@ type NoTargetError struct{ Results []TargetResult }
 
 func (e *NoTargetError) Error() string {
 	if len(e.Results) == 1 {
-		return sentence(fmt.Sprintf("%s doesn't work as a handshake target from this server: %s", e.Results[0].Target, lowerFirst(e.Results[0].Check.Error)))
+		return sentence(fmt.Sprintf("The site %s doesn't work as a handshake target from this server: %s", e.Results[0].Target, lowerFirst(e.Results[0].Check.Error)))
 	}
 	return fmt.Sprintf("None of the %d sites tried works as a handshake target from this server.", len(e.Results))
 }
@@ -117,7 +117,8 @@ func parseTarget(s string) (host string, port int, err error) {
 // a client would, and judge what comes back. What is wrong with the target is
 // in the result; an error is for what stopped the check, such as a target that
 // isn't written as host:port, or an agent too old to run it.
-func (e *Env) CheckTarget(ctx context.Context, c *agent.Client, target string) (HandshakeCheck, error) {
+func (e *Env) CheckTarget(ctx context.Context, c *agent.Client, target string) (_ HandshakeCheck, err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	host, port, err := parseTarget(target)
 	if err != nil {
 		return HandshakeCheck{}, err
@@ -207,7 +208,8 @@ func explainCheck(c *pb.RealityDestCheck) string {
 // the best of them. Candidates are host or host:port, with 443 for the port;
 // none given means DefaultTargets. A target that doesn't work isn't an error:
 // it is a result that says why. An error is for what stopped the checks.
-func (e *Env) ProbeTargets(ctx context.Context, c *agent.Client, candidates []string) (TargetChoice, error) {
+func (e *Env) ProbeTargets(ctx context.Context, c *agent.Client, candidates []string) (_ TargetChoice, err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	if len(candidates) == 0 {
 		candidates = DefaultTargets()
 	}

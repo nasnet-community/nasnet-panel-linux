@@ -251,3 +251,16 @@ func statMode(path string) (string, error) {
 func itoa(n int) string { return fmt.Sprint(n) }
 
 func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }
+
+func gunzipBytes(t testing.TB, b []byte) []byte {
+	t.Helper()
+	r, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}

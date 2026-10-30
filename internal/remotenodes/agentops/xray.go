@@ -34,14 +34,12 @@ const (
 //
 // An agent that predates the call answers Unimplemented, which is
 // ErrAgentOutdated: update the agent first.
-func (e *Env) PushXray(ctx context.Context, c *agent.Client, node model.Node, restart bool, progress Progress) error {
+func (e *Env) PushXray(ctx context.Context, c *agent.Client, node model.Node, restart bool, progress Progress) (err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	return e.pushXray(ctx, c, node, restart, newStepper(progress))
 }
 
 func (e *Env) pushXray(ctx context.Context, c *agent.Client, node model.Node, restart bool, st *stepper) error {
-	if e.Files == nil {
-		return ErrNoFiles
-	}
 	done := st.begin(StepDownloadXray)
 	info, err := c.GetVersion(ctx)
 	if err != nil {
@@ -56,6 +54,9 @@ func (e *Env) pushXray(ctx context.Context, c *agent.Client, node model.Node, re
 	arch := info.Arch
 	if arch == "" {
 		arch = node.Arch
+	}
+	if e.Files == nil {
+		return done("", ErrNoFiles)
 	}
 	x, err := e.Files.Xray(ctx, arch)
 	if err != nil {
@@ -126,7 +127,8 @@ func pushFailure(err error) error {
 // UpdateXray puts the pinned Xray on a node that already runs one and
 // verifies it, restarting Xray as it goes. The manager restarts the bridge
 // itself, since both ends of the tunnel have to run the same build.
-func (e *Env) UpdateXray(ctx context.Context, c *agent.Client, node model.Node, progress Progress) (Versions, error) {
+func (e *Env) UpdateXray(ctx context.Context, c *agent.Client, node model.Node, progress Progress) (_ Versions, err error) {
+	defer func() { err = ctxErr(ctx, err) }()
 	if err := e.pushXray(ctx, c, node, true, newStepper(progress)); err != nil {
 		return Versions{}, err
 	}
