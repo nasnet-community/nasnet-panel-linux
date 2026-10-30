@@ -16,7 +16,8 @@ const DefaultRPCDeadline = 10 * time.Second
 
 // rpcDeadlines: per-method deadline budget. Keys are short names or full
 // gRPC paths; both resolve via shortName(). Fast reads 5s, control 10-30s,
-// binary uploads 5min. Streaming RPCs excluded (would cancel mid-use).
+// binary uploads 5min. Long-lived streams (logs, heartbeat, terminal) are
+// excluded: a deadline would cancel them mid-use.
 var rpcDeadlines = map[string]time.Duration{
 	"FetchPoolSource":   45 * time.Second,
 	"TestPoolCandidate": 120 * time.Second,
@@ -81,6 +82,9 @@ var rpcDeadlines = map[string]time.Duration{
 	"Wipe":             10 * time.Minute,
 	"UpdateXrayBinary": 5 * time.Minute,
 	"Uninstall":        60 * time.Second,
+	// A stream, so the unary interceptor skips it; Client.PushXrayBinary
+	// applies this itself.
+	"PushXrayBinary": 5 * time.Minute,
 
 	// Core dependency install RPCs are all fast — the install itself runs
 	// asynchronously on the node and is polled via GetInstallProgress.
