@@ -47,13 +47,42 @@ type Config struct {
 	Logf func(format string, args ...any)
 }
 
-// node is what the collector holds for one node.
+// node is what the collector holds for one node. Everything in it is under
+// Collector.mu, except pollMu.
 type node struct {
 	hist *nodeHist
 
 	// diskThrough is hist.through as the file holds it, or as it will once
 	// there is a file: the mark up to which the agent may be told to drop.
 	diskThrough int64
+
+	pollMu sync.Mutex // one poll of the node at a time, the fetch included
+
+	// Below is in memory only, and gone with the process.
+
+	src       Source // what the last poll asked; Flush acknowledges through it
+	acked     int64  // the mark the agent was last told, in this run
+	staleSeen bool   // the agent was found holding buckets the file counts: tell it again
+	// ackFailing is whether the last acknowledgement a poll tried failed, so a
+	// failure that goes on is said once.
+	ackFailing bool
+
+	live      bool      // answered within the last MissedPolls polls
+	misses    int       // polls in a row without an answer
+	updatedAt time.Time // the last answer
+	partial   *partial  // the newest bucket, still growing
+
+	online   map[uint]int       // subscription -> client addresses, as of the last poll that said
+	onlineAt time.Time          // when that was
+	lastSeen map[uint]time.Time // subscription -> the last poll that found it online
+
+	havePrev         bool // a poll with traffic data came before, so there is something to take a difference from
+	lastData         time.Time
+	obs              []observation
+	rateUp, rateDown uint64
+	ring             ring
+
+	warnedAhead bool // buckets dated in the future were found, and said
 }
 
 // Collector counts what the subscriptions use on each node and answers for it.
@@ -74,11 +103,10 @@ type Collector struct {
 
 // Open starts a collector on cfg.Dir and loads the history in it. A missing
 // file is an empty history, and nothing is written until something changes.
-// A file that can't be used never stops the hub: one that is damaged or can't
-// be read is kept beside itself under another name and the history starts
-// empty, and one from a newer release is left exactly as it is, with nothing
-// written to disk or acknowledged to the agents until a build that reads it
-// takes over. Either way it is said in the log.
+// A file that can't be used never stops the hub: a damaged or unreadable one is
+// moved beside itself and the history starts empty, and one from a newer
+// release is left as it is, with nothing written or acknowledged until a build
+// that reads it takes over. The log says which.
 func Open(cfg Config) (*Collector, error) {
 	if cfg.FlushEvery <= 0 {
 		cfg.FlushEvery = DefaultFlushEvery
@@ -193,25 +221,38 @@ func (c *Collector) ForgetSubscription(subID uint) {
 	defer c.mu.Unlock()
 	for _, n := range c.nodes {
 		delete(n.hist.subs, subID)
+		delete(n.online, subID)
+		delete(n.lastSeen, subID)
+		if n.partial != nil {
+			delete(n.partial.b.subs, subID)
+		}
 	}
 }
 
-// Flush writes the history if it changed since the last write. The write goes
-// through the store's atomic routine, so the file is the old one or the new
-// one whatever happens.
+// Flush writes the history if it changed since the last write, and then, only
+// then, tells each node's agent to drop the buckets the file now counts. The
+// write goes through the store's atomic routine, so the file is the old one
+// or the new one whatever happens; if it fails nothing is acknowledged. An
+// acknowledgement that fails is returned, naming the node, and is tried again
+// by the next flush: the agent keeps what it wasn't told to drop.
+//
+// A node is acknowledged through the Source of its last poll, so one that
+// hasn't been polled since the hub started isn't acknowledged yet.
 func (c *Collector) Flush(ctx context.Context) error {
 	c.flushMu.Lock()
 	defer c.flushMu.Unlock()
-	_, err := c.write()
-	return err
+	if c.noWrite {
+		return nil
+	}
+	if err := c.write(); err != nil {
+		return err
+	}
+	return c.acknowledge(ctx)
 }
 
-// write saves the history when its bytes differ from the file's and returns
-// the mark of each node as it is on disk now. The caller holds flushMu.
-func (c *Collector) write() (map[uint]int64, error) {
-	if c.noWrite {
-		return nil, nil
-	}
+// write saves the history when its bytes differ from the file's, and records
+// each node's mark as it is on disk now. The caller holds flushMu.
+func (c *Collector) write() error {
 	c.mu.Lock()
 	c.pruneLocked(c.now())
 	enc, err := encode(c.hists())
@@ -221,13 +262,13 @@ func (c *Collector) write() (map[uint]int64, error) {
 	}
 	c.mu.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("usage: %w", err)
+		return fmt.Errorf("usage: %w", err)
 	}
 
 	// the disk is not touched under the lock: readers never wait for it
 	if c.path != "" && !bytes.Equal(enc, c.enc) {
 		if err := store.WriteFileAtomic(c.path, enc); err != nil {
-			return nil, fmt.Errorf("usage: %w", err)
+			return fmt.Errorf("usage: %w", err)
 		}
 		c.enc = enc
 		c.writes.Add(1)
@@ -235,12 +276,12 @@ func (c *Collector) write() (map[uint]int64, error) {
 
 	c.mu.Lock()
 	for id, m := range marks {
-		if n := c.nodes[id]; n != nil && m > n.diskThrough {
-			n.diskThrough = m
+		if n := c.nodes[id]; n != nil {
+			n.diskThrough = max(n.diskThrough, m)
 		}
 	}
 	c.mu.Unlock()
-	return marks, nil
+	return nil
 }
 
 // Run flushes every FlushEvery until ctx is done, and once more then, so a
