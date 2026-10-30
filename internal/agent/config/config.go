@@ -23,6 +23,10 @@ type Config struct {
 	// Node identity (set during deployment)
 	NodeUUID string `yaml:"node_uuid"`
 
+	// Profile limits what the hub may ask: "full" (default) or "managed".
+	// Only this file sets it; there is no environment override.
+	Profile Profile `yaml:"profile,omitempty"`
+
 	// Connection mode: "direct" (default, agent listens for master) or "reverse" (agent dials master)
 	ConnectMode string `yaml:"connect_mode"`
 
@@ -181,6 +185,7 @@ type ProcessConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		ListenAddr: ":9090",
+		Profile:    ProfileFull,
 		Xray: XrayConfig{
 			BinaryPath:    "/usr/local/bin/xray",
 			ConfigPath:    "/usr/local/etc/xray/config.json", // Ensure this matches systemd config path
@@ -256,7 +261,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Override with environment variables
+	// Override with environment variables (not the profile: see Config.Profile)
 	cfg.applyEnvOverrides()
 
 	cfg.FilePath = path
@@ -318,6 +323,10 @@ func (c *Config) applyEnvOverrides() {
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
+	// Load already refuses a bad profile; this covers a Config built in code.
+	if _, err := ParseProfile(string(c.Profile)); err != nil {
+		return err
+	}
 	if c.ConnectMode == "reverse" {
 		if c.HubURL == "" {
 			return fmt.Errorf("hub_url is required when connect_mode is 'reverse'")

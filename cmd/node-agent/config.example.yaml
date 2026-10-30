@@ -4,6 +4,11 @@
 # gRPC server listen address
 listen_addr: ":9090"
 
+# What the hub may ask of this agent. "full" (the default) allows every call.
+# "managed" allows a short list: no shell, terminal, file writes, connection
+# mode switch or uninstall. Read once at startup; no call changes it.
+# profile: managed
+
 # Xray-core settings
 xray:
   binary_path: "/usr/local/bin/xray"

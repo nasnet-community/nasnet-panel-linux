@@ -67,6 +67,10 @@ type Server struct {
 	grpcServer   *grpc.Server
 	listener     net.Listener
 
+	// profile is the config's profile as it was at startup. The checks read
+	// this copy, so nothing that edits cfg later can loosen them.
+	profile config.Profile
+
 	// ports holds every open listener by address (two while a port move is
 	// under way); dropped marks the ones a move closed on purpose.
 	portsMu  sync.Mutex
@@ -174,6 +178,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 
 	s := &Server{
 		cfg:           cfg,
+		profile:       cfg.Profile,
 		xrayMgr:       xrayMgr,
 		sshMgr:        sshMgr,
 		statsCollect:  telemetry.NewSampler(statsCollect.Collect, 5*time.Second, 4*time.Second, 15*time.Second),
@@ -289,27 +294,10 @@ func (s *Server) Start() error {
 	}
 	s.listener = listener
 
-	// Configure gRPC server options
-	var opts []grpc.ServerOption
-
-	if s.cfg.TLS.Enabled {
-		tlsCreds, err := s.loadTLSCredentials()
-		if err != nil {
-			return fmt.Errorf("failed to load TLS credentials: %w", err)
-		}
-		opts = append(opts, grpc.Creds(tlsCreds))
+	opts, err := s.serverOptions()
+	if err != nil {
+		return err
 	}
-
-	// Add logging middleware
-	loggingMw := middleware.NewLoggingMiddleware()
-	opts = append(opts,
-		grpc.UnaryInterceptor(loggingMw.UnaryServerInterceptor()),
-		grpc.StreamInterceptor(loggingMw.StreamServerInterceptor()),
-	)
-
-	// Create gRPC server
-	// Increase max receive message size to 100MB for binary updates
-	opts = append(opts, grpc.MaxRecvMsgSize(100*1024*1024))
 	s.grpcServer = grpc.NewServer(opts...)
 	pb.RegisterNodeAgentServer(s.grpcServer, s)
 
@@ -326,6 +314,31 @@ func (s *Server) Start() error {
 	s.reopenPendingPortLocked()
 	s.portsMu.Unlock()
 	return <-s.serveErr
+}
+
+// serverOptions is what Start serves with: mutual TLS when it's on, the
+// logging middleware, and the profile check inside it so a refused call is
+// logged too. On the full profile that check lets everything through.
+func (s *Server) serverOptions() ([]grpc.ServerOption, error) {
+	var opts []grpc.ServerOption
+
+	if s.cfg.TLS.Enabled {
+		tlsCreds, err := s.loadTLSCredentials()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+		}
+		opts = append(opts, grpc.Creds(tlsCreds))
+	}
+
+	loggingMw := middleware.NewLoggingMiddleware()
+	profileMw := middleware.NewProfileMiddleware(s.profile)
+	opts = append(opts,
+		grpc.ChainUnaryInterceptor(loggingMw.UnaryServerInterceptor(), profileMw.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(loggingMw.StreamServerInterceptor(), profileMw.StreamServerInterceptor()),
+		// Increase max receive message size to 100MB for binary updates
+		grpc.MaxRecvMsgSize(100*1024*1024),
+	)
+	return opts, nil
 }
 
 func (s *Server) StartLocal(ctx context.Context) error {
