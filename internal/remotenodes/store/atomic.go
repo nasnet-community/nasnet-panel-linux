@@ -100,6 +100,16 @@ func writeAtomic(ops diskOps, path string, data []byte) error {
 	return nil
 }
 
+// WriteFileAtomic saves data to path the way state.json is saved: the bytes
+// are on disk before the rename and the rename is on disk before it returns,
+// the file ends up 0600, and a failure leaves what was there. It is for the
+// other files in the data folder that keep their own contents, such as the
+// usage history, so they get the same care without a second copy of the
+// routine.
+func WriteFileAtomic(path string, data []byte) error {
+	return writeAtomic(osOps(), path, data)
+}
+
 // writeTemp fills the file and closes it, whatever happens.
 func writeTemp(f tempFile, data []byte) error {
 	err := f.Chmod(0o600) // CreateTemp asks for 0600, but a strict umask can take bits away

@@ -192,3 +192,66 @@ func TestARealUnwritableFolderLeavesTheOldFile(t *testing.T) {
 		t.Fatal("memory kept a change that was never saved")
 	}
 }
+
+func TestWriteFileAtomicReplacesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.json")
+
+	must(t, WriteFileAtomic(path, []byte("first\n")))
+	if got := string(readFile(t, path)); got != "first\n" {
+		t.Fatalf("file holds %q", got)
+	}
+	fi, err := os.Stat(path)
+	must(t, err)
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("a new file is %v, want 0600", fi.Mode().Perm())
+	}
+
+	// a file that was left looser is tightened by the replacement
+	must(t, os.Chmod(path, 0o644))
+	must(t, WriteFileAtomic(path, []byte("second\n")))
+	if got := string(readFile(t, path)); got != "second\n" {
+		t.Fatalf("file holds %q after the second write", got)
+	}
+	fi, err = os.Stat(path)
+	must(t, err)
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("the replaced file is %v, want 0600", fi.Mode().Perm())
+	}
+	if got := names(t, dir); len(got) != 1 || got[0] != "usage.json" {
+		t.Fatalf("the folder holds %v, want only the file", got)
+	}
+}
+
+func TestWriteFileAtomicInAMissingFolderFails(t *testing.T) {
+	dir := t.TempDir()
+	err := WriteFileAtomic(filepath.Join(dir, "gone", "usage.json"), []byte("x"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want the folder to be missing", err)
+	}
+	if got := names(t, dir); len(got) != 0 {
+		t.Fatalf("the folder holds %v after a failed write", got)
+	}
+}
+
+func TestWriteFileAtomicLeavesTheOldFileWhenItFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "usage.json")
+	must(t, WriteFileAtomic(path, []byte("old\n")))
+
+	must(t, os.Chmod(dir, 0o500))
+	defer os.Chmod(dir, 0o700)
+	if err := WriteFileAtomic(path, []byte("new\n")); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("err = %v, want a permission error", err)
+	}
+	must(t, os.Chmod(dir, 0o700))
+	if got := string(readFile(t, path)); got != "old\n" {
+		t.Fatalf("file holds %q after a failed write", got)
+	}
+	if got := names(t, dir); len(got) != 1 {
+		t.Fatalf("the folder holds %v", got)
+	}
+}
