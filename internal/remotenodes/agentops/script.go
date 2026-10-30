@@ -45,6 +45,11 @@ const (
 	xrayConfDir  = "/usr/local/etc/xray"
 	xrayConfPath = xrayConfDir + "/config.json"
 	xrayUnitPath = "/etc/systemd/system/xray.service"
+
+	// xrayDropIn is the agent's own doing: in service mode it points Xray at
+	// its data files with a drop-in, each time it starts Xray.
+	xrayDropIn    = "/etc/systemd/system/xray.service.d/asset-location.conf"
+	xrayDropInDir = "/etc/systemd/system/xray.service.d"
 )
 
 // shq quotes s for a POSIX shell.
@@ -112,6 +117,29 @@ func cmdWrite(path, mode string) string {
 }
 
 func cmdUFWAllow(port int) string { return "ufw allow " + strconv.Itoa(port) + "/tcp" }
+
+func cmdUFWDelete(port int) string {
+	return "ufw delete allow " + strconv.Itoa(port) + "/tcp 2>/dev/null || true"
+}
+
+// xrayBinSpool is where the agent spools a pushed build before it swaps it in.
+const xrayBinSpool = "/usr/local/bin/.xray-push-"
+
+// Uninstall's commands. Each stands on its own and none fails over something
+// that is already gone, so a half-installed node comes clean.
+var (
+	cmdStopAgent = "systemctl disable --now " + agentUnit + " 2>/dev/null || true"
+	cmdStopXray  = "systemctl disable --now xray 2>/dev/null || true"
+	cmdRmAgent   = "rm -f " + quoted(agentUnitPath, agentUnitPath+".new", agentBin, agentBin+".new", agentBin+".old", agentUpload)
+	cmdRmDirs    = "rm -rf " + quoted(confDir, logDir)
+	cmdRmXray    = "rm -f " + quoted(xrayBin, xrayBin+".bak") + " " + shq(xrayBinSpool) + "*"
+	cmdRmXrayCfg = "rm -f " + quoted(xrayConfPath, xrayConfPath+".tmp.json") + " && rmdir " + shq(xrayConfDir) + " 2>/dev/null || true"
+	cmdRmXrayDef = "rm -f " + quoted(xrayUnitPath, xrayUnitPath+".new")
+	cmdRmDropIn  = "rm -f " + shq(xrayDropIn) + " && rmdir " + shq(xrayDropInDir) + " 2>/dev/null || true"
+	cmdRmData    = "rm -rf " + shq(dataDir)
+	cmdRmEmpty   = "rmdir " + quoted(confDir, dataDir, logDir) + " 2>/dev/null || true"
+	cmdReload    = "systemctl daemon-reload 2>/dev/null || true"
+)
 
 // The paths whose presence the install asks about before it writes anything.
 var presentPaths = []string{agentBin, agentUnitPath, xrayBin, xrayUnitPath, xrayConfPath}

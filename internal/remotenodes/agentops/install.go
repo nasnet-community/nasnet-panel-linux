@@ -21,7 +21,7 @@ import (
 // an error too, as far as the install got: Changed says whether the server
 // was touched, which is when removal has something to clean.
 type InstallResult struct {
-	Changed  bool // the install put something on the server
+	Changed  bool // the install may have put something on the server
 	Repaired bool // an agent of this hub was there already, and was put in order
 	Arch     string
 	OS       string // as the server names it, "Debian GNU/Linux 12 (bookworm)"
@@ -325,13 +325,13 @@ func (in *install) prepare(ctx context.Context) error {
 
 func (in *install) writeAll(ctx context.Context) error {
 	s := in.s
+	in.res.Changed = true // from here on the server may be different, whatever happens to the next command
 	if _, err := s.root(ctx, "Couldn't create "+dataDir, cmdDirs(dataDir), nil); err != nil {
 		return err
 	}
 	if err := in.writeMarker(ctx); err != nil {
 		return err
 	}
-	in.res.Changed = true
 	if _, err := s.root(ctx, "Couldn't create the agent's folders", cmdDirs(confDir, logDir), nil); err != nil {
 		return err
 	}

@@ -5,6 +5,8 @@ package agentops
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"slices"
@@ -37,7 +39,7 @@ func newLinkRig(t *testing.T) *linkRig {
 	ca := testCA(t)
 	ag := fakeagent.Start(t, ca, loopback)
 	return &linkRig{
-		env:  &Env{CA: ca, Local: netip.MustParseAddr(loopback), DialTimeout: 3 * time.Second},
+		env:  &Env{CA: ca, Local: netip.MustParseAddr(loopback), DialTimeout: 3 * time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 		ca:   ca,
 		node: model.Node{ID: 1, Name: "Frankfurt", Host: loopback, AgentPort: ag.Port(), EntryPort: 443, SSHPort: 22},
 		ag:   ag,
