@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test'
 // without a router or a node. The mock holds state, so tests run one at a time and each
 // starts from reset sample data (see e2e/fixtures.ts). Every spec runs twice, in a desktop
 // window and at phone width (Pixel 7); a test that only makes sense for one says so.
-const PORT = 5185
+// E2E_PORT lets two checkouts run the browser tests at once.
+const PORT = Number(process.env.E2E_PORT ?? 5185)
 
 // Use a system Chromium when there is one (CHROMIUM_PATH, or the usual paths);
 // otherwise Playwright's own, installed with `npx playwright install chromium`.
