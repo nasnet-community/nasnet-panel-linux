@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 )
 
 // MaxNameRunes is the longest node or subscription name.
@@ -257,6 +259,21 @@ func (e Enablement) Validate() error {
 	return nil
 }
 
+// validCA takes both halves of the CA or neither, and a pair that pki can
+// load. The message says what is wrong and never quotes the key.
+func validCA(cert, key string) error {
+	switch {
+	case cert == "" && key == "":
+		return nil
+	case cert == "" || key == "":
+		return invalid("the CA needs both its certificate and its key")
+	}
+	if _, err := pki.Load([]byte(cert), []byte(key)); err != nil {
+		return invalid("%v", err)
+	}
+	return nil
+}
+
 func (s Settings) Validate() error {
 	for _, p := range []struct {
 		what string
@@ -284,6 +301,9 @@ func (s State) Validate() error {
 	}
 	if s.NextNodeID == 0 || s.NextSubscriptionID == 0 {
 		return invalid("an id counter is zero")
+	}
+	if err := validCA(s.CACert, s.CAKey); err != nil {
+		return err
 	}
 	nodes := map[uint]bool{}
 	for _, n := range s.Nodes {

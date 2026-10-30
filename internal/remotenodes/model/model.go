@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 )
 
 const (
@@ -28,7 +30,7 @@ const (
 
 	// CertRenewBefore is how long before a node certificate runs out the hub
 	// renews it.
-	CertRenewBefore = 30 * 24 * time.Hour
+	CertRenewBefore = pki.RenewBefore
 )
 
 var (
@@ -124,6 +126,12 @@ type State struct {
 	NextSubscriptionID uint      `json:"next_subscription_id"`
 	Settings           Settings  `json:"settings"`
 	LastBackupAt       time.Time `json:"last_backup_at,omitzero"` // when a backup was last exported
+
+	// The CA every node trusts, as PEM. The hub makes it the first time it
+	// needs one, so a fresh state has neither half. Hub only: the key never
+	// reaches the page, and losing it means enrolling every node again.
+	CACert string `json:"ca_cert,omitempty"`
+	CAKey  string `json:"ca_key,omitempty"`
 
 	Nodes         []Node         `json:"nodes"`
 	Subscriptions []Subscription `json:"subscriptions"`
@@ -236,7 +244,7 @@ func (s State) nameTaken(name string, except uint) bool {
 
 // CheckEdit is what the store runs on a state after an edit. The result must
 // be valid on its own and, compared with the state before, must not grow past
-// a cap or turn an id counter back.
+// a cap, turn an id counter back or lose the CA.
 //
 // Growth is what the caps refuse, so a state that already holds more (a past
 // release allowed it, or the file was edited) can still shrink and be
@@ -253,6 +261,11 @@ func (s State) CheckEdit(before State) error {
 	}
 	if s.NextNodeID < before.NextNodeID || s.NextSubscriptionID < before.NextSubscriptionID {
 		return invalid("an id counter went backwards, which would reuse an id")
+	}
+	// another CA can take its place (a backup import does), but none at all
+	// would leave every node trusting a CA the hub can no longer sign with
+	if before.CACert != "" && s.CACert == "" {
+		return invalid("an edit dropped the CA, which every node trusts")
 	}
 	return nil
 }
