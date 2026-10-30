@@ -82,3 +82,27 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## The Persian font
+
+Persian is set in Vazirmatn, embedded so it looks the same on every device and the page asks for no font.
+`src/fonts/` holds it cut down to what the page's Persian text uses, in two weights (400 and 600; the
+browser maps 500 to the first and 700 to the second): the Persian letters, marks and digits in
+`vazirmatn-persian-*.woff2`, and the digits and punctuation of Latin text in `vazirmatn-symbols-*.woff2`.
+Latin letters keep the system font. `src/fonts.css` declares the four files; the build inlines them as
+base64, which costs about 33 KB packed. Vazirmatn is under the SIL Open Font License 1.1 (`src/fonts/OFL.txt`).
+
+The files were cut from `@fontsource/vazirmatn` 5.3.0 (`vazirmatn-arabic-{400,600}-normal.woff2` and
+`vazirmatn-latin-{400,600}-normal.woff2`) with fontTools. If the Persian copy needs a letter that is
+missing, cut them again with the letter added to the first list, and add it to the `unicode-range`:
+
+```
+pyftsubset vazirmatn-arabic-400-normal.woff2 --flavor=woff2 --layout-features='*' --no-hinting \
+  --name-IDs=0,1,2,3,4,5,6,13,14 --drop-tables+=STAT,gasp --output-file=vazirmatn-persian-400.woff2 \
+  --unicodes=U+0020,U+00A0,U+0621-063A,U+0640-0655,U+0660-066D,U+067E,U+0686,U+0698,U+06A9,U+06AF,U+06CC,U+06C0,U+06F0-06F9,U+060C,U+061B,U+061F,U+200C-200F,U+FDFC
+pyftsubset vazirmatn-latin-400-normal.woff2 --flavor=woff2 --layout-features= --no-hinting \
+  --name-IDs=0,1,2,3,4,5,6,13,14 --drop-tables+=STAT,gasp --output-file=vazirmatn-symbols-400.woff2 \
+  --unicodes=U+0021-0040,U+005B-0060,U+007B-007E,U+00AB,U+00B7,U+00BB,U+2013-2014,U+2018-2019,U+201C-201D,U+2026
+```
+
+The same two commands, with 600 in the names, make the heavier weight.
