@@ -99,6 +99,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	logrus.WithFields(logrus.Fields{
 		"version":     version,
+		"profile":     cfg.Profile.String(),
 		"listen_addr": cfg.ListenAddr,
 		"xray_binary": cfg.Xray.BinaryPath,
 		"xray_config": cfg.Xray.ConfigPath,
@@ -143,7 +144,7 @@ func runReverse(cfg *config.Config, srv *server.Server) error {
 
 	srv.StartBackgroundServices(context.Background())
 
-	handler := reverse.NewCommandHandler(srv)
+	handler := reverse.NewCommandHandler(srv, cfg.Profile)
 	connector := reverse.NewConnector(cfg, handler)
 	connector.Version = server.Version
 	connector.Commit = server.Commit
