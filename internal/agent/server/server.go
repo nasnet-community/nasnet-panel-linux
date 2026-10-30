@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -135,6 +137,9 @@ type Server struct {
 	// Serializes UpdateXrayBinary so two concurrent admin-triggered updates
 	// can't race on stop/backup/write/restart.
 	xrayUpdateMu sync.Mutex
+	// xrayCheck vets the first bytes of a new xray build; nil means
+	// validateXrayBinary. Tests swap it so a script can stand in for the ELF.
+	xrayCheck func(head []byte) error
 }
 
 // NewServer creates a new gRPC server for the node agent
@@ -1630,17 +1635,12 @@ func (s *Server) UpdateXrayBinary(ctx context.Context, req *pb.UpdateXrayRequest
 		}, nil
 	}
 
-	// Validate version string (digits, letters, dots, hyphens) — matches the
-	// hub's IsValidVersion so custom builds like "26.5.9-wg1" are accepted.
-	// No '/' allowed, so it stays path-safe.
-	for _, c := range version {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.' || c == '-') {
-			return &pb.CommandResponse{
-				Success:   false,
-				Message:   fmt.Sprintf("Invalid version format: %s", version),
-				ErrorCode: "INVALID_ARGUMENT",
-			}, nil
-		}
+	if !validXrayVersion(version) {
+		return &pb.CommandResponse{
+			Success:   false,
+			Message:   fmt.Sprintf("Invalid version format: %s", version),
+			ErrorCode: "INVALID_ARGUMENT",
+		}, nil
 	}
 
 	logrus.WithField("version", version).Info("[UpdateXrayBinary] Starting xray-core update")
@@ -1661,6 +1661,18 @@ func (s *Server) UpdateXrayBinary(ctx context.Context, req *pb.UpdateXrayRequest
 
 	// Fall through to GitHub-based install for backward compatibility / disaster recovery.
 	return s.updateXrayFromGitHub(ctx, req, version)
+}
+
+// validXrayVersion accepts digits, letters, dots and hyphens — matches the
+// hub's IsValidVersion so custom builds like "26.5.9-wg1" are accepted.
+// No '/' allowed, so it stays path-safe.
+func validXrayVersion(version string) bool {
+	for _, c := range version {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // XrayRunning reports the node's own Xray process.
@@ -1707,9 +1719,20 @@ func (s *Server) SwitchXray(path string) (string, error) {
 	return version, nil
 }
 
-// updateXrayFromHub performs a hub-mediated atomic update with full rollback.
+// xraySwap is a replacement of the xray binary under way: xray is stopped and
+// the current build backed up, so install or rollback has to follow.
+type xraySwap struct {
+	s          *Server
+	bin        string // the installed build
+	backup     string // where the old build waits
+	wasRunning bool
+	hasBackup  bool
+}
+
+// beginXraySwap stops xray if it runs and backs the current build up. A
+// response back means the swap did not start and nothing changed.
 // Caller must hold xrayUpdateMu.
-func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayRequest, version string) (*pb.CommandResponse, error) {
+func (s *Server) beginXraySwap() (*xraySwap, *pb.CommandResponse) {
 	xrayBin := s.xrayMgr.BinaryPath()
 	backupPath := xrayBin + ".bak"
 
@@ -1721,11 +1744,11 @@ func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayReques
 			// truncate of in-use exec, and partial writes corrupt the
 			// process's executable mmap. Bail out cleanly.
 			logrus.WithError(err).Error("[UpdateXrayBinary] Failed to stop xray; aborting update to avoid corruption")
-			return &pb.CommandResponse{
+			return nil, &pb.CommandResponse{
 				Success:   false,
 				Message:   fmt.Sprintf("Refusing to update: failed to stop running xray: %v", err),
 				ErrorCode: "STOP_FAILED",
-			}, nil
+			}
 		}
 	}
 
@@ -1738,11 +1761,11 @@ func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayReques
 			if wasRunning {
 				_ = s.xrayMgr.Start()
 			}
-			return &pb.CommandResponse{
+			return nil, &pb.CommandResponse{
 				Success:   false,
 				Message:   fmt.Sprintf("Failed to back up current binary: %v", err),
 				ErrorCode: "BACKUP_FAILED",
-			}, nil
+			}
 		}
 		hasBackup = true
 	} else if !os.IsNotExist(origErr) {
@@ -1750,84 +1773,54 @@ func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayReques
 		if wasRunning {
 			_ = s.xrayMgr.Start()
 		}
-		return &pb.CommandResponse{
+		return nil, &pb.CommandResponse{
 			Success:   false,
 			Message:   fmt.Sprintf("Failed to read current binary for backup: %v", origErr),
 			ErrorCode: "BACKUP_FAILED",
-		}, nil
-	}
-
-	// Helper to roll back to the backup binary and (optionally) restart.
-	rollback := func(reason string) {
-		if hasBackup {
-			if backupData, berr := os.ReadFile(backupPath); berr == nil {
-				if err := writeFileAtomic(xrayBin, backupData, 0755); err != nil {
-					logrus.WithError(err).WithField("reason", reason).Error("[UpdateXrayBinary] Rollback write failed")
-				}
-			}
-		}
-		if wasRunning {
-			if err := s.xrayMgr.Start(); err != nil {
-				logrus.WithError(err).Error("[UpdateXrayBinary] Failed to restart xray with old binary after rollback")
-			}
 		}
 	}
 
-	// Download from hub.
-	dlClient := &http.Client{Timeout: 5 * time.Minute}
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", req.DownloadUrl, nil)
-	if err != nil {
-		rollback("create request failed")
-		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to create request: %v", err)}, nil
-	}
-	if req.DownloadToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+req.DownloadToken)
-	}
+	return &xraySwap{s: s, bin: xrayBin, backup: backupPath, wasRunning: wasRunning, hasBackup: hasBackup}, nil
+}
 
-	resp, err := dlClient.Do(httpReq)
-	if err != nil {
-		rollback("download error")
-		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to download xray: %v", err)}, nil
+// rollback puts the backed-up build back and (optionally) restarts xray.
+func (w *xraySwap) rollback(reason string) {
+	if w.hasBackup {
+		if backupData, berr := os.ReadFile(w.backup); berr == nil {
+			if err := writeFileAtomic(w.bin, backupData, 0755); err != nil {
+				logrus.WithError(err).WithField("reason", reason).Error("[UpdateXrayBinary] Rollback write failed")
+			}
+		}
 	}
-	defer resp.Body.Close()
+	if w.wasRunning {
+		if err := w.s.xrayMgr.Start(); err != nil {
+			logrus.WithError(err).Error("[UpdateXrayBinary] Failed to restart xray with old binary after rollback")
+		}
+	}
+}
 
-	if resp.StatusCode != http.StatusOK {
-		rollback("download non-200")
-		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Download failed: HTTP %d", resp.StatusCode)}, nil
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		rollback("read body error")
-		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to read response: %v", err)}, nil
-	}
-
-	// Verify SHA256 — mandatory in the hub path (enforced at entry).
-	hash := sha256.Sum256(data)
-	actual := hex.EncodeToString(hash[:])
-	if actual != req.Checksum {
-		rollback("checksum mismatch")
-		return &pb.CommandResponse{
-			Success: false,
-			Message: fmt.Sprintf("Checksum mismatch: expected %.16s..., got %.16s...", req.Checksum, actual),
-		}, nil
-	}
-	logrus.Info("[UpdateXrayBinary] Checksum verified")
+// install checks the new build, writes it over the old one, restarts xray and
+// probes its version; any failure rolls back. It takes a reader so a push can
+// hand over its spool file instead of loading it into memory.
+func (w *xraySwap) install(r io.Reader, restartAfter bool) *pb.CommandResponse {
+	s := w.s
 
 	// Validate ELF + arch matches this host before writing.
-	if err := validateXrayBinary(data); err != nil {
-		rollback("binary invalid: " + err.Error())
+	br := bufio.NewReader(r)
+	head, _ := br.Peek(64)
+	if err := s.checkXrayBinary(head); err != nil {
+		w.rollback("binary invalid: " + err.Error())
 		return &pb.CommandResponse{
 			Success: false,
 			Message: fmt.Sprintf("Refusing to install: %v", err),
-		}, nil
+		}
 	}
 
 	// Write new binary atomically. Tmp file + rename so a crash mid-write
 	// cannot leave a truncated /usr/local/bin/xray behind.
-	if err := writeFileAtomic(xrayBin, data, 0755); err != nil {
-		rollback("write failed")
-		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to write binary: %v", err)}, nil
+	if err := writeFileAtomicFrom(w.bin, br, 0755); err != nil {
+		w.rollback("write failed")
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to write binary: %v", err)}
 	}
 
 	// Clear cached version so next GetVersion fetches fresh.
@@ -1836,17 +1829,17 @@ func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayReques
 	s.mu.Unlock()
 
 	// Restart if requested or it was running before. Failure rolls back.
-	shouldRun := req.RestartAfter || wasRunning
+	shouldRun := restartAfter || w.wasRunning
 	if shouldRun {
 		logrus.Info("[UpdateXrayBinary] Restarting xray with new binary")
 		if err := s.xrayMgr.Start(); err != nil {
 			logrus.WithError(err).Error("[UpdateXrayBinary] Restart with new binary failed; rolling back")
-			rollback("restart failed")
+			w.rollback("restart failed")
 			return &pb.CommandResponse{
 				Success:   false,
 				Message:   fmt.Sprintf("Xray restart failed after update: %v (rolled back)", err),
 				ErrorCode: "RESTART_FAILED",
-			}, nil
+			}
 		}
 	}
 
@@ -1859,23 +1852,75 @@ func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayReques
 		if shouldRun {
 			_ = s.xrayMgr.Stop(10 * time.Second)
 		}
-		rollback("version probe failed")
+		w.rollback("version probe failed")
 		return &pb.CommandResponse{
 			Success:   false,
 			Message:   "Installed binary failed to report a version; rolled back",
 			ErrorCode: "POST_INSTALL_VERIFY_FAILED",
-		}, nil
+		}
 	}
 
 	// Only now is it safe to remove the backup.
-	if hasBackup {
-		_ = os.Remove(backupPath)
+	if w.hasBackup {
+		_ = os.Remove(w.backup)
 	}
 
 	return &pb.CommandResponse{
 		Success: true,
 		Message: fmt.Sprintf("Xray updated to %s from hub", newVersion),
-	}, nil
+	}
+}
+
+// updateXrayFromHub performs a hub-mediated atomic update with full rollback.
+// Caller must hold xrayUpdateMu.
+func (s *Server) updateXrayFromHub(ctx context.Context, req *pb.UpdateXrayRequest, version string) (*pb.CommandResponse, error) {
+	sw, failed := s.beginXraySwap()
+	if failed != nil {
+		return failed, nil
+	}
+
+	// Download from hub.
+	dlClient := &http.Client{Timeout: 5 * time.Minute}
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", req.DownloadUrl, nil)
+	if err != nil {
+		sw.rollback("create request failed")
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to create request: %v", err)}, nil
+	}
+	if req.DownloadToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+req.DownloadToken)
+	}
+
+	resp, err := dlClient.Do(httpReq)
+	if err != nil {
+		sw.rollback("download error")
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to download xray: %v", err)}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		sw.rollback("download non-200")
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Download failed: HTTP %d", resp.StatusCode)}, nil
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		sw.rollback("read body error")
+		return &pb.CommandResponse{Success: false, Message: fmt.Sprintf("Failed to read response: %v", err)}, nil
+	}
+
+	// Verify SHA256 — mandatory in the hub path (enforced at entry).
+	hash := sha256.Sum256(data)
+	actual := hex.EncodeToString(hash[:])
+	if actual != req.Checksum {
+		sw.rollback("checksum mismatch")
+		return &pb.CommandResponse{
+			Success: false,
+			Message: fmt.Sprintf("Checksum mismatch: expected %.16s..., got %.16s...", req.Checksum, actual),
+		}, nil
+	}
+	logrus.Info("[UpdateXrayBinary] Checksum verified")
+
+	return sw.install(bytes.NewReader(data), req.RestartAfter), nil
 }
 
 // updateXrayFromGitHub: official XTLS install script. Caller holds
@@ -1973,6 +2018,12 @@ func (s *Server) updateXrayFromGitHub(ctx context.Context, req *pb.UpdateXrayReq
 // over the target. Rename within one filesystem is atomic on POSIX, so readers
 // see either the old file or the new file — never a partial write.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	return writeFileAtomicFrom(path, bytes.NewReader(data), mode)
+}
+
+// writeFileAtomicFrom is writeFileAtomic for a reader, so a big build can
+// come from a file instead of memory.
+func writeFileAtomicFrom(path string, r io.Reader, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
@@ -1980,7 +2031,7 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	}
 	tmpName := tmp.Name()
 	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, r); err != nil {
 		_ = tmp.Close()
 		cleanup()
 		return err
@@ -2038,6 +2089,14 @@ func validateXrayBinary(data []byte) error {
 		return fmt.Errorf("binary arch %s does not match host arch %s", gotArch, wantArch)
 	}
 	return nil
+}
+
+// checkXrayBinary is validateXrayBinary unless a test put its own in xrayCheck.
+func (s *Server) checkXrayBinary(head []byte) error {
+	if s.xrayCheck != nil {
+		return s.xrayCheck(head)
+	}
+	return validateXrayBinary(head)
 }
 
 // elfArchForHost returns the canonical arch string for the agent's CPU, or
