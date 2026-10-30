@@ -1,8 +1,12 @@
 // Package pin is the one xray-core release the panel installs on every node.
 package pin
 
-// Version is the pinned release (no "v"); bump it here with both hash tables.
+// Version is the pinned release (no "v"); bump it here with Commit, go.mod and both hash tables.
 const Version = "26.10.21"
+
+// Commit is what Version's tag points at. The panel links xray-core from this
+// commit, so its tests run against the Xray the nodes run.
+const Commit = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 
 // ZipSHA256 is each release zip's hash, as XTLS publishes it in the .dgst files.
 var ZipSHA256 = map[string]string{
