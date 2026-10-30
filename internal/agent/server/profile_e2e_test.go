@@ -49,8 +49,8 @@ func (l *callLog) seen() []string {
 	return out
 }
 
-// onlyTheSafeOnes is what the sweeps register in place of a whole Server: two
-// harmless calls are real and the rest answer Unimplemented. A call that got
+// onlyTheSafeOnes is what the sweeps register in place of a whole Server: one
+// harmless call is real and the rest answer Unimplemented. A call that got
 // past the profile check is then told from a refused one by its code, and
 // nothing destructive can run if the check ever fails.
 type onlyTheSafeOnes struct {
@@ -60,10 +60,6 @@ type onlyTheSafeOnes struct {
 
 func (o onlyTheSafeOnes) GetVersion(ctx context.Context, r *pb.Empty) (*pb.VersionInfo, error) {
 	return o.real.GetVersion(ctx, r)
-}
-
-func (o onlyTheSafeOnes) UpdateXrayAPIConfig(ctx context.Context, r *pb.XrayAPIConfigPayload) (*pb.CommandResponse, error) {
-	return o.real.UpdateXrayAPIConfig(ctx, r)
 }
 
 // liveAgent is a Server behind the options Start serves with, on a loopback
@@ -296,28 +292,37 @@ func TestManagedAgentOverARealConnection(t *testing.T) {
 	_, err = nuke.Recv()
 	wantManagedRefusal(t, "Nuke", err)
 
-	// the only allowed call that rewrites the agent's config file leaves the
-	// profile as the file says: managed, however it is spelled
-	if err := a.hub.UpdateXrayAPIConfig(ctx, "127.0.0.1:10999"); err != nil {
-		t.Fatalf("UpdateXrayAPIConfig: %v", err)
+	// a managed agent never rewrites its own config file: the one call that
+	// would is refused and the file stays byte for byte as it was
+	before, err := os.ReadFile(a.configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantManagedRefusal(t, "UpdateXrayAPIConfig", a.hub.UpdateXrayAPIConfig(ctx, "127.0.0.1:10999"))
+	after, err := os.ReadFile(a.configFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("the config file changed:\n%s", after)
 	}
 	reloaded, err := config.Load(a.configFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.Profile != config.ProfileManaged || reloaded.Xray.APIAddr != "127.0.0.1:10999" {
-		t.Fatalf("the saved config says profile %q, api %q", reloaded.Profile, reloaded.Xray.APIAddr)
+	if reloaded.Profile != config.ProfileManaged {
+		t.Fatalf("the config says profile %q", reloaded.Profile)
 	}
 	_, err = a.hub.ExecuteCommand(ctx, "id", 5)
-	wantManagedRefusal(t, "ExecuteCommand after the config was rewritten", err)
+	wantManagedRefusal(t, "ExecuteCommand after the refused rewrite", err)
 
-	// none of that reached a handler but the two allowed calls
+	// none of that reached a handler but the one allowed call
 	for _, p := range []string{ranMarker, filepath.Join(a.dir, "xray", "evil.txt")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Errorf("%s exists: %v", p, err)
 		}
 	}
-	if got, want := a.reached.seen(), []string{"GetVersion", "UpdateXrayAPIConfig"}; !slices.Equal(got, want) {
+	if got, want := a.reached.seen(), []string{"GetVersion"}; !slices.Equal(got, want) {
 		t.Fatalf("calls that got past the profile: %v, want %v", got, want)
 	}
 }
@@ -344,8 +349,8 @@ func TestManagedAgentSweepOfEveryCall(t *testing.T) {
 	if got := a.reached.seen(); !slices.Equal(got, wantIn) {
 		t.Fatalf("calls that got past the profile:\n  %v\nwant\n  %v", got, wantIn)
 	}
-	if len(wantIn) != 30 || len(allCalls(t))-len(wantIn) != 30 {
-		t.Fatalf("%d calls let in, %d refused: want 30 and 30", len(wantIn), len(allCalls(t))-len(wantIn))
+	if len(wantIn) != 29 || len(allCalls(t))-len(wantIn) != 31 {
+		t.Fatalf("%d calls let in, %d refused: want 29 and 31", len(wantIn), len(allCalls(t))-len(wantIn))
 	}
 }
 

@@ -19,7 +19,7 @@ var wantAllowed = map[string]bool{
 	"GetStatus": true, "HealthCheck": true, "GetVersion": true, "GetHostInfo": true,
 	"Heartbeat": true, "GetSystemStats": true,
 	"StartXray": true, "StopXray": true, "RestartXray": true, "PushConfig": true,
-	"ValidateConfig": true, "GetCurrentConfig": true, "UpdateXrayAPIConfig": true,
+	"ValidateConfig": true, "GetCurrentConfig": true,
 	"AddUser": true, "RemoveUser": true, "ListUsers": true,
 	"GetXrayStats": true, "GetStatsBundle": true, "GetBufferedTraffic": true,
 	"AckBufferedTraffic": true, "GetUserOnlineIPs": true, "GetAllUsersOnlineIPs": true,
@@ -48,8 +48,9 @@ var wantDenied = map[string]string{
 	"ClearSSHLogs":      "erases the SSH auth logs",
 	"RestartSSH":        "restarts sshd",
 
-	"UpdateXrayBinary": "installs Xray from a URL or a shell script; PushXrayBinary is the way in",
-	"InspectCertFile":  "reads whichever path the caller names",
+	"UpdateXrayBinary":    "installs Xray from a URL or a shell script; PushXrayBinary is the way in",
+	"UpdateXrayAPIConfig": "rewrites the agent's own config file; the plugin writes it once, at install",
+	"InspectCertFile":     "reads whichever path the caller names",
 
 	"TestOutbound":      "outbound probing an entry node doesn't do",
 	"FetchPoolSource":   "outbound probing an entry node doesn't do",
@@ -135,16 +136,16 @@ func TestEveryCallHasAManagedDecision(t *testing.T) {
 }
 
 func TestManagedAllowListIsTheApprovedOne(t *testing.T) {
-	if len(wantAllowed) != 30 || len(managedAllowed) != 30 {
-		t.Fatalf("approved %d, allowed %d: want 30 each", len(wantAllowed), len(managedAllowed))
+	if len(wantAllowed) != 29 || len(managedAllowed) != 29 {
+		t.Fatalf("approved %d, allowed %d: want 29 each", len(wantAllowed), len(managedAllowed))
 	}
 	for name := range wantAllowed {
 		if _, ok := managedAllowed[fullName(name)]; !ok {
 			t.Errorf("%s is approved but not in managedAllowed", name)
 		}
 	}
-	if len(wantDenied) != 30 {
-		t.Errorf("%d denied calls, want 30", len(wantDenied))
+	if len(wantDenied) != 31 {
+		t.Errorf("%d denied calls, want 31", len(wantDenied))
 	}
 }
 

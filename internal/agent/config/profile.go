@@ -15,8 +15,8 @@ const (
 	// ProfileFull keeps every call, as agents always have.
 	ProfileFull Profile = "full"
 	// ProfileManaged is for nodes run by a hub nobody logs in to: a short
-	// allow-list of calls, and no shell, terminal, file writes, mode switch
-	// or uninstall.
+	// allow-list of calls, and no shell, terminal, file-write call, mode
+	// switch or uninstall. The hub can still push Xray configs and binaries.
 	ProfileManaged Profile = "managed"
 )
 
