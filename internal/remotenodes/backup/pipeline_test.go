@@ -20,6 +20,7 @@ func TestAnInstallComesBackFromItsBackup(t *testing.T) {
 	const passphrase = "correct horse battery staple"
 	const privateKey = "priv-secret-REALITY"
 	const clientID = "6f1c1c1e-2b3a-4c5d-8e9f-0a1b2c3d4e5f"
+	const bridgeID = "0b9a8f7e-6d5c-4b3a-9281-706f5e4d3c2b"
 	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 
 	old, err := store.Open(t.TempDir())
@@ -30,6 +31,7 @@ func TestAnInstallComesBackFromItsBackup(t *testing.T) {
 		n, err := st.AddNode(model.Node{
 			Name: "تهران", Host: "203.0.113.9", SSHPort: 22, AgentPort: 9090, EntryPort: 443, State: model.NodeRegistered, CreatedAt: at,
 			RealityPublicKey: "pub", RealityShortID: "0123abcd", RealityPrivateKey: privateKey, SSHHostKey: "SHA256:pinned",
+			BridgeUUID: bridgeID,
 		})
 		if err != nil {
 			return err
@@ -52,7 +54,7 @@ func TestAnInstallComesBackFromItsBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{privateKey, clientID, "SHA256:pinned", "203.0.113.9"} {
+	for _, secret := range []string{privateKey, clientID, bridgeID, "SHA256:pinned", "203.0.113.9"} {
 		if bytes.Contains(file, []byte(secret)) {
 			t.Errorf("%q is in the backup file as it is", secret)
 		}
@@ -76,6 +78,10 @@ func TestAnInstallComesBackFromItsBackup(t *testing.T) {
 	}
 	if !bytes.Equal(after, snap) {
 		t.Fatalf("the restored install differs from the one that was backed up:\n%s\n%s", after, snap)
+	}
+	// without it the bridge couldn't log in to the node it was restored with
+	if got := fresh.Read(); len(got.Nodes) != 1 || got.Nodes[0].BridgeUUID != bridgeID {
+		t.Fatalf("the restored node lost its bridge client id: %+v", got.Nodes)
 	}
 
 	// importing again is no way to wipe an install that is in use

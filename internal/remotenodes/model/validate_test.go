@@ -149,6 +149,7 @@ func TestNodeValidate(t *testing.T) {
 	full.CertNotBefore = t0
 	full.CertNotAfter = t0.AddDate(1, 0, 0)
 	full.SSHHostKey = "SHA256:abc"
+	full.BridgeUUID = uuidC
 	if err := full.Validate(); err != nil {
 		t.Fatalf("a full node: %v", err)
 	}
@@ -186,6 +187,8 @@ func TestNodeValidate(t *testing.T) {
 		"version far too long":     func(n *Node) { n.XrayVersion = strings.Repeat("1", 65) },
 		"host key too long":        func(n *Node) { n.SSHHostKey = strings.Repeat("x", 129) },
 		"user not ascii":           func(n *Node) { n.SSHUser = "rööt" },
+		"bridge id not a uuid":     func(n *Node) { n.BridgeUUID = "bridge" },
+		"bridge id in capitals":    func(n *Node) { n.BridgeUUID = strings.ToUpper(uuidA) },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -195,6 +198,35 @@ func TestNodeValidate(t *testing.T) {
 				t.Fatal("accepted")
 			}
 		})
+	}
+}
+
+// A bridge client is one more login on the node's entry. Xray keys a login by
+// its id, so two nodes' bridges, or a bridge and a subscription, may not have
+// the same one, however the state came to be that way.
+func TestABridgeClientIDIsALoginLikeAnyOther(t *testing.T) {
+	s := small(t)
+	// uuidA is subscription 1's client on node 1
+	s.Nodes[0].BridgeUUID = uuidA
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "shares its client id") {
+		t.Fatalf("a bridge id that is a subscription's: %v", err)
+	}
+
+	s = small(t)
+	s.Nodes[0].BridgeUUID = "11111111-2222-4333-8444-666666666666"
+	s.Nodes[1].BridgeUUID = s.Nodes[0].BridgeUUID
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "bridge client id") {
+		t.Fatalf("one bridge id on two nodes: %v", err)
+	}
+
+	s.Nodes[1].BridgeUUID = "11111111-2222-4333-8444-777777777777"
+	if err := s.Validate(); err != nil {
+		t.Fatalf("two different bridge ids: %v", err)
+	}
+	// and a node may have none yet
+	s.Nodes[1].BridgeUUID = ""
+	if err := s.Validate(); err != nil {
+		t.Fatalf("a node with no bridge id: %v", err)
 	}
 }
 
