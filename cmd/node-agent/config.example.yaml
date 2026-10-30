@@ -5,8 +5,9 @@
 listen_addr: ":9090"
 
 # What the hub may ask of this agent. "full" (the default) allows every call.
-# "managed" allows a short list: no shell, terminal, file writes, connection
-# mode switch or uninstall. Read once at startup; no call changes it.
+# "managed" allows a short list: no shell, terminal, file-write call, connection
+# mode switch or uninstall. The hub can still push Xray configs and binaries.
+# Read once at startup; no call changes it.
 # profile: managed
 
 # Xray-core settings

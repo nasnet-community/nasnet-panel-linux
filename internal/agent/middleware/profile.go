@@ -29,7 +29,6 @@ var managedAllowed = methodSet(
 	pb.NodeAgent_PushConfig_FullMethodName,
 	pb.NodeAgent_ValidateConfig_FullMethodName,
 	pb.NodeAgent_GetCurrentConfig_FullMethodName,
-	pb.NodeAgent_UpdateXrayAPIConfig_FullMethodName,
 	// users on the node
 	pb.NodeAgent_AddUser_FullMethodName,
 	pb.NodeAgent_RemoveUser_FullMethodName,
