@@ -57,9 +57,10 @@ type ProvisionResult struct {
 // running and the entry answering. It is the second half of adding a node,
 // after InstallAgent, and the steps run in the order of ProvisionPlan.
 //
-// It stops before it changes anything if the input can't make a config, or
-// the keys it was given don't pair up, or no target works from the node. A
-// node that already has the pinned Xray is not sent it again.
+// It refuses an input that can't make a config, and keys that don't pair up,
+// before it touches the node. The pinned Xray goes on first, and a node that
+// already has it is not sent it again; if no target works from the node, it
+// stops there, with that Xray on and the node otherwise as it was.
 func (e *Env) Provision(ctx context.Context, c *agent.Client, in ProvisionInput, progress Progress) (_ ProvisionResult, err error) {
 	defer func() { err = ctxErr(ctx, err) }()
 	st := newStepper(progress)

@@ -111,7 +111,7 @@ func callFailure(err error, node model.Node) error {
 	case codes.Canceled:
 		return err
 	}
-	return &opError{msg: sentence("The agent answered with an error: " + grpcReason(err)), cause: err}
+	return &opError{msg: sentence("The agent answered with an error: " + statusMessage(err)), cause: err}
 }
 
 // linkDown says a call failed because the link is gone, in the words for a
@@ -229,15 +229,6 @@ func ParseXrayVersion(line string) string {
 		return ""
 	}
 	return v
-}
-
-// grpcReason is a gRPC error without the machinery around it: the agent's own
-// words, or what went wrong with the connection.
-func grpcReason(err error) string {
-	if st, ok := status.FromError(err); ok && st.Message() != "" {
-		return reasonTail(st.Message())
-	}
-	return reasonTail(err.Error())
 }
 
 // reasonTail cuts a connection error down to its last cause:
