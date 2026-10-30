@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package jobs
+
+// Run is how a job's function reports its steps. It is safe for concurrent
+// use, so a progress callback may call it from another goroutine. Once the
+// function has returned the job is over, and a late call does nothing.
+//
+// A step is named by a word the page knows, and one the plan did not list is
+// added at the end. Each call changes only what its name says, and the steps
+// may go in any order: a retry can begin a step that failed.
+type Run struct {
+	e *Engine
+	j *job
+}
+
+// ID is the id of the job.
+func (r *Run) ID() string { return r.j.view.ID }
+
+// Begin marks a step as running.
+func (r *Run) Begin(step string) {
+	r.change(step, func(s *Step) { s.State = StepRunning })
+}
+
+// Detail sets the text beside a step and leaves its state alone. It may start
+// with a share done ("38% · 8.4 of 13.6 MB"), which the page draws as a bar.
+func (r *Run) Detail(step, text string) {
+	r.change(step, func(s *Step) { s.Detail = r.j.text(text, MaxDetail) })
+}
+
+// Done marks a step as ok.
+func (r *Run) Done(step string) {
+	r.change(step, func(s *Step) { s.State = StepOK })
+}
+
+// Fail marks a step as failed and says why in its text.
+func (r *Run) Fail(step string, err error) {
+	raw := ""
+	if err != nil {
+		raw = errText(err)
+	}
+	r.change(step, func(s *Step) {
+		s.State, s.Detail = StepFailed, ""
+		if err != nil {
+			s.Detail = r.j.text(raw, MaxDetail)
+		}
+	})
+}
+
+// Set gives a step a state and a text in one call, for passing on another
+// package's progress as it is: installer.Step{Name, State, Detail} goes in as
+// Set(s.Name, StepState(s.State), s.Detail). A state that is none of the four
+// is refused and logged.
+func (r *Run) Set(step string, state StepState, detail string) {
+	if !state.valid() {
+		r.e.cfg.Log.Warn("job step given a state it does not have", "job", r.ID(), "step", clip(step, maxName), "state", clip(string(state), maxName))
+		return
+	}
+	r.change(step, func(s *Step) { s.State, s.Detail = state, r.j.text(detail, MaxDetail) })
+}
+
+// change applies f to the named step, adding it when it is new.
+func (r *Run) change(step string, f func(*Step)) {
+	r.e.mu.Lock()
+	defer r.e.mu.Unlock()
+	if r.j.view.State != StateRunning {
+		return
+	}
+	if s := r.j.view.step(step); s != nil {
+		f(s)
+	}
+}
