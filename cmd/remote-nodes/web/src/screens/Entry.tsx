@@ -50,7 +50,7 @@ export function entryAttention(e: Entry, t: T): AttentionItem[] {
 /** "Entry is on" or "Entry is off", and the Domestic link, VPN and bridge behind it. */
 export function EntryCard({ entry }: { entry: Entry }) {
   const { t, fmt } = useLang()
-  const ago = entry.checkedAt ? fmt.relative(entry.checkedAt) : ''
+  const ago = entry.checkedAt ? fmt.relative(entry.checkedAt, Date.now(), true) : ''
   return (
     <VerdictCard
       title={entry.on ? t('entry.on') : t('entry.off')}

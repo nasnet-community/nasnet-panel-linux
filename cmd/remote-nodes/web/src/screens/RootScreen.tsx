@@ -4,10 +4,11 @@ import { useLang } from '../i18n'
 import type { AppConfig } from '../lib/api'
 import { AttentionList } from './Attention'
 import { EntryCard, entryAttention } from './Entry'
+import { NodesScreen } from './NodesScreen'
 import { Soon } from './Soon'
 
 /** The first page: whether entry works, what needs attention, then the Nodes, Subscriptions and Settings tabs. */
-export function RootScreen({ tab, config }: { tab: RootTab; config: AppConfig | null }) {
+export function RootScreen({ tab, config, onConfigChanged }: { tab: RootTab; config: AppConfig | null; onConfigChanged: () => void }) {
   const { t } = useLang()
   const tabs: [RootTab, string][] = [
     ['nodes', t('tabs.nodes')],
@@ -20,7 +21,7 @@ export function RootScreen({ tab, config }: { tab: RootTab; config: AppConfig | 
       {config && <AttentionList list={entryAttention(config.entry, t)} />}
       <Tabs label={t('tabs.sections')} idBase="root" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'root', tab: next })} />
       <div role="tabpanel" id="root-panel" aria-labelledby={`root-${tab}`}>
-        <Soon title={tabs.find(([key]) => key === tab)![1]} />
+        {tab === 'nodes' ? <NodesScreen config={config} onChanged={onConfigChanged} /> : <Soon title={tabs.find(([key]) => key === tab)![1]} />}
       </div>
     </div>
   )
