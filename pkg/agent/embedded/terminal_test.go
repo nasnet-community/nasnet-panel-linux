@@ -1,4 +1,4 @@
-package agent
+package embedded
 
 import (
 	"context"
@@ -16,7 +16,7 @@ func TestEmbeddedTerminalReadinessExitAndIndependentSessions(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	client := NewEmbeddedClient(&server.Server{})
+	client := New(&server.Server{})
 	firstCtx, stopFirst := context.WithCancel(ctx)
 	first, err := client.OpenTerminal(firstCtx)
 	if err != nil {
@@ -78,7 +78,7 @@ func TestEmbeddedTerminalCloseSendStopsSilentShell(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	stream, err := NewEmbeddedClient(&server.Server{}).OpenTerminal(ctx)
+	stream, err := New(&server.Server{}).OpenTerminal(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

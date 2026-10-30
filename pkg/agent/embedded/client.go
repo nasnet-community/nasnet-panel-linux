@@ -1,4 +1,6 @@
-package agent
+// Package embedded is the built-in node's agent client. It sits apart from
+// pkg/agent because it links the agent server, and with it the Xray core.
+package embedded
 
 import (
 	"context"
@@ -8,34 +10,36 @@ import (
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"google.golang.org/grpc/metadata"
 )
 
-var _ NodeClient = (*EmbeddedClient)(nil)
+var _ agent.NodeClient = (*Client)(nil)
+var _ agent.InterfaceLister = (*Client)(nil)
 
-// EmbeddedClient talks to the local agent server in-process (no gRPC/TLS).
-// Same shape as the gRPC Client, just calls c.srv.X directly.
-type EmbeddedClient struct {
+// Client talks to the local agent server in-process (no gRPC/TLS).
+// Same shape as the gRPC agent.Client, just calls c.srv.X directly.
+type Client struct {
 	srv *server.Server
 }
 
-func NewEmbeddedClient(srv *server.Server) *EmbeddedClient {
-	return &EmbeddedClient{srv: srv}
+func New(srv *server.Server) *Client {
+	return &Client{srv: srv}
 }
 
 // Close is a no-op — the server is owned by cmd, not the client.
-func (c *EmbeddedClient) Close() error { return nil }
+func (c *Client) Close() error { return nil }
 
-func (c *EmbeddedClient) Target() string { return "embedded" }
+func (c *Client) Target() string { return "embedded" }
 
 // ===== Lifecycle Methods =====
 
-func (c *EmbeddedClient) GetStatus(ctx context.Context) (*pb.NodeStatus, error) {
+func (c *Client) GetStatus(ctx context.Context) (*pb.NodeStatus, error) {
 	return c.srv.GetStatus(ctx, &pb.Empty{})
 }
 
-func (c *EmbeddedClient) StartXray(ctx context.Context) error {
+func (c *Client) StartXray(ctx context.Context) error {
 	resp, err := c.srv.StartXray(ctx, &pb.Empty{})
 	if err != nil {
 		return err
@@ -46,7 +50,7 @@ func (c *EmbeddedClient) StartXray(ctx context.Context) error {
 	return nil
 }
 
-func (c *EmbeddedClient) StopXray(ctx context.Context, gracefulTimeout time.Duration) error {
+func (c *Client) StopXray(ctx context.Context, gracefulTimeout time.Duration) error {
 	resp, err := c.srv.StopXray(ctx, &pb.StopRequest{
 		GracefulTimeoutSeconds: int32(gracefulTimeout.Seconds()),
 	})
@@ -59,7 +63,7 @@ func (c *EmbeddedClient) StopXray(ctx context.Context, gracefulTimeout time.Dura
 	return nil
 }
 
-func (c *EmbeddedClient) RestartXray(ctx context.Context, validateConfig bool) error {
+func (c *Client) RestartXray(ctx context.Context, validateConfig bool) error {
 	resp, err := c.srv.RestartXray(ctx, &pb.RestartRequest{
 		ValidateConfig: validateConfig,
 	})
@@ -74,7 +78,7 @@ func (c *EmbeddedClient) RestartXray(ctx context.Context, validateConfig bool) e
 
 // ===== File Management Methods =====
 
-func (c *EmbeddedClient) WriteFile(ctx context.Context, path string, content []byte, perm uint32) (string, error) {
+func (c *Client) WriteFile(ctx context.Context, path string, content []byte, perm uint32) (string, error) {
 	resp, err := c.srv.WriteFile(ctx, &pb.FilePayload{
 		Path:    path,
 		Content: content,
@@ -92,7 +96,7 @@ func (c *EmbeddedClient) WriteFile(ctx context.Context, path string, content []b
 
 // ===== Configuration Methods =====
 
-func (c *EmbeddedClient) PushConfig(ctx context.Context, configJSON string) error {
+func (c *Client) PushConfig(ctx context.Context, configJSON string) error {
 	resp, err := c.srv.PushConfig(ctx, &pb.ConfigPayload{
 		JsonContent: configJSON,
 	})
@@ -105,7 +109,7 @@ func (c *EmbeddedClient) PushConfig(ctx context.Context, configJSON string) erro
 	return nil
 }
 
-func (c *EmbeddedClient) UpdateXrayAPIConfig(ctx context.Context, apiAddr string) error {
+func (c *Client) UpdateXrayAPIConfig(ctx context.Context, apiAddr string) error {
 	resp, err := c.srv.UpdateXrayAPIConfig(ctx, &pb.XrayAPIConfigPayload{
 		ApiAddr: apiAddr,
 	})
@@ -118,7 +122,7 @@ func (c *EmbeddedClient) UpdateXrayAPIConfig(ctx context.Context, apiAddr string
 	return nil
 }
 
-func (c *EmbeddedClient) GetCurrentConfig(ctx context.Context) (string, string, error) {
+func (c *Client) GetCurrentConfig(ctx context.Context) (string, string, error) {
 	resp, err := c.srv.GetCurrentConfig(ctx, &pb.Empty{})
 	if err != nil {
 		return "", "", err
@@ -126,7 +130,7 @@ func (c *EmbeddedClient) GetCurrentConfig(ctx context.Context) (string, string, 
 	return resp.JsonContent, resp.Checksum, nil
 }
 
-func (c *EmbeddedClient) ValidateConfig(ctx context.Context, configJSON string) (bool, []string, []string, error) {
+func (c *Client) ValidateConfig(ctx context.Context, configJSON string) (bool, []string, []string, error) {
 	resp, err := c.srv.ValidateConfig(ctx, &pb.ConfigPayload{
 		JsonContent: configJSON,
 	})
@@ -137,13 +141,13 @@ func (c *EmbeddedClient) ValidateConfig(ctx context.Context, configJSON string) 
 }
 
 // PushConfig already restarts xray, so this just pushes.
-func (c *EmbeddedClient) PushConfigAndRestart(ctx context.Context, configJSON string, _ bool) error {
+func (c *Client) PushConfigAndRestart(ctx context.Context, configJSON string, _ bool) error {
 	return c.PushConfig(ctx, configJSON)
 }
 
 // ===== User Management Methods =====
 
-func (c *EmbeddedClient) AddUser(ctx context.Context, inboundTag, email, uuid, protocol, flow, encryption string, level int32) error {
+func (c *Client) AddUser(ctx context.Context, inboundTag, email, uuid, protocol, flow, encryption string, level int32) error {
 	resp, err := c.srv.AddUser(ctx, &pb.UserPayload{
 		InboundTag: inboundTag,
 		Email:      email,
@@ -162,7 +166,7 @@ func (c *EmbeddedClient) AddUser(ctx context.Context, inboundTag, email, uuid, p
 	return nil
 }
 
-func (c *EmbeddedClient) RemoveUser(ctx context.Context, inboundTag, email string) error {
+func (c *Client) RemoveUser(ctx context.Context, inboundTag, email string) error {
 	resp, err := c.srv.RemoveUser(ctx, &pb.UserPayload{
 		InboundTag: inboundTag,
 		Email:      email,
@@ -176,7 +180,7 @@ func (c *EmbeddedClient) RemoveUser(ctx context.Context, inboundTag, email strin
 	return nil
 }
 
-func (c *EmbeddedClient) ListUsers(ctx context.Context, inboundTag string) ([]*pb.UserInfo, error) {
+func (c *Client) ListUsers(ctx context.Context, inboundTag string) ([]*pb.UserInfo, error) {
 	resp, err := c.srv.ListUsers(ctx, &pb.InboundSelector{
 		InboundTag: inboundTag,
 	})
@@ -188,22 +192,22 @@ func (c *EmbeddedClient) ListUsers(ctx context.Context, inboundTag string) ([]*p
 
 // ===== Statistics Methods =====
 
-func (c *EmbeddedClient) GetSystemStats(ctx context.Context) (*SystemStats, error) {
+func (c *Client) GetSystemStats(ctx context.Context) (*agent.SystemStats, error) {
 	resp, err := c.srv.GetSystemStats(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return systemStatsFromPB(resp), nil
+	return agent.SystemStatsFromPB(resp), nil
 }
 
-func (c *EmbeddedClient) GetXrayStats(ctx context.Context, reset bool) (*XrayStats, error) {
+func (c *Client) GetXrayStats(ctx context.Context, reset bool) (*agent.XrayStats, error) {
 	resp, err := c.srv.GetXrayStats(ctx, &pb.StatsRequest{
 		Reset_: reset,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &XrayStats{
+	return &agent.XrayStats{
 		UserUplink:       resp.UserUplink,
 		UserDownlink:     resp.UserDownlink,
 		InboundUplink:    resp.InboundUplink,
@@ -218,7 +222,7 @@ func (c *EmbeddedClient) GetXrayStats(ctx context.Context, reset bool) (*XraySta
 // ===== Streaming Methods =====
 
 // StreamLogs runs the handler in a goroutine, returns the read end of the pipe.
-func (c *EmbeddedClient) StreamLogs(ctx context.Context, tail int, follow bool) (pb.NodeAgent_StreamLogsClient, error) {
+func (c *Client) StreamLogs(ctx context.Context, tail int, follow bool) (pb.NodeAgent_StreamLogsClient, error) {
 	pipe := newServerStreamPipe[pb.LogEntry](ctx)
 	go func() {
 		pipe.finish(c.srv.StreamLogs(&pb.LogRequest{
@@ -231,7 +235,7 @@ func (c *EmbeddedClient) StreamLogs(ctx context.Context, tail int, follow bool) 
 }
 
 // OpenTerminal runs the bidi PTY handler over an in-memory pipe.
-func (c *EmbeddedClient) OpenTerminal(ctx context.Context) (pb.NodeAgent_OpenTerminalClient, error) {
+func (c *Client) OpenTerminal(ctx context.Context) (pb.NodeAgent_OpenTerminalClient, error) {
 	pipe := newBidiStreamPipe[pb.TerminalInput, pb.TerminalOutput](ctx)
 	go func() {
 		pipe.finish(c.srv.OpenTerminal(bidiServerStream[pb.TerminalInput, pb.TerminalOutput]{p: pipe}))
@@ -241,12 +245,12 @@ func (c *EmbeddedClient) OpenTerminal(ctx context.Context) (pb.NodeAgent_OpenTer
 
 // ===== Host info =====
 
-func (c *EmbeddedClient) GetHostInfo(ctx context.Context) (*HostInfo, error) {
+func (c *Client) GetHostInfo(ctx context.Context) (*agent.HostInfo, error) {
 	resp, err := c.srv.GetHostInfo(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return &HostInfo{
+	return &agent.HostInfo{
 		Hostname:             resp.Hostname,
 		OS:                   resp.Os,
 		Platform:             resp.Platform,
@@ -264,14 +268,14 @@ func (c *EmbeddedClient) GetHostInfo(ctx context.Context) (*HostInfo, error) {
 	}, nil
 }
 
-func (c *EmbeddedClient) ListInterfaces(ctx context.Context) ([]NetInterface, error) {
+func (c *Client) ListInterfaces(ctx context.Context) ([]agent.NetInterface, error) {
 	ifs, addrs, err := c.srv.ListNetInterfaces(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]NetInterface, 0, len(ifs))
+	out := make([]agent.NetInterface, 0, len(ifs))
 	for _, in := range ifs {
-		out = append(out, NetInterface{
+		out = append(out, agent.NetInterface{
 			IfName:       in.IfName,
 			PermMAC:      in.PermMAC,
 			MAC:          in.MAC,
@@ -296,20 +300,20 @@ func (c *EmbeddedClient) ListInterfaces(ctx context.Context) ([]NetInterface, er
 
 // ===== Health =====
 
-func (c *EmbeddedClient) HealthCheck(ctx context.Context) (*HealthResult, error) {
+func (c *Client) HealthCheck(ctx context.Context) (*agent.HealthResult, error) {
 	resp, err := c.srv.HealthCheck(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	components := make(map[string]ComponentHealth)
+	components := make(map[string]agent.ComponentHealth)
 	for name, comp := range resp.Components {
-		components[name] = ComponentHealth{
-			Status:  HealthStatus(comp.Status),
+		components[name] = agent.ComponentHealth{
+			Status:  agent.HealthStatus(comp.Status),
 			Message: comp.Message,
 		}
 	}
-	return &HealthResult{
-		Status:     HealthStatus(resp.Status),
+	return &agent.HealthResult{
+		Status:     agent.HealthStatus(resp.Status),
 		Message:    resp.Message,
 		Components: components,
 	}, nil
@@ -317,12 +321,12 @@ func (c *EmbeddedClient) HealthCheck(ctx context.Context) (*HealthResult, error)
 
 // ===== Version =====
 
-func (c *EmbeddedClient) GetVersion(ctx context.Context) (*VersionInfo, error) {
+func (c *Client) GetVersion(ctx context.Context) (*agent.VersionInfo, error) {
 	resp, err := c.srv.GetVersion(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return &VersionInfo{
+	return &agent.VersionInfo{
 		AgentVersion:   resp.AgentVersion,
 		AgentCommit:    resp.AgentCommit,
 		AgentBuildTime: resp.AgentBuildTime,
@@ -335,7 +339,7 @@ func (c *EmbeddedClient) GetVersion(ctx context.Context) (*VersionInfo, error) {
 
 // ===== Connectivity =====
 
-func (c *EmbeddedClient) Ping(ctx context.Context) (int64, error) {
+func (c *Client) Ping(ctx context.Context) (int64, error) {
 	start := time.Now()
 	if _, err := c.srv.GetStatus(ctx, &pb.Empty{}); err != nil {
 		return 0, err
@@ -344,7 +348,7 @@ func (c *EmbeddedClient) Ping(ctx context.Context) (int64, error) {
 }
 
 // Heartbeat runs the bidi heartbeat handler over an in-memory pipe.
-func (c *EmbeddedClient) Heartbeat(ctx context.Context) (pb.NodeAgent_HeartbeatClient, error) {
+func (c *Client) Heartbeat(ctx context.Context) (pb.NodeAgent_HeartbeatClient, error) {
 	pipe := newBidiStreamPipe[pb.HeartbeatPing, pb.HeartbeatPong](ctx)
 	go func() {
 		pipe.finish(c.srv.Heartbeat(bidiServerStream[pb.HeartbeatPing, pb.HeartbeatPong]{p: pipe}))
@@ -354,11 +358,11 @@ func (c *EmbeddedClient) Heartbeat(ctx context.Context) (pb.NodeAgent_HeartbeatC
 
 // ===== SSH =====
 
-func (c *EmbeddedClient) GetSSHStatus(ctx context.Context) (*pb.SSHStatus, error) {
+func (c *Client) GetSSHStatus(ctx context.Context) (*pb.SSHStatus, error) {
 	return c.srv.GetSSHStatus(ctx, &pb.Empty{})
 }
 
-func (c *EmbeddedClient) UpdateSSHConfig(ctx context.Context, enabled bool, port int) error {
+func (c *Client) UpdateSSHConfig(ctx context.Context, enabled bool, port int) error {
 	resp, err := c.srv.UpdateSSHConfig(ctx, &pb.SSHConfigPayload{
 		Enabled: enabled,
 		Port:    int32(port),
@@ -372,7 +376,7 @@ func (c *EmbeddedClient) UpdateSSHConfig(ctx context.Context, enabled bool, port
 	return nil
 }
 
-func (c *EmbeddedClient) ClearSSHLogs(ctx context.Context) error {
+func (c *Client) ClearSSHLogs(ctx context.Context) error {
 	resp, err := c.srv.ClearSSHLogs(ctx, &pb.Empty{})
 	if err != nil {
 		return err
@@ -383,7 +387,7 @@ func (c *EmbeddedClient) ClearSSHLogs(ctx context.Context) error {
 	return nil
 }
 
-func (c *EmbeddedClient) RestartSSH(ctx context.Context) error {
+func (c *Client) RestartSSH(ctx context.Context) error {
 	resp, err := c.srv.RestartSSH(ctx, &pb.Empty{})
 	if err != nil {
 		return err
@@ -401,16 +405,16 @@ var errBuiltInNode = errors.New("not supported on the built-in node")
 
 // SelfUpdate is refused: the built-in node's binary is the panel, which updates
 // through its own release channel.
-func (c *EmbeddedClient) SelfUpdate(ctx context.Context, binaryContent []byte, checksum, version string, restartAfter bool, signature []byte, force bool) (*UpdateResult, error) {
+func (c *Client) SelfUpdate(ctx context.Context, binaryContent []byte, checksum, version string, restartAfter bool, signature []byte, force bool) (*agent.UpdateResult, error) {
 	return nil, errBuiltInNode
 }
 
-func (c *EmbeddedClient) GetSelfChecksum(ctx context.Context) (*ChecksumResult, error) {
+func (c *Client) GetSelfChecksum(ctx context.Context) (*agent.ChecksumResult, error) {
 	resp, err := c.srv.GetSelfChecksum(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return &ChecksumResult{
+	return &agent.ChecksumResult{
 		Checksum: resp.Checksum,
 		Path:     resp.Path,
 	}, nil
@@ -418,7 +422,7 @@ func (c *EmbeddedClient) GetSelfChecksum(ctx context.Context) (*ChecksumResult, 
 
 // ===== Certificate Denylist =====
 
-func (c *EmbeddedClient) UpdateCertDenylist(ctx context.Context, serialNumbers []string, denylistHash string) error {
+func (c *Client) UpdateCertDenylist(ctx context.Context, serialNumbers []string, denylistHash string) error {
 	resp, err := c.srv.UpdateCertDenylist(ctx, &pb.CertDenylist{
 		RevokedSerialNumbers: serialNumbers,
 		DenylistHash:         denylistHash,
@@ -434,7 +438,7 @@ func (c *EmbeddedClient) UpdateCertDenylist(ctx context.Context, serialNumbers [
 
 // ===== Xray Version Management =====
 
-func (c *EmbeddedClient) UpdateXrayBinary(ctx context.Context, version string, restartAfter bool, downloadURL, downloadToken, checksum string) error {
+func (c *Client) UpdateXrayBinary(ctx context.Context, version string, restartAfter bool, downloadURL, downloadToken, checksum string) error {
 	resp, err := c.srv.UpdateXrayBinary(ctx, &pb.UpdateXrayRequest{
 		Version:       version,
 		RestartAfter:  restartAfter,
@@ -453,54 +457,17 @@ func (c *EmbeddedClient) UpdateXrayBinary(ctx context.Context, version string, r
 
 // ===== Outbound Testing =====
 
-// outboundTestRequest maps a spec onto the wire message. TimeoutSeconds is kept
-// populated so an agent predating the option fields still gets a sane timeout.
-func outboundTestRequest(spec *OutboundTestSpec) *pb.OutboundTestRequest {
-	maxDelay := spec.MaxDelayMs
-	if maxDelay <= 0 {
-		maxDelay = 5000
-	}
-	return &pb.OutboundTestRequest{
-		ConfigLink:     spec.ConfigLink,
-		TestUrl:        spec.TestURL,
-		TimeoutSeconds: (maxDelay + 999) / 1000,
-		MaxDelayMs:     maxDelay,
-		Retries:        spec.Retries,
-		InsecureTls:    spec.InsecureTLS,
-		Speedtest:      spec.Speedtest,
-		SpeedtestKb:    spec.SpeedtestKb,
-		DirectProbe:    spec.DirectProbe,
-	}
-}
-
-func outboundTestResult(resp *pb.OutboundTestResponse) *OutboundTestResult {
-	return &OutboundTestResult{
-		Success:      resp.Success,
-		Status:       resp.Status,
-		LatencyMs:    resp.LatencyMs,
-		TTFBMs:       resp.TtfbMs,
-		ConnectMs:    resp.ConnectTimeMs,
-		StatusCode:   resp.StatusCode,
-		IP:           resp.Ip,
-		Country:      resp.Country,
-		DownloadMbps: resp.DownloadMbps,
-		UploadMbps:   resp.UploadMbps,
-		Error:        resp.Error,
-		Message:      resp.Message,
-	}
-}
-
-func (c *EmbeddedClient) TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error) {
-	resp, err := c.srv.TestOutbound(ctx, outboundTestRequest(spec))
+func (c *Client) TestOutbound(ctx context.Context, spec *agent.OutboundTestSpec) (*agent.OutboundTestResult, error) {
+	resp, err := c.srv.TestOutbound(ctx, agent.OutboundTestRequestToPB(spec))
 	if err != nil {
 		return nil, err
 	}
-	return outboundTestResult(resp), nil
+	return agent.OutboundTestResultFromPB(resp), nil
 }
 
 // ===== Online User Detection =====
 
-func (c *EmbeddedClient) GetUserOnlineIPs(ctx context.Context, email string) (map[string]int64, error) {
+func (c *Client) GetUserOnlineIPs(ctx context.Context, email string) (map[string]int64, error) {
 	resp, err := c.srv.GetUserOnlineIPs(ctx, &pb.UserEmailRequest{Email: email})
 	if err != nil {
 		return nil, err
@@ -508,7 +475,7 @@ func (c *EmbeddedClient) GetUserOnlineIPs(ctx context.Context, email string) (ma
 	return resp.Ips, nil
 }
 
-func (c *EmbeddedClient) GetAllUsersOnlineIPs(ctx context.Context) (map[string]map[string]int64, error) {
+func (c *Client) GetAllUsersOnlineIPs(ctx context.Context) (map[string]map[string]int64, error) {
 	snapshot, err := c.GetOnlineIPSnapshot(ctx)
 	if err != nil {
 		return nil, err
@@ -516,25 +483,25 @@ func (c *EmbeddedClient) GetAllUsersOnlineIPs(ctx context.Context) (map[string]m
 	return snapshot.Users, nil
 }
 
-func (c *EmbeddedClient) GetOnlineIPSnapshot(ctx context.Context) (*OnlineIPSnapshot, error) {
+func (c *Client) GetOnlineIPSnapshot(ctx context.Context) (*agent.OnlineIPSnapshot, error) {
 	resp, err := c.srv.GetAllUsersOnlineIPs(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return &OnlineIPSnapshot{Users: onlineIPsFromPB(resp), CollectedAtUnixMs: resp.GetCollectedAtUnixMs()}, nil
+	return &agent.OnlineIPSnapshot{Users: agent.OnlineIPsFromPB(resp), CollectedAtUnixMs: resp.GetCollectedAtUnixMs()}, nil
 }
 
 // ===== Buffered Traffic =====
 
-func (c *EmbeddedClient) GetBufferedTraffic(ctx context.Context) (*BufferedTrafficStats, error) {
+func (c *Client) GetBufferedTraffic(ctx context.Context) (*agent.BufferedTrafficStats, error) {
 	resp, err := c.srv.GetBufferedTraffic(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	return bufferedTrafficFromPB(resp), nil
+	return agent.BufferedTrafficFromPB(resp), nil
 }
 
-func (c *EmbeddedClient) AckBufferedTraffic(ctx context.Context, throughTimestamp int64) error {
+func (c *Client) AckBufferedTraffic(ctx context.Context, throughTimestamp int64) error {
 	resp, err := c.srv.AckBufferedTraffic(ctx, &pb.AckTrafficRequest{
 		AckedThroughTimestamp: throughTimestamp,
 	})
@@ -549,14 +516,14 @@ func (c *EmbeddedClient) AckBufferedTraffic(ctx context.Context, throughTimestam
 
 // ===== Tools =====
 
-func (c *EmbeddedClient) GenerateVLESSKeys(ctx context.Context) ([]VLESSKeyPair, error) {
+func (c *Client) GenerateVLESSKeys(ctx context.Context) ([]agent.VLESSKeyPair, error) {
 	resp, err := c.srv.GenerateVLESSKeys(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]VLESSKeyPair, 0, len(resp.Keys))
+	keys := make([]agent.VLESSKeyPair, 0, len(resp.Keys))
 	for _, k := range resp.Keys {
-		keys = append(keys, VLESSKeyPair{
+		keys = append(keys, agent.VLESSKeyPair{
 			Label:      k.Label,
 			Decryption: k.Decryption,
 			Encryption: k.Encryption,
@@ -567,7 +534,7 @@ func (c *EmbeddedClient) GenerateVLESSKeys(ctx context.Context) ([]VLESSKeyPair,
 
 // ===== Bandwidth Shaping =====
 
-func (c *EmbeddedClient) SetupBandwidth(ctx context.Context, iface string, totalBWMbps int) error {
+func (c *Client) SetupBandwidth(ctx context.Context, iface string, totalBWMbps int) error {
 	resp, err := c.srv.SetupBandwidth(ctx, &pb.BandwidthRequest{
 		InterfaceName: iface,
 		TotalBwMbps:   int32(totalBWMbps),
@@ -581,7 +548,7 @@ func (c *EmbeddedClient) SetupBandwidth(ctx context.Context, iface string, total
 	return nil
 }
 
-func (c *EmbeddedClient) TeardownBandwidth(ctx context.Context) error {
+func (c *Client) TeardownBandwidth(ctx context.Context) error {
 	resp, err := c.srv.TeardownBandwidth(ctx, &pb.Empty{})
 	if err != nil {
 		return err
@@ -594,7 +561,7 @@ func (c *EmbeddedClient) TeardownBandwidth(ctx context.Context) error {
 
 // ===== Access Logs =====
 
-func (c *EmbeddedClient) GetAccessLogs(ctx context.Context, email string, limit int32) ([]*pb.AccessLogEntry, error) {
+func (c *Client) GetAccessLogs(ctx context.Context, email string, limit int32) ([]*pb.AccessLogEntry, error) {
 	resp, err := c.srv.GetAccessLogs(ctx, &pb.AccessLogRequest{
 		Email: email,
 		Limit: limit,
@@ -605,11 +572,11 @@ func (c *EmbeddedClient) GetAccessLogs(ctx context.Context, email string, limit 
 	return resp.Entries, nil
 }
 
-func (c *EmbeddedClient) GetBufferedAccessLogSummary(ctx context.Context) (*pb.BufferedAccessLogSummary, error) {
+func (c *Client) GetBufferedAccessLogSummary(ctx context.Context) (*pb.BufferedAccessLogSummary, error) {
 	return c.srv.GetBufferedAccessLogSummary(ctx, &pb.Empty{})
 }
 
-func (c *EmbeddedClient) AckBufferedAccessLogSummary(ctx context.Context, upToTimestamp int64, cfg AccessLogAckConfig) error {
+func (c *Client) AckBufferedAccessLogSummary(ctx context.Context, upToTimestamp int64, cfg agent.AccessLogAckConfig) error {
 	graceSec := int32(0)
 	if cfg.GracePeriod > 0 {
 		graceSec = int32(cfg.GracePeriod / time.Second)
@@ -626,12 +593,12 @@ func (c *EmbeddedClient) AckBufferedAccessLogSummary(ctx context.Context, upToTi
 
 // ===== Starlink Monitoring =====
 
-func (c *EmbeddedClient) GetStarlinkStatus(ctx context.Context, dishAddr string) (*StarlinkStatus, error) {
+func (c *Client) GetStarlinkStatus(ctx context.Context, dishAddr string) (*agent.StarlinkStatus, error) {
 	resp, err := c.srv.GetStarlinkStatus(ctx, &pb.StarlinkRequest{DishAddress: dishAddr})
 	if err != nil {
 		return nil, err
 	}
-	return &StarlinkStatus{
+	return &agent.StarlinkStatus{
 		Available:                        resp.Available,
 		DownlinkThroughputBps:            float64(resp.DownlinkThroughputBps),
 		UplinkThroughputBps:              float64(resp.UplinkThroughputBps),
@@ -688,12 +655,12 @@ func (c *EmbeddedClient) GetStarlinkStatus(ctx context.Context, dishAddr string)
 	}, nil
 }
 
-func (c *EmbeddedClient) GetStarlinkObstructionMap(ctx context.Context, dishAddr string) (*StarlinkObstructionMap, error) {
+func (c *Client) GetStarlinkObstructionMap(ctx context.Context, dishAddr string) (*agent.StarlinkObstructionMap, error) {
 	resp, err := c.srv.GetStarlinkObstructionMap(ctx, &pb.StarlinkRequest{DishAddress: dishAddr})
 	if err != nil {
 		return nil, err
 	}
-	return &StarlinkObstructionMap{
+	return &agent.StarlinkObstructionMap{
 		NumRows:        resp.NumRows,
 		NumCols:        resp.NumCols,
 		SNR:            resp.Snr,
@@ -704,7 +671,7 @@ func (c *EmbeddedClient) GetStarlinkObstructionMap(ctx context.Context, dishAddr
 
 // ===== Command Execution =====
 
-func (c *EmbeddedClient) ExecuteCommand(ctx context.Context, command string, timeoutSecs int) (*pb.ExecuteCommandResponse, error) {
+func (c *Client) ExecuteCommand(ctx context.Context, command string, timeoutSecs int) (*pb.ExecuteCommandResponse, error) {
 	return c.srv.ExecuteCommand(ctx, &pb.ExecuteCommandRequest{
 		Command:        command,
 		TimeoutSeconds: int32(timeoutSecs),
@@ -714,29 +681,29 @@ func (c *EmbeddedClient) ExecuteCommand(ctx context.Context, command string, tim
 // ===== Moving the agent =====
 
 // The built-in node runs inside the panel: there is no port or mode to move.
-func (c *EmbeddedClient) MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error) {
+func (c *Client) MoveListenPort(ctx context.Context, req *pb.MoveListenPortRequest) (*pb.CommandResponse, error) {
 	return nil, errBuiltInNode
 }
 
-func (c *EmbeddedClient) SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error) {
+func (c *Client) SwitchConnectMode(ctx context.Context, req *pb.SwitchConnectModeRequest) (*pb.CommandResponse, error) {
 	return nil, errBuiltInNode
 }
 
 // ===== Cleanup =====
 
 // Uninstall is refused: on the built-in node it would delete the panel binary.
-func (c *EmbeddedClient) Uninstall(ctx context.Context) error {
+func (c *Client) Uninstall(ctx context.Context) error {
 	return errBuiltInNode
 }
 
 // ===== Nuke / Wipe =====
 
-func (c *EmbeddedClient) Wipe(ctx context.Context, req *pb.NukeRequest) (*pb.NukeReport, error) {
+func (c *Client) Wipe(ctx context.Context, req *pb.NukeRequest) (*pb.NukeReport, error) {
 	return c.srv.Wipe(ctx, req)
 }
 
 // Nuke runs the streaming handler in a goroutine; caller reads per-phase progress.
-func (c *EmbeddedClient) Nuke(ctx context.Context, req *pb.NukeRequest) (pb.NodeAgent_NukeClient, error) {
+func (c *Client) Nuke(ctx context.Context, req *pb.NukeRequest) (pb.NodeAgent_NukeClient, error) {
 	pipe := newServerStreamPipe[pb.NukeProgress](ctx)
 	go func() {
 		pipe.finish(c.srv.Nuke(req, pipe))

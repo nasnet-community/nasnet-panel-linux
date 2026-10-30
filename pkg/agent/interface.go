@@ -142,9 +142,7 @@ type AccessLogAckConfig struct {
 var _ NodeClient = (*Client)(nil)
 
 // InterfaceLister enumerates the box's NICs. Router mode only, so only the
-// in-process EmbeddedClient implements it; remote agents never expose it.
+// in-process embedded client implements it; remote agents never expose it.
 type InterfaceLister interface {
 	ListInterfaces(ctx context.Context) ([]NetInterface, error)
 }
-
-var _ InterfaceLister = (*EmbeddedClient)(nil)

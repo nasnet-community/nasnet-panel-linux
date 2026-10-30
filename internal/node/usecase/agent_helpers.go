@@ -24,6 +24,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/node/repository"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/shared/contract"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/embedded"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/bandwidth"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/httpclient"
@@ -210,7 +211,7 @@ func mergeWGRenderPeers(static []domain.WireGuardPeer, managed []WGRenderPeer) [
 var ErrLiteNode = errors.New("this is an MTProto node: it has no agent to call")
 
 // getAgentClient routes a node to its transport: the built-in node to the
-// in-process EmbeddedClient, reverse-mode nodes to a ReverseClient over the
+// in-process embedded client, reverse-mode nodes to a ReverseClient over the
 // hub command channel, direct-mode nodes to a pooled mTLS gRPC client.
 // nil node → nil.
 func (u *nodeUsecase) getAgentClient(node *domain.Node) (agent.NodeClient, error) {
@@ -227,7 +228,7 @@ func (u *nodeUsecase) getAgentClient(node *domain.Node) (agent.NodeClient, error
 		if u.embeddedSrv == nil {
 			return nil, fmt.Errorf("embedded node server not initialized")
 		}
-		return agent.NewEmbeddedClient(u.embeddedSrv), nil
+		return embedded.New(u.embeddedSrv), nil
 	case domain.ConnectModeReverse:
 		if u.reverseRegistry == nil {
 			return nil, fmt.Errorf("reverse registry not initialized")
