@@ -1,5 +1,6 @@
 import type { MsgKey, T } from '../i18n'
 import type { Node, Traffic } from './api'
+import type { Format } from './format'
 
 /** Dotted version numbers compared part by part: "26.10.9" is older than "26.10.21". A "v" and a "-rc1" are ignored. */
 export function cmpVersion(a: string, b: string): -1 | 0 | 1 {
@@ -65,6 +66,9 @@ export function niceMax(v: number, floor = 100_000): number {
   const p = 10 ** Math.floor(Math.log10(top))
   return ([1, 2, 5, 10].find((m) => m * p >= top) ?? 10) * p
 }
+
+/** A rate on the chart's axis: "2 MB/s", not "2.0 MB/s", in either language's digits. */
+export const axisRate = (fmt: Format, v: number) => fmt.rate(v).replace(/[.٫][0۰](?=\s)/, '')
 
 export interface Plot {
   /** the top of the y axis, in bytes per second */
