@@ -14,6 +14,11 @@ const STEP_KEYS: Record<string, MsgKey> = {
   handshake: 'step.handshake',
   config: 'step.config',
   tunnel: 'step.tunnel',
+  cert: 'step.cert',
+  reconnect: 'step.reconnect',
+  keys: 'step.keys',
+  remove: 'step.remove',
+  forget: 'step.forget',
 }
 
 /** A job step's name ("xray") as the step it is ("Send Xray 26.10.21"). `xray` is the version this plugin installs. */
