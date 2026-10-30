@@ -9,8 +9,10 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -83,6 +85,12 @@ type options struct {
 
 func startRig(t *testing.T, o options) *rig {
 	t.Helper()
+	// The agent's process manager looks for any process named xray, and stops
+	// it when it hasn't started one of its own. These tests aren't for a
+	// machine that runs Xray.
+	if out, err := exec.Command("pgrep", "-x", "xray").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		t.Skip("a process named xray runs on this machine, and the agent's process manager would stop it")
+	}
 	quiet(t)
 	ca := newCA(t)
 	if o.version == "" {
@@ -119,6 +127,7 @@ func startRig(t *testing.T, o options) *rig {
 	cfg.Process.WatchdogEnabled = false
 	cfg.Traffic.BufferEnabled = false
 	cfg.Xray.AccessLogPath = ""
+	cfg.Xray.APITimeout = 1 // there is no Xray API here, and the agent waits this long to find that out
 	cfg.Xray.BinaryPath = write("xray", []byte(xrayScript(o.version)), 0o755)
 	cfg.Xray.ConfigPath = filepath.Join(dir, "xray-conf", "config.json")
 	cfg.Cores.DataDir = filepath.Join(dir, "cores")

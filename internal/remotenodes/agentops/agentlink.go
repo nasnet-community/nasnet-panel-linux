@@ -114,6 +114,22 @@ func callFailure(err error, node model.Node) error {
 	return &opError{msg: sentence("The agent answered with an error: " + grpcReason(err)), cause: err}
 }
 
+// linkDown says a call failed because the link is gone, in the words for a
+// node that doesn't answer. It is nil for any other failure.
+func linkDown(err error, c *agent.Client) error {
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded:
+	default:
+		return nil
+	}
+	host, portText, splitErr := net.SplitHostPort(c.Target())
+	port, _ := strconv.Atoi(portText)
+	if splitErr != nil {
+		host = c.Target()
+	}
+	return &UnreachableError{What: "agent", Host: host, Port: port, Err: err}
+}
+
 // proveManaged shows that an agent runs the managed profile. GetSSHStatus is
 // read-only and the profile refuses it, so a managed agent answers
 // PermissionDenied. An agent that predates the profile ignores the line in its
@@ -234,4 +250,23 @@ func reasonTail(msg string) string {
 		msg = strings.TrimPrefix(msg, p)
 	}
 	return msg
+}
+
+// statusMessage is what the agent said in a gRPC error, however many times it
+// was wrapped on the way.
+func statusMessage(err error) string {
+	var se interface{ GRPCStatus() *status.Status }
+	if errors.As(err, &se) {
+		if m := se.GRPCStatus().Message(); m != "" {
+			return m
+		}
+	}
+	return tidyCause(err)
+}
+
+func trimPrefixes(s string, prefixes ...string) string {
+	for _, p := range prefixes {
+		s = strings.TrimPrefix(s, p)
+	}
+	return s
 }

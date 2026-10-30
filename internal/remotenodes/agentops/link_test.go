@@ -21,6 +21,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/artifacts"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 )
 
@@ -28,23 +29,69 @@ const loopback = "127.0.0.1"
 
 // linkRig is a hub Env and a stand-in agent that trusts its CA.
 type linkRig struct {
-	env  *Env
-	ca   *pki.CA
-	node model.Node
-	ag   *fakeagent.Agent
+	tt    *testing.T
+	env   *Env
+	ca    *pki.CA
+	node  model.Node
+	ag    *fakeagent.Agent
+	files *fakeFiles
+	steps []Step
+}
+
+func (r *linkRig) progress(s Step) { r.steps = append(r.steps, s) }
+
+// stepNames is the steps that began, in order, once each.
+func (r *linkRig) stepNames() []string {
+	var names []string
+	for _, s := range r.steps {
+		if s.State == StateRunning && (len(names) == 0 || names[len(names)-1] != s.Name) {
+			names = append(names, s.Name)
+		}
+	}
+	return names
+}
+
+func (r *linkRig) lastStep(name string) Step {
+	var last Step
+	for _, s := range r.steps {
+		if s.Name == name {
+			last = s
+		}
+	}
+	return last
+}
+
+// connect is what the manager does to get its client.
+func (r *linkRig) connect() *agent.Client {
+	r.t().Helper()
+	c, err := r.env.Connect(context.Background(), r.node)
+	if err != nil {
+		r.t().Fatal(err)
+	}
+	r.t().Cleanup(func() { c.Close() })
+	return c
 }
 
 func newLinkRig(t *testing.T) *linkRig {
 	t.Helper()
 	ca := testCA(t)
 	ag := fakeagent.Start(t, ca, loopback)
-	return &linkRig{
-		env:  &Env{CA: ca, Local: netip.MustParseAddr(loopback), DialTimeout: 3 * time.Second, Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
-		ca:   ca,
-		node: model.Node{ID: 1, Name: "Frankfurt", Host: loopback, AgentPort: ag.Port(), EntryPort: 443, SSHPort: 22},
-		ag:   ag,
+	files := newFakeFiles(t)
+	r := &linkRig{
+		env: &Env{
+			CA: ca, Files: files, Local: netip.MustParseAddr(loopback), DialTimeout: 3 * time.Second,
+			Settle: 700 * time.Millisecond, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		},
+		ca:    ca,
+		node:  model.Node{ID: 1, Name: "Frankfurt", Host: loopback, AgentPort: ag.Port(), EntryPort: 443, SSHPort: 22},
+		ag:    ag,
+		files: files,
 	}
+	r.tt = t
+	return r
 }
+
+func (r *linkRig) t() *testing.T { return r.tt }
 
 func TestConnectProvesTheManagedProfile(t *testing.T) {
 	r := newLinkRig(t)

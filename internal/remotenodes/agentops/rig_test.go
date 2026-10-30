@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -53,11 +54,13 @@ type fakeFiles struct {
 	t       *testing.T
 	version string // of the agent
 	padding int    // bytes of the agent beyond its script, to make an upload take a while
+	xrayPad int    // the same for the Xray build, which is 20 KB without it
 
 	mu       sync.Mutex
 	agentErr error
 	xrayErr  error
 	asked    []string
+	built    map[string]any // a build is made once, so asking again gives the same bytes
 }
 
 func newFakeFiles(t *testing.T) *fakeFiles { return &fakeFiles{t: t, version: "v1.3.0"} }
@@ -65,31 +68,50 @@ func newFakeFiles(t *testing.T) *fakeFiles { return &fakeFiles{t: t, version: "v
 func (f *fakeFiles) Agent(ctx context.Context, arch string) (*artifacts.Agent, error) {
 	f.mu.Lock()
 	f.asked = append(f.asked, "agent "+arch)
-	err := f.agentErr
+	err, built := f.agentErr, f.built["agent "+arch]
 	f.mu.Unlock()
 	if err != nil {
 		return nil, err
+	}
+	if built != nil {
+		return built.(*artifacts.Agent), nil
 	}
 	// what `nasnet-agent version` prints on a real one
 	script := fmt.Sprintf("#!/bin/sh\n# a test agent for %s\nif [ \"$1\" = version ]; then echo \"nasnet-agent %s\"; fi\nexit 0\n", arch, f.version)
 	plain := append([]byte(script), randomBytes(f.padding)...)
 	packed := gz(f.t, plain)
-	return &artifacts.Agent{
+	a := &artifacts.Agent{
 		Version: f.version, Arch: arch, Gz: packed, GzSHA256: sum256(packed),
 		PlainSize: int64(len(plain)), PlainSHA256: sum256(plain), Sig: make([]byte, 64),
-	}, nil
+	}
+	f.keep("agent "+arch, a)
+	return a, nil
+}
+
+func (f *fakeFiles) keep(key string, v any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.built == nil {
+		f.built = map[string]any{}
+	}
+	f.built[key] = v
 }
 
 func (f *fakeFiles) Xray(ctx context.Context, arch string) (*artifacts.Xray, error) {
 	f.mu.Lock()
 	f.asked = append(f.asked, "xray "+arch)
-	err := f.xrayErr
+	err, built := f.xrayErr, f.built["xray "+arch]
 	f.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	plain := append([]byte("fake xray build\n"), randomBytes(20_000)...)
-	return &artifacts.Xray{Version: pin.Version, Arch: arch, Gz: gz(f.t, plain), PlainSize: int64(len(plain)), PlainSHA256: sum256(plain)}, nil
+	if built != nil {
+		return built.(*artifacts.Xray), nil
+	}
+	plain := append([]byte("fake xray build\n"), randomBytes(20_000+f.xrayPad)...)
+	x := &artifacts.Xray{Version: pin.Version, Arch: arch, Gz: gz(f.t, plain), PlainSize: int64(len(plain)), PlainSHA256: sum256(plain)}
+	f.keep("xray "+arch, x)
+	return x, nil
 }
 
 func randomBytes(n int) []byte {
@@ -225,3 +247,7 @@ func statMode(path string) (string, error) {
 	}
 	return fmt.Sprintf("%04o", fi.Mode().Perm()), nil
 }
+
+func itoa(n int) string { return fmt.Sprint(n) }
+
+func mustAddr(s string) netip.Addr { return netip.MustParseAddr(s) }

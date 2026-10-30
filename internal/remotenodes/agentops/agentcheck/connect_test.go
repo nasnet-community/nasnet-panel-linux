@@ -5,6 +5,7 @@ package agentcheck
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,27 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 )
 
 var bg = context.Background()
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func ctxWith(d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(bg, d)
+}
+
+// connect is what the manager does to get its client.
+func (r *rig) connect() *agent.Client {
+	r.t.Helper()
+	c, err := r.env.Connect(bg, r.node)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	r.t.Cleanup(func() { c.Close() })
+	return c
+}
 
 func TestConnectToARealManagedAgent(t *testing.T) {
 	r := startRig(t, options{profile: config.ProfileManaged})
