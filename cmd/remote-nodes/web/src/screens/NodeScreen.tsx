@@ -12,6 +12,7 @@ import { health, nodeNotes, unreachable, type NodeAct } from '../lib/health'
 import { jobTitle } from '../lib/jobs'
 import { AttentionList, type AttentionItem } from './Attention'
 import { RemoveDialog, RenameDialog, RenewDialog, RotateDialog, UpdateDialog, type StartJob } from './NodeDialogs'
+import { NodeStatusTab } from './NodeStatusTab'
 import { NodeSubscriptionsTab } from './NodeSubscriptionsTab'
 import { Soon } from './Soon'
 
@@ -242,7 +243,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
 
       <div role="tabpanel" id="node-panel" aria-labelledby={`node-${tab}`}>
         {tab === 'subscriptions' && <NodeSubscriptionsTab node={node} />}
-        {tab === 'status' && (node.installing || !node.registered ? <Waiting node={node} /> : <Soon title={t('tabs.status')} />)}
+        {tab === 'status' && (node.installing || !node.registered ? <Waiting node={node} /> : <NodeStatusTab node={node} />)}
         {tab === 'settings' && (node.installing || !node.registered ? <Waiting node={node} /> : <Soon title={t('tabs.settings')} />)}
       </div>
 
