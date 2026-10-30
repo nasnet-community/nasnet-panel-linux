@@ -83,6 +83,20 @@ func (a *API) guarded(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// guardedStream is the route for what an EventSource reads. It can't send the
+// page's header, so that is not asked of it. It only reads, and a browser that
+// says the request came from another site is refused: the one thing left to
+// check, since the Origin comparison below is for what changes something.
+func (a *API) guardedStream(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if here, said := fetchSite(r); said && !here {
+			a.fail(w, &Error{CodeForbidden, "Requests from other sites are refused."})
+			return
+		}
+		h(w, r)
+	}
+}
+
 // looksLikeAPI is for a path no route took, which should still be refused
 // before it is told "not found". The base path itself usually starts with
 // /api, so under it the path is judged by what follows.
@@ -91,6 +105,19 @@ func (a *API) looksLikeAPI(path string) bool {
 		path = strings.TrimPrefix(path, b)
 	}
 	return path == "/api" || strings.HasPrefix(path, "/api/")
+}
+
+// fetchSite is what Sec-Fetch-Site says: whether the request came from this
+// site (the page itself, or the user typing the address), and whether the
+// browser said anything at all.
+func fetchSite(r *http.Request) (here, said bool) {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return true, true
+	case "":
+		return false, false
+	}
+	return false, true
 }
 
 // fromThisSite is the extra check on requests that change something.
@@ -102,12 +129,8 @@ func (a *API) looksLikeAPI(path string) bool {
 // adds X-Forwarded-For), so unless X-Forwarded-Host says otherwise there is
 // nothing to compare and the request is let through.
 func fromThisSite(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "none":
-		return true
-	case "":
-	default:
-		return false
+	if here, said := fetchSite(r); said {
+		return here
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {

@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
 
@@ -91,10 +92,24 @@ func classify(err error) *Error {
 		return &Error{CodeNameTaken, "That name is already in use."}
 	case errors.Is(err, model.ErrNotFound):
 		return &Error{CodeNotFound, "There is no such node or subscription."}
+	case errors.Is(err, jobs.ErrBusy):
+		return busy(err)
 	case errors.As(err, &inv):
 		return &Error{CodeBadRequest, sentence(err.Error())}
 	}
 	return nil
+}
+
+// busy is the answer for a second job on a node. Handlers pass the error
+// from Engine.Start to fail as it is, and it comes out as the busy code. The
+// contract has no field for the running job's id, so it is only in the
+// sentence.
+func busy(err error) *Error {
+	var b *jobs.BusyError
+	if errors.As(err, &b) && b.JobID != "" {
+		return &Error{CodeBusy, fmt.Sprintf("A job is already running on that node (job %s).", b.JobID)}
+	}
+	return &Error{CodeBusy, "A job is already running on that node."}
 }
 
 // sentence turns a message like "the name is required" into one that starts

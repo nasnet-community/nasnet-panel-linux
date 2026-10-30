@@ -25,19 +25,24 @@ type Store interface {
 
 type Config struct {
 	Store    Store
+	Jobs     Jobs // where jobs are read from; nil means there are none
 	Version  string
 	Commit   string
 	BasePath string       // "" or "/a/b", already cleaned by ui.BasePath
 	Index    http.Handler // the web page; nil serves none
 	Log      *slog.Logger
 	Now      func() time.Time
+	// JobPing is how long a job's event stream may sit quiet before it sends a
+	// comment, which keeps a proxy from closing it. Zero means 15 seconds.
+	JobPing time.Duration
 }
 
 type API struct{ cfg Config }
 
 // New serves every route at / and, when there is a base path, under it too:
 // the router's proxy may or may not strip its prefix. Routes under /api are
-// only for requests from the page (see allowed); /health is open.
+// only for requests from the page (see allowed), except a job's event stream,
+// which an EventSource reads (see guardedStream); /health is open.
 func New(cfg Config) http.Handler {
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
@@ -45,20 +50,29 @@ func New(cfg Config) http.Handler {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.JobPing <= 0 {
+		cfg.JobPing = defaultJobPing
+	}
 	a := &API{cfg: cfg}
 	mux := http.NewServeMux()
-	route := func(pattern string, h http.HandlerFunc) {
+	handle := func(pattern string, h http.HandlerFunc) {
 		method, path, _ := strings.Cut(pattern, " ")
-		if strings.HasPrefix(path, "/api/") {
-			h = a.guarded(h)
-		}
 		mux.HandleFunc(method+" "+path, h)
 		if cfg.BasePath != "" {
 			mux.HandleFunc(method+" "+cfg.BasePath+path, h)
 		}
 	}
+	route := func(pattern string, h http.HandlerFunc) {
+		if _, path, _ := strings.Cut(pattern, " "); strings.HasPrefix(path, "/api/") {
+			h = a.guarded(h)
+		}
+		handle(pattern, h)
+	}
 	route("GET /health", a.health)
 	route("GET /api/config", a.config)
+	route("GET /api/jobs", a.listJobs)
+	route("GET /api/jobs/{id}", a.getJob)
+	handle("GET /api/jobs/{id}/events", a.guardedStream(a.jobEvents))
 	route("GET /api/nodes", a.nodes)
 	route("GET /api/subscriptions", a.subscriptions)
 	mux.HandleFunc("/", a.noRoute)

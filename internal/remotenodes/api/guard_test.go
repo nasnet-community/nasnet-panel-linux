@@ -20,7 +20,7 @@ func TestEveryAPIPathNeedsTheHeader(t *testing.T) {
 		r := newRig(t, b)
 		r.populate()
 		for _, prefix := range prefixes(b) {
-			for _, p := range []string{"/api/config", "/api/nodes", "/api/subscriptions", "/api/nothing", "/api"} {
+			for _, p := range []string{"/api/config", "/api/nodes", "/api/subscriptions", "/api/jobs", "/api/jobs/abc", "/api/nothing", "/api"} {
 				for _, hdr := range []map[string]string{nil, {UIHeader: ""}, {UIHeader: "0"}, {UIHeader: "yes"}} {
 					code, _, body := r.call("GET", prefix+p, hdr)
 					got := decode[map[string]any](t, body)
