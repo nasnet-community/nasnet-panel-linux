@@ -24,11 +24,12 @@
 //   password "wrong"           -> the login is refused before any job starts
 //   an existing address        -> refused: it is already a node here
 //
-// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry }:
+// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace }:
 //   fresh     the first-run state above
 //   nodes     0 to 3: how many of the sample nodes stay (1 keeps only Node 1)
 //   maxNodes  the router's cap (3)
 //   entry     "off", "domestic-offline", "vpn-offline", "stale" or "old-routeros"
+//   pace      how long install steps take, as a multiple of the usual (1)
 // Every call but the job event stream needs the page's X-RemoteNodes-UI header, as the hub
 // does; the stream can't carry one (EventSource), so it is refused only when the browser says
 // the request came from another site.
@@ -106,6 +107,7 @@ let nextNodeId = 1
 let nextSubId = 1
 let maxNodes = 3
 let entryMode = 'on'
+let pace = 1
 
 function node(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>): MockNode {
   const now = Date.now()
@@ -140,13 +142,14 @@ function sub(name: string, o: Partial<MockSub> = {}): MockSub {
   return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month: 0, on: new Set(), ...o }
 }
 
-function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string } = {}) {
+function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number } = {}) {
   const now = Date.now()
   nodes = []
   subs = []
   nextNodeId = 1
   nextSubId = 1
   maxNodes = o.maxNodes ?? 3
+  pace = o.pace ?? 1
   entryMode = o.fresh ? 'off' : (o.entry ?? 'on')
   jobs.clear()
   installing.clear()
@@ -480,12 +483,12 @@ function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: s
     emit(j)
   }
   void (async () => {
-    await sleep(300)
+    await sleep(300 * pace)
     for (const step of steps) {
       const s = j.view.steps.find((x) => x.name === step.name)!
       s.state = 'running'
       emit(j)
-      const ms = step.ms ?? 380
+      const ms = (step.ms ?? 380) * pace
       if (step.progress) {
         const { total, unit } = step.progress
         for (let p = 8; p < 100; p += 15) {

@@ -90,7 +90,7 @@ function NodeCard({ node }: { node: Node }) {
             )
           )}
           {(node.updates.agent || node.updates.xray) && <UpdateChip>{t('node.updateAvailable')}</UpdateChip>}
-          <ChevronRight className="ms-auto h-4 w-4 text-faint transition group-hover:text-foreground rtl:-scale-x-100" />
+          <ChevronRight className="ms-auto h-4 w-4 text-faint transition-colors group-hover:text-foreground rtl:-scale-x-100" />
         </div>
       </Card>
     </RouteLink>
@@ -171,6 +171,10 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
         open={adding}
         nodes={nodes}
         onClose={() => setAdding(false)}
+        onStarted={() => {
+          void reload()
+          onChanged()
+        }}
         onInstalled={() => {
           void reload()
           onChanged()

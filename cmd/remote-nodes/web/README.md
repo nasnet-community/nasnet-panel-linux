@@ -18,13 +18,15 @@ and sends `X-RemoteNodes-UI: 1` with every request except the job event stream, 
 | `npm run pack` | Writes `dist/index.html.br` (brotli, highest quality) from the built page, for the Go side to embed. |
 | `npm run typecheck` | `tsc -b`. |
 | `npm test` | Unit tests (vitest). |
+| `npm run e2e` | Browser tests (Playwright) against the mock API, in a desktop window and at phone width (Pixel 7). Needs Chromium: `npx playwright install chromium`, or set `CHROMIUM_PATH`. |
 
 ## The mock API
 
 `mock-api.ts` is a Vite plugin that answers the plugin's HTTP API from memory while `npm run dev:mock`
 runs. Its header comment lists the sample data and the scenarios (an address containing `fail`,
 `changed`, `offline` and so on makes the add-node flow go that way). `POST /api/__reset` puts the data
-back and takes `{ fresh, nodes, maxNodes, entry }` to set up other states. It is not part of the build.
+back and takes `{ fresh, nodes, maxNodes, entry, pace }` to set up other states (the browser tests use
+it). It is not part of the build.
 
 ## Where it comes from
 

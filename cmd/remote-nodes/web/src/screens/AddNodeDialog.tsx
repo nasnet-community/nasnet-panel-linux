@@ -26,6 +26,8 @@ interface Props {
   /** the nodes there are now, to pick a name that isn't taken; null while the list loads */
   nodes: Node[] | null
   onClose: () => void
+  /** The install job started: the node is in the list, installing. */
+  onStarted: () => void
   /** The install job ended; the node may be saved even if it failed late. */
   onInstalled: () => void
   onOpenNode: (id: number) => void
@@ -49,7 +51,7 @@ function suggestName(nodes: Node[], t: T) {
 /** The port subscriptions connect to: 1 to 65535, and not the one SSH uses. */
 const badPort = (p: number, ssh: number) => !Number.isInteger(p) || p < 1 || p > 65535 || p === ssh
 
-function AddNode({ nodes, onClose, onInstalled, onOpenNode }: Props) {
+function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) {
   const { t, fmt } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
@@ -85,6 +87,7 @@ function AddNode({ nodes, onClose, onInstalled, onOpenNode }: Props) {
       setLogin(withoutSecrets)
       setJobId(jobId)
       setStage('installing')
+      onStarted()
       // reported here even when the dialog is closed by then
       jobs.watch(jobId, (j) => {
         if (j.state === 'ok') toast(t('job.install.ok', { target: name }))
