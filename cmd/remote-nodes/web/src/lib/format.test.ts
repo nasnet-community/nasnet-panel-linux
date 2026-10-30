@@ -79,6 +79,12 @@ describe('times relative to now', () => {
     expect(plain(fa.relative(at(-22 * 60e3), NOW))).toBe('۲۲ دقیقه پیش')
   })
 
+  it('has a short form too, which Persian words the same', () => {
+    expect(en.relative(at(-2 * 60e3), NOW, true)).toBe('2 min ago')
+    expect(en.relative(at(60 * 60e3), NOW, true)).toBe('in 1 hr')
+    expect(plain(fa.relative(at(-2 * 60e3), NOW, true))).toBe('۲ دقیقه پیش')
+  })
+
   it('counts seconds for the first two minutes, then falls back to words', () => {
     expect(en.secondsAgo(at(-10e3), NOW)).toBe('10 s ago')
     expect(en.secondsAgo(at(-10 * 60e3), NOW)).toBe('10 minutes ago')

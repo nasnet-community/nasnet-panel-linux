@@ -13,7 +13,7 @@ const dates = (lang: Lang, options: Intl.DateTimeFormatOptions) => {
   return f
 }
 
-const relatives = new Map<Lang, Intl.RelativeTimeFormat>()
+const relatives = new Map<string, Intl.RelativeTimeFormat>()
 
 /**
  * Numbers, sizes and times as text in one language: Persian digits and separators
@@ -37,7 +37,7 @@ export function makeFormat(lang: Lang) {
     return t(`unit.${SIZES[unit]}${rate ? 'ps' : ''}` as MsgKey, { value: shown })
   }
 
-  function relative(iso: string, now = Date.now()): string {
+  function relative(iso: string, now = Date.now(), short = false): string {
     const diff = new Date(iso).getTime() - now
     const abs = Math.abs(diff)
     if (diff < 0 && abs < 60000) return t('time.justNow')
@@ -47,8 +47,9 @@ export function makeFormat(lang: Lang) {
         : abs >= 3600e3
           ? ([Math.round(abs / 3600e3), 'hour'] as const)
           : ([Math.max(1, Math.round(abs / 60e3)), 'minute'] as const)
-    let rtf = relatives.get(lang)
-    if (!rtf) relatives.set(lang, (rtf = new Intl.RelativeTimeFormat(LANGS[lang].intl, { numeric: 'always' })))
+    const key = `${lang}-${short}`
+    let rtf = relatives.get(key)
+    if (!rtf) relatives.set(key, (rtf = new Intl.RelativeTimeFormat(LANGS[lang].intl, { numeric: 'always', style: short ? 'short' : 'long' })))
     return rtf.format(diff >= 0 ? n : -n, unit)
   }
 
@@ -82,7 +83,7 @@ export function makeFormat(lang: Lang) {
       return localizeDigits(`${h ? `${h}:${pad(m)}` : m}:${pad(s % 60)}`, lang)
     },
 
-    /** "in 3 days", "2 hours ago", "just now", relative to `now`. */
+    /** "in 3 days", "2 hours ago", "just now", relative to `now`; `short` gives "2 min ago". */
     relative,
 
     /** "12 s ago" for the last two minutes, then like relative. */

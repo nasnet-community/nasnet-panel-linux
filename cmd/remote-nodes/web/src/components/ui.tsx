@@ -17,7 +17,7 @@ import {
 import { createPortal } from 'react-dom'
 import qrcode from 'qrcode-generator'
 import { useLang } from '../i18n'
-import { Check, ChevronDown, Copy, Info, Loader, TriangleAlert, X } from './icons'
+import { Check, ChevronDown, Copy, Download, Info, Loader, TriangleAlert, X } from './icons'
 
 export function cx(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(' ')
@@ -135,7 +135,7 @@ const TONES: Record<Tone, [string, string]> = {
   muted: ['bg-track text-muted', 'bg-faint'],
 }
 
-export function Badge({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) {
+export function Badge({ tone, icon, children, className }: { tone: Tone; /** stands in for the dot */ icon?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <span
       className={cx(
@@ -144,7 +144,17 @@ export function Badge({ tone, children, className }: { tone: Tone; children: Rea
         className,
       )}
     >
-      <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TONES[tone][1])} />
+      {icon ?? <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TONES[tone][1])} />}
+      {children}
+    </span>
+  )
+}
+
+/** A small chip that says an update is waiting. */
+export function UpdateChip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-border-strong px-2 py-px text-[11.5px] font-medium text-foreground">
+      <Download className="h-3 w-3" />
       {children}
     </span>
   )
@@ -190,7 +200,8 @@ export function Switch({
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <Loader className={cx('h-4 w-4 animate-spin text-muted', className)} />
+  // a colour passed in replaces the default; both on one element would leave the stylesheet's order to decide
+  return <Loader className={cx('h-4 w-4 animate-spin', className ?? 'text-muted')} />
 }
 
 /** A thin bar filled to `pct`. */
@@ -715,7 +726,8 @@ export function Notice({ tone = 'info', children, className }: { tone?: keyof ty
 
 export function ErrorBox({ children }: { children: ReactNode }) {
   return (
-    <div role="alert" className="whitespace-pre-wrap break-words rounded-md border border-bad bg-bad-tint px-3 py-2 text-[13px] text-bad-text">
+    // the text often comes from the server in English, so each box reads in its own direction
+    <div role="alert" dir="auto" className="whitespace-pre-wrap break-words rounded-md border border-bad bg-bad-tint px-3 py-2 text-[13px] text-bad-text">
       {children}
     </div>
   )

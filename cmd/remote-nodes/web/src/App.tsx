@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Moon, RemoteNodesLogo, Sun } from './components/icons'
+import { JobTray } from './components/jobs'
 import { RouteLink } from './components/link'
 import { Button, ErrorBox } from './components/ui'
-import { ConfigContext } from './hooks/useConfig'
-import { usePoll } from './hooks/usePoll'
+import { useConfigState } from './hooks/useConfig'
 import { useRoute } from './hooks/useRoute'
 import { LANGS, useErrorText, useLang } from './i18n'
-import { api } from './lib/api'
 import { NodeScreen } from './screens/NodeScreen'
 import { RootScreen } from './screens/RootScreen'
 
@@ -46,38 +45,37 @@ export function App() {
   const route = useRoute()
   const { t } = useLang()
   const errorText = useErrorText()
-  const config = usePoll(api.config, 30000)
+  const config = useConfigState()
 
   // a new page starts at the top, a new tab on the same page doesn't
   const page = route.page === 'node' ? `node-${route.id}` : 'root'
   useEffect(() => window.scrollTo(0, 0), [page])
 
   return (
-    <ConfigContext.Provider value={config.data}>
-      <div className="min-h-screen">
-        <header className="sticky top-0 z-20 border-b border-border bg-surface">
-          <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-            <RouteLink to={{ page: 'root', tab: 'nodes' }} className="flex shrink-0 items-center gap-2.5 font-semibold">
-              <RemoteNodesLogo size={30} />
-              <span dir="ltr">Remote Nodes</span>
-            </RouteLink>
-            <span className="hidden truncate text-xs text-faint md:inline">{t('app.subtitle')}</span>
-            <div className="ms-auto flex items-center gap-1 sm:gap-2">
-              {config.data && (
-                <span dir="ltr" className="hidden text-xs text-faint sm:inline">
-                  v{config.data.version}
-                </span>
-              )}
-              <LanguageButton />
-              <ThemeToggle />
-            </div>
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-20 border-b border-border bg-surface">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
+          <RouteLink to={{ page: 'root', tab: 'nodes' }} className="flex shrink-0 items-center gap-2.5 font-semibold">
+            <RemoteNodesLogo size={30} />
+            <span dir="ltr">Remote Nodes</span>
+          </RouteLink>
+          <span className="hidden truncate text-xs text-faint md:inline">{t('app.subtitle')}</span>
+          <div className="ms-auto flex items-center gap-1 sm:gap-2">
+            <JobTray />
+            {config.data && (
+              <span dir="ltr" className="hidden text-xs text-faint sm:inline">
+                v{config.data.version}
+              </span>
+            )}
+            <LanguageButton />
+            <ThemeToggle />
           </div>
-        </header>
-        <main className="mx-auto max-w-6xl px-4 py-6">
-          {config.error != null && !config.data && <ErrorBox>{errorText(config.error)}</ErrorBox>}
-          {route.page === 'root' ? <RootScreen tab={route.tab} config={config.data} /> : <NodeScreen key={route.id} id={route.id} tab={route.tab} />}
-        </main>
-      </div>
-    </ConfigContext.Provider>
+        </div>
+      </header>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        {config.error != null && !config.data && <ErrorBox>{errorText(config.error)}</ErrorBox>}
+        {route.page === 'root' ? <RootScreen tab={route.tab} config={config.data} onConfigChanged={config.reload} /> : <NodeScreen key={route.id} id={route.id} tab={route.tab} />}
+      </main>
+    </div>
   )
 }
