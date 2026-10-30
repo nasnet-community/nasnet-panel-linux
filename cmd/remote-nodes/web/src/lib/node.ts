@@ -32,6 +32,26 @@ export const renewLeadDays = (cert: Node['cert']) => Math.round((Date.parse(cert
 /** A certificate with this many days left or fewer means the hub's renewal didn't happen. */
 export const CERT_SOON_DAYS = 14
 
+// --- what can be typed in ----------------------------------------------------------
+
+// a host name with a dot in it, whose last label starts with a letter (so a bare IP is not one)
+const HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/
+
+/** A server name for the handshake: a host name, as typed (case aside). */
+export const validServerName = (s: string) => s.length <= 253 && HOST.test(s.trim().toLowerCase())
+
+/**
+ * A handshake target as typed, as the host:port the hub takes: a bare host gets :443, a scheme and a path
+ * are dropped. Empty when it isn't a site.
+ */
+export function normalizeTarget(input: string): string {
+  const s = input.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/[/?#].*$/, '')
+  const m = /^(.+?)(?::(\d{1,5}))?$/.exec(s)
+  if (!m || !validServerName(m[1])) return ''
+  const port = m[2] === undefined ? 443 : Number(m[2])
+  return port >= 1 && port <= 65535 ? `${m[1]}:${port}` : ''
+}
+
 // --- events ----------------------------------------------------------------------
 
 // what the hub reports in a node's event list, by kind

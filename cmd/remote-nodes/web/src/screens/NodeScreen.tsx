@@ -11,12 +11,15 @@ import { api, type Job, type Node } from '../lib/api'
 import { health, nodeNotes, unreachable, type NodeAct } from '../lib/health'
 import { jobTitle } from '../lib/jobs'
 import { AttentionList, type AttentionItem } from './Attention'
-import { RemoveDialog, RenameDialog, RenewDialog, RotateDialog, UpdateDialog, type StartJob } from './NodeDialogs'
+import { HandshakeDialog, PortDialog, RemoveDialog, RenameDialog, RenewDialog, RotateDialog, ServerNameDialog, UpdateDialog, type StartJob } from './NodeDialogs'
+import { NodeSettingsTab } from './NodeSettingsTab'
 import { NodeStatusTab } from './NodeStatusTab'
 import { NodeSubscriptionsTab } from './NodeSubscriptionsTab'
-import { Soon } from './Soon'
 
-type Modal = { kind: 'rename' | 'remove' | 'rotate' | 'renew' } | { kind: 'update'; what: 'agent' | 'xray' }
+type Modal =
+  | { kind: 'rename' | 'remove' | 'rotate' | 'renew' | 'port' | 'target' }
+  | { kind: 'update'; what: 'agent' | 'xray' }
+  | { kind: 'sni'; sni: string }
 
 /** A chip that says an update is waiting and opens its confirmation. Small to look at, a 44 px target for a thumb. */
 function UpdateButton({ children, disabled, title, onClick }: { children: ReactNode; disabled: boolean; title?: string; onClick: () => void }) {
@@ -244,7 +247,19 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       <div role="tabpanel" id="node-panel" aria-labelledby={`node-${tab}`}>
         {tab === 'subscriptions' && <NodeSubscriptionsTab node={node} />}
         {tab === 'status' && (node.installing || !node.registered ? <Waiting node={node} /> : <NodeStatusTab node={node} />)}
-        {tab === 'settings' && (node.installing || !node.registered ? <Waiting node={node} /> : <Soon title={t('tabs.settings')} />)}
+        {tab === 'settings' &&
+          (node.installing || !node.registered ? (
+            <Waiting node={node} />
+          ) : (
+            <NodeSettingsTab
+              node={node}
+              onChangePort={() => setModal({ kind: 'port' })}
+              onChangeTarget={() => setModal({ kind: 'target' })}
+              onRotate={() => setModal({ kind: 'rotate' })}
+              onRenew={() => setModal({ kind: 'renew' })}
+              onChangeName={(sni) => setModal({ kind: 'sni', sni })}
+            />
+          ))}
       </div>
 
       {modal?.kind === 'rename' && <RenameDialog node={node} onClose={close} onRenamed={take} />}
@@ -252,6 +267,9 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       {modal?.kind === 'rotate' && <RotateDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'renew' && <RenewDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'update' && <UpdateDialog node={node} what={modal.what} start={start} onClose={close} />}
+      {modal?.kind === 'port' && <PortDialog node={node} start={start} onClose={close} />}
+      {modal?.kind === 'target' && <HandshakeDialog node={node} start={start} onClose={close} />}
+      {modal?.kind === 'sni' && <ServerNameDialog node={node} sni={modal.sni} start={start} onClose={close} />}
     </div>
   )
 }
