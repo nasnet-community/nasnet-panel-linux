@@ -28,6 +28,28 @@ runs. Its header comment lists the sample data and the scenarios (an address con
 back and takes `{ fresh, nodes, maxNodes, entry, pace }` to set up other states (the browser tests use
 it). It is not part of the build.
 
+## In the image
+
+`Dockerfile.remote-nodes`, at the repository root, builds the page here with `npm ci`, `npm run build`
+and `npm run pack`, copies `dist/index.html.br` to `internal/remotenodes/ui/index.html.br`, and builds
+the hub with it. Without that file the hub embeds a placeholder page.
+
+To run the hub with the real page and no Docker, from the repository root (git ignores the copy):
+
+```
+(cd cmd/remote-nodes/web && npm run build && npm run pack)
+cp cmd/remote-nodes/web/dist/index.html.br internal/remotenodes/ui/
+DATA_DIR=/tmp/remote-nodes go run ./cmd/remote-nodes
+```
+
+To build the image for this machine, or only the two packed programs, with their unpacked sizes and
+the licence files, into `bin/remote-nodes`:
+
+```
+docker build -f Dockerfile.remote-nodes -t remote-nodes .
+docker build -f Dockerfile.remote-nodes --target binary --output type=local,dest=bin/remote-nodes .
+```
+
 ## Where it comes from
 
 The tokens, the components in `src/components` and the job tray follow the web page of the Remote

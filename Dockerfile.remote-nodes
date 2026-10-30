@@ -1,0 +1,100 @@
+# syntax=docker/dockerfile:1
+
+# Remote Nodes: the hub (/remote-nodes) and the bridge it starts as another
+# user (/remote-nodes-bridge), in one small image for linux/amd64 and linux/arm64.
+#
+# The image, for this machine:
+#   docker build -f Dockerfile.remote-nodes -t remote-nodes .
+# Only the two packed binaries, the size each has before packing and the
+# licence files, into bin/remote-nodes (git ignores bin):
+#   docker build -f Dockerfile.remote-nodes --target binary --output type=local,dest=bin/remote-nodes .
+# Add --platform linux/arm64 (or amd64) for the other architecture. All the
+# compiling happens on the build machine, so nothing runs under emulation.
+# --build-arg VERSION=... and COMMIT=... set the hub's version and commit and
+# the image labels.
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG SOURCE_URL=https://github.com/nasnet-community/nasnet-panel-linux
+
+# The web page, built into one self-contained index.html and packed with
+# brotli, which is the form the hub embeds.
+FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS web
+WORKDIR /web
+COPY cmd/remote-nodes/web/package.json cmd/remote-nodes/web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY cmd/remote-nodes/web/ ./
+RUN npm run build && npm run pack
+
+# Static binaries, cross-compiled on the build platform.
+FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
+# a go.mod that wants a newer Go than this image has is an error, not a download
+ENV GOTOOLCHAIN=local
+# upx packs foreign-arch ELF files too, so it runs on the build platform as well
+RUN apk add --no-cache ca-certificates upx
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd/remote-nodes/*.go cmd/remote-nodes/
+COPY cmd/remote-nodes-bridge cmd/remote-nodes-bridge
+COPY internal internal
+COPY pkg pkg
+COPY LICENSE ./
+COPY scripts/remote-nodes-licenses.sh scripts/
+COPY --from=web /web/dist/index.html.br internal/remotenodes/ui/index.html.br
+# Declared below the steps that don't use them, so a new commit doesn't rerun those.
+ARG TARGETOS TARGETARCH VERSION COMMIT SOURCE_URL
+# Only the hub has a version and commit to set. Each program is packed for the
+# router's flash, but what it unpacks to is what it takes in RAM, so that size
+# is written down first for CI to check.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eux; \
+    case "$TARGETARCH" in amd64|arm64) ;; *) echo "no image for $TARGETARCH: only amd64 and arm64" >&2; exit 1 ;; esac; \
+    export CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH"; \
+    mkdir -p /out; \
+    go build -trimpath -buildvcs=false -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+      -o /out/remote-nodes ./cmd/remote-nodes; \
+    go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/remote-nodes-bridge ./cmd/remote-nodes-bridge; \
+    for b in remote-nodes remote-nodes-bridge; do \
+      echo "$b $(stat -c %s /out/$b)" >> /out/unpacked-sizes; \
+      upx -q --lzma /out/$b; \
+      upx -q -t /out/$b; \
+    done
+# The licences of what was just linked, read from the module cache.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    set -eux; \
+    export CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH"; \
+    sh scripts/remote-nodes-licenses.sh /out/licenses
+
+# What the image ships besides busybox, so CI can export it and check the
+# sizes and the licence files.
+FROM scratch AS binary
+COPY --from=build /out/remote-nodes /out/remote-nodes-bridge /out/unpacked-sizes /
+COPY --from=build /out/licenses /licenses
+
+# busybox for a shell and wget (the healthcheck), CA roots for HTTPS. Root,
+# because RouterOS mounts are root-owned and only root can start the bridge as
+# another user.
+FROM busybox:musl
+ARG VERSION COMMIT SOURCE_URL
+LABEL org.opencontainers.image.title="remote-nodes" \
+      org.opencontainers.image.description="Manages remote nodes that run nasnet-agent, from a RouterOS container" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="${SOURCE_URL}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.version="${VERSION}"
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=binary /remote-nodes /remote-nodes-bridge /
+COPY --from=binary /licenses /licenses
+# GOMAXPROCS and GOMEMLIMIT are the hub's only: it starts the bridge with an
+# environment of its own. Putting a binary on a node holds it in RAM two or
+# three times over, 40 to 60 MB at the peak, so the heap limit sits above that
+# and still stops the hub growing without end on a small router. Two threads
+# are plenty for a process that mostly waits.
+ENV LISTEN_ADDR=:8080 DATA_DIR=/data BASE_PATH= \
+    GOMAXPROCS=2 GOMEMLIMIT=96MiB SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+EXPOSE 8080
+# the port is whatever LISTEN_ADDR says
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${LISTEN_ADDR##*:}/health" || exit 1
+ENTRYPOINT ["/remote-nodes"]
