@@ -1,0 +1,397 @@
+name: Remote Nodes
+
+# The Remote Nodes plugin: its hub, its bridge, the web page they serve and the
+# image they ship in. Pull requests and pushes to main run the checks when a
+# path below changes. A tag remote-nodes-v* runs them and then pushes the image.
+#
+# That tag can't start release.yml. GitHub matches a tag filter against the whole
+# tag name, and * stops at a slash, so v* means "starts with v": remote-nodes-v0.1.0
+# starts with r and doesn't match it, and v1.3.0 doesn't match remote-nodes-v*.
+# Path filters aren't evaluated for tag pushes, so a tag always gets here.
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/remote-nodes/**'
+      - 'cmd/remote-nodes-bridge/**'
+      - 'internal/remotenodes/**'
+      - 'pkg/agent/**'
+      - 'pkg/release/**'
+      - 'pkg/signing/**'
+      - 'internal/xray/pin/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile.remote-nodes*'
+      - 'scripts/remote-nodes-licenses.sh'
+      - '.github/workflows/remote-nodes.yml'
+  push:
+    branches:
+      - main
+    tags:
+      - 'remote-nodes-v*'
+    paths:
+      - 'cmd/remote-nodes/**'
+      - 'cmd/remote-nodes-bridge/**'
+      - 'internal/remotenodes/**'
+      - 'pkg/agent/**'
+      - 'pkg/release/**'
+      - 'pkg/signing/**'
+      - 'internal/xray/pin/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile.remote-nodes*'
+      - 'scripts/remote-nodes-licenses.sh'
+      - '.github/workflows/remote-nodes.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-nodes-${{ github.ref }}
+  # a second push of a tag doesn't cut a release run short
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  IMAGE: ghcr.io/nasnet-community/remote-nodes
+  # Size limits in bytes, for each program on each architecture. Unpacked is
+  # the stripped Go binary, which is what a router unpacks into RAM; packed is
+  # the UPX --lzma file the image ships.
+  #
+  # Probed on arm64 with these flags: hub 14.0 MB unpacked, 3.6 MB packed;
+  # bridge 19.0 and 4.8. Measured when the limits were set: the hub, still a
+  # skeleton, 7.4 and 2.4 on amd64, 6.8 and 2.0 on arm64; the bridge with the
+  # Xray core linked 20.9 and 6.1 on amd64, 19.5 and 4.9 on arm64. amd64 comes
+  # out bigger (the bridge by 7.6% unpacked and 23% packed), so the hub's
+  # probe is scaled the same way. Each limit is the larger of the probe and
+  # what was measured, plus 10%, rounded up to the next half megabyte.
+  # They get tightened to the baseline plus 5% once the hub is feature complete.
+  HUB_MAX_UNPACKED: "17000000"
+  HUB_MAX_PACKED: "5000000"
+  BRIDGE_MAX_UNPACKED: "23500000"
+  BRIDGE_MAX_PACKED: "7000000"
+
+jobs:
+  web:
+    name: Web
+    runs-on: depot-ubuntu-24.04
+    defaults:
+      run:
+        working-directory: cmd/remote-nodes/web
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          # what the image builds the page with
+          node-version: "22.23.4"
+          cache: npm
+          cache-dependency-path: cmd/remote-nodes/web/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Pack
+        run: npm run pack
+
+      - name: Page size
+        run: |
+          raw=$(stat -c %s dist/index.html)
+          packed=$(stat -c %s dist/index.html.br)
+          echo "The page is $raw bytes, $packed with brotli." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The config prefers a Chrome it finds on the machine. The empty
+      # CHROMIUM_PATH makes it use the Chromium that was just installed.
+      - name: Browser tests
+        id: e2e
+        env:
+          E2E_PORT: "5185"
+          CHROMIUM_PATH: ""
+        run: npm run e2e
+
+      - name: Keep the Playwright report
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-report
+          path: cmd/remote-nodes/web/playwright-report
+          retention-days: 7
+
+  go:
+    name: Go
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: true
+
+      - name: Build
+        run: go build ./cmd/remote-nodes/... ./cmd/remote-nodes-bridge/... ./internal/remotenodes/...
+
+      - name: Vet
+        run: go vet ./cmd/remote-nodes/... ./cmd/remote-nodes-bridge/... ./internal/remotenodes/...
+
+      # deps_test.go in cmd/remote-nodes checks the same under go test. This
+      # prints the answer, so the log shows it.
+      - name: Dependency guards
+        run: |
+          set -euo pipefail
+          export CGO_ENABLED=0
+          fail=0
+          guard() { # program, its dependencies, what it may not link
+            local hits
+            hits=$(grep -E "$3" <<<"$2" || true)
+            if [ -n "$hits" ]; then
+              echo "::error::$1 links what it must not:"
+              echo "$hits"
+              fail=1
+            else
+              echo "ok: $1 links nothing that matches $3"
+            fi
+          }
+          for arch in amd64 arm64; do
+            hub=$(GOARCH=$arch go list -deps ./cmd/remote-nodes)
+            bridge=$(GOARCH=$arch go list -deps ./cmd/remote-nodes-bridge)
+            echo "linux/$arch: the hub links $(wc -l <<<"$hub") packages, the bridge $(wc -l <<<"$bridge")"
+            guard "the hub (linux/$arch)" "$hub" 'xtls/xray-core|sagernet|gvisor|gorm|nasnet-panel-linux/(pkg/xray|pkg/geoip|internal/node/domain)'
+            guard "the bridge (linux/$arch)" "$bridge" 'nasnet-panel-linux/pkg/agent|golang.org/x/crypto/ssh'
+          done
+          exit $fail
+
+      - name: Test (race)
+        run: go test -race -count=1 ./cmd/remote-nodes/... ./cmd/remote-nodes-bridge/... ./internal/remotenodes/...
+
+      # xray-core has two known data races upstream, which show up in process:
+      # the reverse outbound's constructor against its first dial, and Vision's
+      # reader against its writer. TestE2EVisionFlow skips itself under -race, so
+      # it runs here on its own, and has to pass rather than be skipped.
+      - name: Test the Vision flow (no race detector)
+        run: |
+          set -euo pipefail
+          out=$(go test -count=1 -v -run 'TestE2EVisionFlow' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          grep -q -- '--- PASS: TestE2EVisionFlow ' <<<"$out" || { echo "::error::TestE2EVisionFlow did not run and pass"; exit 1; }
+
+      # These only run on Linux, which this is: one binds 127.0.0.17 and
+      # 127.0.0.18, the other checks no_new_privs. A skip would hide a bridge
+      # that doesn't do what the hub relies on, so a skip fails the step.
+      - name: Linux-only bridge tests
+        run: |
+          set -euo pipefail
+          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          skipped=$(grep -c -- '--- SKIP' <<<"$out" || true)
+          echo "skipped: $skipped"
+          [ "$skipped" = 0 ] || { echo "::error::$skipped of the Linux-only bridge tests were skipped"; exit 1; }
+          for t in TestE2ESourceAddresses TestNoNewPrivs; do
+            grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
+          done
+
+      # Switching user only works as root, and this is the test that does it.
+      # It runs last: go test as root leaves root-owned files in the build
+      # cache, which a later step, as the runner user, couldn't write over.
+      - name: Switching user as root
+        run: |
+          set -euo pipefail
+          out=$(sudo -E env "PATH=$PATH" go test -count=1 -v -run 'TestCredentialAsRoot' ./internal/remotenodes/bridgectl/... 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          grep -q -- '--- PASS: TestCredentialAsRoot ' <<<"$out" || { echo "::error::TestCredentialAsRoot did not run as root"; exit 1; }
+
+  size:
+    name: Size (${{ matrix.platform }})
+    runs-on: depot-ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Build the programs
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: Dockerfile.remote-nodes
+          target: binary
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          sbom: false
+          outputs: type=local,dest=./out
+          cache-from: type=gha,scope=remote-nodes-${{ matrix.arch }}
+          cache-to: type=gha,scope=remote-nodes-${{ matrix.arch }},mode=max
+
+      # The summary gets the sizes whether or not they are within the limits.
+      - name: Check the sizes
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          dir=$(dirname "$(find out -name remote-nodes -type f | head -1)")
+          {
+            echo "### $PLATFORM"
+            echo
+            echo "| program | unpacked | limit | packed | limit |"
+            echo "|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ok=0
+          check() { # program, unpacked limit, packed limit
+            local unpacked packed
+            unpacked=$(awk -v p="$1" '$1 == p { print $2 }' "$dir/unpacked-sizes")
+            packed=$(stat -c %s "$dir/$1")
+            echo "| $1 | $unpacked | $2 | $packed | $3 |" >> "$GITHUB_STEP_SUMMARY"
+            echo "$PLATFORM $1: $unpacked bytes unpacked (limit $2), $packed packed (limit $3)"
+            if [ "$unpacked" -gt "$2" ]; then
+              echo "::error::$1 is $unpacked bytes before packing, the limit is $2"
+              ok=1
+            fi
+            if [ "$packed" -gt "$3" ]; then
+              echo "::error::$1 is $packed bytes packed, the limit is $3"
+              ok=1
+            fi
+          }
+          check remote-nodes "$HUB_MAX_UNPACKED" "$HUB_MAX_PACKED"
+          check remote-nodes-bridge "$BRIDGE_MAX_UNPACKED" "$BRIDGE_MAX_PACKED"
+          exit $ok
+
+      - name: Check the licence files
+        run: |
+          set -euo pipefail
+          dir=$(dirname "$(find out -name remote-nodes -type f | head -1)")/licenses
+          ls -l "$dir"
+          grep -q 'GNU AFFERO GENERAL PUBLIC LICENSE' "$dir/LICENSE"
+          for want in 'The Go Authors' 'github.com/nasnet-community/mtproto-remote-plugin' 'github.com/xtls/xray-core' 'Mozilla Public License'; do
+            grep -q "$want" "$dir/NOTICES" || { echo "::error::NOTICES has no $want"; exit 1; }
+          done
+          cat "$dir/README"
+
+      # upx -t only reads the archive: run the packed programs on their own
+      # architecture, under QEMU
+      - uses: docker/setup-qemu-action@v4.4.0
+
+      - name: Run the packed programs
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          dir=$(dirname "$(find out -name remote-nodes -type f | head -1)")
+          cat > "$RUNNER_TEMP/smoke.sh" <<'EOF'
+          set -eu
+          fail() {
+            echo "$PLATFORM: $*" >&2
+            cat /tmp/hub.log >&2 2>/dev/null || true
+            exit 1
+          }
+
+          # With no hub to send it a spec the bridge says so and stops. That
+          # shows the packed file unpacks and runs.
+          code=0
+          : | /o/remote-nodes-bridge 2>/tmp/bridge.log || code=$?
+          case $code in
+          1|2) ;;
+          *) cat /tmp/bridge.log >&2; fail "the bridge exited with $code" ;;
+          esac
+          grep -q remote-nodes-bridge /tmp/bridge.log || fail "the bridge said nothing of its own"
+          echo "$PLATFORM: the bridge runs, and says: $(head -n 1 /tmp/bridge.log)"
+
+          /o/remote-nodes >/tmp/hub.log 2>&1 &
+          pid=$!
+          ok=
+          for i in $(seq 90); do
+            if body=$(wget -qO- http://127.0.0.1:8080/health 2>/dev/null); then
+              ok=1
+              break
+            fi
+            kill -0 "$pid" 2>/dev/null || fail "the hub stopped before it answered"
+            sleep 1
+          done
+          [ -n "$ok" ] || fail "no answer on /health in 90 s"
+          case $body in
+          *'"ok":true'*) ;;
+          *) fail "/health said $body" ;;
+          esac
+          echo "$PLATFORM: the hub answers on /health after ${i}s: $body"
+
+          # the real page, not the placeholder, with the base tag in it
+          wget -qO /tmp/page.html http://127.0.0.1:8080/api/plugin/view/remote-nodes/ || fail "no page"
+          size=$(wc -c </tmp/page.html)
+          [ "$size" -gt 50000 ] || fail "the page is $size bytes, which is the placeholder"
+          grep -q '<base href="/api/plugin/view/remote-nodes/">' /tmp/page.html || fail "the page has no base tag"
+          echo "$PLATFORM: the hub serves the page, $size bytes"
+          kill "$pid"
+          wait "$pid" 2>/dev/null || true
+          EOF
+          docker pull -q --platform "$PLATFORM" busybox:musl
+          docker run --rm --platform "$PLATFORM" \
+            -v "$PWD/$dir:/o:ro" -v "$RUNNER_TEMP/smoke.sh:/smoke.sh:ro" \
+            -e PLATFORM -e DATA_DIR=/tmp/data -e LISTEN_ADDR=127.0.0.1:8080 -e BASE_PATH=/api/plugin/view/remote-nodes \
+            busybox:musl sh /smoke.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  image:
+    name: Image
+    # a remote-nodes-v* tag only, and only when everything above passed
+    if: startsWith(github.ref, 'refs/tags/remote-nodes-v')
+    needs: [web, go, size]
+    runs-on: depot-ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: docker/setup-buildx-action@v4.4.1
+
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # remote-nodes-v0.1.0 becomes 0.1.0, and latest, which is what
+          # type=match adds by default
+          tags: |
+            type=match,pattern=remote-nodes-v(.*),group=1
+
+      # Nothing in the final stage runs, so no QEMU is needed for the arm64 half.
+      # Attestations would add unknown/unknown entries to the manifest list,
+      # which show up as architectures that don't exist.
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: Dockerfile.remote-nodes
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=remote-nodes-image
+            type=gha,scope=remote-nodes-amd64
+            type=gha,scope=remote-nodes-arm64
+          cache-to: type=gha,scope=remote-nodes-image,mode=max
