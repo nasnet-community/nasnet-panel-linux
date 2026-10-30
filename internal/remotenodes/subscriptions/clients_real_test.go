@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -89,8 +90,18 @@ func freePorts(t *testing.T, n int) []int {
 	return ports
 }
 
+// skipIfXrayRuns keeps these tests off a machine that runs Xray: the agent's
+// process manager stops any process named xray it did not start itself.
+func skipIfXrayRuns(t *testing.T) {
+	t.Helper()
+	if out, err := exec.Command("pgrep", "-x", "xray").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		t.Skip("a process named xray runs on this machine, and the agent's process manager would stop it")
+	}
+}
+
 func startLiveNode(t *testing.T) *liveNode {
 	t.Helper()
+	skipIfXrayRuns(t)
 	ports := freePorts(t, 2)
 	raw, err := nodecfg.Build(nodecfg.Input{
 		EntryPort: ports[0], APIPort: ports[1],
