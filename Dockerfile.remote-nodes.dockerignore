@@ -1,0 +1,29 @@
+# BuildKit reads this one, not .dockerignore, for Dockerfile.remote-nodes. The
+# image needs the hub, the bridge, the web page and what they import, and
+# nothing of the panel's own web page, docs or installers.
+
+.git
+.github
+.idea
+.vscode
+bin
+data
+docs
+web-panel
+third_party
+**/.DS_Store
+
+# build output and tools' leftovers, which the build makes for itself
+**/node_modules
+**/dist
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+
+# tests and their data: no build here runs them, and a change to one
+# shouldn't rebuild the binaries
+**/*_test.go
+**/testdata
+
+# the geoip data is 18 MB and nothing the hub or the bridge links embeds it
+pkg/geofiles/embedded/*.dat
