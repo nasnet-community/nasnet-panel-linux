@@ -12,10 +12,19 @@ and sends `X-RemoteNodes-UI: 1` with every request except the job event stream, 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Dev server. It proxies `/api` to a hub on `localhost:8080`. |
+| `npm run dev:mock` | Dev server with a fake API (`mock-api.ts`): sample nodes, subscriptions and jobs, no hub needed. |
+| `npm run dev:mock:fresh` | The same, starting from a first run: no nodes, entry off. |
 | `npm run build` | Typechecks, then writes the single-file `dist/index.html`. |
 | `npm run pack` | Writes `dist/index.html.br` (brotli, highest quality) from the built page, for the Go side to embed. |
 | `npm run typecheck` | `tsc -b`. |
 | `npm test` | Unit tests (vitest). |
+
+## The mock API
+
+`mock-api.ts` is a Vite plugin that answers the plugin's HTTP API from memory while `npm run dev:mock`
+runs. Its header comment lists the sample data and the scenarios (an address containing `fail`,
+`changed`, `offline` and so on makes the add-node flow go that way). `POST /api/__reset` puts the data
+back and takes `{ fresh, nodes, maxNodes, entry }` to set up other states. It is not part of the build.
 
 ## Where it comes from
 
