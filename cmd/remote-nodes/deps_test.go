@@ -19,6 +19,9 @@ const module = "github.com/nasnet-community/nasnet-panel-linux"
 type ban struct {
 	why   string
 	match func(importPath string) bool
+	// insurance: nothing in the module links it today, so the canary check
+	// below doesn't ask for a live match.
+	insurance bool
 }
 
 // under matches the package and everything below it.
@@ -34,20 +37,20 @@ func fragment(s string) func(string) bool {
 // What it must not link is the Xray core and what comes with it, the panel's
 // database, and the embedded geoip data (nodes get theirs as plain ranges).
 var hubBans = []ban{
-	{"xray-core", fragment("xtls/xray-core")},
-	{"sing-box", fragment("sagernet")},
-	{"gvisor", fragment("gvisor")},
-	{"gorm", fragment("gorm")},
-	{"pkg/xray, the panel's Xray layer", under(module + "/pkg/xray")},
-	{"pkg/geoip, which embeds the geoip data", under(module + "/pkg/geoip")},
-	{"internal/node/domain, which brings in gorm", under(module + "/internal/node/domain")},
+	{"xray-core", fragment("xtls/xray-core"), false},
+	{"sing-box", fragment("sagernet"), false},
+	{"gvisor", fragment("gvisor"), true},
+	{"gorm", fragment("gorm"), false},
+	{"pkg/xray, the panel's Xray layer", under(module + "/pkg/xray"), false},
+	{"pkg/geoip, which embeds the geoip data", under(module + "/pkg/geoip"), false},
+	{"internal/node/domain, which brings in gorm", under(module + "/internal/node/domain"), false},
 }
 
 // The bridge may link xray-core: it is an Xray instance. It has no business
 // with the agent client or SSH, which are the hub's.
 var bridgeBans = []ban{
-	{"pkg/agent, the agent client", under(module + "/pkg/agent")},
-	{"x/crypto/ssh", under("golang.org/x/crypto/ssh")},
+	{"pkg/agent, the agent client", under(module + "/pkg/agent"), false},
+	{"x/crypto/ssh", under("golang.org/x/crypto/ssh"), false},
 }
 
 // graph is the import graph go list reports: package to what it imports.
@@ -147,12 +150,12 @@ func TestTheChainShowsHowAPackageGotIn(t *testing.T) {
 		"hub/store":                 {"os"},
 		"example.com/x/gorm/driver": {"database/sql"},
 	}
-	gorm := ban{"gorm", fragment("gorm")}
+	gorm := ban{why: "gorm", match: fragment("gorm")}
 	want := "hub -> hub/api -> helper -> example.com/x/gorm/driver"
 	if got := strings.Join(g.chain("hub", gorm), " -> "); got != want {
 		t.Fatalf("chain = %q, want %q", got, want)
 	}
-	if c := g.chain("hub", ban{"nothing", fragment("sagernet")}); c != nil {
+	if c := g.chain("hub", ban{why: "nothing", match: fragment("sagernet")}); c != nil {
 		t.Fatalf("a chain to nothing: %v", c)
 	}
 	if c := g.chain("hub/store", gorm); c != nil {
@@ -179,6 +182,8 @@ func TestEveryBanMatchesSomethingReal(t *testing.T) {
 	heavy := map[string]graph{}
 	for _, pkg := range []string{
 		module + "/pkg/xray", module + "/pkg/geoip", module + "/internal/node/domain", module + "/pkg/agent",
+		// still links sing-box, which pkg/agent no longer does
+		module + "/internal/agent/server",
 		"golang.org/x/crypto/ssh",
 	} {
 		heavy[pkg] = deps(t, "amd64", pkg)
@@ -188,7 +193,7 @@ func TestEveryBanMatchesSomethingReal(t *testing.T) {
 		for pkg, g := range heavy {
 			found = found || g.chain(pkg, b) != nil
 		}
-		if !found {
+		if !found && !b.insurance {
 			t.Errorf("the ban on %s matches nothing in the heaviest packages: its pattern is probably out of date", b.why)
 		}
 	}
