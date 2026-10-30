@@ -59,14 +59,23 @@ func (r *Run) Set(step string, state StepState, detail string) {
 	r.change(step, func(s *Step) { s.State, s.Detail = state, r.j.text(detail, MaxDetail) })
 }
 
-// change applies f to the named step, adding it when it is new.
+// change applies f to the named step, adding it when it is new, and tells
+// whoever follows the job if that changed anything.
 func (r *Run) change(step string, f func(*Step)) {
-	r.e.mu.Lock()
-	defer r.e.mu.Unlock()
-	if r.j.view.State != StateRunning {
+	e, j := r.e, r.j
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if j.view.State != StateRunning {
 		return
 	}
-	if s := r.j.view.step(step); s != nil {
-		f(s)
+	n := len(j.view.Steps)
+	s := j.view.step(step)
+	if s == nil {
+		return
+	}
+	before := *s
+	f(s)
+	if len(j.view.Steps) != n || *s != before {
+		e.publish(j)
 	}
 }

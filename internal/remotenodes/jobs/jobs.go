@@ -211,10 +211,11 @@ type Engine struct {
 }
 
 type job struct {
-	view     Job       // what the page sees; its Steps belong to the job
-	hide     *hider    // nil when the job has no secrets, and once it is over
-	finished time.Time // when it ended, as the clock read it
-	endSeq   uint64    // 1 for the first job to end, and so on
+	view     Job                   // what the page sees; its Steps belong to the job
+	hide     *hider                // nil when the job has no secrets, and once it is over
+	subs     map[chan Job]struct{} // who is following it, until it ends
+	finished time.Time             // when it ended, as the clock read it
+	endSeq   uint64                // 1 for the first job to end, and so on
 }
 
 // snapshot is the job as the outside may hold it.
@@ -405,6 +406,7 @@ func (e *Engine) finish(j *job, err error) {
 	if v.NodeID != 0 && e.onNode[v.NodeID] == j {
 		delete(e.onNode, v.NodeID)
 	}
+	e.publish(j)
 	e.prune()
 	id, kind, node, state, took := v.ID, v.Kind, v.NodeID, v.State, at.Sub(v.StartedAt)
 	e.mu.Unlock()
