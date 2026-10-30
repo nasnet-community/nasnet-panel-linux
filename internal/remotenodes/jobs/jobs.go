@@ -124,9 +124,10 @@ type Job struct {
 // an ellipsis; steps over the limit are not added.
 const (
 	MaxSteps  = 32
-	MaxDetail = 200 // runes
-	MaxError  = 500 // runes
-	maxName   = 64  // runes
+	MaxDetail = 200  // runes
+	MaxError  = 500  // runes
+	maxName   = 64   // runes
+	maxPanic  = 2000 // runes of a panic's text that the log keeps
 )
 
 // Defaults for the fields of Config left at zero.
@@ -172,6 +173,11 @@ type Spec struct {
 	// until it reaches them. A name that is empty or repeated is left out, and
 	// so is any beyond MaxSteps.
 	Steps []string
+	// Secrets are values that must never show up in the job, such as the
+	// password, key and passphrase of the login it uses. Whatever the job
+	// reports, in a step's text or an error, has each of them replaced by "…"
+	// first, and the engine forgets them when the job ends.
+	Secrets []string
 }
 
 // Config says how the engine runs. Every field may be left at zero.
@@ -206,6 +212,7 @@ type Engine struct {
 
 type job struct {
 	view     Job       // what the page sees; its Steps belong to the job
+	hide     *hider    // nil when the job has no secrets, and once it is over
 	finished time.Time // when it ended, as the clock read it
 	endSeq   uint64    // 1 for the first job to end, and so on
 }
@@ -272,7 +279,7 @@ func (e *Engine) Start(spec Spec, fn func(ctx context.Context, r *Run) error) (J
 	j := &job{view: Job{
 		ID: id, Kind: spec.Kind, State: StateRunning, Steps: plan(spec.Steps),
 		NodeID: spec.NodeID, Target: spec.Target, StartedAt: e.cfg.Now().UTC(),
-	}}
+	}, hide: newHider(spec.Secrets)}
 	e.byID[id] = j
 	e.order = append(e.order, j)
 	if spec.NodeID != 0 {
@@ -347,7 +354,11 @@ func (e *Engine) run(j *job, fn func(context.Context, *Run) error) {
 func (e *Engine) call(ctx context.Context, j *job, fn func(context.Context, *Run) error) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			e.cfg.Log.Error("job panicked", "job", j.view.ID, "kind", j.view.Kind, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+			// the page gets only "internal error", but the log is read too
+			e.mu.Lock()
+			what := j.text(fmt.Sprint(p), maxPanic)
+			e.mu.Unlock()
+			e.cfg.Log.Error("job panicked", "job", j.view.ID, "kind", j.view.Kind, "panic", what, "stack", string(debug.Stack()))
 			err = errInternal
 		}
 	}()
@@ -388,6 +399,7 @@ func (e *Engine) finish(j *job, err error) {
 	at := now.UTC()
 	v.FinishedAt = &at
 	j.finished = now
+	j.hide = nil // nothing more will be reported, and the secrets need not outlive the job
 	e.ended++
 	j.endSeq = e.ended
 	if v.NodeID != 0 && e.onNode[v.NodeID] == j {
