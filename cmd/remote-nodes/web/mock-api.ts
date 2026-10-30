@@ -36,6 +36,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 import type { AgentState, AppConfig, Entry, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
+import { subscriptionRoutes } from './mock-subscriptions'
 
 const DAY = 86400e3
 const H = 3600e3
@@ -622,6 +623,7 @@ export function mockApi(): Plugin {
         }
         if (path === 'health') return send(200, { ok: true, version: VERSION, commit: 'a1b2c3d', writes: 0 })
         if (path === 'config' && method === 'GET') return send(200, configView())
+        if (subscriptionRoutes({ method, path, body, send, fail, subs, nodes, max: MAX_SUBSCRIPTIONS, make: sub, view: subView, nodeView: view })) return
 
         if (path === 'probe' && method === 'POST') {
           const host = String(body.host ?? '').trim()
