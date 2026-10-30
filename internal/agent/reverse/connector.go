@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -410,7 +411,32 @@ func (c *Connector) handleTerminalSignal(ctx context.Context, conn *grpc.ClientC
 		return
 	}
 
-	// 3. Start a local PTY shell (same approach as internal/agent/server/terminal.go).
+	// fail tells the hub why there is no shell, then waits for it to hang up.
+	fail := func(msg string) {
+		_ = sendFrame(&hubpb.TerminalFrame{
+			SessionId: sessionID,
+			Payload:   &hubpb.TerminalFrame_Error{Error: msg},
+		})
+		// Half-close flushes the error before cancellation resets the RPC.
+		_ = termStream.CloseSend()
+		timeout := time.AfterFunc(5*time.Second, cancel)
+		defer timeout.Stop()
+		for {
+			if _, err := termStream.Recv(); err != nil {
+				break
+			}
+		}
+	}
+
+	// 3. A managed agent has no terminal. The hub opened a stream for it, so
+	// answer on that stream instead of leaving the hub to wait.
+	if err := c.handler.Check("OpenTerminal"); err != nil {
+		log.WithError(err).Warn("ReverseConnector: terminal refused")
+		fail(status.Convert(err).Message())
+		return
+	}
+
+	// 4. Start a local PTY shell (same approach as internal/agent/server/terminal.go).
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash"
@@ -434,19 +460,7 @@ func (c *Connector) handleTerminalSignal(ctx context.Context, conn *grpc.ClientC
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		log.WithError(err).Error("ReverseConnector: failed to start PTY")
-		_ = sendFrame(&hubpb.TerminalFrame{
-			SessionId: sessionID,
-			Payload:   &hubpb.TerminalFrame_Error{Error: "failed to start PTY: " + err.Error()},
-		})
-		// Half-close flushes the error before cancellation resets the RPC.
-		_ = termStream.CloseSend()
-		timeout := time.AfterFunc(5*time.Second, cancel)
-		defer timeout.Stop()
-		for {
-			if _, err := termStream.Recv(); err != nil {
-				break
-			}
-		}
+		fail("failed to start PTY: " + err.Error())
 		return
 	}
 

@@ -5,18 +5,29 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/middleware"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 	"google.golang.org/protobuf/proto"
 )
 
 // CommandHandler wraps a pb.NodeAgentServer and dispatches commands by method name.
 type CommandHandler struct {
-	srv pb.NodeAgentServer
+	srv   pb.NodeAgentServer
+	guard *middleware.ProfileMiddleware
 }
 
 // NewCommandHandler creates a new CommandHandler wrapping the given server.
-func NewCommandHandler(srv pb.NodeAgentServer) *CommandHandler {
-	return &CommandHandler{srv: srv}
+// The profile decides which methods it dispatches: this path never meets the
+// interceptors of the direct listener, so it applies the same allow-list itself.
+func NewCommandHandler(srv pb.NodeAgentServer, profile config.Profile) *CommandHandler {
+	return &CommandHandler{srv: srv, guard: middleware.NewProfileMiddleware(profile)}
+}
+
+// Check answers nil when the profile lets a method run and PermissionDenied
+// when it doesn't. The terminal asks it too, as "OpenTerminal".
+func (h *CommandHandler) Check(method string) error {
+	return h.guard.CheckName(method)
 }
 
 // call is a generic helper that unmarshals payload into req, calls handler, and marshals the response.
@@ -40,6 +51,9 @@ func (h *CommandHandler) GetNodeStatus(ctx context.Context) (*pb.NodeStatus, err
 
 // StreamLogs passes through to the underlying server's StreamLogs method.
 func (h *CommandHandler) StreamLogs(req *pb.LogRequest, stream pb.NodeAgent_StreamLogsServer) error {
+	if err := h.Check("StreamLogs"); err != nil {
+		return err
+	}
 	return h.srv.StreamLogs(req, stream)
 }
 
@@ -48,6 +62,11 @@ func (h *CommandHandler) HandleCommand(ctx context.Context, method string, paylo
 	// Strip gRPC full method path prefix (e.g., "/nodeagent.NodeAgent/GetStatus" → "GetStatus")
 	if i := strings.LastIndex(method, "/"); i >= 0 {
 		method = method[i+1:]
+	}
+
+	// Judge the name the switch below uses, after the prefix is gone.
+	if err := h.Check(method); err != nil {
+		return nil, err
 	}
 
 	switch method {

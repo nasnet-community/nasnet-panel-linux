@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +21,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/signing"
 	"github.com/sirupsen/logrus"
 )
+
+// selfPath is the running binary; tests point it at a stand-in.
+var selfPath = os.Executable
 
 // SelfUpdate receives a new agent binary and updates in-place
 func (s *Server) SelfUpdate(ctx context.Context, req *pb.UpdateRequest) (*pb.UpdateResponse, error) {
@@ -31,7 +35,7 @@ func (s *Server) SelfUpdate(ctx context.Context, req *pb.UpdateRequest) (*pb.Upd
 	log.Info("[SelfUpdate] Received update request")
 
 	// Get current binary path
-	currentBinary, err := os.Executable()
+	currentBinary, err := selfPath()
 	if err != nil {
 		return &pb.UpdateResponse{
 			Success:    false,
@@ -115,16 +119,27 @@ func (s *Server) SelfUpdate(ctx context.Context, req *pb.UpdateRequest) (*pb.Upd
 	log.WithField("temp_path", tempPath).Debug("[SelfUpdate] New binary written")
 
 	// Verify the new binary is executable
-	verifyCmd := exec.Command(tempPath, "--version")
-	if output, err := verifyCmd.CombinedOutput(); err != nil {
+	versionOut, err := exec.Command(tempPath, "--version").CombinedOutput()
+	if err != nil {
 		os.Remove(tempPath)
 		return &pb.UpdateResponse{
 			Success:    false,
-			Message:    fmt.Sprintf("New binary verification failed: %v - %s", err, string(output)),
+			Message:    fmt.Sprintf("New binary verification failed: %v - %s", err, string(versionOut)),
 			OldVersion: Version,
 		}, nil
 	}
 	log.Debug("[SelfUpdate] New binary verified")
+
+	// An older release has no profile and would hand out a shell. The check
+	// above trusts the version the hub names (or none), so a managed agent
+	// reads it off the signed build itself, force or not.
+	if s.profile.Managed() {
+		if err := refuseOlderBuild(Version, string(versionOut)); err != nil {
+			os.Remove(tempPath)
+			log.WithError(err).Warn("[SelfUpdate] Update refused")
+			return &pb.UpdateResponse{Success: false, Message: err.Error(), OldVersion: Version}, nil
+		}
+	}
 
 	// Backup current binary
 	backupPath := currentBinary + ".old"
@@ -262,28 +277,30 @@ func sha256sum(data []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// parseVersion reads "v1.2.3", "1.2.3" or "1.2.3-rc1" into its numbers.
+func parseVersion(v string) (major, minor, patch int, ok bool) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	ma, e1 := strconv.Atoi(parts[0])
+	mi, e2 := strconv.Atoi(parts[1])
+	// Handle patch with pre-release suffix (e.g., "1-rc1")
+	patchStr := strings.SplitN(parts[2], "-", 2)[0]
+	pa, e3 := strconv.Atoi(patchStr)
+	if e1 != nil || e2 != nil || e3 != nil {
+		return 0, 0, 0, false
+	}
+	return ma, mi, pa, true
+}
+
 // isNewerVersion returns true if the candidate version is newer than the current version.
 // Both versions should follow semver format (e.g., "v1.2.3" or "1.2.3").
 // Returns true (allow update) if either version cannot be parsed.
 func isNewerVersion(current, candidate string) bool {
-	parse := func(v string) (int, int, int, bool) {
-		v = strings.TrimPrefix(v, "v")
-		parts := strings.SplitN(v, ".", 3)
-		if len(parts) != 3 {
-			return 0, 0, 0, false
-		}
-		major, e1 := strconv.Atoi(parts[0])
-		minor, e2 := strconv.Atoi(parts[1])
-		// Handle patch with pre-release suffix (e.g., "1-rc1")
-		patchStr := strings.SplitN(parts[2], "-", 2)[0]
-		patch, e3 := strconv.Atoi(patchStr)
-		if e1 != nil || e2 != nil || e3 != nil {
-			return 0, 0, 0, false
-		}
-		return major, minor, patch, true
-	}
-	cMaj, cMin, cPat, cOk := parse(current)
-	nMaj, nMin, nPat, nOk := parse(candidate)
+	cMaj, cMin, cPat, cOk := parseVersion(current)
+	nMaj, nMin, nPat, nOk := parseVersion(candidate)
 	if !cOk || !nOk {
 		return true // Can't parse → allow update
 	}
@@ -294,6 +311,40 @@ func isNewerVersion(current, candidate string) bool {
 		return nMin > cMin
 	}
 	return nPat > cPat
+}
+
+// reportedVersion is the version a build prints for --version: the last word
+// of the first line, as in "nasnet-agent version v1.3.0".
+func reportedVersion(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			return f[len(f)-1]
+		}
+	}
+	return ""
+}
+
+// refuseOlderBuild is the managed profile's downgrade check. It compares the
+// version the new build reports with the running one, so neither the version
+// the hub names nor force gets a say. A running "dev" build has nothing to
+// compare against.
+func refuseOlderBuild(current, versionOutput string) error {
+	if current == "dev" {
+		return nil
+	}
+	cMaj, cMin, cPat, ok := parseVersion(current)
+	if !ok {
+		return nil // an unreleased build of our own, nothing to hold it to
+	}
+	reported := reportedVersion(versionOutput)
+	nMaj, nMin, nPat, ok := parseVersion(reported)
+	if !ok {
+		return fmt.Errorf("this agent runs the managed profile: can't tell which version the new build is (it says %q)", reported)
+	}
+	if slices.Compare([]int{nMaj, nMin, nPat}, []int{cMaj, cMin, cPat}) < 0 {
+		return fmt.Errorf("this agent runs the managed profile: it won't go back to an older build (this is %s, the new one says %s)", current, reported)
+	}
+	return nil
 }
 
 // GetSelfChecksum returns the SHA256 checksum of the running binary
