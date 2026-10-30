@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* nasnet-panel's palette (frontend/src/ui/global.scss), under this page's names. */
+  :root,
+  [data-theme='dark'] {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --card: #141414;
+    --card2: #1c1c1c;
+    --border: #262626;
+    --border-strong: #3a3a3a;
+    --text: #f5f5f5;
+    --muted: #a1a1aa;
+    --faint: #8b8b94;
+    --track: rgba(255, 255, 255, 0.08);
+    --accent: #f8fafc;
+    --accent-strong: #e2e8f0;
+    --accent-fg: #0f172a;
+    --ok: #22c55e;
+    --ok-text: #4ade80;
+    --ok-tint: rgba(34, 197, 94, 0.13);
+    --warn: #edc32c;
+    --warn-text: #edc32c;
+    --warn-tint: rgba(237, 195, 44, 0.13);
+    --bad: #ef4444;
+    --bad-text: #f87171;
+    --bad-tint: rgba(239, 68, 68, 0.13);
+    --info: #3b82f6;
+    --overlay: rgba(0, 0, 0, 0.72);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
+  }
+
+  /* status text is darker than the dots in light mode, so it stays readable on white */
+  [data-theme='light'] {
+    --bg: #f1f5f9;
+    --surface: #ffffff;
+    --card: #ffffff;
+    --card2: #f8fafc;
+    --border: #dbe3ed;
+    --border-strong: #c2ccd9;
+    --text: #0f172a;
+    --muted: #5b6b80;
+    --faint: #64748b;
+    --track: rgba(15, 23, 42, 0.07);
+    --accent: #0f172a;
+    --accent-strong: #1e293b;
+    --accent-fg: #f8fafc;
+    --ok: #22c55e;
+    --ok-text: #15803d;
+    --ok-tint: rgba(34, 197, 94, 0.14);
+    --warn: #d4a514;
+    --warn-text: #8a5a00;
+    --warn-tint: rgba(237, 195, 44, 0.2);
+    --bad: #dc2626;
+    --bad-text: #b91c1c;
+    --bad-tint: rgba(220, 38, 38, 0.1);
+    --info: #2563eb;
+    --overlay: rgba(15, 23, 42, 0.35);
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.14);
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    margin: 0;
+    background: var(--bg);
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  input[type='checkbox'] {
+    accent-color: var(--accent);
+  }
+
+  input[type='range'] {
+    accent-color: var(--accent);
+  }
+
+  mark {
+    background: var(--warn-tint);
+    color: inherit;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px var(--warn);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .pb-safe {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}
+
+/* on phones a sheet keeps its buttons at the bottom: toasts go up top while one is open */
+@media (max-width: 639.98px) {
+  body:has([role='dialog'], [role='alertdialog']) [data-toasts] {
+    top: calc(12px + env(safe-area-inset-top));
+    bottom: auto;
+  }
+}
