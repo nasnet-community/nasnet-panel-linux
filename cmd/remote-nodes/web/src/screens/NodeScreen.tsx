@@ -5,6 +5,7 @@ import { usePoll } from '../hooks/usePoll'
 import { navigate, type NodeTab } from '../hooks/useRoute'
 import { useErrorText, useLang } from '../i18n'
 import { api } from '../lib/api'
+import { NodeSubscriptionsTab } from './NodeSubscriptionsTab'
 import { Soon } from './Soon'
 
 /** A node's page: a way back, its name, and the Subscriptions, Status and Settings tabs. */
@@ -36,7 +37,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       )}
       <Tabs label={t('tabs.node')} idBase="node" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'node', id, tab: next })} />
       <div role="tabpanel" id="node-panel" aria-labelledby={`node-${tab}`}>
-        <Soon title={tabs.find(([key]) => key === tab)![1]} />
+        {tab === 'subscriptions' ? node.data && <NodeSubscriptionsTab node={node.data} /> : <Soon title={tabs.find(([key]) => key === tab)![1]} />}
       </div>
     </div>
   )
