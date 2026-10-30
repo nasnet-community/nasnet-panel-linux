@@ -90,6 +90,17 @@ jobs:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: ./release-sign sign bin/agent/nasnet-agent-linux-amd64 bin/agent/nasnet-agent-linux-arm64
 
+      - name: Compress nasnet-agent binaries
+        run: |
+          # About a third of the size, for links that are slow or small. The name
+          # skips "nasnet-" on purpose: old updaters pick assets by substring, and
+          # nasnet-agent-linux-amd64.gz would match the plain agent too. -n leaves
+          # the file's name and mtime out of the header, so the same bytes give
+          # the same file.
+          for arch in amd64 arm64; do
+            gzip -9 -n -c "nasnet-agent-linux-${arch}" > "agent-linux-${arch}.gz"
+          done
+
       - name: Download PostgreSQL standalone
         id: pgsql_dl
         run: |
@@ -181,6 +192,7 @@ jobs:
             nasnet-panel-linux-amd64 nasnet-panel-linux-arm64 \
             nasnet-tool-linux-amd64 nasnet-tool-linux-arm64 \
             nasnet-agent-linux-amd64 nasnet-agent-linux-arm64 \
+            agent-linux-amd64.gz agent-linux-arm64.gz \
             nasnet-tool.sh \
             nasnet-panel-offline-linux-amd64.tar.gz nasnet-panel-offline-linux-arm64.tar.gz
 
@@ -193,6 +205,8 @@ jobs:
             nasnet-tool-linux-arm64 \
             nasnet-agent-linux-amd64 \
             nasnet-agent-linux-arm64 \
+            agent-linux-amd64.gz \
+            agent-linux-arm64.gz \
             nasnet-tool.sh \
             nasnet-panel-offline-linux-amd64.tar.gz \
             nasnet-panel-offline-linux-arm64.tar.gz \
@@ -213,6 +227,8 @@ jobs:
             nasnet-tool-linux-arm64
             nasnet-agent-linux-amd64
             nasnet-agent-linux-arm64
+            agent-linux-amd64.gz
+            agent-linux-arm64.gz
             checksums.txt
             release.json
             release.json.sig

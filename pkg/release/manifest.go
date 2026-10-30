@@ -24,12 +24,44 @@ const (
 // BundleAsset is the update file for one architecture.
 func BundleAsset(arch string) string { return "nasnet-panel-offline-linux-" + arch + ".tar.gz" }
 
+// AgentAsset is the node agent for one architecture.
+func AgentAsset(arch string) string { return "nasnet-agent-linux-" + arch }
+
+// AgentGzAsset is the same agent gzipped. Old updaters pick release files by
+// substring, so its name can't contain another asset's: with the nasnet-
+// prefix it would match the plain agent's pattern too.
+func AgentGzAsset(arch string) string { return "agent-linux-" + arch + ".gz" }
+
+// AgentGzArch is the architecture a gzipped agent's asset name is for.
+func AgentGzArch(name string) (string, bool) {
+	arch, ok := strings.CutPrefix(name, "agent-linux-")
+	if !ok {
+		return "", false
+	}
+	arch, ok = strings.CutSuffix(arch, ".gz")
+	return arch, ok && arch != ""
+}
+
 // Asset is one release file.
 type Asset struct {
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
 	// Sig is set for agent binaries, which nodes check themselves.
 	Sig string `json:"sig,omitempty"`
+}
+
+// AgentGz is an agent that also ships gzipped, for links that are slow or
+// small. The file has no signature of its own. release.json's covers its
+// checksum, and a node unpacks it and checks the plain bytes against Sig, as it
+// does for the plain agent.
+type AgentGz struct {
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	SHA256      string `json:"sha256"`
+	PlainSize   int64  `json:"plain_size"`
+	PlainSHA256 string `json:"plain_sha256"`
+	// Sig is the plain agent's signature, the same one Assets carries.
+	Sig string `json:"sig"`
 }
 
 // Manifest is release.json: what a release is and what it ships.
@@ -42,6 +74,9 @@ type Manifest struct {
 	BuiltAt    time.Time        `json:"built_at"`
 	Notes      string           `json:"notes"`
 	Assets     map[string]Asset `json:"assets"`
+	// AgentsGz, by architecture, is a key of its own so panels that don't know
+	// it read everything else exactly as before.
+	AgentsGz map[string]AgentGz `json:"agents_gz,omitempty"`
 }
 
 // Bundle is bundle.json, inside each offline bundle, so an uploaded one checks itself.
