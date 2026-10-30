@@ -97,6 +97,13 @@ service NodeAgent {
   // UpdateXrayBinary downloads and installs a specific xray-core version
   rpc UpdateXrayBinary(UpdateXrayRequest) returns (CommandResponse);
 
+  // PushXrayBinary installs an xray-core build the hub sends over the call:
+  // the header first, then the data in chunks. It is a method of its own so an
+  // agent that predates it answers UNIMPLEMENTED rather than ignoring fields
+  // it doesn't know and downloading from GitHub. A build that is already
+  // installed (same hash, same version) is answered OK and nothing restarts.
+  rpc PushXrayBinary(stream XrayBinaryChunk) returns (CommandResponse);
+
   // ===== Cleanup =====
 
   // Uninstall removes the agent and xray from the system (Destructive)
@@ -1130,4 +1137,19 @@ message RealityDestProbeResponse {
   string summary = 3;
   repeated RealityDestCheck checks = 4;
   repeated string warnings = 5;
+}
+
+// One message of PushXrayBinary: the header, then the data. The agent takes
+// at most 64 MiB once unpacked.
+message XrayBinaryChunk {
+  oneof payload {
+    XrayBinaryHeader header = 1;  // first message only
+    bytes data = 2;               // every later message, at most 1 MiB
+  }
+}
+message XrayBinaryHeader {
+  string version = 1;       // e.g. "26.10.21" (no v prefix)
+  string sha256 = 2;        // hex SHA256 of the unpacked binary (required)
+  bool restart_after = 3;   // start xray afterwards even if it was stopped
+  bool gzip = 4;            // the data chunks together are one gzip stream
 }
