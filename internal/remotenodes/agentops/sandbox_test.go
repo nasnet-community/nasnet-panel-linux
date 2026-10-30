@@ -365,3 +365,32 @@ func (f *fakeShell) do(ctx context.Context, rooted bool, cmd string, stdin io.Re
 	}
 	return out.String(), nil
 }
+
+// snapshot is every file and folder under the places an install writes to,
+// with the mode and a hash of the contents of each file, so that a test can
+// tell whether the server is as it was. What the stand-in tools keep for
+// themselves (their logs, which services run) sits outside these folders.
+func (sb *sandbox) snapshot() map[string]string {
+	out := map[string]string{}
+	filepath.Walk(sb.root, func(p string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(sb.root, p)
+		rel = "/" + filepath.ToSlash(rel)
+		keep := false
+		for _, pre := range []string{"/etc", "/usr", "/var", "/run"} {
+			keep = keep || rel == pre || strings.HasPrefix(rel, pre+"/")
+		}
+		switch {
+		case !keep || rel == "/usr/local/bin/sh":
+		case fi.IsDir():
+			out[rel] = "dir"
+		case fi.Mode().IsRegular():
+			b, _ := os.ReadFile(p)
+			out[rel] = fmt.Sprintf("%04o %s", fi.Mode().Perm(), sum256(b))
+		}
+		return nil
+	})
+	return out
+}

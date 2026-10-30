@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -137,7 +138,7 @@ func newInstallRig(t *testing.T) *installRig {
 		},
 		login: Login{Password: "hunter2"},
 	}
-	r.env = &Env{CA: ca, Files: r.files, startWait: 600 * time.Millisecond}
+	r.env = &Env{CA: ca, Files: r.files, startWait: 600 * time.Millisecond, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	r.env.connectSSH = func(ctx context.Context, tg installer.Target) (Shell, error) {
 		r.mu.Lock()
 		r.targets = append(r.targets, tg)
