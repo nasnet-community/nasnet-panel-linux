@@ -88,6 +88,12 @@ type Node struct {
 	// SSHHostKey is the SHA256 fingerprint pinned on the first connect. A
 	// changed key stops and asks. Hub only.
 	SSHHostKey string `json:"ssh_host_key,omitempty"`
+
+	// BridgeUUID is the id the router's bridge logs in with on this node: the
+	// one client of the entry inbound that carries the reverse tag. The
+	// install makes it, and until then the node has no way into the bridge.
+	// Hub only.
+	BridgeUUID string `json:"bridge_uuid,omitempty"`
 }
 
 // Subscription is a named entry with one link per node it is switched on for.

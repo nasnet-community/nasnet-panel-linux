@@ -68,6 +68,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 	s := small(t)
 	s.Nodes[0].RealityPrivateKey = "private-key-material"
 	s.Nodes[0].SSHHostKey = "SHA256:pinned"
+	s.Nodes[0].BridgeUUID = "11111111-2222-4333-8444-666666666666"
 	s.LastBackupAt = t0
 	b, err := Encode(s)
 	if err != nil {
@@ -77,10 +78,14 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		t.Fatalf("the file should end in a newline: %q", b[len(b)-3:])
 	}
 	// the file is the one place the secrets live
-	for _, want := range []string{"private-key-material", "SHA256:pinned", uuidA} {
+	for _, want := range []string{"private-key-material", "SHA256:pinned", uuidA, "11111111-2222-4333-8444-666666666666"} {
 		if !bytes.Contains(b, []byte(want)) {
 			t.Errorf("the file does not hold %q", want)
 		}
+	}
+	// the second node has no bridge client yet, and says nothing of one
+	if n := bytes.Count(b, []byte(`"bridge_uuid"`)); n != 1 {
+		t.Errorf("the file has %d bridge ids, want 1", n)
 	}
 	back, err := Decode(b)
 	if err != nil {

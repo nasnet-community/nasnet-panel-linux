@@ -233,6 +233,10 @@ func (n Node) Validate() error {
 	if !n.CertNotBefore.IsZero() && !n.CertNotAfter.IsZero() && !n.CertNotAfter.After(n.CertNotBefore) {
 		return invalid("the certificate ends before it starts")
 	}
+	// none is fine: a node the install hasn't finished with has no bridge client yet
+	if n.BridgeUUID != "" && !validUUID(n.BridgeUUID) {
+		return invalid("the bridge client id is not a lower-case UUID")
+	}
 	return nil
 }
 
@@ -334,7 +338,18 @@ func (s State) Validate() error {
 		}
 		subs[x.ID] = true
 	}
+	// A client id is one login on one node's entry, so no two logins may share
+	// one: not two bridges, and not a bridge and a subscription.
 	pairs, uuids := map[[2]uint]bool{}, map[string]bool{}
+	for _, n := range s.Nodes {
+		if n.BridgeUUID == "" {
+			continue
+		}
+		if uuids[n.BridgeUUID] {
+			return invalid("node %d shares its bridge client id with another node", n.ID)
+		}
+		uuids[n.BridgeUUID] = true
+	}
 	for _, e := range s.Enablements {
 		if err := e.Validate(); err != nil {
 			return fmt.Errorf("subscription %d on node %d: %w", e.SubscriptionID, e.NodeID, err)
@@ -346,7 +361,7 @@ func (s State) Validate() error {
 		case pairs[pair]:
 			return invalid("subscription %d is on node %d twice", e.SubscriptionID, e.NodeID)
 		case uuids[e.ClientUUID]:
-			return invalid("subscription %d on node %d shares its client id with another", e.SubscriptionID, e.NodeID)
+			return invalid("subscription %d on node %d shares its client id with another login", e.SubscriptionID, e.NodeID)
 		}
 		pairs[pair], uuids[e.ClientUUID] = true, true
 	}
