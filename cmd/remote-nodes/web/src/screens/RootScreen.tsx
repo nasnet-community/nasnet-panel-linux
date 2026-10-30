@@ -5,7 +5,7 @@ import type { AppConfig } from '../lib/api'
 import { AttentionList } from './Attention'
 import { EntryCard, entryAttention } from './Entry'
 import { NodesScreen } from './NodesScreen'
-import { Soon } from './Soon'
+import { RootSettingsTab } from './RootSettingsTab'
 import { SubscriptionsScreen } from './SubscriptionsScreen'
 
 /** The first page: whether entry works, what needs attention, then the Nodes, Subscriptions and Settings tabs. */
@@ -27,7 +27,7 @@ export function RootScreen({ tab, config, onConfigChanged }: { tab: RootTab; con
         ) : tab === 'subscriptions' ? (
           <SubscriptionsScreen config={config} onChanged={onConfigChanged} />
         ) : (
-          <Soon title={tabs.find(([key]) => key === tab)![1]} />
+          <RootSettingsTab config={config} onChanged={onConfigChanged} />
         )}
       </div>
     </div>

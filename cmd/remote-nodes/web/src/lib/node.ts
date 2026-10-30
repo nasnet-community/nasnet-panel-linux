@@ -52,6 +52,19 @@ export function normalizeTarget(input: string): string {
   return port >= 1 && port <= 65535 ? `${m[1]}:${port}` : ''
 }
 
+// --- about -----------------------------------------------------------------------
+
+export const REPO_URL = 'https://github.com/nasnet-community/nasnet-panel-linux'
+
+// a short or full git hash; a "dev" build has no commit to link to
+const isHash = (c: string) => /^[0-9a-f]{7,40}$/i.test(c)
+
+/** The source of this build: its exact commit when it has one, else the repository. */
+export const sourceUrl = (commit: string) => (isHash(commit) ? `${REPO_URL}/tree/${commit}` : REPO_URL)
+
+/** The licence file, at the commit of this build when there is one. */
+export const noticesUrl = (commit: string) => `${REPO_URL}/blob/${isHash(commit) ? commit : 'main'}/LICENSE`
+
 // --- events ----------------------------------------------------------------------
 
 // what the hub reports in a node's event list, by kind

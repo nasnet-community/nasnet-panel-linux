@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react'
 import { Card, cx, type Tone } from './ui'
 
-/** A card of label and value rows, with a line of small print under it when it needs one. */
-export function Section({ title, children, foot }: { title: string; children: ReactNode; foot?: string }) {
+/** A card of label and value rows, with a line of small print under it when it needs one, or anything else (`after`). */
+export function Section({ title, children, foot, after }: { title: string; children: ReactNode; foot?: string; after?: ReactNode }) {
   return (
     <Card className="p-4">
       <h2 className="font-semibold">{title}</h2>
       <dl className="mt-2 divide-y divide-border">{children}</dl>
       {foot && <p className="mt-2 text-xs text-faint">{foot}</p>}
+      {after}
     </Card>
   )
 }
