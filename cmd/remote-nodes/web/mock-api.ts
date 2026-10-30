@@ -35,6 +35,7 @@
 // the request came from another site.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
+import { nodeApi } from './mock-node'
 import type { AgentState, AppConfig, Entry, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
 import { subscriptionRoutes } from './mock-subscriptions'
 
@@ -55,7 +56,7 @@ const XRAY = '26.10.21'
 const NEW_KEY = 'SHA256:u3Rq0Q1uV3Jc0mYw7b6o8xk3j2m9Pq5c1f0aZyXwVb8'
 const MAX_SUBSCRIPTIONS = 10
 
-interface MockNode {
+export interface MockNode {
   id: number
   name: string
   host: string
@@ -83,7 +84,7 @@ interface MockNode {
   events: NodeEvent[]
 }
 
-interface MockSub {
+export interface MockSub {
   id: number
   name: string
   createdAt: number
@@ -102,15 +103,17 @@ const split = (total: number) => {
   return { up, down: Math.round(total) - up }
 }
 
-let nodes: MockNode[] = []
-let subs: MockSub[] = []
+export let nodes: MockNode[] = []
+export let subs: MockSub[] = []
 let nextNodeId = 1
+/** The next node id, or `id` kept clear of later installs when it is given. */
+export const claimNodeId = (id?: number) => (id === undefined ? nextNodeId++ : ((nextNodeId = Math.max(nextNodeId, id + 1)), id))
 let nextSubId = 1
 let maxNodes = 3
 let entryMode = 'on'
 let pace = 1
 
-function node(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>): MockNode {
+export function node(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>): MockNode {
   const now = Date.now()
   return {
     sshPort: 22,
@@ -134,7 +137,7 @@ function node(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>): Mo
   }
 }
 
-const event = (n: MockNode, kind: string, detail = '', at = Date.now()) => {
+export const event = (n: MockNode, kind: string, detail = '', at = Date.now()) => {
   n.events.push({ at: iso(at), kind, detail })
   n.events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 }
@@ -297,7 +300,7 @@ const STEP_TEXT: Record<string, string> = {
 }
 const stepText = (name: string) => STEP_TEXT[name] ?? name
 
-function view(n: MockNode, detail = false): Node {
+export function view(n: MockNode, detail = false): Node {
   const live = reachable(n) && !n.installJob
   const here = present(n)
   const out: Node = {
@@ -407,7 +410,7 @@ function entryView(): Entry {
   }
 }
 
-function configView(): AppConfig {
+export function configView(): AppConfig {
   return {
     version: VERSION,
     commit: 'a1b2c3d',
@@ -444,7 +447,7 @@ const jobs = new Map<string, MockJob>()
 /** Hosts with an install still running. */
 const installing = new Set<string>()
 
-interface Step {
+export interface Step {
   name: string
   detail?: string
   ms?: number
@@ -459,7 +462,7 @@ interface Step {
 const snapshot = (j: MockJob): Job => ({ ...j.view, steps: j.view.steps.map((s) => ({ ...s })) })
 const emit = (j: MockJob) => j.listeners.forEach((l) => l(snapshot(j)))
 
-function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void; failed?: () => void } = {}) {
+export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void; failed?: () => void } = {}) {
   const j: MockJob = {
     view: {
       id: hex(16),
@@ -615,6 +618,8 @@ export function mockApi(): Plugin {
         } else if (path !== '__reset' && path !== 'health' && req.headers['x-remotenodes-ui'] !== '1') {
           return fail(403, 'forbidden', 'requests from other sites are refused')
         }
+
+        if (await nodeApi({ method, path, body, send, fail, res })) return
 
         // Test hook: back to the sample data, or to a first run.
         if (path === '__reset' && method === 'POST') {

@@ -24,7 +24,9 @@ and sends `X-RemoteNodes-UI: 1` with every request except the job event stream, 
 
 `mock-api.ts` is a Vite plugin that answers the plugin's HTTP API from memory while `npm run dev:mock`
 runs. Its header comment lists the sample data and the scenarios (an address containing `fail`,
-`changed`, `offline` and so on makes the add-node flow go that way). `POST /api/__reset` puts the data
+`changed`, `offline` and so on makes the add-node flow go that way). `mock-node.ts` answers the node
+page and the router's Settings tab (traffic, renaming, settings, updates, removal, backup); its header
+lists what `POST /api/__node` can do to a node, such as putting it in the Xray mismatch state. `POST /api/__reset` puts the data
 back and takes `{ fresh, nodes, maxNodes, entry, pace }` to set up other states (the browser tests use
 it). The calls that change subscriptions (add, rename, delete, the switch per node, the links) are in
 `mock-subscriptions.ts`. It is not part of the build.
