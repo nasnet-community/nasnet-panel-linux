@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,6 +56,10 @@ func TestInstallingCountsTheStepsTheWayThePageDoes(t *testing.T) {
 type fakeJobs map[uint]jobs.Job
 
 func (f fakeJobs) Running(id uint) (jobs.Job, bool) { j, ok := f[id]; return j, ok }
+
+func (f fakeJobs) Start(jobs.Spec, func(context.Context, *jobs.Run) error) (jobs.Job, error) {
+	return jobs.Job{}, errors.New("this fake runs no jobs")
+}
 
 func TestOnlyARunningInstallMakesANodeInstalling(t *testing.T) {
 	cfg, _ := baseConfig(t)
