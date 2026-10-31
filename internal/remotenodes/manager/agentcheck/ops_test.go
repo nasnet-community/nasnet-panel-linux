@@ -473,11 +473,12 @@ func TestAddingAndRemovingANodeThroughTheRealAgent(t *testing.T) {
 		t.Error("the config doesn't have the entry port")
 	}
 
-	// the loop has the node, over its own link
+	// the loop has the node, over its own link; the agent's version comes in a
+	// call of its own after the first stats, so it is waited for too
 	eventually(t, "the node is never watched", func() bool {
 		l := w.mgr.NodeLive(n.ID)
 		_, linked := w.mgr.Client(n.ID)
-		return l.Agent != nil && l.Agent.Xray.Running && l.Usage.Live && linked
+		return l.Agent != nil && l.Agent.Xray.Running && l.Agent.Version != "" && l.Agent.XrayVersion != "" && l.Usage.Live && linked
 	})
 	if l := w.mgr.NodeLive(n.ID); l.Agent.Version != server.Version || l.Agent.XrayVersion != pin.Version || l.Installing != nil {
 		t.Errorf("live = %+v, agent %+v", l, l.Agent)
