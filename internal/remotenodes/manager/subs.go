@@ -102,6 +102,13 @@ func notFound(what string, id uint) error {
 	return fmt.Errorf("%w: %s %d", model.ErrNotFound, what, id)
 }
 
+// What a refusal says, for the page and for whoever reads the API.
+var (
+	errSwitchedOff = &api.Error{Code: api.CodeNotFound, Msg: "This subscription is switched off on that node, so it has no link there."}
+	errCantReach   = &api.Error{Code: api.CodeNodeUnreachable, Msg: "The node can't be reached, so its link can't be replaced now."}
+	errNotTaken    = &api.Error{Code: api.CodeNodeUnreachable, Msg: "The node did not take the change, so the link was not replaced."}
+)
+
 func clientOf(subID uint, uuid string) subscriptions.Client {
 	return subscriptions.Client{Email: nodecfg.SubscriptionEmail(int(subID)), UUID: uuid}
 }
@@ -353,4 +360,107 @@ func (m *Manager) SetEnabled(ctx context.Context, subID, nodeID uint, enabled bo
 		m.log.Info("subscription switched", "subscription", subID, "node", nodeID, "on", enabled)
 	}
 	return m.subscriptionView(subID)
+}
+
+// Link is the address a subscription's client uses to reach a node: the node's
+// address and entry port, its REALITY values and the client id the state keeps
+// for the pair, with the subscription's name as the label. It is refused while
+// the subscription is switched off there, since the client is not on the node.
+func (m *Manager) Link(subID, nodeID uint) (api.Link, error) {
+	st := m.cfg.Store.Read()
+	n, sub, e, err := linkParts(st, subID, nodeID)
+	if err != nil {
+		return api.Link{}, err
+	}
+	return buildLink(n, sub, e.ClientUUID)
+}
+
+// linkParts finds what a link is made of, or why there is none.
+func linkParts(st model.State, subID, nodeID uint) (model.Node, model.Subscription, model.Enablement, error) {
+	sub := st.FindSubscription(subID)
+	if sub == nil {
+		return model.Node{}, model.Subscription{}, model.Enablement{}, notFound("subscription", subID)
+	}
+	n := st.FindNode(nodeID)
+	if n == nil || n.State != model.NodeRegistered {
+		return model.Node{}, model.Subscription{}, model.Enablement{}, notFound("node", nodeID)
+	}
+	e := st.FindEnablement(subID, nodeID)
+	if e == nil || !e.Enabled {
+		return model.Node{}, model.Subscription{}, model.Enablement{}, errSwitchedOff
+	}
+	return *n, *sub, *e, nil
+}
+
+func buildLink(n model.Node, sub model.Subscription, clientID string) (api.Link, error) {
+	vless, err := subscriptions.BuildLink(subscriptions.LinkParams{
+		UUID: clientID, Host: n.Host, Port: n.EntryPort, ServerName: serverName(n),
+		PublicKey: n.RealityPublicKey, ShortID: n.RealityShortID, Name: sub.Name,
+	})
+	if err != nil {
+		// a node that is installed has all of this, so something is wrong in the state
+		return api.Link{}, fmt.Errorf("the link of subscription %d on node %d: %w", sub.ID, n.ID, err)
+	}
+	return api.Link{NodeID: n.ID, NodeName: n.Name, Vless: vless}, nil
+}
+
+// ReplaceLink gives a subscription a new client id on one node: the link
+// handed out before stops working, and the answer is the one that takes its
+// place.
+//
+// A switch can be left for a node to catch up on, but this can't. The
+// reconcile tells a client that is missing from one that is there and nothing
+// more, since the agent doesn't say what id a client has, so a new id saved for
+// later would leave the old link working and the new one dead. So the node goes
+// first, and with no connection to it the call is refused. The id is saved once
+// the node holds it, and if that fails the node gets its old one back.
+func (m *Manager) ReplaceLink(ctx context.Context, subID, nodeID uint) (api.Link, error) {
+	if _, _, _, err := linkParts(m.cfg.Store.Read(), subID, nodeID); err != nil {
+		return api.Link{}, err
+	}
+	unlock, err := m.lockNodes(ctx, nodeID)
+	if err != nil {
+		return api.Link{}, err
+	}
+	defer unlock()
+
+	// it may have been switched off while this waited
+	n, sub, was, err := linkParts(m.cfg.Store.Read(), subID, nodeID)
+	if err != nil {
+		return api.Link{}, err
+	}
+	fresh, err := newClientID()
+	if err != nil {
+		return api.Link{}, err
+	}
+	held, err := m.callNode(ctx, nodeID, func(ctx context.Context, a Client) error {
+		return subscriptions.Replace(ctx, a, clientOf(subID, fresh))
+	})
+	switch {
+	case !held:
+		return api.Link{}, errCantReach
+	case err != nil:
+		// the node may have lost the client; the reconcile after a reconnect puts it back
+		m.log.Warn("a link could not be replaced on its node", "subscription", subID, "node", nodeID, "err", err)
+		m.Reconnect(nodeID)
+		return api.Link{}, errNotTaken
+	}
+
+	err = m.cfg.Store.Update(func(s *model.State) error {
+		e := s.FindEnablement(subID, nodeID)
+		if e == nil || !e.Enabled {
+			return errSwitchedOff
+		}
+		e.ClientUUID = fresh
+		return nil
+	})
+	if err != nil {
+		m.applyTo(ctx, nodeID, "restore", func(ctx context.Context, a Client) error {
+			return subscriptions.Replace(ctx, a, clientOf(subID, was.ClientUUID))
+		})
+		return api.Link{}, err
+	}
+	m.Event(nodeID, EventSubscriptionOn, sub.Name+" (new link)")
+	m.log.Info("link replaced", "subscription", subID, "node", nodeID)
+	return buildLink(n, sub, fresh)
 }
