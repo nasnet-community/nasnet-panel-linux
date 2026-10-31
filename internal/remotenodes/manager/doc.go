@@ -12,8 +12,9 @@
 // One Manager does everything, with its methods grouped by concern: nodes.go
 // keeps a loop for each node, entry.go reads the router's report, bridge.go
 // builds the bridge's spec and runs the supervisor, tunnel.go says what each
-// node's tunnel is doing and live.go answers the API. Everything it depends on
-// is a small interface defined in deps.go, so a test stands in with a fake.
+// node's tunnel is doing and live.go answers the API. subs.go changes what the
+// subscriptions ask of the nodes. Everything it depends on is a small interface
+// defined in deps.go, so a test stands in with a fake.
 //
 // A node that Sync has been told of gets a loop of its own: connect, poll every
 // few seconds, give the connection up after three polls with no answer and

@@ -231,6 +231,12 @@ func firstOf(a, b string) string {
 // subscriptions that are switched on there. A failure is logged and left to the
 // next connection; it never stops the loop.
 func (m *Manager) reconcile(ctx context.Context, l *nodeLive, c Client) {
+	// a switch made while this works from what it read would be undone by it
+	unlock, err := m.lockNodes(ctx, l.id)
+	if err != nil {
+		return // the loop is stopping
+	}
+	defer unlock()
 	st := m.cfg.Store.Read()
 	var want []subscriptions.Client
 	for _, e := range st.Enablements {
