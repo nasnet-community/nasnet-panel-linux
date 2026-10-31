@@ -196,7 +196,7 @@ describe('what a node reports', () => {
   })
 
   it("words an event by its kind, and shows one the page doesn't know as itself", () => {
-    const kinds = ['tunnel_up', 'tunnel_down', 'node_unreachable', 'node_back', 'agent_updated', 'xray_changed', 'cert_renewed', 'subscription_on', 'subscription_off', 'keys_rotated']
+    const kinds = ['tunnel_up', 'tunnel_down', 'node_unreachable', 'node_back', 'agent_updated', 'xray_changed', 'cert_renewed', 'subscription_on', 'subscription_off', 'keys_rotated', 'xray_restarted']
     for (const kind of kinds) {
       // every kind the contract lists has its words in both languages
       expect(en, kind).toHaveProperty(`event.${kind}`)
@@ -205,6 +205,7 @@ describe('what a node reports', () => {
     }
     expect(eventLabel(words('en'), 'cert_renewed')).toBe('Certificate renewed')
     expect(eventLabel(words('fa'), 'cert_renewed')).toBe('گواهی تمدید شد')
+    expect(eventLabel(words('en'), 'xray_restarted')).toBe("Xray restarted: the router's address changed")
     expect(eventLabel(words('en'), 'portal_moved_house')).toBe('Portal moved house')
     expect(eventLabel(words('fa'), 'portal_moved_house')).toBe('Portal moved house')
   })

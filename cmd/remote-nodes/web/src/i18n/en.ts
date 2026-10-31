@@ -354,6 +354,7 @@ export const en = {
   'event.subscription_on': 'Subscription switched on',
   'event.subscription_off': 'Subscription switched off',
   'event.keys_rotated': 'Keys rotated',
+  'event.xray_restarted': "Xray restarted: the router's address changed",
   // the node page: header, menu, dialogs
   'node.port': 'port {port}',
   'node.up': 'up {time}',

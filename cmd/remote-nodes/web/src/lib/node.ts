@@ -91,6 +91,7 @@ const EVENT_KEYS = [
   'subscription_on',
   'subscription_off',
   'keys_rotated',
+  'xray_restarted',
 ]
 
 /** An event's kind ("cert_renewed") as the words for it; a kind the page doesn't know shows as itself, spaced out. */
