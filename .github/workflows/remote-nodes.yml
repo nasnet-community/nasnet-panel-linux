@@ -281,11 +281,12 @@ jobs:
           for want in 'The Go Authors' 'github.com/nasnet-community/mtproto-remote-plugin' 'github.com/xtls/xray-core' 'Mozilla Public License'; do
             grep -q "$want" "$dir/NOTICES" || { echo "::error::NOTICES has no $want"; exit 1; }
           done
-          # the page's own: each library with its version, and the font with its licence
-          for want in lucide-react preact qrcode-generator; do
+          # the page's own: each library with its version, tailwindcss (its base styles are in the page's
+          # CSS) among them, then modern-normalize, the MIT text qrcode-generator lacks, and the font
+          for want in lucide-react preact qrcode-generator tailwindcss; do
             grep -Eq "^$want [0-9]+\.[0-9]+" "$dir/web-notices.txt" || { echo "::error::web-notices.txt has no $want"; exit 1; }
           done
-          for want in 'Vazirmatn (font)' 'SIL OPEN FONT LICENSE Version 1.1'; do
+          for want in "modern-normalize (included in the page's CSS)" 'standard MIT licence text, not a file of the package' 'Vazirmatn (font)' 'SIL OPEN FONT LICENSE Version 1.1'; do
             grep -Fq "$want" "$dir/web-notices.txt" || { echo "::error::web-notices.txt has no $want"; exit 1; }
           done
           grep -q 'web-notices.txt' "$dir/README" || { echo "::error::the README does not name web-notices.txt"; exit 1; }
