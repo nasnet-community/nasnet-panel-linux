@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -123,6 +124,10 @@ type Manager struct {
 	entryKey string    // what the last reading said, to log a change once
 	entrySet bool
 	bv       bridgeView
+
+	// The router's address on the Domestic link as the last report that gave
+	// one said it, kept in memory only. See domestic.go.
+	domAddr netip.Addr
 
 	// What the bridge's loop keeps to itself, under bridgeMu: one look at a
 	// time, so that two can't start the bridge twice.

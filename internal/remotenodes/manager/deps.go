@@ -64,7 +64,9 @@ type Facts interface {
 
 // Client is the narrow set of a node's agent calls that the manager makes: the
 // stats the usage poll asks for and the acknowledgement of the traffic it has
-// counted, the version, and the clients on the entry. *agent.Client is one.
+// counted, the version, the clients on the entry, and a restart of Xray, which
+// the node's loop asks for when the router's address has changed.
+// *agent.Client is one.
 //
 // A slice that does more with a node (pushing a config, updating the agent)
 // asks for a wider interface of the client it borrows with Manager.Client, and
@@ -73,6 +75,9 @@ type Client interface {
 	usage.Source
 	subscriptions.Agent
 	GetVersion(ctx context.Context) (*agent.VersionInfo, error)
+	// RestartXray stops Xray and starts it again, after checking its config
+	// first when validateConfig is set.
+	RestartXray(ctx context.Context, validateConfig bool) error
 	Close() error
 }
 
