@@ -50,6 +50,11 @@ type fakeOps struct {
 	updates    []opsUpdate
 	renewals   []model.Node
 
+	// A misbehaving library echoes what it was given in its errors: a failing
+	// install repeats the login, and a failing provision the REALITY key.
+	leakLogin bool
+	leakKeys  bool
+
 	// What the calls answer.
 	fingerprint string
 	install     agentops.InstallResult
@@ -139,12 +144,24 @@ func (f *fakeOps) reach(ctx context.Context, point string) error {
 	return err
 }
 
+// leaked is an error that has said too much.
+type leaked struct {
+	err   error
+	spilt []string
+}
+
+func (e *leaked) Error() string { return e.err.Error() + " (" + strings.Join(e.spilt, " | ") + ")" }
+func (e *leaked) Unwrap() error { return e.err }
+
 // steps runs a plan the way agentops does: each step is running and then ok,
-// and the one that fails says why.
-func (f *fakeOps) steps(ctx context.Context, plan []string, progress agentops.Progress) error {
+// and the one that fails says why, with whatever the caller says it spilt.
+func (f *fakeOps) steps(ctx context.Context, plan []string, progress agentops.Progress, spilt ...string) error {
 	for _, name := range plan {
 		progress(agentops.Step{Name: name, State: agentops.StateRunning})
 		if err := f.reach(ctx, name); err != nil {
+			if len(spilt) > 0 {
+				err = &leaked{err, spilt}
+			}
 			progress(agentops.Step{Name: name, State: agentops.StateFailed, Detail: err.Error()})
 			return err
 		}
@@ -186,9 +203,13 @@ func (f *fakeOps) InstallAgent(ctx context.Context, node model.Node, login agent
 	f.note(fmt.Sprintf("InstallAgent %d", node.ID))
 	f.mu.Lock()
 	f.installs = append(f.installs, opsInstall{node, login})
-	res := f.install
+	res, leak := f.install, f.leakLogin
 	f.mu.Unlock()
-	return res, f.steps(ctx, agentops.InstallPlan(), progress)
+	var spilt []string
+	if leak {
+		spilt = []string{login.Password, login.PrivateKey, login.Passphrase}
+	}
+	return res, f.steps(ctx, agentops.InstallPlan(), progress, spilt...)
 }
 
 func (f *fakeOps) Uninstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
@@ -211,13 +232,16 @@ func (f *fakeOps) Provision(ctx context.Context, c Client, in agentops.Provision
 	f.note(fmt.Sprintf("Provision %d", in.Node.ID))
 	f.mu.Lock()
 	f.provisions = append(f.provisions, in)
-	target := f.target
-	check := f.check
+	target, check, leak := f.target, f.check, f.leakKeys
 	f.mu.Unlock()
 	if in.Target != "" {
 		target = in.Target
 	}
-	if err := f.steps(ctx, agentops.ProvisionPlan(), progress); err != nil {
+	var spilt []string
+	if leak {
+		spilt = []string{in.Keys.PrivateKey}
+	}
+	if err := f.steps(ctx, agentops.ProvisionPlan(), progress, spilt...); err != nil {
 		return agentops.ProvisionResult{}, err
 	}
 	sni := in.SNI
@@ -303,6 +327,45 @@ func (a *fakeAgent) versions() (agentVersion, xrayLine string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.agentVersion, a.xrayLine
+}
+
+// scriptedStore is the state with writes that fail when a test says so: the nth
+// write from now on, or every one.
+type scriptedStore struct {
+	Store
+	mu      sync.Mutex
+	writes  int
+	failAt  map[int]error // by the number of the write, counted from 1
+	failAll error
+}
+
+func newScripted(st Store) *scriptedStore { return &scriptedStore{Store: st, failAt: map[int]error{}} }
+
+func (f *scriptedStore) Update(fn func(*model.State) error) error {
+	f.mu.Lock()
+	f.writes++
+	err := f.failAt[f.writes]
+	if f.failAll != nil {
+		err = f.failAll
+	}
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return f.Store.Update(fn)
+}
+
+// failNext makes the write that comes n writes from now fail (1 is the next).
+func (f *scriptedStore) failNext(n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failAt[f.writes+n] = err
+}
+
+func (f *scriptedStore) setFailAll(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failAll = err
 }
 
 // fakeDownloads is the project's releases: what the latest one carries for
