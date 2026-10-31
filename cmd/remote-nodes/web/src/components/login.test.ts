@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyLogin, keyNeedsTrust, keyTrusted, loginError, toLogin, withoutSecrets } from './login'
+import { emptyLogin, forgetOnly, keyNeedsTrust, keyTrusted, loginError, removeWithLogin, toLogin, withoutSecrets } from './login'
 
 const probe = (status: 'new' | 'known' | 'changed') => ({ fingerprint: 'SHA256:x', status })
 
@@ -14,6 +14,28 @@ describe('host keys', () => {
     expect(keyTrusted(probe('new'), false)).toBe(true)
     expect(keyTrusted(probe('changed'), false)).toBe(false)
     expect(keyTrusted(probe('changed'), true)).toBe(true)
+  })
+})
+
+describe('what a removal sends', () => {
+  const login = { ...emptyLogin(22, 'deploy'), password: 'pw' }
+
+  it('is the login, signed with the key that was shown, and nothing that would skip it', () => {
+    const req = removeWithLogin(login, 'SHA256:shown')
+    expect(req).toEqual({ login: { sshPort: 22, sshUser: 'deploy', hostKey: 'SHA256:shown', password: 'pw' } })
+    expect(req).not.toHaveProperty('force')
+  })
+
+  it('is force alone to forget the node and leave the server, with no login in it', () => {
+    expect(forgetOnly()).toEqual({ force: true })
+  })
+
+  // the hub answers needs_login to a removal with neither, and refuses one with both
+  it('is never empty and never both', () => {
+    for (const req of [removeWithLogin(login, 'SHA256:k'), forgetOnly()]) {
+      expect(Object.keys(req).length, JSON.stringify(req)).toBe(1)
+      expect('login' in req !== 'force' in req).toBe(true)
+    }
   })
 })
 

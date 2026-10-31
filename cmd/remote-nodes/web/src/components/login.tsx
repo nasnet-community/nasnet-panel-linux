@@ -1,6 +1,6 @@
 import { useId, type KeyboardEvent, type ReactNode } from 'react'
 import { useLang, type MsgKey } from '../i18n'
-import type { Login, ProbeResult } from '../lib/api'
+import type { Login, ProbeResult, RemoveRequest } from '../lib/api'
 import { KeyRound, TriangleAlert } from './icons'
 import { Field, Input, Textarea, cx } from './ui'
 
@@ -50,6 +50,12 @@ export function toLogin(f: LoginForm, hostKey: string): Login {
   }
   return login
 }
+
+/** A removal that signs in to the server and takes the agent off it. */
+export const removeWithLogin = (f: LoginForm, hostKey: string): RemoveRequest => ({ login: toLogin(f, hostKey) })
+
+/** A removal that only forgets the node and leaves the server as it is. The hub wants a login or this, never neither. */
+export const forgetOnly = (): RemoveRequest => ({ force: true })
 
 const METHODS = [
   ['password', 'login.password'],

@@ -321,7 +321,7 @@ export const api = {
   update: (id: number, kind: 'agent' | 'xray') => request<Started>('POST', `${node(id)}/update`, { kind }),
   renewCert: (id: number) => request<Started>('POST', `${node(id)}/renew-cert`),
   rotateKeys: (id: number) => request<Started>('POST', `${node(id)}/rotate-keys`),
-  remove: (id: number, req: RemoveRequest = {}) => request<Started>('POST', `${node(id)}/remove`, req),
+  remove: (id: number, req: RemoveRequest) => request<Started>('POST', `${node(id)}/remove`, req),
   nodeSubscriptions: (id: number) => request<NodeSubscription[]>('GET', `${node(id)}/subscriptions`),
   traffic: (id: number) => request<Traffic>('GET', `${node(id)}/traffic`),
 }
