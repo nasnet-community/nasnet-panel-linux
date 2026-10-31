@@ -160,6 +160,14 @@ func (m *memStore) Update(fn func(*model.State) error) error {
 	return nil
 }
 
+func (m *memStore) Restore(data []byte) error {
+	restored, err := model.Decode(data)
+	if err != nil {
+		return err
+	}
+	return m.Update(func(s *model.State) error { *s = restored; return nil })
+}
+
 func (m *memStore) Writes() uint64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
