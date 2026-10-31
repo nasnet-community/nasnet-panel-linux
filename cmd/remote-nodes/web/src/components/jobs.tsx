@@ -4,9 +4,11 @@ import { useNow } from '../hooks/usePoll'
 import { useConfig } from '../hooks/useConfig'
 import { codeText, useLang } from '../i18n'
 import { JOB_LOST, api, followJob, type Job } from '../lib/api'
+import { isRefusal } from '../lib/fixes'
 import { installOutcome, retryForm } from '../lib/install'
-import { jobLine, jobStep, jobTitle, stepLabel, stepPercent } from '../lib/jobs'
+import { jobHeader, jobStep, jobTitle, stepLabel, stepPercent } from '../lib/jobs'
 import { askRetry } from '../lib/retry'
+import { FixPanel } from '../screens/FixPanel'
 import { CircleCheck, CircleX, History } from './icons'
 import { JobSteps } from './job'
 import { Bar, Button, Dialog, Spinner, cx, useToast } from './ui'
@@ -121,11 +123,12 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
   const now = useNow()
   const running = job.state === 'running'
   const form = retryForm(job)
+  const header = jobHeader(t, fmt, job, target, now)
   return (
     <Dialog
       onClose={onClose}
-      title={jobTitle(t, job, target)}
-      description={jobLine(t, fmt, job, now)}
+      title={header.title}
+      description={header.line}
       closeLabel={running ? t('job.closeKeepsGoing') : t('common.close')}
       footer={
         <>
@@ -149,7 +152,7 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
                 askRetry(form)
               }}
             >
-              {t('job.tryAgain')}
+              {t(isRefusal(job) ? 'fix.change' : 'job.tryAgain')}
             </Button>
           )}
           <Button variant={running || job.kind === 'install' ? 'secondary' : 'primary'} onClick={onClose}>
@@ -158,7 +161,11 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
         </>
       }
     >
-      <JobSteps job={job} />
+      <div className="flex flex-col gap-4">
+        <JobSteps job={job} />
+        {/* no login is held here: the install was sent from a dialog that is closed by now */}
+        <FixPanel job={job} sent={null} />
+      </div>
       {running && <p className="mt-4 border-t border-border pt-3 text-[13px] text-muted">{t('job.keepsGoing')}</p>}
     </Dialog>
   )
@@ -289,7 +296,7 @@ export function JobTray() {
                                 askRetry(retryForm(j)!)
                               }}
                             >
-                              {t('job.tryAgain')}
+                              {t(isRefusal(j) ? 'fix.change' : 'job.tryAgain')}
                             </Button>
                           )}
                         </div>

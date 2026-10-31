@@ -8,9 +8,11 @@ import { useConfig } from '../hooks/useConfig'
 import { useNow } from '../hooks/usePoll'
 import { useLang, type T } from '../i18n'
 import type { Job, Node } from '../lib/api'
+import { isRefusal } from '../lib/fixes'
 import { retryForm } from '../lib/install'
-import { jobTitle, stepLabel } from '../lib/jobs'
+import { jobHeader, jobTitle, stepLabel } from '../lib/jobs'
 import { askRetry } from '../lib/retry'
+import { FixPanel } from './FixPanel'
 import { ForgetDialog, RemoveDialog } from './NodeDialogs'
 
 // An unfinished install is an install that failed and whose cleanup failed too. It is no node: the
@@ -167,23 +169,27 @@ export function UnfinishedView({ node, onAct }: { node: Node; onAct: (modal: Unf
 
 /** The page of a node whose install failed and was cleaned away: how the install went, and another try. */
 export function InstallGone({ job, target }: { job: Job; target: string }) {
-  const { t } = useLang()
+  const { t, fmt } = useLang()
   const form = retryForm(job)
+  const header = jobHeader(t, fmt, job, target, 0)
+  const refused = isRefusal(job)
   return (
     <div className="flex flex-col gap-5">
       <Back />
       <Card className="flex flex-col gap-4 p-4">
         <div>
           <h1 dir="auto" className="text-lg font-semibold">
-            {jobTitle(t, job, target)}
+            {header.title}
           </h1>
-          <p className="text-[13px] text-muted">{t('job.gone')}</p>
+          <p className="text-[13px] text-muted">{refused ? header.line : t('job.gone')}</p>
         </div>
         <JobSteps job={job} />
+        {/* the dialog that sent the install is gone, and its login with it */}
+        <FixPanel job={job} sent={null} />
         {form && (
           <div>
             <Button variant="primary" onClick={() => askRetry(form)}>
-              {t('job.tryAgain')}
+              {t(refused ? 'fix.change' : 'job.tryAgain')}
             </Button>
           </div>
         )}

@@ -605,8 +605,47 @@ export const en = {
   'error.port_in_use': 'A port this node needs is already in use on the server. Free it, or use another port.',
   'error.login_refused': "The server didn't accept the login. Check the user name and the password or key.",
   'error.needs_root': "This login can't act as root: the server has no sudo, or sudo didn't accept the password. Use root, or a user that can use sudo.",
-  'error.server_has_agent': "This server already runs an agent that Remote Nodes did not install, such as a Linux panel's node. Use a server without one.",
+  'error.server_has_agent':
+    "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
   'error.server_is_node': 'This server is already one of your nodes, under another address. Change that node instead of adding the server again.',
+
+  // a failed install: said once, with what to do about it
+  'job.refused.title': "This server can't be used",
+  'job.notStarted': { one: '{n} step not started', other: '{n} steps not started' },
+  'job.tookOver': "The server's own Xray was stopped and removed, as you asked, and is not restored.",
+  'fix.title': 'What you can do',
+  'fix.noLogin': "The login isn't kept once the dialog it was typed in is closed, so this can't go on from here. Change the details to type it again.",
+  'fix.continue': 'Continue',
+  'fix.change': 'Change details',
+  'fix.xray.found': 'Found on the server:',
+  'fix.found.binary': 'its program, /usr/local/bin/xray',
+  'fix.found.unit': 'its service, xray.service',
+  'fix.found.process': 'a running process named xray',
+  'fix.xray.same': "It is Xray {version}, the same build as this plugin's, so its program stays as it is.",
+  'fix.xray.other': "It is Xray {version}, not the same build as this plugin's, so its program is replaced.",
+  'fix.xray.unknown': "Its version can't be read, so its program is replaced.",
+  'fix.xray.noBinary': "Its program isn't at /usr/local/bin/xray, so Xray {pinned} is put there.",
+  'fix.takeover.warning':
+    "Taking it over stops that Xray, removes its config and its service, and keeps no backup. Its program is replaced unless it is the same build as this plugin's.",
+  'fix.takeover.go': 'Take over and continue',
+  'fix.other.title': 'Or use another server',
+  'fix.stop.text': 'Stop it there, then continue. The takeover you asked for still applies.',
+  'fix.port.entry': 'Port {port} on the server is used by {process}.',
+  'fix.port.agent':
+    "Port {port}, which the agent uses, is used by {process} on the server. The agent's port is a setting of this hub and can't be set for one node. Free it on the server, then try again.",
+  'fix.port.another': 'another program',
+  'fix.port.entryLabel': 'Entry port',
+  'fix.port.entryHint': 'Pick a free one, or free {port} on the server and try again.',
+  'fix.login.title': 'Log in again',
+  'fix.hostkey.agreed': 'Agreed to',
+  'fix.hostkey.shows': 'Shows now',
+  'fix.hostkey.go': 'Trust the new key and continue',
+  'fix.server.node': 'This server is already the node {name} here, under another address. Change that node instead of adding the server again.',
+  'fix.openNode': 'Open that node',
+  'add.takeOver': 'Take over the Xray that runs on this server',
+  'add.takeOverWarn':
+    "Only if you want that. It stops that Xray, removes its config and its service, keeps no backup, and replaces its binary unless it is the same build as this plugin's.",
+  'add.changeDetails': 'Change details',
 } satisfies Record<string, Message>
 
 export type MsgKey = keyof typeof en
