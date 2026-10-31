@@ -5,9 +5,11 @@ package manager
 import (
 	"context"
 	"errors"
+	"net"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
@@ -83,6 +85,40 @@ func TestAProbeRefusesWhatCantBeAServer(t *testing.T) {
 	}
 	if len(r.ops.allCalls()) != 0 {
 		t.Errorf("the server was probed anyway: %v", r.ops.allCalls())
+	}
+}
+
+// An address the router can't reach, say one that isn't on the domestic list,
+// doesn't refuse the connection: it never answers. That is a dial that times
+// out, which errors.Is also takes for a context deadline. It must still come out
+// as a node that can't be reached, with the sentence for it, and not as a fault
+// of the hub's own.
+func TestAServerThatNeverAnswersIsANodeThatCantBeReached(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, timeout := (&net.Dialer{}).DialContext(ctx, "tcp", "203.0.113.5:22")
+	if !errors.Is(timeout, context.DeadlineExceeded) || !strings.Contains(timeout.Error(), "i/o timeout") {
+		t.Fatalf("the dial's error is %v, which is not the trap this test is about", timeout)
+	}
+
+	r := newOpsRig(t)
+	r.ops.failAt("Probe", &agentops.UnreachableError{What: "ssh", Host: "203.0.113.5", Port: 22, Err: timeout})
+	_, err := probe(t, r, "203.0.113.5", 22)
+	var e *api.Error
+	if !errors.As(err, &e) || e.Code != api.CodeNodeUnreachable || !strings.Contains(e.Msg, "Can't reach SSH on 203.0.113.5 port 22") || !strings.Contains(e.Msg, "i/o timeout") {
+		t.Errorf("a server that never answers: %v", err)
+	}
+
+	// and the same for the check of a handshake target, which goes over the agent's link
+	if opFailure(&agentops.UnreachableError{What: "agent", Host: "203.0.113.5", Port: 9090, Err: timeout}).(*api.Error).Code != api.CodeNodeUnreachable {
+		t.Error("an agent that never answers is not a node that can't be reached")
+	}
+
+	// a context that ended on its own is still passed on as it is, for the API to leave unanswered
+	for _, ctxErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		if got := opFailure(ctxErr); got != ctxErr {
+			t.Errorf("%v became %v", ctxErr, got)
+		}
 	}
 }
 
