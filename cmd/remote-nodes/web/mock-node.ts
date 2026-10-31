@@ -30,7 +30,7 @@
 import { createHash } from 'node:crypto'
 import type { ServerResponse } from 'node:http'
 import type { HandshakeCheck, JobKind, Node, Traffic } from './src/lib/api'
-import { claimNodeId, configView, event, node as makeNode, nodes, startJob, subs, view, type MockNode, type Step } from './mock-api'
+import { STEPS, claimNodeId, configView, event, node as makeNode, nodes, startJob, subs, view, type MockNode, type Step } from './mock-api'
 
 const DAY = 86400e3
 const H = 3600e3
@@ -184,9 +184,6 @@ function run(kind: JobKind, n: MockNode, steps: Step[], o: { target?: string; en
   })
 }
 
-const release = (v: string): Step => ({ name: 'release', detail: `v${v}`, ms: 500 })
-const verify: Step = { name: 'verify' }
-
 // --- handshake checks ----------------------------------------------------------------
 
 const TARGET = /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?:\d{1,5}$/
@@ -208,13 +205,14 @@ const proof = (passphrase: string) => createHash('sha256').update(`remote-nodes:
 function backupFile(passphrase: string): Buffer {
   const payload = {
     proof: proof(passphrase),
-    nodes: nodes.filter((n) => n.registered).map((n) => ({ id: n.id, name: n.name, host: n.host, entryPort: n.entryPort, handshakeTarget: n.handshakeTarget, hostKey: n.hostKey, arch: n.arch })),
+    // every node in the state, as the hub's backup holds them: one that never finished comes back unfinished
+    nodes: nodes.map((n) => ({ id: n.id, name: n.name, host: n.host, entryPort: n.entryPort, handshakeTarget: n.handshakeTarget, hostKey: n.hostKey, arch: n.arch, registered: n.registered })),
   }
   return Buffer.from(MAGIC + Buffer.from(JSON.stringify(payload)).toString('base64'))
 }
 
 /** The nodes a backup holds, or the code the hub answers with. */
-function openBackup(passphrase: string, data: string): { nodes: { id: number; name: string; host: string; entryPort: number; handshakeTarget: string; hostKey: string; arch: string }[] } | 'backup_bad_file' | 'backup_bad_passphrase' {
+function openBackup(passphrase: string, data: string): { nodes: { id: number; name: string; host: string; entryPort: number; handshakeTarget: string; hostKey: string; arch: string; registered: boolean }[] } | 'backup_bad_file' | 'backup_bad_passphrase' {
   const text = Buffer.from(data, 'base64').toString('utf8')
   if (!text.startsWith(MAGIC)) return 'backup_bad_file'
   let payload: any
@@ -253,7 +251,8 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     const day = new Date().toISOString().slice(0, 10)
     res.statusCode = 200
     res.setHeader('Content-Type', 'application/octet-stream')
-    res.setHeader('Content-Disposition', `attachment; filename="remote-nodes-backup-${day}.bak"`)
+    // as Go writes it: a name that is plain ASCII needs no quotes
+    res.setHeader('Content-Disposition', `attachment; filename=remote-nodes-backup-${day}.rnbackup`)
     res.end(backupFile(passphrase))
     return true
   }
@@ -373,12 +372,13 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     const steps: Step[] = []
     if (handshakeTarget !== undefined) {
       const result = handshake(handshakeTarget)
-      steps.push({ name: 'handshake', detail: handshakeTarget, ms: 500, fail: !result.ok && (result.error || 'the handshake check failed') })
+      steps.push({ ...STEPS.chooseTarget, detail: handshakeTarget, ms: 500, fail: !result.ok && (result.error || 'the handshake check failed') })
     }
     steps.push(
+      { ...STEPS.applyConfig, ms: 500 },
       {
-        name: 'config',
-        ms: 500,
+        ...STEPS.saveNode,
+        ms: 450,
         then: () => {
           if (entryPort !== undefined) n.entryPort = entryPort
           if (handshakeTarget !== undefined) {
@@ -388,7 +388,6 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
           if (sni !== undefined) x.sni = sni
         },
       },
-      { name: 'tunnel', ms: 450 },
     )
     return send(202, { jobId: run('change-settings', n, steps) }), true
   }
@@ -401,12 +400,10 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
       const was = n.agentVersion
       return send(202, {
         jobId: run('update-agent', n, [
-          release(pin.agentVersion),
-          verify,
-          { name: 'upload', detail: '18 MB', ms: 900, progress: { total: '18.0', unit: 'MB' } },
+          { ...STEPS.downloadAgent, detail: `v${pin.agentVersion} · 18 MB`, ms: 500 },
+          { ...STEPS.uploadAgent, detail: '18.0 MB sent', ms: 900, progress: { total: '18.0', unit: 'MB' } },
           {
-            name: 'agent',
-            detail: 'Connected over mTLS',
+            ...STEPS.restartAgent,
             ms: 600,
             then: () => {
               n.agentVersion = pin.agentVersion
@@ -414,17 +411,17 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
               event(n, 'agent_updated', `${was} to ${pin.agentVersion}`)
             },
           },
+          { ...STEPS.checkAgent, detail: `v${pin.agentVersion}, managed profile`, ms: 400 },
         ]),
       }), true
     }
     const was = n.xrayVersion
     return send(202, {
       jobId: run('update-xray', n, [
-        release(pin.agentVersion),
-        verify,
+        { ...STEPS.downloadXray, detail: `${pin.xrayVersion} · 13.6 MB`, ms: 500 },
         {
-          name: 'xray',
-          detail: `Xray ${pin.xrayVersion}`,
+          ...STEPS.uploadXray,
+          detail: '13.6 MB sent',
           ms: 1200,
           progress: { total: '13.6', unit: 'MB' },
           then: () => {
@@ -432,8 +429,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
             event(n, 'xray_changed', `${was} to ${pin.xrayVersion}`)
           },
         },
-        { name: 'config', ms: 400 },
-        { name: 'tunnel', ms: 500, then: () => event(n, 'tunnel_up') },
+        { ...STEPS.checkXray, detail: `Xray ${pin.xrayVersion}`, ms: 500, then: () => event(n, 'tunnel_up') },
       ]),
     }), true
   }
@@ -441,9 +437,9 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
   if (rest === 'renew-cert') {
     return send(202, {
       jobId: run('renew-cert', n, [
-        { name: 'cert', detail: 'valid for 12 months', ms: 500 },
+        { ...STEPS.renewCert, detail: `Valid until ${iso(Date.now() + 365 * DAY).slice(0, 10)}`, ms: 500 },
         {
-          name: 'reconnect',
+          ...STEPS.saveNode,
           ms: 700,
           then: () => {
             x.certBase = Date.now()
@@ -458,15 +454,15 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     return send(202, {
       jobId: run('rotate-keys', n, [
         {
-          name: 'keys',
+          ...STEPS.createKeys,
           ms: 400,
           then: () => {
             x.keys = { publicKey: randomKey(), shortId: randomHex(8) }
             event(n, 'keys_rotated')
           },
         },
-        { name: 'config', ms: 500 },
-        { name: 'tunnel', ms: 450 },
+        { ...STEPS.applyConfig, ms: 500 },
+        { ...STEPS.saveNode, ms: 450 },
       ]),
     }), true
   }
@@ -481,7 +477,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     if (req.login.password === 'wrong') return fail(400, 'bad_request', 'ssh: unable to authenticate: the password or key was not accepted'), true
   }
   const gone: Step = {
-    name: 'forget',
+    ...STEPS.forgetNode,
     ms: 350,
     then: () => {
       nodes.splice(nodes.indexOf(n), 1)
@@ -490,5 +486,6 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     },
   }
   // the node is gone by the end, so the job carries its name
-  return send(202, { jobId: run('remove', n, req.force ? [gone] : [{ name: 'remove', detail: 'agent and Xray', ms: 900 }, gone], { target: n.name }) }), true
+  const steps: Step[] = req.force ? [gone] : [{ ...STEPS.checkServer, ms: 300 }, { ...STEPS.stopAgent, ms: 300 }, { ...STEPS.removeAgent, ms: 500 }, gone]
+  return send(202, { jobId: run('remove', n, steps, { target: n.name }) }), true
 }

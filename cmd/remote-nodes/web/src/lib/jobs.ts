@@ -2,30 +2,40 @@ import type { Format } from './format'
 import type { Job } from './api'
 import type { MsgKey, T } from '../i18n'
 
-// The steps the hub reports, by name. The page words them itself, so a name it doesn't
-// know shows as the name, capitalised ("agent-upload" becomes "Agent upload").
+// The steps the hub reports, by key. The hub sends each step with a stable key and its English
+// name, the page words the key itself, and a key it doesn't know shows as the hub's name.
+// internal/remotenodes/manager/stepkeys.go lists the keys, and a test there fails for one
+// that has no words here.
 const STEP_KEYS: Record<string, MsgKey> = {
-  release: 'step.release',
-  verify: 'step.verify',
-  check: 'step.check',
-  upload: 'step.upload',
-  agent: 'step.agent',
-  xray: 'step.xray',
-  handshake: 'step.handshake',
-  config: 'step.config',
-  tunnel: 'step.tunnel',
-  cert: 'step.cert',
-  reconnect: 'step.reconnect',
-  keys: 'step.keys',
-  remove: 'step.remove',
-  forget: 'step.forget',
+  check_server: 'step.check_server',
+  download_agent: 'step.download_agent',
+  create_certificate: 'step.create_certificate',
+  prepare_server: 'step.prepare_server',
+  upload_agent: 'step.upload_agent',
+  start_agent: 'step.start_agent',
+  check_agent: 'step.check_agent',
+  connect_agent: 'step.connect_agent',
+  download_xray: 'step.download_xray',
+  upload_xray: 'step.upload_xray',
+  check_xray: 'step.check_xray',
+  choose_target: 'step.choose_target',
+  create_keys: 'step.create_keys',
+  apply_config: 'step.apply_config',
+  save_node: 'step.save_node',
+  stop_agent: 'step.stop_agent',
+  remove_agent: 'step.remove_agent',
+  restart_agent: 'step.restart_agent',
+  renew_cert: 'step.renew_cert',
+  forget_node: 'step.forget_node',
 }
 
-/** A job step's name ("xray") as the step it is ("Send Xray 26.10.21"). `xray` is the version this plugin installs. */
-export function stepLabel(t: T, name: string, xray = ''): string {
-  const key = STEP_KEYS[name]
-  if (key) return t(key, { version: xray }).trim()
-  return name.charAt(0).toUpperCase() + name.slice(1).replace(/[-_]/g, ' ')
+/** The words for a step key, or undefined for one the page has none for. */
+const stepWords = (key: string) => (Object.prototype.hasOwnProperty.call(STEP_KEYS, key) ? STEP_KEYS[key] : undefined)
+
+/** A job step as the step it is ("Upload Xray 26.10.21"): worded by its key, else the hub's name. `xray` is the version this plugin installs. */
+export function stepLabel(t: T, step: { key?: string; name: string }, xray = ''): string {
+  const words = step.key ? stepWords(step.key) : undefined
+  return words ? t(words, { version: xray }).trim() : step.name
 }
 
 /** What a job is doing, or how it ended: "Installing Node 3", "Agent updated". */
@@ -64,7 +74,8 @@ export function jobLine(t: T, fmt: Format, job: Job, now: number): string {
   return start && end ? t('job.took', { time: fmt.clock((end - start) / 1000) }) : t('job.done')
 }
 
-/** The job failed where the router talks to the node: it could not reach it, or the address isn't on the domestic list. */
-export const failedAtLink = (job: Job) =>
-  job.state === 'failed' && job.steps.some((s) => (s.name === 'upload' || s.name === 'agent') && s.state === 'failed')
+// The steps where the router itself reaches the node: the SSH login, and the link to the agent.
+const LINK_STEPS = ['check_server', 'check_agent', 'connect_agent']
 
+/** The job failed where the router talks to the node: it could not reach it, or the address isn't on the domestic list. */
+export const failedAtLink = (job: Job) => job.state === 'failed' && job.steps.some((s) => s.state === 'failed' && LINK_STEPS.includes(s.key))

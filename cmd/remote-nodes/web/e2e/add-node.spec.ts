@@ -1,14 +1,22 @@
 import { card, dialog, expect, fillAddNode, openAddNode, reset, stateHolds, test, toast } from './fixtures'
 
+// the fifteen steps of an install, as the hub names them, with the Xray version the page adds
 const STEPS = [
-  'Fetch the signed release',
-  'Check signature and hashes',
-  'Send the agent',
+  'Check the server',
+  'Download the agent',
+  'Create the certificate',
+  'Prepare the server',
+  'Upload the agent',
   'Start the agent',
-  'Send Xray 26.10.21',
+  'Check the agent',
+  'Connect to the agent',
+  'Download Xray 26.10.21',
+  'Upload Xray 26.10.21',
+  'Check Xray 26.10.21',
   'Choose a handshake target',
-  'Apply the config',
-  'Start the tunnel',
+  'Create the keys',
+  'Apply the configuration',
+  'Save the node',
 ]
 
 test.beforeEach(async ({ request }) => {
@@ -38,7 +46,7 @@ test('adds a node: the form, then the install job with its steps, then the finis
   await expect(job).toBeVisible()
   // every step is listed from the start, the later ones not started
   for (const step of STEPS) await expect(job.getByText(step)).toBeVisible()
-  await expect(job).toContainText(/Step \d of 8 · \d+:\d\d so far/)
+  await expect(job).toContainText(/Step \d+ of 15 · \d+:\d\d so far/)
   // the upload reports how far it has got (a short window, so look often)
   await expect.poll(() => job.innerText(), { intervals: [40], timeout: 15000 }).toMatch(/\d+% · [\d.]+ of 18\.0 MB/)
   await expect(job).toContainText("You can close this. The install keeps going, and the job tray at the top shows it until it's done.")
@@ -51,7 +59,7 @@ test('adds a node: the form, then the install job with its steps, then the finis
   await expect(done).toContainText(/Took \d+:\d\d/)
   await expect(done).toContainText('The agent is running and its tunnel is up.')
   for (const step of STEPS) await expect(done.getByText(step)).toBeVisible()
-  await expect(done).toContainText('Connected over mTLS')
+  await expect(done).toContainText('v1.3.0, managed profile')
   await expect(done).toContainText('www.example.com:443')
   await expect(toast(page, 'Node 3 added')).toBeVisible()
   // the list and the cap follow
@@ -127,39 +135,39 @@ test('a changed host key stops the install until it is trusted on purpose', asyn
   await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 20000 })
 })
 
-test('an install that fails shows the step, the reason and a hint, and leaves no node behind', async ({ page }) => {
+test('an install that fails shows the step, the reason and a hint, and keeps the node, unfinished', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'fail.example.com')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   const failed = dialog(page, 'Installation failed')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('Failed at step 4 of 8')
-  await expect(failed.getByText('dial fail.example.com:8443: i/o timeout')).toBeVisible()
+  await expect(failed).toContainText('Failed at step 7 of 15')
+  await expect(failed.getByText("The agent doesn't answer on TCP port 9090 (dial tcp fail.example.com:9090: i/o timeout).")).toBeVisible()
   // the steps after it were never started
-  await expect(failed.getByText('Send Xray 26.10.21')).toHaveClass(/text-faint/)
+  await expect(failed.getByText('Upload Xray 26.10.21')).toHaveClass(/text-faint/)
   await expect(failed).toContainText('This router reaches the node over its Domestic link, so the address must be on the domestic list.')
   await expect(toast(page, 'Installation failed')).toBeVisible()
-  await expect(page.getByText('2 of 3 nodes')).toBeVisible()
-  await expect(card(page, 'Node 3')).toHaveCount(0)
-
-  // Try again is the form again, without the password it had
-  await failed.getByRole('button', { name: 'Try again' }).click()
-  await expect(dialog(page, 'Add a node')).toBeVisible()
-  await expect(dialog(page, 'Add a node').locator('input[type="password"]')).toHaveValue('')
+  // the hub saves the node before it installs it, so it stays, never finished, and counts toward the cap
+  await expect(failed).toContainText('The node is saved. Open it to see where it stands.')
+  await expect(failed.getByRole('button', { name: 'Try again' })).toHaveCount(0)
+  await expect(page.getByText('3 of 3 nodes')).toBeVisible()
+  await expect(card(page, 'Node 3')).toContainText('Not finished')
+  await failed.getByRole('button', { name: 'Open node' }).click()
+  await expect(page).toHaveURL(/#\/nodes\/3$/)
+  await expect(page.getByText("This node's install never finished")).toBeVisible()
 })
 
-test('an install that fails late keeps the node, which can then be opened', async ({ page }) => {
+test('an install that fails late fails there, and has no hint about the domestic list', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'late.example.com')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   const failed = dialog(page, 'Installation failed')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('Failed at step 6 of 8')
+  await expect(failed).toContainText('Failed at step 12 of 15')
   await expect(failed).toContainText("www.example.com:443 didn't answer from this node")
   await expect(failed).toContainText('The node is saved. Open it to see where it stands.')
-  // the node is saved, so there is no starting over; the domestic hint belongs to the first steps
+  // the domestic hint belongs to the steps where the router reaches the node
   await expect(failed).not.toContainText('Domestic link')
-  await expect(failed.getByRole('button', { name: 'Try again' })).toHaveCount(0)
   await failed.getByRole('button', { name: 'Open node' }).click()
   await expect(page).toHaveURL(/#\/nodes\/3$/)
 })

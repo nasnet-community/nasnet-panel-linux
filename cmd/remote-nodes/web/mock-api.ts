@@ -7,7 +7,7 @@
 //
 // Sample data matches the design boards: Node 1 works (3 of its 6 subscriptions
 // are online), Node 2 can't be reached (its agent and Xray are due an update),
-// Node 3 is installing, frozen at step 5 of 8 (62% through the Xray upload).
+// Node 3 is installing, frozen at step 10 of 15 (62% through the Xray upload).
 // Seven subscriptions, the entry is on (WireGuard). The router is at its cap of
 // 3 nodes; remove one (or reset with { nodes: 2 }) to add another. The job tray
 // starts with that install and two finished jobs. Usage moves every few seconds.
@@ -18,8 +18,9 @@
 // Add-node scenarios, picked by the address you type:
 //   address contains "offline" -> the host key check can't connect
 //   address contains "changed" -> the host key differs from last time
-//   address contains "fail"    -> fails at "Start the agent" (dial timeout); nothing is kept
-//   address contains "late"    -> fails at "Choose a handshake target"; the node is kept
+//   address contains "fail"    -> fails at "Check the agent" (dial timeout)
+//   address contains "late"    -> fails at "Choose a handshake target"
+//   (a failed install keeps its node, never finished, as the hub does: only removing it works)
 //   address contains "poll"    -> the job's event stream answers 503, so the page polls
 //   password "wrong"           -> the login is refused before any job starts
 //   an existing address        -> refused: it is already a node here
@@ -103,6 +104,31 @@ const split = (total: number) => {
   const up = Math.round(total * 0.25)
   return { up, down: Math.round(total) - up }
 }
+
+// The steps the hub reports: its English name, and the key it sends beside it, which the page words
+// the step by (internal/remotenodes/manager/stepkeys.go has the real table).
+export const STEPS = {
+  checkServer: { key: 'check_server', name: 'Check the server' },
+  downloadAgent: { key: 'download_agent', name: 'Download the agent' },
+  createCertificate: { key: 'create_certificate', name: 'Create the certificate' },
+  prepareServer: { key: 'prepare_server', name: 'Prepare the server' },
+  uploadAgent: { key: 'upload_agent', name: 'Upload the agent' },
+  startAgent: { key: 'start_agent', name: 'Start the agent' },
+  checkAgent: { key: 'check_agent', name: 'Check the agent' },
+  connectAgent: { key: 'connect_agent', name: 'Connect to the agent' },
+  downloadXray: { key: 'download_xray', name: 'Download Xray' },
+  uploadXray: { key: 'upload_xray', name: 'Upload Xray' },
+  checkXray: { key: 'check_xray', name: 'Check Xray' },
+  chooseTarget: { key: 'choose_target', name: 'Choose a handshake target' },
+  createKeys: { key: 'create_keys', name: 'Create the keys' },
+  applyConfig: { key: 'apply_config', name: 'Apply the configuration' },
+  saveNode: { key: 'save_node', name: 'Save the node' },
+  stopAgent: { key: 'stop_agent', name: 'Stop the agent' },
+  removeAgent: { key: 'remove_agent', name: 'Remove the agent' },
+  restartAgent: { key: 'restart_agent', name: 'Restart the agent' },
+  renewCert: { key: 'renew_cert', name: 'Renew the certificate' },
+  forgetNode: { key: 'forget_node', name: 'Forget the node' },
+} as const
 
 export let nodes: MockNode[] = []
 export let subs: MockSub[] = []
@@ -188,7 +214,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   event(n2, 'tunnel_up', '', n2.createdAt + 3 * MIN)
   event(n2, 'node_unreachable', 'no answer over the Domestic link', n2.lastSeen)
 
-  const n3 = node({ id: 3, name: 'Node 3', host: '192.0.2.41', registered: true, createdAt: now - 62e3, installJob: 'seed-install-3' })
+  const n3 = node({ id: 3, name: 'Node 3', host: '192.0.2.41', registered: false, createdAt: now - 62e3, installJob: 'seed-install-3' })
 
   const wanted = [n1, n2, n3].slice(0, keep)
   nodes = wanted
@@ -216,14 +242,21 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
         target: 'Node 3',
         startedAt: iso(now - 62e3),
         steps: [
-          { name: 'release', state: 'ok', detail: `v${AGENT}` },
-          { name: 'verify', state: 'ok' },
-          { name: 'upload', state: 'ok', detail: '18 MB' },
-          { name: 'agent', state: 'ok', detail: 'Connected over mTLS' },
-          { name: 'xray', state: 'running', detail: '62% · 8.4 of 13.6 MB' },
-          { name: 'handshake', state: 'pending' },
-          { name: 'config', state: 'pending' },
-          { name: 'tunnel', state: 'pending' },
+          { ...STEPS.checkServer, state: 'ok', detail: 'amd64 · Debian GNU/Linux 12 (bookworm)' },
+          { ...STEPS.downloadAgent, state: 'ok', detail: `v${AGENT} · 18 MB` },
+          { ...STEPS.createCertificate, state: 'ok', detail: 'Valid until 2027-10-31' },
+          { ...STEPS.prepareServer, state: 'ok' },
+          { ...STEPS.uploadAgent, state: 'ok', detail: '18.0 MB sent' },
+          { ...STEPS.startAgent, state: 'ok' },
+          { ...STEPS.checkAgent, state: 'ok', detail: `v${AGENT}, managed profile` },
+          { ...STEPS.connectAgent, state: 'ok' },
+          { ...STEPS.downloadXray, state: 'ok', detail: `${XRAY} · 13.6 MB` },
+          { ...STEPS.uploadXray, state: 'running', detail: '62% · 8.4 of 13.6 MB' },
+          { ...STEPS.checkXray, state: 'pending' },
+          { ...STEPS.chooseTarget, state: 'pending' },
+          { ...STEPS.createKeys, state: 'pending' },
+          { ...STEPS.applyConfig, state: 'pending' },
+          { ...STEPS.saveNode, state: 'pending' },
         ],
       },
       listeners: new Set(),
@@ -233,7 +266,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   const finished = (id: string, kind: JobKind, nodeId: number, target: string, ago: number, took: number): [string, MockJob] => [
     id,
     {
-      view: { id, kind, state: 'ok', nodeId, target, startedAt: iso(now - ago - took), finishedAt: iso(now - ago), steps: [{ name: 'release', state: 'ok' }, { name: 'tunnel', state: 'ok' }] },
+      view: { id, kind, state: 'ok', nodeId, target, startedAt: iso(now - ago - took), finishedAt: iso(now - ago), steps: [{ ...STEPS.checkServer, state: 'ok' }, { ...STEPS.saveNode, state: 'ok' }] },
       listeners: new Set(),
       noStream: false,
     },
@@ -285,21 +318,15 @@ function installingView(n: MockNode): Node['installing'] {
   const i = j.steps.findIndex((s) => s.state === 'running')
   const step = j.steps[i]
   const m = step?.detail ? /^(\d{1,3})%/.exec(step.detail) : null
-  return { jobId: j.id, step: i < 0 ? j.steps.filter((s) => s.state === 'ok').length + 1 : i + 1, steps: j.steps.length, label: step ? stepText(step.name) : '', percent: m ? Number(m[1]) : null }
+  return {
+    jobId: j.id,
+    step: i < 0 ? j.steps.filter((s) => s.state === 'ok').length + 1 : i + 1,
+    steps: j.steps.length,
+    key: step?.key ?? '',
+    label: step?.name ?? '',
+    percent: m ? Number(m[1]) : null,
+  }
 }
-
-// the English words the hub would send for a step; the page words steps itself
-const STEP_TEXT: Record<string, string> = {
-  release: 'Fetch the signed release',
-  verify: 'Check signature and hashes',
-  upload: 'Send the agent',
-  agent: 'Start the agent',
-  xray: `Send Xray ${XRAY}`,
-  handshake: 'Choose a handshake target',
-  config: 'Apply the config',
-  tunnel: 'Start the tunnel',
-}
-const stepText = (name: string) => STEP_TEXT[name] ?? name
 
 export function view(n: MockNode, detail = false): Node {
   const live = reachable(n) && !n.installJob
@@ -449,6 +476,7 @@ const jobs = new Map<string, MockJob>()
 const installing = new Set<string>()
 
 export interface Step {
+  key: string
   name: string
   detail?: string
   ms?: number
@@ -463,14 +491,14 @@ export interface Step {
 const snapshot = (j: MockJob): Job => ({ ...j.view, steps: j.view.steps.map((s) => ({ ...s })) })
 const emit = (j: MockJob) => j.listeners.forEach((l) => l(snapshot(j)))
 
-export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void; failed?: () => void } = {}) {
+export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void } = {}) {
   const j: MockJob = {
     view: {
       id: hex(16),
       kind,
       state: 'running',
       // every step is listed from the start
-      steps: steps.map((s) => ({ name: s.name, state: 'pending' as const })),
+      steps: steps.map((s) => ({ key: s.key, name: s.name, state: 'pending' as const })),
       nodeId: o.nodeId ?? 0,
       target: o.target ?? '',
       startedAt: iso(Date.now()),
@@ -481,7 +509,6 @@ export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; tar
   jobs.set(j.view.id, j)
   const finish = (error?: string) => {
     o.end?.()
-    if (error) o.failed?.()
     j.view.state = error ? 'failed' : 'ok'
     if (error) j.view.error = error
     j.view.finishedAt = iso(Date.now())
@@ -529,7 +556,8 @@ function streamJob(req: IncomingMessage, res: ServerResponse, j: MockJob) {
   write(snapshot(j))
 }
 
-// The install is eight steps; the page words them (see stepLabel in src/lib/jobs.ts).
+// The install is the hub's fifteen steps. The node is saved at the start, as installing, and the job has its
+// id from then on; it is set up at the last step. An install that fails leaves the node as it is, unfinished.
 function install(b: Record<string, any>) {
   const host = String(b.host).trim()
   const name = String(b.name || host)
@@ -552,36 +580,41 @@ function install(b: Record<string, any>) {
   const id = startJob(
     'install',
     [
-      { name: 'release', detail: `v${AGENT}`, ms: 500 },
-      { name: 'verify' },
-      { name: 'upload', detail: '18 MB', ms: 900, progress: { total: '18.0', unit: 'MB' } },
+      { ...STEPS.checkServer, detail: 'amd64 · Debian GNU/Linux 12 (bookworm)', ms: 300 },
+      { ...STEPS.downloadAgent, detail: `v${AGENT} · 18 MB`, ms: 400 },
+      { ...STEPS.createCertificate, detail: 'Valid until 2027-10-31', ms: 200 },
+      { ...STEPS.prepareServer, ms: 200 },
+      { ...STEPS.uploadAgent, detail: '18.0 MB sent', ms: 900, progress: { total: '18.0', unit: 'MB' } },
+      { ...STEPS.startAgent, ms: 300 },
       {
-        name: 'agent',
-        detail: 'Connected over mTLS',
-        ms: 600,
-        fail: host.includes('fail') && `dial ${host}:8443: i/o timeout`,
-        then: (j) => {
-          // the node is saved once its agent answers
-          Object.assign(n, { registered: true, agentVersion: AGENT, agentStart: Date.now() })
-          j.view.nodeId = n.id
+        ...STEPS.checkAgent,
+        detail: `v${AGENT}, managed profile`,
+        ms: 300,
+        fail: host.includes('fail') && `The agent doesn't answer on TCP port 9090 (dial tcp ${host}:9090: i/o timeout). The server's firewall (or the provider's) may block it.`,
+      },
+      { ...STEPS.connectAgent, ms: 200 },
+      { ...STEPS.downloadXray, detail: `${XRAY} · 13.6 MB`, ms: 300 },
+      { ...STEPS.uploadXray, detail: '13.6 MB sent', ms: 1200, progress: { total: '13.6', unit: 'MB' } },
+      { ...STEPS.checkXray, detail: `Xray ${XRAY}`, ms: 200 },
+      { ...STEPS.chooseTarget, detail: n.handshakeTarget, ms: 300, fail: late && `${n.handshakeTarget} didn't answer from this node` },
+      { ...STEPS.createKeys, ms: 200 },
+      { ...STEPS.applyConfig, ms: 300 },
+      {
+        ...STEPS.saveNode,
+        ms: 200,
+        then: () => {
+          Object.assign(n, { registered: true, agentVersion: AGENT, xrayVersion: XRAY, agentStart: Date.now() })
+          event(n, 'tunnel_up')
         },
       },
-      { name: 'xray', detail: `Xray ${XRAY}`, ms: 1200, progress: { total: '13.6', unit: 'MB' }, then: () => (n.xrayVersion = XRAY) },
-      { name: 'handshake', detail: n.handshakeTarget, fail: late && `${n.handshakeTarget} didn't answer from this node` },
-      { name: 'config' },
-      { name: 'tunnel', ms: 500, then: () => event(n, 'tunnel_up') },
     ],
     {
-      nodeId: 0,
+      nodeId: n.id,
       target: name,
       noStream: host.includes('poll'),
       end: () => {
         installing.delete(host)
         delete n.installJob
-      },
-      // an install that died before the node was saved leaves nothing behind
-      failed: () => {
-        if (!n.registered) nodes.splice(nodes.indexOf(n), 1)
       },
     },
   )

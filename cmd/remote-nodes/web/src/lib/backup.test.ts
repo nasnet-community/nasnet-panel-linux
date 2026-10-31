@@ -5,6 +5,14 @@ import { MAX_BACKUP_BYTES, backupFileName, bytesToBase64 } from './backup'
 const NOW = new Date('2026-10-30T12:00:00Z')
 
 describe('the name of a downloaded backup', () => {
+  it('is the one the hub writes: Go leaves a plain name unquoted', () => {
+    // mime.FormatMediaType("attachment", {"filename": "remote-nodes-backup-2026-10-31.rnbackup"})
+    expect(backupFileName('attachment; filename=remote-nodes-backup-2026-10-31.rnbackup', NOW)).toBe('remote-nodes-backup-2026-10-31.rnbackup')
+    // a name with a space or a non-ASCII letter is quoted or sent as filename*
+    expect(backupFileName('attachment; filename="remote nodes.rnbackup"', NOW)).toBe('remote nodes.rnbackup')
+    expect(backupFileName("attachment; filename*=utf-8''%D9%86%D9%88%D8%AF.rnbackup", NOW)).toBe('نود.rnbackup')
+  })
+
   it("is the one the hub gives, quoted or not", () => {
     expect(backupFileName('attachment; filename="remote-nodes-backup-2026-10-30.bak"', NOW)).toBe('remote-nodes-backup-2026-10-30.bak')
     expect(backupFileName('attachment; filename=remote-nodes.bak', NOW)).toBe('remote-nodes.bak')

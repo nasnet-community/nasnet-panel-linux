@@ -171,7 +171,7 @@ test.describe('the backup', () => {
     await page.getByRole('button', { name: 'Export backup' }).click()
     const file = await download
     expect((await sent).postDataJSON()).toEqual({ passphrase: PASS })
-    expect(file.suggestedFilename()).toMatch(/^remote-nodes-backup-\d{4}-\d\d-\d\d\.bak$/)
+    expect(file.suggestedFilename()).toMatch(/^remote-nodes-backup-\d{4}-\d\d-\d\d\.rnbackup$/)
     const text = Buffer.concat(await collect(await file.createReadStream())).toString()
     expect(text.startsWith('RNBK1\n')).toBe(true)
     await expect(toast(page, `Backup saved as ${file.suggestedFilename()}`)).toBeVisible()
