@@ -24,6 +24,8 @@ import (
 type Store interface {
 	Read() model.State
 	Update(fn func(*model.State) error) error
+	// Restore puts a backup's state in place of an empty install's.
+	Restore(data []byte) error
 	Writes() uint64
 }
 
