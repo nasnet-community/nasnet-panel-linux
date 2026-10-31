@@ -33,6 +33,10 @@ var (
 	ErrUnsupportedHost = errors.New("agentops: the server can't run the agent")
 	ErrPortInUse       = errors.New("agentops: a port the node needs is already in use")
 	ErrOtherHub        = errors.New("agentops: the server's agent belongs to another hub")
+	// An install found something on the server that it would take over: an
+	// agent or an Xray that this plugin did not put there.
+	ErrServerHasAgent  = errors.New("agentops: the server already runs an agent this plugin did not install")
+	ErrServerHasXray   = errors.New("agentops: the server already runs an Xray this plugin did not install")
 	ErrUploadCorrupt   = errors.New("agentops: an upload arrived damaged")
 	ErrAgentNotStarted = errors.New("agentops: the agent did not start")
 

@@ -45,6 +45,8 @@ const (
 	StepChooseTarget  = "Choose a handshake target"
 	StepCreateKeys    = "Create the keys"
 	StepApplyConfig   = "Apply the configuration"
+	// UndoInstall's one step, after an install that failed.
+	StepCleanServer = "Clean up the server"
 )
 
 // skippedDetail is what a step says when there was nothing for it to do.

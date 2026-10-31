@@ -45,6 +45,8 @@ func TestAnInstallRunsExactlyTheseCommands(t *testing.T) {
 		{false, `for f in '/usr/local/bin/nasnet-agent' '/etc/systemd/system/nasnet-agent.service' '/usr/local/bin/xray' '/etc/systemd/system/xray.service' '/usr/local/etc/xray/config.json'; do if [ -e "$f" ]; then echo "$f"; fi; done`},
 		{true, `cat '/etc/nasnet-agent/ca.crt' 2>/dev/null || true`},
 		{true, `cat '/var/lib/nasnet-agent/remote-nodes.json' 2>/dev/null || true`},
+		// no marker of this plugin's, so whether the server runs an Xray of its own
+		{false, `systemctl cat xray.service >/dev/null 2>&1 && echo unit; cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true`},
 		{true, `ss -ltnp 2>/dev/null`},
 		{false, `command -v ufw`},
 		{false, `cat '/proc/sys/net/ipv4/tcp_retries2' 2>/dev/null || true`}, // what the kernel setting is now, for removal to give back
@@ -239,7 +241,7 @@ func TestAnInstallLeavesTheServerAsTheAgentNeedsIt(t *testing.T) {
 	}
 
 	// and what the manager is told
-	if !res.Changed || res.Repaired || res.ForeignXray || res.Arch != "amd64" || res.OS != "Debian GNU/Linux 12 (bookworm)" || res.AgentVersion != "v1.3.0" || res.XrayVersion != "" {
+	if !res.Changed || res.Repaired || res.Arch != "amd64" || res.OS != "Debian GNU/Linux 12 (bookworm)" || res.AgentVersion != "v1.3.0" || res.XrayVersion != "" {
 		t.Errorf("result: %+v", res)
 	}
 }
@@ -368,14 +370,38 @@ func TestAnInstallStopsBeforeChangingAServerThatCannotTakeIt(t *testing.T) {
 			other := testCA(t)
 			r.sb.put("/etc/nasnet-agent/ca.crt", string(other.CertPEM()), 0o644)
 			r.sb.put("/usr/local/bin/nasnet-agent", "#!/bin/sh\n", 0o755)
-		}, ErrOtherHub, []string{"another hub", "one hub"}},
-		{"a CA file that isn't one", func(r *installRig) { r.sb.put("/etc/nasnet-agent/ca.crt", "not a certificate\n", 0o644) }, ErrOtherHub, []string{"another hub"}},
+		}, ErrServerHasAgent, []string{"another hub", "one hub"}},
+		{"a CA file that isn't one", func(r *installRig) { r.sb.put("/etc/nasnet-agent/ca.crt", "not a certificate\n", 0o644) }, ErrServerHasAgent, []string{"another hub"}},
 		{"a marker from another hub's install", func(r *installRig) {
 			r.sb.put("/var/lib/nasnet-agent/remote-nodes.json", `{"version":1,"ca_sha256":"`+strings.Repeat("ab", 32)+`","agent":true}`, 0o644)
-		}, ErrOtherHub, []string{"another hub"}},
+		}, ErrServerHasAgent, []string{"another hub"}},
 		{"a CA file with another CA beside ours", func(r *installRig) {
 			r.sb.put("/etc/nasnet-agent/ca.crt", string(r.ca.CertPEM())+string(testCA(t).CertPEM()), 0o644)
-		}, ErrOtherHub, []string{"another hub"}},
+		}, ErrServerHasAgent, []string{"another hub"}},
+		// a Linux panel's node with no TLS has an agent and nothing that says whose
+		{"an agent nobody vouches for", func(r *installRig) {
+			r.sb.put("/usr/local/bin/nasnet-agent", "#!/bin/sh\n", 0o755)
+		}, ErrServerHasAgent, []string{"did not install", "Linux panel", "one hub"}},
+		{"an agent's unit nobody vouches for", func(r *installRig) {
+			r.sb.put("/etc/systemd/system/nasnet-agent.service", "[Service]\nExecStart=/opt/agent\n", 0o644)
+		}, ErrServerHasAgent, []string{"did not install"}},
+		// the server's own Xray, found any of the ways it shows
+		{"an Xray binary at the standard path", func(r *installRig) {
+			r.sb.put("/usr/local/bin/xray", "#!/bin/sh\necho theirs\n", 0o755)
+		}, ErrServerHasXray, []string{"already runs an Xray", "Remote Nodes did not install", "/usr/local/bin/xray", "without one"}},
+		{"an xray.service where the install writes its own", func(r *installRig) {
+			r.sb.put("/etc/systemd/system/xray.service", "[Service]\nExecStart=/their/xray\n", 0o644)
+		}, ErrServerHasXray, []string{"xray.service unit"}},
+		{"an xray.service from a package", func(r *installRig) {
+			r.sb.put("/lib/systemd/system/xray.service", "[Service]\nExecStart=/usr/bin/xray\n", 0o644)
+		}, ErrServerHasXray, []string{"xray.service unit"}},
+		{"an xray process from somewhere else", func(r *installRig) {
+			r.sb.put("/proc/4321/comm", "xray\n", 0o644)
+		}, ErrServerHasXray, []string{"running xray process"}},
+		{"an Xray with a CA file of ours and no marker", func(r *installRig) {
+			r.sb.put("/etc/nasnet-agent/ca.crt", string(r.ca.CertPEM()), 0o644)
+			r.sb.put("/usr/local/bin/xray", "#!/bin/sh\n", 0o755)
+		}, ErrServerHasXray, []string{"/usr/local/bin/xray"}},
 		{"a login that isn't root and no sudo", func(r *installRig) {
 			r.shell.root = false
 			r.sb.without("sudo")
@@ -445,10 +471,12 @@ func TestAnInstallOverTheHubsOwnAgentIsARepair(t *testing.T) {
 	if _, err := r.install(); err != nil {
 		t.Fatal(err)
 	}
-	// the agent runs, holding its port; Xray was pushed over the link and holds the entry's
+	// the agent runs, holding its port; Xray was pushed over the link and holds the entry's,
+	// and runs under the unit the install wrote, which the marker vouches for
 	r.sb.listening(443, "xray")
 	r.sb.put("/usr/local/bin/xray", "#!/bin/sh\n", 0o755)
 	r.sb.put("/usr/local/etc/xray/config.json", "{}", 0o644)
+	r.sb.put("/proc/4243/comm", "xray\n", 0o644)
 	oldKey, oldCert := r.sb.read("/etc/nasnet-agent/server.key"), r.sb.read("/etc/nasnet-agent/server.crt")
 	var first marker
 	json.Unmarshal([]byte(r.sb.read("/var/lib/nasnet-agent/remote-nodes.json")), &first)
@@ -459,7 +487,7 @@ func TestAnInstallOverTheHubsOwnAgentIsARepair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a repair of this hub's own agent: %v", err)
 	}
-	if !res.Repaired || !res.Changed || res.ForeignXray {
+	if !res.Repaired || !res.Changed {
 		t.Errorf("result %+v", res)
 	}
 	if d := r.lastStep(StepCheckServer).Detail; !strings.Contains(d, "agent already installed") {
@@ -497,32 +525,30 @@ func TestARepairStillStopsForSomeoneElseOnItsPorts(t *testing.T) {
 	}
 }
 
-// A server that has Xray already keeps it: the marker says the install didn't
-// put it there, so taking the agent away never takes it.
-func TestAnInstallLeavesAForeignXrayAlone(t *testing.T) {
+// The Xray an install finds on a server isn't left to run beside the node's:
+// both want the same paths and the same service. The install stops before it
+// writes anything, and says what it found.
+func TestAnInstallRefusesAServerThatRunsItsOwnXray(t *testing.T) {
 	r := newInstallRig(t)
 	r.sb.put("/usr/local/bin/xray", "#!/bin/sh\necho theirs\n", 0o755)
 	r.sb.put("/etc/systemd/system/xray.service", "[Service]\nExecStart=/their/xray\n", 0o644)
 	r.sb.put("/usr/local/etc/xray/config.json", `{"theirs":true}`, 0o644)
-	res, err := r.install()
-	if err != nil {
-		t.Fatal(err)
+	r.sb.put("/proc/812/comm", "xray\n", 0o644)
+	before := r.sb.snapshot()
+	_, err := r.install()
+	if !errors.Is(err, ErrServerHasXray) {
+		t.Fatalf("err = %v", err)
 	}
-	if !res.ForeignXray {
-		t.Error("the result doesn't say Xray was already there")
-	}
-	for p, want := range map[string]string{
-		"/usr/local/bin/xray": "#!/bin/sh\necho theirs\n", "/etc/systemd/system/xray.service": "[Service]\nExecStart=/their/xray\n",
-		"/usr/local/etc/xray/config.json": `{"theirs":true}`,
-	} {
-		if got := r.sb.read(p); got != want {
-			t.Errorf("%s was changed to %q", p, got)
+	for _, s := range []string{"/usr/local/bin/xray", "an xray.service unit", "a running xray process"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("%q doesn't name %q", err, s)
 		}
 	}
-	var mk marker
-	json.Unmarshal([]byte(r.sb.read("/var/lib/nasnet-agent/remote-nodes.json")), &mk)
-	if mk.XrayBinary || mk.XrayUnit || mk.XrayConfig || !mk.Agent {
-		t.Errorf("marker %+v: the install claims what it didn't add", mk)
+	if d := diff(before, r.sb.snapshot()); len(d) != 0 {
+		t.Errorf("the server changed:\n%s", strings.Join(d, "\n"))
+	}
+	if r.sb.exists("/var/lib/nasnet-agent/remote-nodes.json") {
+		t.Error("a marker was written")
 	}
 }
 

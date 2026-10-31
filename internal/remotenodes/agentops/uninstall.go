@@ -5,6 +5,7 @@ package agentops
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
@@ -14,7 +15,8 @@ import (
 // the binary, the firewall rules the install opened, the kernel setting the
 // install made (its file always, and the live value if it is still the
 // install's), and Xray's binary, service and config only where the marker says
-// the install put them there.
+// the install put them there. A service the marker claims is taken, and Xray
+// stopped, only while the unit file is still the one the install wrote.
 // It never touches a server's own Xray, and it leaves a server's other agent
 // alone: an agent that trusts another hub's CA is ErrOtherHub.
 //
@@ -39,6 +41,26 @@ func (e *Env) Uninstall(ctx context.Context, node model.Node, login Login, progr
 	return err
 }
 
+// UndoInstall takes off a server what an install that failed put there, with
+// the login the install was given, as one step (StepCleanServer). It is
+// Uninstall under another name: the marker says what the install added, and
+// only that goes. A server the install never got to change has nothing on it
+// to take, and that is no failure.
+func (e *Env) UndoInstall(ctx context.Context, node model.Node, login Login, progress Progress) error {
+	if e.CA == nil {
+		return ErrNoCA
+	}
+	done := newStepper(progress).begin(StepCleanServer)
+	u := &uninstall{e: e, node: node, st: newStepper(nil)}
+	err := scrub(u.run(ctx, login), login.secrets())
+	if err != nil {
+		e.log().Warn("cleaning up after a failed install failed", "node", node.ID, "host", node.Host, "error", err)
+	} else {
+		e.log().Info("cleaned up after a failed install", "node", node.ID, "host", node.Host)
+	}
+	return done(u.said, err)
+}
+
 type uninstall struct {
 	e    *Env
 	node model.Node
@@ -47,7 +69,8 @@ type uninstall struct {
 
 	// what the marker says the install added
 	mk       marker
-	xrayLeft bool // a foreign Xray stays
+	xrayLeft bool   // a foreign Xray stays
+	said     string // what the last step said, for UndoInstall's one step
 }
 
 func (u *uninstall) run(ctx context.Context, login Login) error {
@@ -77,7 +100,8 @@ func (u *uninstall) tidy(ctx context.Context) error {
 	u.st.skip(StepStopAgent, "")
 	done := u.st.begin(StepRemoveAgent)
 	_, err := u.s.root(ctx, "Couldn't tidy the server", cmdRmEmpty, nil)
-	return done("Nothing of the agent was left", err)
+	u.said = "Nothing of the agent was left"
+	return done(u.said, err)
 }
 
 // check looks at the server and decides whose it is. It reports false when
@@ -110,6 +134,15 @@ func (u *uninstall) inspect(ctx context.Context) (bool, string, error) {
 		// install may or may not have put there, stays
 		u.mk = marker{Agent: true}
 	}
+	if u.mk.XrayUnit {
+		// a unit that isn't the install's own any more is someone else's now, and
+		// so is the Xray it runs: stopping it would stop theirs
+		out, err := u.s.root(ctx, "Couldn't read Xray's service", cmdXrayUnit, nil)
+		if err != nil {
+			return false, "", err
+		}
+		u.mk.XrayUnit = strings.TrimSpace(out) == strings.TrimSpace(xrayUnitText)
+	}
 	u.xrayLeft = (state.present[xrayBin] && !u.mk.XrayBinary) || (state.present[xrayUnitPath] && !u.mk.XrayUnit) ||
 		(state.present[xrayConfPath] && !u.mk.XrayConfig)
 	return true, "", nil
@@ -134,7 +167,9 @@ func (u *uninstall) stop(ctx context.Context) error {
 // removal cut short still knows what it was doing.
 func (u *uninstall) remove(ctx context.Context) error {
 	done := u.st.begin(StepRemoveAgent)
-	return done(u.removeAll(ctx))
+	said, err := u.removeAll(ctx)
+	u.said = said
+	return done(said, err)
 }
 
 func (u *uninstall) removeAll(ctx context.Context) (string, error) {

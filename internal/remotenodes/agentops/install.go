@@ -29,9 +29,6 @@ type InstallResult struct {
 	AgentVersion string // as the running agent reports it
 	XrayVersion  string // empty until Xray is pushed
 	NodeUUID     string
-	// ForeignXray: the server already had Xray, which stays as it is until
-	// the pinned build is pushed over it.
-	ForeignXray bool
 
 	CertSerial    string
 	CertNotBefore time.Time
@@ -45,11 +42,15 @@ type InstallResult struct {
 //
 // It looks before it touches anything: the server's architecture, systemd,
 // the tools it needs, whether the agent's port and the entry port are free,
-// and whether an agent is there already. An agent that trusts another hub's CA
-// stops it (ErrOtherHub), since a node belongs to one hub; one that trusts
-// this hub's is a repair and is put back in order, with its certificate,
+// and whether an agent or an Xray is there already. An agent this plugin did
+// not install stops it (ErrServerHasAgent), whether it trusts another hub's CA
+// or nobody vouches for it, since a node belongs to one hub. So does an Xray
+// this plugin did not install (ErrServerHasXray): its binary at the standard
+// path, an xray.service unit or a running xray process, since the install
+// would take over its paths and its service. One that this hub's marker
+// vouches for is a repair and is put back in order, with its certificate,
 // config and binary replaced. A failure afterwards leaves what it had done,
-// which Uninstall takes away.
+// which UndoInstall and Uninstall take away.
 //
 // The login, port, user and host key to hold the server to come from login and
 // node. A login is used for this call and not kept.
@@ -177,12 +178,20 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 		return "", err
 	}
 	mine, other := in.state.ownership(in.e.CA.Certificate())
-	if other {
-		return "", newErr(ErrOtherHub, nil, "This server already runs an agent that trusts another hub. A node belongs to one hub: remove that agent first, or use another server.")
+	switch {
+	case other:
+		return "", newErr(ErrServerHasAgent, nil, "This server already runs an agent that trusts another hub. A node belongs to one hub: use a server without one, or remove that agent first.")
+	case !mine && (in.state.present[agentBin] || in.state.present[agentUnitPath]):
+		return "", newErr(ErrServerHasAgent, nil, "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.")
+	}
+	// only the marker vouches for an Xray: the CA file alone says nothing of it
+	if in.state.marker == nil || !mine {
+		if err := in.checkNoXray(ctx); err != nil {
+			return "", err
+		}
 	}
 	in.repair = mine
 	in.res.Repaired = mine
-	in.res.ForeignXray = in.state.present[xrayBin] && !(in.state.marker != nil && in.state.marker.XrayBinary)
 
 	in.listen = s.listeners(ctx)
 	if err := in.checkPorts(); err != nil {
@@ -204,6 +213,31 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 		detail += " · agent already installed"
 	}
 	return detail, nil
+}
+
+// checkNoXray stops the install on a server that runs an Xray of its own.
+// The install writes Xray's binary, config and service at the standard paths,
+// so it would take that one over, and removing the node would take it away.
+func (in *install) checkNoXray(ctx context.Context) error {
+	out, err := in.s.run(ctx, "Couldn't look for Xray on the server", cmdXraySigns)
+	if err != nil {
+		return err
+	}
+	unit, process := xraySigns(out)
+	var found []string
+	if in.state.present[xrayBin] {
+		found = append(found, xrayBin)
+	}
+	if unit {
+		found = append(found, "an xray.service unit")
+	}
+	if process {
+		found = append(found, "a running xray process")
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return newErr(ErrServerHasXray, nil, "This server already runs an Xray that Remote Nodes did not install (%s). Use a server without one.", strings.Join(found, ", "))
 }
 
 func orUnknown(s string) string {

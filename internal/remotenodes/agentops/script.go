@@ -124,7 +124,29 @@ var (
 	cmdSetRetries2 = "echo " + shq(retries2Want) + " > " + shq(retries2Path)
 	// cmdMkSysctlDir only makes the folder where a server has none.
 	cmdMkSysctlDir = "mkdir -p -m 0755 " + shq(sysctlDir)
+
+	// cmdXraySigns says whether the server has an Xray beyond its binary: a
+	// unit named xray.service wherever systemd keeps it, and a process named
+	// xray. Neither needs root, and neither needs pgrep, which small images
+	// leave out.
+	cmdXraySigns = "systemctl cat xray.service >/dev/null 2>&1 && echo unit; " +
+		"cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true"
+	// cmdXrayUnit reads the unit at the path the install writes its own to.
+	cmdXrayUnit = "cat " + shq(xrayUnitPath) + " 2>/dev/null || true"
 )
+
+// xraySigns reads cmdXraySigns' answer.
+func xraySigns(out string) (unit, process bool) {
+	for _, line := range strings.Split(out, "\n") {
+		switch strings.TrimSpace(line) {
+		case "unit":
+			unit = true
+		case "process":
+			process = true
+		}
+	}
+	return unit, process
+}
 
 // cmdPresent names which of the paths the install cares about are there
 // already: a foreign Xray, or an agent from an earlier install.

@@ -116,34 +116,96 @@ func TestUninstallPutsAServerBackAsItWas(t *testing.T) {
 	}
 }
 
-// A server that had Xray before: the install leaves it, the marker says so,
-// and so does the removal. What the agent wrote for Xray's service is the
-// agent's, and goes.
-func TestUninstallNeverTakesAForeignXray(t *testing.T) {
-	r := newInstallRig(t)
-	r.sb.decoys()
+// asOlderInstallOverTheirXray makes a server look as an install from before
+// installs refused a server's own Xray left it: their Xray at its paths, and a
+// marker that claims none of it.
+func (r *installRig) asOlderInstallOverTheirXray() {
+	r.t.Helper()
 	r.sb.put("/usr/local/bin/xray", "#!/bin/sh\necho theirs\n", 0o755)
 	r.sb.put("/etc/systemd/system/xray.service", "[Service]\nExecStart=/their/xray\n", 0o644)
 	r.sb.put("/usr/local/etc/xray/config.json", `{"theirs":true}`, 0o644)
-	before := r.sb.snapshot()
+	mk, err := parseMarker(r.sb.read("/var/lib/nasnet-agent/remote-nodes.json"))
+	if err != nil || mk == nil {
+		r.t.Fatal(err)
+	}
+	mk.XrayBinary, mk.XrayUnit, mk.XrayConfig = false, false, false
+	r.sb.put("/var/lib/nasnet-agent/remote-nodes.json", string(mk.bytes()), 0o644)
+}
 
+// A server whose Xray was its own before an older install keeps it when the
+// node is removed: its binary, config and service stay, and it keeps running.
+// What the agent wrote for Xray's service is the agent's, and goes.
+func TestUninstallNeverTakesAForeignXray(t *testing.T) {
+	r := newInstallRig(t)
+	r.sb.decoys()
+	theirs := map[string]string{
+		"/usr/local/bin/xray": "#!/bin/sh\necho theirs\n", "/etc/systemd/system/xray.service": "[Service]\nExecStart=/their/xray\n",
+		"/usr/local/etc/xray/config.json": `{"theirs":true}`,
+	}
 	if _, err := r.install(); err != nil {
 		t.Fatal(err)
 	}
+	r.asOlderInstallOverTheirXray()
 	// the agent wrote its drop-in for their service
 	r.sb.put("/etc/systemd/system/xray.service.d/asset-location.conf", "[Service]\nEnvironment=XRAY_LOCATION_ASSET=/usr/local/etc/xray\n", 0o644)
 	r.steps = nil
 	if err := r.uninstall(); err != nil {
 		t.Fatal(err)
 	}
-	if d := diff(before, r.sb.snapshot()); len(d) != 0 {
-		t.Errorf("the server isn't as it was:\n%s", strings.Join(d, "\n"))
+	for p, want := range theirs {
+		if got := r.sb.read(p); got != want {
+			t.Errorf("%s is now %q, want theirs %q", p, got, want)
+		}
+	}
+	if r.sb.exists("/etc/systemd/system/xray.service.d/asset-location.conf") || !r.sb.exists("/etc/systemd/system/xray.service.d/their-own.conf") {
+		t.Error("the agent's drop-in should go, and theirs stay")
 	}
 	if log := r.sb.read("/systemctl.log"); strings.Contains(log, "disable --now xray") {
 		t.Errorf("their Xray was stopped:\n%s", log)
 	}
 	if d := r.lastStep(StepRemoveAgent).Detail; !strings.Contains(d, "Xray") || !strings.Contains(d, "left") {
 		t.Errorf("the page isn't told that Xray stayed: %q", d)
+	}
+}
+
+// The marker can claim Xray's service when the unit at its path is someone
+// else's by now, or gone. Then it is not the install's to stop or take: the
+// Xray it runs is theirs.
+func TestUninstallLeavesAnXrayServiceThatIsNoLongerTheInstalls(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		unit string // "" for none
+	}{
+		{"replaced by their own", "[Service]\nExecStart=/opt/their/xray run -c /opt/their/config.json\n"},
+		{"gone", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newInstallRig(t)
+			if _, err := r.install(); err != nil {
+				t.Fatal(err)
+			}
+			mk, err := parseMarker(r.sb.read("/var/lib/nasnet-agent/remote-nodes.json"))
+			if err != nil || mk == nil || !mk.XrayUnit {
+				t.Fatalf("the marker should claim the unit: %+v, %v", mk, err)
+			}
+			os.Remove(r.sb.path("/etc/systemd/system/xray.service"))
+			if c.unit != "" {
+				r.sb.put("/etc/systemd/system/xray.service", c.unit, 0o644)
+			}
+			os.Remove(r.sb.path("/systemctl.log"))
+			if err := r.uninstall(); err != nil {
+				t.Fatal(err)
+			}
+			if log := r.sb.read("/systemctl.log"); strings.Contains(log, "disable --now xray") {
+				t.Errorf("their Xray was stopped:\n%s", log)
+			}
+			if got := r.sb.read("/etc/systemd/system/xray.service"); got != c.unit {
+				t.Errorf("the unit is now %q, want %q", got, c.unit)
+			}
+			if r.sb.exists("/usr/local/bin/nasnet-agent") || r.sb.exists("/var/lib/nasnet-agent") {
+				t.Error("the agent is still there")
+			}
+		})
 	}
 }
 
@@ -168,7 +230,7 @@ func TestUninstallTakesWhatTheMarkerSaysAndNothingElse(t *testing.T) {
 			}
 			r.sb.put("/usr/local/bin/xray", "x", 0o755)
 			r.sb.put("/usr/local/etc/xray/config.json", "{}", 0o644)
-			r.sb.put("/etc/systemd/system/xray.service", "[Service]\n", 0o644)
+			r.sb.put("/etc/systemd/system/xray.service", xrayUnitText, 0o644)
 			mk, err := parseMarker(r.sb.read("/var/lib/nasnet-agent/remote-nodes.json"))
 			if err != nil || mk == nil {
 				t.Fatal(err)
@@ -407,6 +469,116 @@ func TestAnInstallThatDiesAnywhereCanBeUninstalled(t *testing.T) {
 				t.Error("a service still runs")
 			}
 		})
+	}
+}
+
+func (r *installRig) undo() error {
+	r.t.Helper()
+	return r.env.UndoInstall(context.Background(), r.node, r.login, r.progress)
+}
+
+// UndoInstall is what the hub runs in the job of an install that failed, with
+// the login it was given. Wherever the install died, the server comes out as
+// it was, and the page sees one step for it.
+func TestUndoingAnInstallThatDiedAnywhereLeavesTheServerAsItWas(t *testing.T) {
+	probe := newInstallRig(t)
+	if _, err := probe.install(); err != nil {
+		t.Fatal(err)
+	}
+	total := len(probe.sb.commands())
+	for n := 1; n <= total; n++ {
+		t.Run(fmt.Sprintf("dies at command %d", n), func(t *testing.T) {
+			t.Parallel()
+			r := newInstallRig(t)
+			r.sb.decoys()
+			r.sb.withUFW(true, 22)
+			before := r.sb.snapshot()
+			rules := r.sb.read("/ufw.rules")
+			calls := 0
+			r.shell.failOn = func(string) error {
+				if calls++; calls == n {
+					return errors.New("connection lost")
+				}
+				return nil
+			}
+			if _, err := r.install(); err != nil && errors.Is(err, ErrServerHasXray) {
+				t.Fatalf("a clean server was taken for one with Xray: %v", err)
+			}
+			r.shell.failOn = nil
+			r.steps = nil
+			if err := r.undo(); err != nil {
+				t.Fatalf("cleaning up after dying at command %d: %v", n, err)
+			}
+			if d := diff(before, r.sb.snapshot()); len(d) != 0 {
+				t.Errorf("not as it was:\n%s", strings.Join(d, "\n"))
+			}
+			if got := r.sb.read("/ufw.rules"); got != rules {
+				t.Errorf("the firewall: %q, was %q", got, rules)
+			}
+			if r.sb.exists("/active/nasnet-agent") || r.sb.exists("/active/xray") {
+				t.Error("a service still runs")
+			}
+			if names := r.stepNames(); !slices.Equal(names, []string{StepCleanServer}) {
+				t.Errorf("the page saw steps %q", names)
+			}
+			if last := r.lastStep(StepCleanServer); last.State != StateOK {
+				t.Errorf("the step ended %+v", last)
+			}
+		})
+	}
+}
+
+// The cleanup signs in the way the install did, held to the key the person
+// agreed to, and a failure is the step's: the job then keeps the install.
+func TestUndoingAnInstallUsesItsLoginAndSaysWhenItCant(t *testing.T) {
+	r := newInstallRig(t)
+	r.verifyErr = errors.New("the agent doesn't answer")
+	if _, err := r.install(); err == nil {
+		t.Fatal("the install should fail")
+	}
+	r.mu.Lock()
+	r.targets = nil
+	r.mu.Unlock()
+	r.shows = "SHA256:someone-else"
+	r.steps = nil
+	err := r.undo()
+	if !errors.Is(err, ErrHostKeyChanged) {
+		t.Fatalf("a changed key: %v", err)
+	}
+	if last := r.lastStep(StepCleanServer); last.State != StateFailed || last.Detail != err.Error() {
+		t.Errorf("the step ended %+v", last)
+	}
+	if !r.sb.exists("/usr/local/bin/nasnet-agent") {
+		t.Error("something was taken from a server whose key didn't match")
+	}
+	r.mu.Lock()
+	tg := r.targets
+	r.mu.Unlock()
+	if len(tg) != 1 || tg[0].HostKey != pinnedKey || tg[0].Password != "hunter2" || tg[0].Port != 22 || tg[0].User != "root" {
+		t.Errorf("signed in as %+v", tg)
+	}
+	r.shows = pinnedKey
+	if err := r.undo(); err != nil {
+		t.Fatal(err)
+	}
+	if r.sb.exists("/usr/local/bin/nasnet-agent") || r.sb.exists("/var/lib/nasnet-agent") {
+		t.Error("the agent is still there")
+	}
+}
+
+// A server the install never got to change is clean already.
+func TestUndoingAnInstallThatChangedNothingIsFine(t *testing.T) {
+	r := newInstallRig(t)
+	r.sb.decoys()
+	before := r.sb.snapshot()
+	if err := r.undo(); err != nil {
+		t.Fatal(err)
+	}
+	if d := diff(before, r.sb.snapshot()); len(d) != 0 {
+		t.Errorf("changed: %v", d)
+	}
+	if last := r.lastStep(StepCleanServer); last.State != StateOK || !strings.Contains(last.Detail, "Nothing") {
+		t.Errorf("the step ended %+v", last)
 	}
 }
 
