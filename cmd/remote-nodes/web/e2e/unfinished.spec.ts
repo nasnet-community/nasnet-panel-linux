@@ -14,17 +14,19 @@ test.describe('a refused server', () => {
     await openAddNode(page)
     const form = await fillAddNode(page, 'hasxray.example.com')
     await form.getByRole('button', { name: 'Connect and install' }).click()
-    const failed = dialog(page, 'Installation failed')
+    // titled for what it is, with the reason on the line under it, once, in the page's words
+    const failed = dialog(page, "This server can't be used")
     await expect(failed).toBeVisible({ timeout: 20000 })
-    await expect(failed).toContainText('Failed at step 1 of 16')
-    // the step has the hub's sentence, with what it found, and the page says it in its own words
-    await expect(failed).toContainText('(/usr/local/bin/xray, an xray.service unit)')
+    await expect(failed).toContainText('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')
+    // what was found, said by the page from what the hub sent
+    await expect(failed).toContainText('its service, xray.service')
+    await expect(failed).toContainText("It is Xray 26.9.1, not the same build as this plugin's")
     // the router reached the server to find it, so the domestic list is not the matter
     await expect(failed).not.toContainText('Domestic link')
-    await expect(failed.getByRole('alert')).toHaveText('This server already runs an Xray that Remote Nodes did not install. Use a server without one.')
     await expect(failed).toContainText('Nothing was changed on the server, and nothing was kept.')
+    // nothing was made or changed, so there is no cleanup and no node that was forgotten
     await expect(failed.getByText('Clean up the server')).toHaveCount(0)
-    await expect(failed.getByText('Discard the node')).toBeVisible()
+    await expect(failed.getByText('Discard the node')).toHaveCount(0)
     await expect(page.getByText('2 of 3 nodes')).toBeVisible()
   })
 
@@ -32,10 +34,10 @@ test.describe('a refused server', () => {
     await openAddNode(page)
     const form = await fillAddNode(page, 'hasagent.example.com')
     await form.getByRole('button', { name: 'Connect and install' }).click()
-    const failed = dialog(page, 'Installation failed')
+    const failed = dialog(page, "This server can't be used")
     await expect(failed).toBeVisible({ timeout: 20000 })
-    await expect(failed.getByRole('alert')).toHaveText(
-      "This server already runs an agent that Remote Nodes did not install, such as a Linux panel's node. Use a server without one.",
+    await expect(failed).toContainText(
+      "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
     )
     await expect(failed).toContainText('Nothing was changed on the server, and nothing was kept.')
   })

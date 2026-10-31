@@ -19,14 +19,24 @@
 //   address contains "offline" -> the host key check can't connect
 //   address contains "changed" -> the host key differs from last time
 //   address contains "fail"    -> fails at "Check the agent" (dial timeout), then cleans the server up
+//   address contains "unreach" -> the same, and the job has the code node_unreachable, which the page words
 //   address contains "late"    -> fails at "Choose a handshake target", then cleans the server up
-//   address contains "hasxray" -> refused at "Check the server": it runs an Xray of its own (server_has_xray)
+//   address contains "hasxray" -> refused at "Check the server": it runs an Xray of its own (server_has_xray),
+//                                 version 26.9.1 and not the pinned build ("hasxraysame": the pinned build);
+//                                 with takeOverXray in the request the install takes it over and goes on
+//                                 ("notstopped" too: the first takeover finds an Xray still running, xray_not_stopped,
+//                                 and the next try works, as if the person had stopped it)
 //   address contains "hasagent"-> refused at "Check the server": it runs another agent (server_has_agent)
+//   address contains "isnode"  -> refused at "Check the server": it is Node 1 already (server_is_node)
+//   address contains "portbusy"-> refused at "Check the server" while the entry port is 443: nginx has it (port_in_use)
+//   address contains "agentbusy"-> refused at "Check the server": the agent's port is held (port_in_use, role agent)
+//   address contains "nosudo"  -> refused at "Check the server" unless the user is root (needs_root)
+//   address contains "keymoved"-> refused at "Check the server" until the key the server shows now is trusted (host_key_changed)
+//   password "wrong"           -> refused at "Check the server": the server doesn't accept the login (login_refused)
 //   address contains "stuck"   -> fails at "Upload the agent", and the cleanup fails too: the install is
 //                                 kept as unfinished, which only Clean up or Forget takes out
 //   (as the hub does, a failed install leaves no node behind unless its cleanup failed too)
 //   address contains "poll"    -> the job's event stream answers 503, so the page polls
-//   password "wrong"           -> the login is refused before any job starts
 //   an existing address        -> refused: it is already a node here
 //
 // The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished }:
@@ -43,7 +53,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Connect, Plugin } from 'vite'
 import { nodeApi } from './mock-node'
-import type { AgentState, AppConfig, Entry, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
+import type { AgentState, AppConfig, Entry, ErrorInfo, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
 import { subscriptionRoutes } from './mock-subscriptions'
 
 const DAY = 86400e3
@@ -61,6 +71,7 @@ const VERSION = '0.1.0'
 const AGENT = '1.3.0'
 const XRAY = '26.10.21'
 const NEW_KEY = 'SHA256:u3Rq0Q1uV3Jc0mYw7b6o8xk3j2m9Pq5c1f0aZyXwVb8'
+const OLD_KEY = 'SHA256:Zk9wP2mA7sQ1tR4yU6iO8pLhJgFdSaXcVbNmQwErTyU'
 const MAX_SUBSCRIPTIONS = 10
 /** The longest a name may be, in characters, and what the hub says of one that is longer. */
 export const MAX_NAME = 64
@@ -141,6 +152,7 @@ export const STEPS = {
   forgetNode: { key: 'forget_node', name: 'Forget the node' },
   cleanServer: { key: 'clean_server', name: 'Clean up the server' },
   discardNode: { key: 'discard_node', name: 'Discard the node' },
+  takeOverXray: { key: 'take_over_xray', name: "Take over the server's Xray" },
 } as const
 
 export let nodes: MockNode[] = []
@@ -190,6 +202,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   const now = Date.now()
   nodes = []
   subs = []
+  stoppedElsewhere.clear()
   nextNodeId = 1
   nextSubId = 1
   maxNodes = o.maxNodes ?? 3
@@ -537,6 +550,8 @@ export interface Recovery {
   /** the job's error, from the failed step's text and whether the steps worked */
   error: (cause: string, worked: boolean) => string
   code?: string
+  /** the facts that go with the code */
+  info?: ErrorInfo
 }
 
 export function startJob(
@@ -560,11 +575,12 @@ export function startJob(
     noStream: !!o.noStream,
   }
   jobs.set(j.view.id, j)
-  const finish = (error?: string, code?: string) => {
+  const finish = (error?: string, code?: string, info?: ErrorInfo) => {
     o.end?.()
     j.view.state = error ? 'failed' : 'ok'
     if (error) j.view.error = error
     if (code) j.view.code = code
+    if (info) j.view.errorInfo = info
     j.view.finishedAt = iso(Date.now())
     emit(j)
   }
@@ -580,7 +596,7 @@ export function startJob(
         break
       }
     }
-    finish(r.error(failed.fail || '', worked), r.code)
+    finish(r.error(failed.fail || '', worked), r.code, r.info)
   }
   // runs one step; false when it failed
   const runStep = async (step: Step) => {
@@ -645,16 +661,33 @@ function streamJob(req: IncomingMessage, res: ServerResponse, j: MockJob) {
 const NOTHING_CHANGED = 'Nothing was changed on the server, and nothing was kept.'
 const CLEANED = 'The server was cleaned up and nothing was kept.'
 const KEPT = 'Cleaning up the server failed too, so the install is kept as unfinished: clean it up or forget it on the Nodes tab.'
-const XRAY_HERE = 'This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray, an xray.service unit). Use a server without one.'
+const TOOK_OVER = "The server's own Xray was stopped and removed, as you asked, and is not restored."
+const xrayHere = (version: string, same: boolean) =>
+  `This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray, an xray.service unit). It is Xray ${version}, ${same ? 'the same build as' : 'not the same build as'} this plugin's. Use a server without one, or take it over.`
 const AGENT_HERE = "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one."
+const STILL_RUNNING = 'An Xray is still running on this server after its service was stopped, for example in a container. Stop it there, or use another server. Its service was started again.'
 
-// The install is the hub's fifteen steps. The node is saved at the start, as installing, and the job has its
-// id from then on; it is set up at the last step. An install that fails takes off the server what it put
-// there and forgets the node; one that fails before it changed anything only forgets it. When the cleanup
-// fails too, the record is kept as an unfinished install.
+/** Hosts whose takeover has found an Xray still running once: the next try finds none, as if the person had stopped it. */
+const stoppedElsewhere = new Set<string>()
+
+/** Why an install is stopped at one of its first steps, and what the hub says of it. */
+interface Refusal {
+  cause: string
+  code: string
+  info?: ErrorInfo
+  /** "check" for "Check the server", "takeover" for the takeover's step */
+  at: 'check' | 'takeover'
+}
+
+// The install is the hub's fifteen steps, and sixteen when the server's own Xray is to be taken over. The node is
+// saved at the start, as installing, and the job has its id from then on; it is set up at the last step. An install
+// that fails takes off the server what it put there and forgets the node; one that fails before it changed anything
+// only forgets it. When the cleanup fails too, the record is kept as an unfinished install.
 function install(b: Record<string, any>) {
   const host = String(b.host).trim()
   const name = String(b.name || host)
+  const has = (word: string) => host.includes(word)
+  const takeOver = b.takeOverXray === true
   const n = node({
     id: nextNodeId++,
     name,
@@ -670,19 +703,57 @@ function install(b: Record<string, any>) {
   })
   nodes.push(n)
   installing.add(host)
-  const late = host.includes('late')
-  const refused = host.includes('hasxray') ? XRAY_HERE : host.includes('hasagent') ? AGENT_HERE : ''
+  const late = has('late')
+
+  // what the server is, which the install finds out at its first step
+  const xrayThere = has('hasxray')
+  const same = xrayThere && has('same')
+  const xrayVersion = same ? XRAY : '26.9.1'
+  let refusal: Refusal | null = null
+  if (xrayThere && !takeOver) {
+    refusal = { cause: xrayHere(xrayVersion, same), code: 'server_has_xray', info: { found: ['binary', 'unit'], xrayVersion, ...(same ? { sameBuild: true } : {}) }, at: 'check' }
+  } else if (has('hasagent')) {
+    refusal = { cause: AGENT_HERE, code: 'server_has_agent', at: 'check' }
+  } else if (has('isnode')) {
+    refusal = {
+      cause: 'This server is already the node "Node 1" here, under another address. Change that node instead of adding the server again.',
+      code: 'server_is_node',
+      info: { nodeId: 1, nodeName: 'Node 1' },
+      at: 'check',
+    }
+  } else if (has('agentbusy')) {
+    refusal = { cause: 'TCP port 9090, which the agent needs, is already in use on the server by python3. Free it, or pick another port for the node.', code: 'port_in_use', info: { port: 9090, role: 'agent', process: 'python3' }, at: 'check' }
+  } else if (has('portbusy') && n.entryPort === 443) {
+    refusal = { cause: 'TCP port 443, which the entry needs, is already in use on the server by nginx. Free it, or pick another port for the node.', code: 'port_in_use', info: { port: 443, role: 'entry', process: 'nginx' }, at: 'check' }
+  } else if (b.password === 'wrong') {
+    refusal = { cause: "The server didn't accept the login. Check the user name and the password or key.", code: 'login_refused', at: 'check' }
+  } else if (has('nosudo') && n.sshUser !== 'root') {
+    refusal = { cause: "This login isn't root, and the server has no sudo. Sign in as root, or as a user that can use sudo.", code: 'needs_root', at: 'check' }
+  } else if (has('keymoved') && b.hostKey !== NEW_KEY) {
+    refusal = {
+      cause: `The SSH host key of ${host} has changed: it shows ${NEW_KEY}, and ${n.hostKey} is on record. The server may have been set up again, or something sits between it and the router.`,
+      code: 'host_key_changed',
+      info: { pinnedKey: n.hostKey, shownKey: NEW_KEY },
+      at: 'check',
+    }
+  } else if (takeOver && xrayThere && has('notstopped') && !stoppedElsewhere.has(host)) {
+    stoppedElsewhere.add(host)
+    refusal = { cause: STILL_RUNNING, code: 'xray_not_stopped', at: 'takeover' }
+  }
+  // a takeover that has gone through: the server's own Xray is gone, whatever happens next
+  const took = takeOver && xrayThere && refusal === null
+
   const forget = () => {
     const i = nodes.indexOf(n)
     if (i >= 0) nodes.splice(i, 1)
   }
-  // the steps before "Prepare the server" only look at the server
-  const looked = new Set<string>([STEPS.checkServer.name, STEPS.downloadAgent.name, STEPS.createCertificate.name])
+  // the steps before "Prepare the server" only look at the server, and a takeover that stopped has changed nothing
+  const looked = new Set<string>([STEPS.checkServer.name, STEPS.downloadAgent.name, STEPS.createCertificate.name, STEPS.takeOverXray.name])
   const recover = (failed: Step): Recovery => {
-    if (looked.has(failed.name)) {
-      return { steps: [{ ...STEPS.discardNode, ms: 150, then: forget }], error: (cause) => `${cause} ${NOTHING_CHANGED}`, code: refused ? (host.includes('hasxray') ? 'server_has_xray' : 'server_has_agent') : undefined }
+    if (looked.has(failed.name) && !took) {
+      return { steps: [{ ...STEPS.discardNode, ms: 150, then: forget }], error: (cause) => `${cause} ${NOTHING_CHANGED}`, code: refusal?.code, info: refusal?.info }
     }
-    const fails = host.includes('stuck')
+    const fails = has('stuck')
     return {
       steps: [
         { ...STEPS.cleanServer, ms: 500, fail: fails && `Can't reach SSH on ${host} port 22 (dial tcp ${host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.` },
@@ -690,34 +761,56 @@ function install(b: Record<string, any>) {
       ],
       error: (cause, worked) => {
         if (!worked) n.failure = { step: STEPS[stepOf(failed)], error: cause, cleanup: `Can't reach SSH on ${host} port 22 (dial tcp ${host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.`, at: Date.now() }
-        return `${cause} ${worked ? CLEANED : KEPT}`
+        return `${cause} ${worked ? CLEANED : KEPT}${took ? ' ' + TOOK_OVER : ''}`
       },
+      code: has('unreach') ? 'node_unreachable' : undefined,
+      info: took ? { tookOver: true } : undefined,
     }
   }
+  const takeoverStep: Step[] = takeOver
+    ? [
+        {
+          ...STEPS.takeOverXray,
+          detail: !xrayThere
+            ? "There is no Xray of the server's own"
+            : same
+              ? `Xray ${XRAY} was stopped, and its service, 1 drop-in, 1 config file removed. It is the pinned build, so its binary stays.`
+              : `Xray ${xrayVersion} was stopped, and its service, 1 drop-in, 1 config file, its binary removed. Xray ${XRAY} goes on later.`,
+          ms: 400,
+          fail: refusal?.at === 'takeover' && refusal.cause,
+        },
+      ]
+    : []
   const id = startJob(
     'install',
     [
-      { ...STEPS.checkServer, detail: 'amd64 · Debian GNU/Linux 12 (bookworm)', ms: 300, fail: refused },
+      { ...STEPS.checkServer, detail: 'amd64 · Debian GNU/Linux 12 (bookworm)', ms: 300, fail: refusal?.at === 'check' && refusal.cause },
       { ...STEPS.downloadAgent, detail: `v${AGENT} · 18 MB`, ms: 400 },
       { ...STEPS.createCertificate, detail: 'Valid until 2027-10-31', ms: 200 },
+      ...takeoverStep,
       { ...STEPS.prepareServer, ms: 200 },
       {
         ...STEPS.uploadAgent,
         detail: '18.0 MB sent',
         ms: 900,
         progress: { total: '18.0', unit: 'MB' },
-        fail: host.includes('stuck') && "Couldn't upload the agent: the connection broke.",
+        fail: has('stuck') && "Couldn't upload the agent: the connection broke.",
       },
       { ...STEPS.startAgent, ms: 300 },
       {
         ...STEPS.checkAgent,
         detail: `v${AGENT}, managed profile`,
         ms: 300,
-        fail: host.includes('fail') && `The agent doesn't answer on TCP port 9090 (dial tcp ${host}:9090: i/o timeout). The server's firewall (or the provider's) may block it.`,
+        fail: (has('fail') || has('unreach')) && `The agent doesn't answer on TCP port 9090 (dial tcp ${host}:9090: i/o timeout). The server's firewall (or the provider's) may block it.`,
       },
       { ...STEPS.connectAgent, ms: 200 },
-      { ...STEPS.downloadXray, detail: `${XRAY} · 13.6 MB`, ms: 300 },
-      { ...STEPS.uploadXray, detail: '13.6 MB sent', ms: 1200, progress: { total: '13.6', unit: 'MB' } },
+      // the pinned build that the takeover kept is neither fetched nor sent
+      same && took
+        ? { ...STEPS.downloadXray, detail: 'Not needed', ms: 100 }
+        : { ...STEPS.downloadXray, detail: `${XRAY} · 13.6 MB`, ms: 300 },
+      same && took
+        ? { ...STEPS.uploadXray, detail: 'Not needed', ms: 100 }
+        : { ...STEPS.uploadXray, detail: '13.6 MB sent', ms: 1200, progress: { total: '13.6', unit: 'MB' } },
       { ...STEPS.checkXray, detail: `Xray ${XRAY}`, ms: 200 },
       { ...STEPS.chooseTarget, detail: n.handshakeTarget, ms: 300, fail: late && `${n.handshakeTarget} didn't answer from this node` },
       { ...STEPS.createKeys, ms: 200 },
@@ -734,7 +827,7 @@ function install(b: Record<string, any>) {
     {
       nodeId: n.id,
       target: name,
-      noStream: host.includes('poll'),
+      noStream: has('poll'),
       install: { name, host, sshPort: n.sshPort, sshUser: n.sshUser, entryPort: n.entryPort },
       recover,
       end: () => {
@@ -819,8 +912,10 @@ export function mockApi(): Plugin {
           const here = nodes.find((n) => n.host === host && (n.registered || n.failure))
           // only a pinned key makes a host known
           const pinned = here?.hostKey ?? ''
+          // "keymoved": what it showed a moment ago, which the install then finds it no longer shows
+          const first = host.includes('keymoved') ? OLD_KEY : pinned || NEW_KEY
           return send(200, {
-            fingerprint: host.includes('changed') ? NEW_KEY : pinned || NEW_KEY,
+            fingerprint: host.includes('changed') ? NEW_KEY : first,
             status: host.includes('changed') ? 'changed' : pinned ? 'known' : 'new',
           })
         }
@@ -857,9 +952,7 @@ export function mockApi(): Plugin {
           if (!String(body.hostKey ?? '').startsWith('SHA256:')) return fail(400, 'bad_request', "confirm the node's host key first")
           const port = body.entryPort === undefined ? 443 : Number(body.entryPort)
           if (!Number.isInteger(port) || port < 1 || port > 65535 || port === Number(body.sshPort)) return fail(400, 'bad_request', 'the entry port must be 1 to 65535 and differ from the SSH port')
-          // like the hub: the login is tried before the job starts
-          await sleep(700)
-          if (body.password === 'wrong') return fail(400, 'bad_request', 'ssh: unable to authenticate: the password or key was not accepted')
+          await sleep(300)
           return send(202, { jobId: install(body) })
         }
 

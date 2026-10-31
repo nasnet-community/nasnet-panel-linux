@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MutableRefObject } from 'react'
 import { KeyRound } from '../components/icons'
 import { JobSteps } from '../components/job'
 import { useJobs } from '../components/jobs'
@@ -17,9 +17,11 @@ import { Button, Dialog, Disclosure, ErrorBox, Field, Input, useToast } from '..
 import { useConfig } from '../hooks/useConfig'
 import { useNow } from '../hooks/usePoll'
 import { useErrorText, useLang, type T } from '../i18n'
-import { MAX_NAME_LENGTH, api, type InstallForm, type Node, type ProbeResult } from '../lib/api'
-import { installOutcome, realNodes } from '../lib/install'
-import { jobLine } from '../lib/jobs'
+import { MAX_NAME_LENGTH, api, type InstallForm, type InstallRequest, type Job, type Node, type ProbeResult } from '../lib/api'
+import { fixFor, forAnotherTry, withHostKey } from '../lib/fixes'
+import { badPort, installOutcome, realNodes } from '../lib/install'
+import { jobHeader, jobLine } from '../lib/jobs'
+import { FixPanel } from './FixPanel'
 
 type Stage = 'form' | 'hostkey' | 'installing'
 
@@ -52,8 +54,23 @@ function suggestName(all: Node[], t: T) {
   return t('node.defaultName', { n })
 }
 
-/** The port subscriptions connect to: 1 to 65535, and not the one SSH uses. */
-const badPort = (p: number, ssh: number) => !Number.isInteger(p) || p < 1 || p > 65535 || p === ssh
+type Say = ReturnType<typeof useToast>
+
+/**
+ * What happens when an install ends, whether or not this dialog is still open: a toast, and the list is read
+ * again. It is made out here, with nothing of the dialog's scope, because the job tray keeps it for as long as
+ * the page lives, and it must not keep what the dialog holds: the install that was sent, login and all. A
+ * good install no longer needs it, so it is let go of here.
+ */
+function installEnded(name: string, toast: Say, t: T, held: MutableRefObject<InstallRequest | null>, onInstalled: () => void) {
+  return (j: Job) => {
+    if (j.state === 'ok') {
+      held.current = null
+      toast(t('job.install.ok', { target: name }))
+    } else toast(t('job.installFailed'), 'error')
+    onInstalled()
+  }
+}
 
 function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }: Props) {
   const { t, fmt } = useLang()
@@ -64,7 +81,9 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   const entryOn = useConfig()?.entry.on
   const suggested = suggestName(nodes ?? [], t)
   const [form, setForm] = useState(() =>
-    initial ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443) } : { host: '', name: '', entryPort: '443' },
+    initial
+      ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443), takeOver: false }
+      : { host: '', name: '', entryPort: '443', takeOver: false },
   )
   const [login, setLogin] = useState<LoginForm>(() => (initial ? emptyLogin(initial.sshPort || 22, initial.sshUser || lastUser) : emptyLogin(22, lastUser)))
   const [stage, setStage] = useState<Stage>('form')
@@ -72,37 +91,57 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   const [ackChanged, setAckChanged] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fixError, setFixError] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   // the name the install goes with, fixed at submit: the suggestion moves on once the node is in the list
   const [named, setNamed] = useState('')
   const job = jobs.get(jobId)
 
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  // The install as it was sent, login and all, so that a fix can send it again with one change. It is kept
+  // here, in memory, for as long as this dialog is open and its install can still fail: it is let go of when
+  // the install works, when nothing can be done about a failure, and when the dialog closes. It is never
+  // written anywhere, and nothing but this dialog and the panel it hands it to ever reads it.
+  const held = useRef<InstallRequest | null>(null)
+  // an install waiting for a host key to be trusted, and the stage Back goes to
+  const waiting = useRef<{ req: InstallRequest; back: Stage } | null>(null)
+  useEffect(
+    () => () => {
+      held.current = null
+      waiting.current = null
+    },
+    [],
+  )
+  useEffect(() => {
+    if (job && job.state !== 'running' && (job.state === 'ok' || !fixFor(job))) held.current = null
+  }, [job?.state, job?.code])
 
-  const install = async (fingerprint: string, name: string) => {
+  const set = (k: 'host' | 'name' | 'entryPort') => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+
+  /** Sends the install, from the form or from a fix, and follows it in this dialog. */
+  const begin = async (req: InstallRequest, from: 'form' | 'fix') => {
     setBusy(true)
     setError(null)
+    setFixError(null)
     try {
-      const { jobId } = await api.install({
-        ...toLogin(login, fingerprint),
-        host: form.host.trim(),
-        name,
-        entryPort: Number(form.entryPort),
-      })
-      // the secrets have gone; nothing needs them again
+      const { jobId: id } = await api.install(req)
+      held.current = req
+      waiting.current = null
+      // the secrets are kept in `held` and nowhere else
       setLogin(withoutSecrets)
-      setJobId(jobId)
+      setNamed(req.name)
+      setJobId(id)
       setStage('installing')
       onStarted()
       // reported here even when the dialog is closed by then
-      jobs.watch(jobId, (j) => {
-        if (j.state === 'ok') toast(t('job.install.ok', { target: name }))
-        else toast(t('job.installFailed'), 'error')
-        onInstalled()
-      })
+      jobs.watch(id, installEnded(req.name, toast, t, held, onInstalled))
     } catch (e) {
-      setError(errorText(e))
-      setStage('form')
+      if (from === 'form') {
+        setError(errorText(e))
+        setStage('form')
+      } else {
+        setFixError(errorText(e))
+        setStage('installing')
+      }
     } finally {
       setBusy(false)
     }
@@ -124,11 +163,14 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       const probe = await api.probe({ host: form.host.trim(), sshPort: ssh, sshUser: login.sshUser.trim() })
       setKey(probe)
       setAckChanged(false)
+      const req: InstallRequest = { ...toLogin(login, probe.fingerprint), host: form.host.trim(), name: chosen, entryPort: Number(form.entryPort) }
+      if (form.takeOver) req.takeOverXray = true
       // a first key is pinned as it is, like ssh does; only a changed one stops to ask
       if (!keyNeedsTrust(probe)) {
         setBusy(false)
-        await install(probe.fingerprint, chosen)
+        await begin(req, 'form')
       } else {
+        waiting.current = { req, back: 'form' }
         setStage('hostkey')
         setBusy(false)
       }
@@ -138,14 +180,56 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
     }
   }
 
+  /** A fix: the install that was sent, with this change, sent again. For another server its key is read first. */
+  const resend = async (change: (r: InstallRequest) => InstallRequest, probe = false) => {
+    const before = held.current
+    if (!before || busy) return
+    const next = change(before)
+    if (!probe) return begin(next, 'fix')
+    setBusy(true)
+    setFixError(null)
+    try {
+      const seen = await api.probe({ host: next.host, sshPort: next.sshPort, sshUser: next.sshUser })
+      setKey(seen)
+      setAckChanged(false)
+      const req = withHostKey(next, seen.fingerprint)
+      if (keyNeedsTrust(seen)) {
+        waiting.current = { req, back: 'installing' }
+        setStage('hostkey')
+        setBusy(false)
+        return
+      }
+      setBusy(false)
+      await begin(req, 'fix')
+    } catch (e) {
+      setFixError(errorText(e))
+      setBusy(false)
+    }
+  }
+
+  /** Back to the form with what was sent, but not the login: the person types that again. */
+  const changeDetails = () => {
+    held.current = null
+    waiting.current = null
+    setJobId(null)
+    setError(null)
+    setFixError(null)
+    setStage('form')
+  }
+
+  // what the panel is told of it: where it was sent and how it signs in, and none of the secrets
+  const sent = held.current ? { sshPort: held.current.sshPort, sshUser: held.current.sshUser, hostKey: held.current.hostKey } : null
   const finished = job && job.state !== 'running'
+  const failed = finished && job.state === 'failed'
+  const fix = failed ? fixFor(job) : null
+  const header = failed ? jobHeader(t, fmt, job, '', now) : null
   const title =
     stage !== 'installing'
       ? t('add.title')
       : job?.state === 'ok'
         ? t('job.installDone')
-        : job?.state === 'failed'
-          ? t('job.installFailed')
+        : header
+          ? header.title
           : t('job.install.running', { target: job?.target || named || suggested })
 
   const footer =
@@ -158,8 +242,24 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       </>
     ) : stage === 'hostkey' ? (
       <>
-        <Button onClick={() => setStage('form')}>{t('add.back')}</Button>
-        <Button variant="danger" disabled={!key || !keyTrusted(key, ackChanged)} busy={busy} onClick={() => key && install(key.fingerprint, named)}>
+        <Button
+          onClick={() => {
+            const back = waiting.current?.back ?? 'form'
+            waiting.current = null
+            setStage(back)
+          }}
+        >
+          {t('add.back')}
+        </Button>
+        <Button
+          variant="danger"
+          disabled={!key || !keyTrusted(key, ackChanged)}
+          busy={busy}
+          onClick={() => {
+            const w = waiting.current
+            if (w && key) void begin(withHostKey(w.req, key.fingerprint), w.back === 'form' ? 'form' : 'fix')
+          }}
+        >
           {t('add.trust')}
         </Button>
       </>
@@ -168,27 +268,24 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
         {t('job.openNode')}
       </Button>
     ) : finished && installOutcome(job) === 'kept' && job.nodeId ? (
-      // its server waits for a cleanup, so another try can't start yet
+      // its server waits for a cleanup, so another try can't start yet; the details can still be changed
       <>
         <Button onClick={onClose}>{t('common.close')}</Button>
+        <Button onClick={changeDetails}>{t('add.changeDetails')}</Button>
         <Button variant="primary" onClick={() => onOpenNode(job.nodeId!)}>
           {t('job.openUnfinished')}
         </Button>
       </>
     ) : finished ? (
-      // the form as it was sent; the login's secrets are typed again
+      // the install as it was sent can go again as it was, and the details can be changed: the login is typed again
       <>
         <Button onClick={onClose}>{t('common.close')}</Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setJobId(null)
-            setError(null)
-            setStage('form')
-          }}
-        >
-          {t('add.tryAgain')}
-        </Button>
+        <Button onClick={changeDetails}>{t('add.changeDetails')}</Button>
+        {held.current && (fix?.kind === 'again' || fix?.kind === 'port') && (
+          <Button variant="primary" busy={busy} onClick={() => void resend(forAnotherTry)}>
+            {t('job.tryAgain')}
+          </Button>
+        )}
       </>
     ) : (
       <Button onClick={onClose}>{t('common.close')}</Button>
@@ -199,7 +296,7 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       onClose={onClose}
       closeLabel={stage === 'installing' && !finished ? t('job.closeKeepsGoing') : t('common.close')}
       title={title}
-      description={stage === 'form' ? t('add.desc') : stage === 'installing' && job ? jobLine(t, fmt, job, now) : undefined}
+      description={stage === 'form' ? t('add.desc') : stage === 'installing' && job ? (header ? header.line : jobLine(t, fmt, job, now)) : undefined}
       footer={footer}
     >
       {stage === 'form' && (
@@ -235,9 +332,23 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
             {(p) => <Input {...p} dir="auto" value={form.name} onChange={set('name')} placeholder={suggested} maxLength={MAX_NAME_LENGTH} />}
           </Field>
           <Disclosure title={t('add.advanced')} className="col-span-6 border-t border-border pt-3">
-            <Field label={t('add.entryPort')} hint={t('add.entryPortHint')}>
-              {(p) => <Input {...p} dir="ltr" className="font-mono" inputMode="numeric" value={form.entryPort} onChange={set('entryPort')} />}
-            </Field>
+            <div className="flex flex-col gap-4">
+              <Field label={t('add.entryPort')} hint={t('add.entryPortHint')}>
+                {(p) => <Input {...p} dir="ltr" className="font-mono" inputMode="numeric" value={form.entryPort} onChange={set('entryPort')} />}
+              </Field>
+              <label className="flex items-start gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  checked={form.takeOver}
+                  onChange={(e) => setForm((f) => ({ ...f, takeOver: e.currentTarget.checked }))}
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="font-medium">{t('add.takeOver')}</span>
+                  <span className="text-muted">{t('add.takeOverWarn')}</span>
+                </span>
+              </label>
+            </div>
           </Disclosure>
           {error && (
             <div className="col-span-6">
@@ -253,8 +364,8 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
 
       {stage === 'hostkey' && key && (
         <div className="flex flex-col gap-3">
-          <HostKeyCheck host={form.host.trim()} probe={key} acked={ackChanged} onAck={setAckChanged} />
-          {error && <ErrorBox>{error}</ErrorBox>}
+          <HostKeyCheck host={(waiting.current?.req.host ?? form.host).trim()} probe={key} acked={ackChanged} onAck={setAckChanged} />
+          {(error || fixError) && <ErrorBox>{error ?? fixError}</ErrorBox>}
         </div>
       )}
 
@@ -263,6 +374,11 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
           <JobSteps job={job} />
           {job?.state === 'ok' && <p className="text-[13px] text-muted">{entryOn === false ? t('add.doneNoEntry') : t('add.doneNote')}</p>}
           {!finished && <p className="border-t border-border pt-3 text-[13px] text-muted">{t('job.keepsGoingInstall')}</p>}
+          {failed && (
+            <FixPanel job={job} sent={sent} busy={busy} onFix={(change, probe) => void resend(change, probe)} onOpenNode={(id) => onOpenNode(id)} />
+          )}
+          {/* why the install could not be sent again, whichever way it was asked for */}
+          {failed && fixError && <ErrorBox>{fixError}</ErrorBox>}
         </div>
       )}
     </Dialog>

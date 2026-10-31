@@ -1,4 +1,4 @@
-import { card, dialog, expect, fillAddNode, liftLimit, openAddNode, reset, stateHolds, test, toast } from './fixtures'
+import { card, dialog, expect, fillAddNode, leaks, liftLimit, openAddNode, reset, stateHolds, test, toast } from './fixtures'
 
 // the fifteen steps of an install, as the hub names them, with the Xray version the page adds
 const STEPS = [
@@ -135,7 +135,7 @@ test('a changed host key stops the install until it is trusted on purpose', asyn
   await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 20000 })
 })
 
-test('an install that fails after changing the server cleans it up, keeps no node, and offers to try again', async ({ page }) => {
+test('an install that fails after changing the server cleans it up, keeps no node, and offers to try again or to change it', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'fail.example.com')
   await form.getByLabel('Name', { exact: true }).fill('Frankfurt')
@@ -146,8 +146,9 @@ test('an install that fails after changing the server cleans it up, keeps no nod
   await expect(failed).toBeVisible({ timeout: 20000 })
   await expect(failed).toContainText('Failed at step 7 of 17')
   await expect(failed.getByText("The agent doesn't answer on TCP port 9090 (dial tcp fail.example.com:9090: i/o timeout).")).toBeVisible()
-  // the steps after it were never started, and the cleanup came after them
-  await expect(failed.getByText('Upload Xray 26.10.21')).toHaveClass(/text-faint/)
+  // the steps after it never started: one line, and the cleanup that came after them is shown
+  await expect(failed.getByRole('button', { name: '8 steps not started' })).toBeVisible()
+  await expect(failed.getByText('Upload Xray 26.10.21')).toHaveCount(0)
   await expect(failed.getByText('Clean up the server')).toBeVisible()
   await expect(failed.getByText('Discard the node')).toBeVisible()
   await expect(failed).toContainText('The server was cleaned up, and nothing was kept.')
@@ -159,8 +160,8 @@ test('an install that fails after changing the server cleans it up, keeps no nod
   await expect(card(page, 'Frankfurt')).toHaveCount(0)
   await expect(page.getByText("Installs that didn't finish")).toHaveCount(0)
 
-  // Try again: the form as it was sent, the password typed again
-  await failed.getByRole('button', { name: 'Try again' }).click()
+  // Change details: the form as it was sent, the password typed again
+  await failed.getByRole('button', { name: 'Change details' }).click()
   const again = dialog(page, 'Add a node')
   await expect(again.getByLabel('Server address')).toHaveValue('fail.example.com')
   await expect(again.getByLabel('Name', { exact: true })).toHaveValue('Frankfurt')
@@ -227,22 +228,20 @@ test('says what is wrong with the form before asking the hub', async ({ page }) 
   await expect(form.getByRole('alert')).toContainText('The entry port is a number from 1 to 65535')
 })
 
-test('shows what the hub says when it cannot reach the node or refuses the login', async ({ page }) => {
+test('shows what the hub says when it cannot reach the node', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'offline.example.com')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   // a code the page has its own words for
   await expect(form.getByRole('alert')).toContainText("The router can't reach this node. Check that it is on and its address is on the domestic list.")
-  // one it hasn't: the hub's sentence
-  await form.getByLabel('Server address').fill('192.0.2.41')
-  await form.locator('input[type="password"]').fill('wrong')
-  await form.getByRole('button', { name: 'Connect and install' }).click()
-  await expect(form.getByRole('alert')).toContainText('ssh: unable to authenticate: the password or key was not accepted')
   // still the form, with what was typed
-  await expect(form.getByLabel('Server address')).toHaveValue('192.0.2.41')
+  await expect(form.getByLabel('Server address')).toHaveValue('offline.example.com')
 })
 
-test('the password is not kept once the install has started', async ({ page }) => {
+// The install a person sent is kept by the dialog that sent it, in memory, so that a fix can send it again:
+// while the install runs, and while a failure can still be fixed. A good install lets go of it, so does
+// closing the dialog, and it is in no storage, address or history whatever happens.
+test('the login is held only while its dialog is open and its install can still fail', async ({ page }) => {
   const secret = 'hunter2-not-a-real-password'
   await openAddNode(page)
   const form = await fillAddNode(page, '192.0.2.41', secret)
@@ -250,7 +249,74 @@ test('the password is not kept once the install has started', async ({ page }) =
   expect(await stateHolds(page, secret)).toBe(true)
   await form.getByRole('button', { name: 'Connect and install' }).click()
   await expect(dialog(page, 'Installing Node 3')).toBeVisible()
-  expect(await stateHolds(page, secret)).toBe(false)
+  // kept while it runs, since it may fail, and nowhere a page can keep a thing
+  expect(await stateHolds(page, secret)).toBe(true)
+  expect(await leaks(page, secret)).toEqual([])
+  // a good install has no use for it
   await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 20000 })
   expect(await stateHolds(page, secret)).toBe(false)
+  expect(await leaks(page, secret)).toEqual([])
+})
+
+test('closing the dialog lets go of the login, whatever became of the install', async ({ page }) => {
+  const secret = 'hunter2-not-a-real-password'
+  await openAddNode(page)
+  const form = await fillAddNode(page, 'fail.example.com', secret)
+  await form.getByRole('button', { name: 'Connect and install' }).click()
+  const failed = dialog(page, 'Installation failed')
+  await expect(failed).toBeVisible({ timeout: 20000 })
+  // a failure that can be tried again keeps it, for that
+  expect(await stateHolds(page, secret)).toBe(true)
+  await failed.getByRole('button', { name: 'Close', exact: true }).first().click()
+  await expect(failed).toBeHidden()
+  expect(await stateHolds(page, secret)).toBe(false)
+  expect(await leaks(page, secret)).toEqual([])
+  // and one that was closed while it ran
+  await page.getByRole('button', { name: 'Add node' }).click()
+  const again = await fillAddNode(page, '192.0.2.41', secret)
+  await again.getByRole('button', { name: 'Connect and install' }).click()
+  const running = dialog(page, 'Installing Node 3')
+  await expect(running).toBeVisible()
+  await running.getByRole('button', { name: 'Close; it keeps going' }).first().click()
+  await expect(running).toBeHidden()
+  expect(await stateHolds(page, secret)).toBe(false)
+  expect(await leaks(page, secret)).toEqual([])
+  await expect(toast(page, 'Node 3 added')).toBeVisible({ timeout: 20000 })
+  expect(await stateHolds(page, secret)).toBe(false)
+})
+
+test('the take-over option is under Advanced, says what it does, and is asked for only when ticked', async ({ page }) => {
+  await openAddNode(page)
+  const form = await fillAddNode(page, 'hasxray.example.com')
+  // hidden until Advanced is opened
+  await expect(form.getByLabel('Take over the Xray that runs on this server')).toHaveCount(0)
+  await form.getByRole('button', { name: 'Advanced' }).click()
+  const box = form.getByLabel('Take over the Xray that runs on this server')
+  await expect(box).not.toBeChecked()
+  // the warning is next to it, plain
+  await expect(form).toContainText('It stops that Xray, removes its config and its service, keeps no backup, and replaces its binary unless it is the same build as this plugin\'s.')
+  // not ticked: the request leaves the question out, and the server is refused
+  const sent = page.waitForRequest((r) => r.url().endsWith('/api/nodes') && r.method() === 'POST')
+  await form.getByRole('button', { name: 'Connect and install' }).click()
+  expect((await sent).postDataJSON().takeOverXray).toBeUndefined()
+  const refused = dialog(page, "This server can't be used")
+  await expect(refused).toBeVisible({ timeout: 20000 })
+  // Change details: the option is not carried, since it is asked again each time
+  await refused.getByRole('button', { name: 'Change details' }).click()
+  const again = dialog(page, 'Add a node')
+  await expect(again.getByLabel('Server address')).toHaveValue('hasxray.example.com')
+  await again.locator('input[type="password"]').fill('a-password')
+  await again.getByRole('button', { name: 'Advanced' }).click()
+  const box2 = again.getByLabel('Take over the Xray that runs on this server')
+  await expect(box2).not.toBeChecked()
+  // ticked: it is asked for, and the install takes the Xray over and goes on
+  await box2.check()
+  const sent2 = page.waitForRequest((r) => r.url().endsWith('/api/nodes') && r.method() === 'POST')
+  await again.getByRole('button', { name: 'Connect and install' }).click()
+  expect((await sent2).postDataJSON().takeOverXray).toBe(true)
+  const job = dialog(page, /Installing|Node added/)
+  await expect(job).toBeVisible()
+  await expect(job.getByText("Take over the server's Xray")).toBeVisible()
+  await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  await expect(dialog(page, 'Node added')).toContainText('was stopped, and its service, 1 drop-in, 1 config file, its binary removed')
 })

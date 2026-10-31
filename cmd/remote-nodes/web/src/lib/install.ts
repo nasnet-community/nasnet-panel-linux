@@ -1,4 +1,4 @@
-import type { InstallForm, Job, Node } from './api'
+import type { InstallForm, Job, JobStep, Node } from './api'
 
 /**
  * An install that stopped and wasn't cleaned up: no node, and only Clean up and Forget work.
@@ -32,3 +32,14 @@ export function installOutcome(job: Job): InstallOutcome | null {
  */
 export const retryForm = (job: Job): InstallForm | null =>
   job.kind === 'install' && job.state === 'failed' && job.install && installOutcome(job) !== 'kept' ? job.install : null
+
+/** The port subscriptions connect to: 1 to 65535, and not the one SSH uses. */
+export const badPort = (p: number, ssh: number) => !Number.isInteger(p) || p < 1 || p > 65535 || p === ssh
+
+/**
+ * The steps a failed install shows. A refusal before anything was created or changed has no use for the
+ * step that forgets the node: there was no node to forget, so the step says nothing a person needs. The
+ * job keeps it, and so does any other failure's.
+ */
+export const shownSteps = (job: Job): JobStep[] =>
+  installOutcome(job) === 'untouched' ? job.steps.filter((s) => s.key !== 'discard_node') : job.steps

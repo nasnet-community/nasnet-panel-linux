@@ -111,3 +111,67 @@ export function stateHolds(page: Page, text: string) {
     return false
   }, text)
 }
+
+/**
+ * Where in the browser `text` is kept, other than in the page's own memory: the two storages, every IndexedDB
+ * database (each store read whole), the cookies, the address, the history entry and the window's name.
+ * Empty when it is nowhere, which is what a login typed into a dialog has to be, the whole time.
+ */
+export function leaks(page: Page, text: string) {
+  return page.evaluate(async (needle) => {
+    const found: string[] = []
+    const has = (v: unknown) => JSON.stringify(v ?? null).includes(needle) || String(v ?? '').includes(needle)
+    for (const [name, store] of [['localStorage', window.localStorage], ['sessionStorage', window.sessionStorage]] as const) {
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i)!
+        if (k.includes(needle) || (store.getItem(k) ?? '').includes(needle)) found.push(`${name}[${k}]`)
+      }
+    }
+    if (has(document.cookie)) found.push('cookie')
+    if (has(location.href)) found.push('url')
+    if (has(history.state)) found.push('history.state')
+    if (has(window.name)) found.push('window.name')
+    if (has(document.title)) found.push('title')
+    const dbs = (await indexedDB.databases?.()) ?? []
+    for (const info of dbs) {
+      if (!info.name) continue
+      const db: IDBDatabase = await new Promise((resolve, reject) => {
+        const r = indexedDB.open(info.name!)
+        r.onsuccess = () => resolve(r.result)
+        r.onerror = () => reject(r.error)
+      })
+      for (const store of Array.from(db.objectStoreNames)) {
+        const rows: unknown[] = await new Promise((resolve, reject) => {
+          const q = db.transaction(store).objectStore(store).getAll()
+          q.onsuccess = () => resolve(q.result)
+          q.onerror = () => reject(q.error)
+        })
+        if (has(rows)) found.push(`indexedDB[${info.name}/${store}]`)
+      }
+      db.close()
+    }
+    return found
+  }, text)
+}
+
+/**
+ * Whether the page's JavaScript heap holds `text` anywhere, after a garbage collection: in a component's state,
+ * in a closure that something kept, in a string no one let go of. A heap snapshot lists every string, so this
+ * sees what stateHolds' walk over the component tree cannot, and it is the check that a login is gone once its
+ * dialog is. Chromium only, which is what both projects run.
+ */
+export async function heapHolds(page: Page, text: string): Promise<boolean> {
+  const cdp = await page.context().newCDPSession(page)
+  try {
+    await cdp.send('HeapProfiler.enable')
+    await cdp.send('HeapProfiler.collectGarbage')
+    let snapshot = ''
+    cdp.on('HeapProfiler.addHeapSnapshotChunk', (e) => {
+      snapshot += e.chunk
+    })
+    await cdp.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false })
+    return snapshot.includes(text)
+  } finally {
+    await cdp.detach().catch(() => {})
+  }
+}
