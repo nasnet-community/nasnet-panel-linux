@@ -154,8 +154,7 @@ func closedPort(t *testing.T) int {
 
 // The hub's calls to add and take out a node run on the real operations, over
 // the real manager, job engine and state: a server that can't be reached shows
-// as one, an install that fails leaves the node the way the contract says, and
-// it can be forgotten.
+// as one, and an install that fails before it changed anything leaves no node.
 func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 	addr, stop := start(t, testSettings(t, t.TempDir(), ""))
 	defer stop()
@@ -171,17 +170,23 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 		t.Fatalf("probe = %d %s", code, body)
 	}
 
-	// an install on it fails at the first step, and says so as a sentence
+	// an install on it fails at the first step, and says so as a sentence, with what was done about it
 	code, _, body = callHub(t, "POST", url+"/api/nodes", fmt.Sprintf(`{%s,"password":"hunter2-MARKER","hostKey":%q,"name":"Closed","entryPort":8443}`, host, key))
 	if code != 202 {
 		t.Fatalf("install = %d %s", code, body)
 	}
 	job := waitJob(t, url, jsonOf(t, body)["jobId"].(string))
-	if job["state"] != "failed" || job["kind"] != "install" || job["target"] != "Closed" || !strings.HasPrefix(job["error"].(string), "Can't reach SSH on 127.0.0.1") {
+	errText, _ := job["error"].(string)
+	if job["state"] != "failed" || job["kind"] != "install" || job["target"] != "Closed" || !strings.HasPrefix(errText, "Can't reach SSH on 127.0.0.1") ||
+		!strings.HasSuffix(errText, "Nothing was changed on the server, and nothing was kept.") || job["code"] != "node_unreachable" {
 		t.Fatalf("job = %v", job)
 	}
+	// what was asked, for another try, and none of the login's secrets
+	if form, _ := job["install"].(map[string]any); form["name"] != "Closed" || form["host"] != "127.0.0.1" || form["sshPort"] != float64(port) || form["sshUser"] != "root" || form["entryPort"] != 8443.0 {
+		t.Errorf("the job's form = %v", job["install"])
+	}
 	steps := job["steps"].([]any)
-	if steps[0].(map[string]any)["state"] != "failed" || len(steps) != 15 {
+	if steps[0].(map[string]any)["state"] != "failed" || len(steps) != 16 {
 		t.Errorf("steps = %v", steps)
 	}
 	// every step goes by a key, which the page words it by: main gives the engine the manager's
@@ -193,20 +198,55 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 		}
 		keys[key] = true
 	}
-	if first, last := steps[0].(map[string]any), steps[14].(map[string]any); first["key"] != "check_server" || first["name"] != "Check the server" || last["key"] != "save_node" {
+	if first, last := steps[0].(map[string]any), steps[15].(map[string]any); first["key"] != "check_server" || first["name"] != "Check the server" || last["key"] != "discard_node" || last["state"] != "ok" {
 		t.Errorf("first and last steps = %v, %v", first, last)
 	}
 	if strings.Contains(fmt.Sprint(job), "hunter2") {
 		t.Errorf("the login shows in the job: %v", job)
 	}
 
-	// the node is there, never set up
-	_, _, body = callHub(t, "GET", url+"/api/nodes/1", "")
-	if n := jsonOf(t, body); n["name"] != "Closed" || n["registered"] != false || n["host"] != "127.0.0.1" || n["entryPort"] != 8443.0 {
+	// and no node is left behind
+	if code, _, body = callHub(t, "GET", url+"/api/nodes/1", ""); code != 404 {
+		t.Fatalf("node = %d %s", code, body)
+	}
+	if _, _, body = callHub(t, "GET", url+"/api/nodes", ""); string(body) != "[]\n" {
+		t.Errorf("nodes = %s", body)
+	}
+	if _, _, body = callHub(t, "GET", url+"/api/config", ""); jsonOf(t, body)["nodeCount"] != 0.0 {
+		t.Errorf("config = %s", body)
+	}
+}
+
+// A state file that holds an install as running, from a hub that stopped
+// while it ran, comes back as an unfinished install: no node, shown apart, and
+// taken out with a login or by forgetting it.
+func TestTheHubReadsAnInstallFromBeforeARestartAsUnfinished(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Update(func(s *model.State) error {
+		_, err := s.AddNode(model.Node{Name: "Stopped", Host: "203.0.113.9", SSHPort: 22, AgentPort: 9090, EntryPort: 443, State: model.NodeInstalling, CreatedAt: time.Now()})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	addr, stop := start(t, testSettings(t, dir, ""))
+	defer stop()
+	url := "http://" + addr
+
+	_, _, body := callHub(t, "GET", url+"/api/nodes/1", "")
+	n := jsonOf(t, body)
+	unfinished, _ := n["unfinished"].(map[string]any)
+	if n["registered"] != false || n["installing"] != nil || unfinished == nil || unfinished["error"] == "" {
 		t.Fatalf("node = %s", body)
 	}
+	if _, _, body = callHub(t, "GET", url+"/api/config", ""); jsonOf(t, body)["nodeCount"] != 0.0 {
+		t.Errorf("an unfinished install counts as a node: %s", body)
+	}
 	// taking it out needs a login, or force
-	code, _, body = callHub(t, "POST", url+"/api/nodes/1/remove", "{}")
+	code, _, body := callHub(t, "POST", url+"/api/nodes/1/remove", "{}")
 	if got := jsonOf(t, body); code != 409 || got["code"] != "needs_login" || got["needLogin"] != true {
 		t.Fatalf("remove with no login = %d %s", code, body)
 	}
@@ -214,8 +254,8 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 	if code != 202 {
 		t.Fatalf("remove = %d %s", code, body)
 	}
-	job = waitJob(t, url, jsonOf(t, body)["jobId"].(string))
-	if job["state"] != "ok" || job["kind"] != "remove" || job["target"] != "Closed" {
+	job := waitJob(t, url, jsonOf(t, body)["jobId"].(string))
+	if job["state"] != "ok" || job["kind"] != "remove" || job["target"] != "Stopped" {
 		t.Fatalf("job = %v", job)
 	}
 	if forget := job["steps"].([]any); len(forget) != 1 || forget[0].(map[string]any)["key"] != "forget_node" {
@@ -224,7 +264,7 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 	if _, _, body = callHub(t, "GET", url+"/api/nodes", ""); string(body) != "[]\n" {
 		t.Errorf("nodes = %s", body)
 	}
-	// the three calls that were refused for a node that is gone say it is
+	// the calls that were refused for a node that is gone say it is
 	for _, path := range []string{"/api/nodes/1/rotate-keys", "/api/nodes/1/renew-cert", "/api/nodes/1/check-updates"} {
 		if code, _, body := callHub(t, "POST", url+path, ""); code != 404 || jsonOf(t, body)["code"] != "not_found" {
 			t.Errorf("POST %s = %d %s", path, code, body)

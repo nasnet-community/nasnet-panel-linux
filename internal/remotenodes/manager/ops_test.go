@@ -305,7 +305,7 @@ func TestAnOperationsPreconditionsAreAskedInOrder(t *testing.T) {
 		if _, err := r.m.settled(99); !errors.Is(err, model.ErrNotFound) {
 			t.Errorf("a node nobody has: %v", err)
 		}
-		if _, err := r.m.settled(unfinished.ID); !errors.As(err, &apiErr) || apiErr.Code != api.CodeBadRequest || !strings.Contains(apiErr.Msg, "never fully installed") {
+		if _, err := r.m.settled(unfinished.ID); !errors.As(err, &apiErr) || apiErr.Code != api.CodeBadRequest || !strings.Contains(apiErr.Msg, "didn't finish") {
 			t.Errorf("a node whose install didn't finish: %v", err)
 		}
 		n, err := r.m.settled(ready.ID)

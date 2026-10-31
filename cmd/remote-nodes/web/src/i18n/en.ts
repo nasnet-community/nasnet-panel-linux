@@ -137,6 +137,8 @@ export const en = {
   'step.restart_agent': 'Restart the agent',
   'step.renew_cert': 'Renew the certificate',
   'step.forget_node': 'Forget the node',
+  'step.clean_server': 'Clean up the server',
+  'step.discard_node': 'Discard the node',
   'tray.title': 'Jobs',
   'tray.recent': 'Recent',
   'tray.recentJobs': 'Recent jobs',

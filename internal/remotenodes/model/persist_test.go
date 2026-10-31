@@ -155,3 +155,38 @@ func TestDecodeAnswersWhatItCannotUse(t *testing.T) {
 		t.Fatalf("the good one: %v", err)
 	}
 }
+
+// No job outlives the hub, so an install a file holds as running stopped
+// when that hub did. It comes back as an unfinished install, which says it
+// can't tell why; one that already says why keeps its words, and a node
+// that is set up is untouched.
+func TestAnInstallTheFileHoldsAsRunningComesBackUnfinished(t *testing.T) {
+	s := small(t)
+	s.Nodes[0].State = NodeInstalling
+	kept := InstallFailure{Step: "Upload the agent", StepKey: "upload_agent", Error: "The connection broke.", At: t0}
+	s.Nodes[1].State, s.Nodes[1].Failure = NodeInstalling, kept
+	n, err := s.AddNode(goodNode("set up", "203.0.113.3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Encode(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.Nodes[0]; !got.Unfinished() || got.Failure.Error != unknownFailure {
+		t.Errorf("the running install came back as %+v", got)
+	}
+	if got := back.Nodes[1].Failure; got != kept {
+		t.Errorf("the failure on record became %+v", got)
+	}
+	if got := *back.FindNode(n.ID); got.Unfinished() || got.Failure != (InstallFailure{}) {
+		t.Errorf("a set-up node came back as %+v", got)
+	}
+	if back.NodeCount() != 1 {
+		t.Errorf("%d nodes count", back.NodeCount())
+	}
+}

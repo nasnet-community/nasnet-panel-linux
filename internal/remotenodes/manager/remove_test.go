@@ -319,8 +319,8 @@ func TestARemovalNeedsAClearRequestAndAFreeNode(t *testing.T) {
 	})
 }
 
-// A node can't be taken out from under an install that is running, but one
-// whose install failed can, with a login or without, and its server can be
+// A node can't be taken out from under an install that is running, but an
+// unfinished install can, with a login or without, and its server can be
 // started on again.
 func TestAFailedInstallIsRemovedLikeAnyNode(t *testing.T) {
 	for _, how := range []string{"a login", "force"} {
@@ -330,6 +330,7 @@ func TestAFailedInstallIsRemovedLikeAnyNode(t *testing.T) {
 				r.start()
 				defer r.stop()
 				r.ops.failAt(agentops.StepUploadAgent, errors.New("The upload broke."))
+				r.ops.failAt(agentops.StepCleanServer, errors.New("The server went away."))
 				release := r.ops.holdAt(agentops.StepUploadAgent)
 				install := r.add(installReq("Frankfurt", "203.0.113.9"))
 				synctest.Wait()

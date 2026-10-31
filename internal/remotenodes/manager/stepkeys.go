@@ -26,11 +26,13 @@ var stepKeys = map[string]string{
 	agentops.StepChooseTarget:  "choose_target",
 	agentops.StepCreateKeys:    "create_keys",
 	agentops.StepApplyConfig:   "apply_config",
+	agentops.StepCleanServer:   "clean_server",
 
-	StepConnect:    "connect_agent",
-	StepSaveNode:   "save_node",
-	StepRenewCert:  "renew_cert",
-	StepForgetNode: "forget_node",
+	StepConnect:     "connect_agent",
+	StepSaveNode:    "save_node",
+	StepRenewCert:   "renew_cert",
+	StepForgetNode:  "forget_node",
+	StepDiscardNode: "discard_node",
 }
 
 // StepKey is the key of the step with this name, and "" for a name that has

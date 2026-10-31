@@ -106,6 +106,16 @@ type Step struct {
 	Detail string    `json:"detail,omitempty"`
 }
 
+// InstallForm is what an install was asked for, but the login's secrets: the
+// page fills its form in again from it for another try.
+type InstallForm struct {
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	SSHPort   int    `json:"sshPort"`
+	SSHUser   string `json:"sshUser"`
+	EntryPort int    `json:"entryPort"`
+}
+
 // Job is what the page reads, as the API contract has it. Everything Start,
 // Get, List and Running return is a copy that the caller may change.
 type Job struct {
@@ -114,12 +124,17 @@ type Job struct {
 	State State  `json:"state"`
 	Steps []Step `json:"steps"`
 	Error string `json:"error,omitempty"`
+	// Code is the failure's API code when it has one the page words, as an
+	// error answer's code ("server_has_xray"). Left out otherwise.
+	Code string `json:"code,omitempty"`
 	// NodeID is the node the job works on, and Target a name for it that the
 	// page shows when it has no node to look up. Both are left out when empty.
 	NodeID     uint       `json:"nodeId,omitempty"`
 	Target     string     `json:"target,omitempty"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"` // absent while it runs
+	// Install is what an install job was asked for, left out of other jobs.
+	Install *InstallForm `json:"install,omitempty"`
 }
 
 // What a job that runs away can hold. Text over the limit is cut and ends in
@@ -180,6 +195,9 @@ type Spec struct {
 	// reports, in a step's text or an error, has each of them replaced by "…"
 	// first, and the engine forgets them when the job ends.
 	Secrets []string
+	// Install is what an install was asked for, with no secret in it; the
+	// job carries it so that the page can offer the same install again.
+	Install *InstallForm
 }
 
 // Config says how the engine runs. Every field may be left at zero.
@@ -197,6 +215,9 @@ type Config struct {
 	// created. The key is what the page words a step by, and it never changes
 	// once a build has sent it. Nil gives every step an empty key.
 	StepKey func(name string) string
+	// ErrorCode gives a failed job the code of its error, "" for none. Nil
+	// gives none.
+	ErrorCode func(err error) string
 }
 
 // Engine runs jobs. Its methods are safe for concurrent use.
@@ -230,6 +251,10 @@ func (j *job) snapshot() Job {
 	v.Steps = slices.Clone(j.view.Steps)
 	if v.Steps == nil {
 		v.Steps = []Step{} // JSON gets [], never null
+	}
+	if v.Install != nil {
+		f := *v.Install
+		v.Install = &f
 	}
 	return v
 }
@@ -283,9 +308,15 @@ func (e *Engine) Start(spec Spec, fn func(ctx context.Context, r *Run) error) (J
 		e.mu.Unlock()
 		return Job{}, err
 	}
+	var form *InstallForm
+	if spec.Install != nil {
+		f := *spec.Install
+		f.Name, f.Host, f.SSHUser = clip(f.Name, maxName), clip(f.Host, maxName*4), clip(f.SSHUser, maxName)
+		form = &f
+	}
 	j := &job{view: Job{
 		ID: id, Kind: spec.Kind, State: StateRunning, Steps: e.plan(spec.Steps),
-		NodeID: spec.NodeID, Target: spec.Target, StartedAt: e.cfg.Now().UTC(),
+		NodeID: spec.NodeID, Target: spec.Target, StartedAt: e.cfg.Now().UTC(), Install: form,
 	}, hide: newHider(spec.Secrets)}
 	e.byID[id] = j
 	e.order = append(e.order, j)
@@ -387,9 +418,10 @@ func (e *Engine) call(ctx context.Context, j *job, fn func(context.Context, *Run
 func (e *Engine) finish(j *job, err error) {
 	// the error is read before the lock is taken: finish has nobody to
 	// catch a panic, and the lock must not be left held
-	raw := ""
+	raw, code := "", ""
 	if err != nil {
 		raw = errText(err)
+		code = e.codeOf(err)
 	}
 	e.mu.Lock()
 	now := e.cfg.Now()
@@ -408,7 +440,7 @@ func (e *Engine) finish(j *job, err error) {
 	}
 	v.State = StateOK
 	if err != nil {
-		v.State, v.Error = StateFailed, text
+		v.State, v.Error, v.Code = StateFailed, text, clip(code, maxName)
 	} else {
 		v.Steps = slices.DeleteFunc(v.Steps, func(s Step) bool { return s.State == StepPending })
 	}
@@ -431,6 +463,20 @@ func (e *Engine) finish(j *job, err error) {
 		args = append(args, "error", text)
 	}
 	e.cfg.Log.Info("job finished", args...)
+}
+
+// codeOf is the code of a job's error. A panic in ErrorCode costs the job its
+// code and nothing else: finish has nobody to catch it.
+func (e *Engine) codeOf(err error) (code string) {
+	if e.cfg.ErrorCode == nil || errors.Is(err, errInternal) {
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			code = ""
+		}
+	}()
+	return e.cfg.ErrorCode(err)
 }
 
 // errText is what an error says. One whose Error method panics, as a nil

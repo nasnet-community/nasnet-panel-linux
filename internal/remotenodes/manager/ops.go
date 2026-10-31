@@ -41,6 +41,8 @@ type Ops interface {
 	Probe(ctx context.Context, host string, port int) (fingerprint string, err error)
 	InstallAgent(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) (agentops.InstallResult, error)
 	Uninstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error
+	// UndoInstall takes off the server what an install that failed put there.
+	UndoInstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error
 	// Connect opens a link to the node's agent, which the caller closes.
 	Connect(ctx context.Context, node model.Node) (Client, error)
 	Provision(ctx context.Context, c Client, in agentops.ProvisionInput, progress agentops.Progress) (agentops.ProvisionResult, error)
@@ -87,6 +89,10 @@ func (o envOps) InstallAgent(ctx context.Context, node model.Node, login agentop
 
 func (o envOps) Uninstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
 	return o.env.Uninstall(ctx, node, login, progress)
+}
+
+func (o envOps) UndoInstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
+	return o.env.UndoInstall(ctx, node, login, progress)
 }
 
 func (o envOps) Connect(ctx context.Context, node model.Node) (Client, error) {
@@ -202,7 +208,7 @@ func unreachable(what string) error {
 func badRequest(msg string) error { return &api.Error{Code: api.CodeBadRequest, Msg: msg} }
 
 func neverInstalled() error {
-	return badRequest("This node was never fully installed. It can only be removed.")
+	return badRequest("This install didn't finish. It can only be cleaned up or forgotten.")
 }
 
 // opFailure words an error that an Ops call returned. agentops writes the
@@ -231,12 +237,28 @@ func opFailure(err error) error {
 		return &api.Error{Code: api.CodeVersionMismatch, Msg: clipText(err.Error())}
 	case errors.Is(err, agentops.ErrAgentOutdated):
 		return &api.Error{Code: api.CodeAgentTooOld, Msg: clipText(err.Error())}
+	case errors.Is(err, agentops.ErrServerHasXray):
+		return &api.Error{Code: api.CodeServerHasXray, Msg: clipText(err.Error())}
+	case errors.Is(err, agentops.ErrServerHasAgent):
+		return &api.Error{Code: api.CodeServerHasAgent, Msg: clipText(err.Error())}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err // the request's own context ended, which the API leaves unanswered
 	case errors.Is(err, nodecfg.ErrInvalid):
 		return badRequest(sentence(strings.TrimPrefix(err.Error(), nodecfg.ErrInvalid.Error()+": ")))
 	}
 	return &api.Error{Code: api.CodeInternal, Msg: clipText(err.Error())}
+}
+
+// JobErrorCode is the code of a job's error, which the job engine is given
+// as Config.ErrorCode: the code an answer with that error would have, as
+// opFailure words it, and "" for the hub's own errors, which the page has no
+// words for.
+func JobErrorCode(err error) string {
+	var e *api.Error
+	if errors.As(opFailure(err), &e) && e.Code != api.CodeInternal {
+		return e.Code
+	}
+	return ""
 }
 
 // maxMsg is the longest message that goes to the page, in characters.

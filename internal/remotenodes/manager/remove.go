@@ -39,10 +39,11 @@ func removeSteps(force bool) []string {
 // the node. With force it only forgets the node and leaves the server as it is,
 // which is the way out for a server that is gone or can't be signed in to.
 //
-// A node that is still installing, with no job, is removed the same way: a
-// failed install leaves something on the server too. The job's target is the
-// node's name, since the node is gone by the end, and the page needs it to say
-// what was removed.
+// An unfinished install, an install that failed and whose cleanup failed too,
+// is taken out the same way: with a login is the page's Clean up, which takes
+// off what the marker says the install put there, and force is its Forget.
+// The job's target is the node's name, since the node is gone by the end, and
+// the page needs it to say what was removed.
 func (m *Manager) RemoveNode(_ context.Context, id uint, req api.RemoveRequest) (string, error) {
 	n, err := m.nodeFor(id)
 	if err != nil {
