@@ -345,6 +345,7 @@ export const fa: Record<MsgKey, Message> = {
   'event.subscription_on': 'اشتراک روشن شد',
   'event.subscription_off': 'اشتراک خاموش شد',
   'event.keys_rotated': 'کلیدها تعویض شدند',
+  'event.xray_restarted': 'Xray دوباره راه‌اندازی شد: آدرس روتر تغییر کرد',
   'node.port': 'پورت {port}',
   'node.up': '{time} روشن',
   'node.updateTo': 'به‌روزرسانی به {version}',
