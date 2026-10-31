@@ -46,6 +46,8 @@ type Config struct {
 	Subs SubscriptionOps
 	// Backup exports the state and imports it again, with the same rule for nil.
 	Backup BackupOps
+	// NodeOps adds, changes and removes nodes, with the same rule for nil.
+	NodeOps NodeOps
 }
 
 type API struct{ cfg Config }
@@ -92,6 +94,7 @@ func New(cfg Config) http.Handler {
 	route("GET /api/subscriptions", a.subscriptions)
 	a.subscriptionRoutes(route)
 	a.backupRoutes(route)
+	a.nodeOpRoutes(route)
 	mux.HandleFunc("/", a.noRoute)
 	if cfg.Index != nil {
 		mux.Handle("GET /{$}", cfg.Index)
@@ -151,6 +154,11 @@ func (a *API) node(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, a.nodeDetail(st, n))
+}
+
+// nodeDetail is the view of one node that carries its recent events.
+func (a *API) nodeDetail(st model.State, n model.Node) Node {
 	events := []NodeEvent{}
 	if a.cfg.Live != nil {
 		if got := a.cfg.Live.NodeEvents(n.ID); got != nil {
@@ -159,7 +167,7 @@ func (a *API) node(w http.ResponseWriter, r *http.Request) {
 	}
 	v := nodeView(n, enabledCounts(st)[n.ID], a.cfg.Now(), a.cfg.Live)
 	v.Events = &events
-	writeJSON(w, http.StatusOK, v)
+	return v
 }
 
 func (a *API) nodeSubscriptions(w http.ResponseWriter, r *http.Request) {
