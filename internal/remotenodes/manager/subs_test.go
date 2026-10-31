@@ -44,6 +44,20 @@ func idOnNode(t testing.TB, st Store, sub, node uint) model.Enablement {
 	return *e
 }
 
+// hasClient is whether the state has a record of the subscription's client on
+// the node, on or off.
+func hasClient(st Store, sub, node uint) bool {
+	s := st.Read()
+	return s.FindEnablement(sub, node) != nil
+}
+
+// clientIsOn is whether the state says the subscription is switched on there.
+func clientIsOn(st Store, sub, node uint) bool {
+	s := st.Read()
+	e := s.FindEnablement(sub, node)
+	return e != nil && e.Enabled
+}
+
 // usedUsage is the collector with a note of which subscriptions were forgotten.
 type usedUsage struct {
 	Usage
