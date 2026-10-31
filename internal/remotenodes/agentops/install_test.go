@@ -50,7 +50,7 @@ func TestAnInstallRunsExactlyTheseCommands(t *testing.T) {
 		// 4. the marker first, then the folders, config and certificates (the contents go on stdin)
 		{true, `install -d -m 0755 '/var/lib/nasnet-agent'`},
 		{true, `umask 077 && cat > '/var/lib/nasnet-agent/remote-nodes.json.new' && chmod 0644 '/var/lib/nasnet-agent/remote-nodes.json.new' && mv -f '/var/lib/nasnet-agent/remote-nodes.json.new' '/var/lib/nasnet-agent/remote-nodes.json'`},
-		{true, `install -d -m 0755 '/etc/nasnet-agent' '/var/log/nasnet-agent'`},
+		{true, `install -d -m 0755 '/etc/nasnet-agent' '/var/log/nasnet-agent' '/usr/local/etc/xray'`},
 		{true, `umask 077 && cat > '/etc/nasnet-agent/config.yaml.new' && mv -f '/etc/nasnet-agent/config.yaml.new' '/etc/nasnet-agent/config.yaml'`},
 		{true, `umask 077 && cat > '/etc/nasnet-agent/ca.crt.new' && chmod 0644 '/etc/nasnet-agent/ca.crt.new' && mv -f '/etc/nasnet-agent/ca.crt.new' '/etc/nasnet-agent/ca.crt'`},
 		{true, `umask 077 && cat > '/etc/nasnet-agent/server.crt.new' && chmod 0644 '/etc/nasnet-agent/server.crt.new' && mv -f '/etc/nasnet-agent/server.crt.new' '/etc/nasnet-agent/server.crt'`},
@@ -121,6 +121,11 @@ func TestAnInstallLeavesTheServerAsTheAgentNeedsIt(t *testing.T) {
 	}
 	if !sb.exists("/var/log/nasnet-agent") {
 		t.Error("no log folder")
+	}
+	// the agent checks a config by writing a temp file beside the real one, so
+	// the folder has to be there before the first config is pushed
+	if !sb.exists("/usr/local/etc/xray") {
+		t.Error("no folder for Xray's config")
 	}
 
 	// the agent on the server is what was sent, unpacked

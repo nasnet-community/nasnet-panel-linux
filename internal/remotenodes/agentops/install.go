@@ -332,7 +332,8 @@ func (in *install) writeAll(ctx context.Context) error {
 	if err := in.writeMarker(ctx); err != nil {
 		return err
 	}
-	if _, err := s.root(ctx, "Couldn't create the agent's folders", cmdDirs(confDir, logDir), nil); err != nil {
+	// Xray's config folder too: the agent checks a config by writing a file beside it
+	if _, err := s.root(ctx, "Couldn't create the agent's folders", cmdDirs(confDir, logDir, xrayConfDir), nil); err != nil {
 		return err
 	}
 
