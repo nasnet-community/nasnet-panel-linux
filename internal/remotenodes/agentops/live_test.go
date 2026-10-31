@@ -108,7 +108,7 @@ func TestLiveLifecycle(t *testing.T) {
 		}
 	}()
 
-	res, err := env.InstallAgent(ctx, node, login, progress)
+	res, err := env.InstallAgent(ctx, node, login, InstallOptions{}, progress)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}

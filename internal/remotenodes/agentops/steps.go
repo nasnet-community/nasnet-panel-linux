@@ -2,7 +2,10 @@
 
 package agentops
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // Step is one line of a job's progress, as the page shows it. A step goes
 // running, then ok or failed; while an upload runs, Detail carries how far it
@@ -47,6 +50,9 @@ const (
 	StepApplyConfig   = "Apply the configuration"
 	// UndoInstall's one step, after an install that failed.
 	StepCleanServer = "Clean up the server"
+	// The install's step that takes over an Xray the server runs, when the person
+	// asked for that: it is in the plan only then.
+	StepTakeOverXray = "Take over the server's Xray"
 )
 
 // skippedDetail is what a step says when there was nothing for it to do.
@@ -55,6 +61,19 @@ const skippedDetail = "Not needed"
 // InstallPlan is the steps of InstallAgent, in order.
 func InstallPlan() []string {
 	return []string{StepCheckServer, StepDownloadAgent, StepCertificate, StepPrepareServer, StepUploadAgent, StepStartAgent, StepCheckAgent}
+}
+
+// InstallPlanFor is the steps of InstallAgent with these options, in order. A
+// takeover goes after everything that only looks or fetches (the check, the
+// agent's download, the certificate), so that a failure there costs the
+// server's own Xray nothing, and before the server is written to.
+func InstallPlanFor(opts InstallOptions) []string {
+	plan := InstallPlan()
+	if !opts.TakeOverXray {
+		return plan
+	}
+	i := slices.Index(plan, StepCertificate) + 1
+	return slices.Insert(plan, i, StepTakeOverXray)
 }
 
 // UninstallPlan is the steps of Uninstall, in order.

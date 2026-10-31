@@ -27,6 +27,7 @@ var stepKeys = map[string]string{
 	agentops.StepCreateKeys:    "create_keys",
 	agentops.StepApplyConfig:   "apply_config",
 	agentops.StepCleanServer:   "clean_server",
+	agentops.StepTakeOverXray:  "take_over_xray",
 
 	StepConnect:     "connect_agent",
 	StepSaveNode:    "save_node",

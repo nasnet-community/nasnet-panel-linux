@@ -99,15 +99,21 @@ func (l Login) LogValue() slog.Value { return slog.StringValue(l.String()) }
 // InstallRequest is a new node: where it is, what to call it, which port its
 // entry listens on (the router's default when left out), and the login to set
 // it up with.
+//
+// TakeOverXray says the person agreed that an Xray the server runs of its own
+// may be taken over: stopped, its config, service and drop-ins removed with no
+// copy kept, and its binary replaced unless it is the build this plugin pins.
+// Without it such a server is refused (server_has_xray), as before.
 type InstallRequest struct {
 	Login
-	Name      string `json:"name"`
-	Host      string `json:"host"`
-	EntryPort int    `json:"entryPort,omitempty"`
+	Name         string `json:"name"`
+	Host         string `json:"host"`
+	EntryPort    int    `json:"entryPort,omitempty"`
+	TakeOverXray bool   `json:"takeOverXray,omitempty"`
 }
 
 func (r InstallRequest) String() string {
-	return fmt.Sprintf("install %q at %s, entry port %d, with an %v", r.Name, r.Host, r.EntryPort, r.Login)
+	return fmt.Sprintf("install %q at %s, entry port %d, take over Xray %t, with an %v", r.Name, r.Host, r.EntryPort, r.TakeOverXray, r.Login)
 }
 
 func (r InstallRequest) GoString() string { return r.String() }

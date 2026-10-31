@@ -86,7 +86,7 @@ func TestAddingANodeInstallsItAndSavesItSetUpOnlyWhenAllHasWorked(t *testing.T) 
 			t.Errorf("a node that isn't set up already has what the install finds out: %+v", n)
 		}
 		live := r.m.NodeLive(n.ID)
-		if in := live.Installing; in == nil || in.JobID != jobID || in.Step != 5 || in.Steps != len(installSteps()) || in.Label != agentops.StepUploadAgent || in.Key != "upload_agent" {
+		if in := live.Installing; in == nil || in.JobID != jobID || in.Step != 5 || in.Steps != len(installSteps(agentops.InstallOptions{})) || in.Label != agentops.StepUploadAgent || in.Key != "upload_agent" {
 			t.Errorf("installing = %+v", in)
 		}
 		if _, ok := r.m.Client(n.ID); ok || r.net.tries(n.ID) != 0 || len(r.bridge.tags()) != 0 {
@@ -97,7 +97,7 @@ func TestAddingANodeInstallsItAndSavesItSetUpOnlyWhenAllHasWorked(t *testing.T) 
 			t.Errorf("job = %+v", j)
 		}
 		states := stepStates(j)
-		for i, name := range installSteps() {
+		for i, name := range installSteps(agentops.InstallOptions{}) {
 			want := jobs.StepPending
 			switch {
 			case i < 4:
@@ -112,8 +112,8 @@ func TestAddingANodeInstallsItAndSavesItSetUpOnlyWhenAllHasWorked(t *testing.T) 
 
 		release()
 		j = r.ok(jobID)
-		if !slices.Equal(stepNames(j), installSteps()) {
-			t.Errorf("steps %q\nwant  %q", stepNames(j), installSteps())
+		if !slices.Equal(stepNames(j), installSteps(agentops.InstallOptions{})) {
+			t.Errorf("steps %q\nwant  %q", stepNames(j), installSteps(agentops.InstallOptions{}))
 		}
 		for _, s := range j.Steps {
 			if s.State != jobs.StepOK {

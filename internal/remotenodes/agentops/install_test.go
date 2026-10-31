@@ -305,7 +305,7 @@ func TestAnInstallReportsItsStepsInTheOrderOfItsPlan(t *testing.T) {
 	}
 	// and a nil Progress is fine
 	r2 := newInstallRig(t)
-	if _, err := r2.env.InstallAgent(context.Background(), r2.node, r2.login, nil); err != nil {
+	if _, err := r2.env.InstallAgent(context.Background(), r2.node, r2.login, InstallOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -788,11 +788,11 @@ func (w wrapped) Unwrap() error { return w.base }
 func TestAnInstallNeedsWhatItSignsAndFetchesWith(t *testing.T) {
 	r := newInstallRig(t)
 	env := &Env{Files: r.files, connectSSH: r.env.connectSSH}
-	if _, err := env.InstallAgent(context.Background(), r.node, r.login, nil); !errors.Is(err, ErrNoCA) {
+	if _, err := env.InstallAgent(context.Background(), r.node, r.login, InstallOptions{}, nil); !errors.Is(err, ErrNoCA) {
 		t.Errorf("without a CA: %v", err)
 	}
 	env = &Env{CA: r.ca, connectSSH: r.env.connectSSH}
-	if _, err := env.InstallAgent(context.Background(), r.node, r.login, nil); !errors.Is(err, ErrNoFiles) {
+	if _, err := env.InstallAgent(context.Background(), r.node, r.login, InstallOptions{}, nil); !errors.Is(err, ErrNoFiles) {
 		t.Errorf("without downloads: %v", err)
 	}
 	for name, node := range map[string]model.Node{
@@ -801,7 +801,7 @@ func TestAnInstallNeedsWhatItSignsAndFetchesWith(t *testing.T) {
 		"no port":    {ID: 1, Host: rigHost, EntryPort: 443},
 		"no entry":   {ID: 1, Host: rigHost, AgentPort: 9090},
 	} {
-		if _, err := r.env.InstallAgent(context.Background(), node, r.login, nil); err == nil {
+		if _, err := r.env.InstallAgent(context.Background(), node, r.login, InstallOptions{}, nil); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
 	}
@@ -929,7 +929,7 @@ func TestACancelledInstallStopsAtOnce(t *testing.T) {
 		}
 		return nil
 	}
-	_, err := r.env.InstallAgent(ctx, r.node, r.login, r.progress)
+	_, err := r.env.InstallAgent(ctx, r.node, r.login, InstallOptions{}, r.progress)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
 	}

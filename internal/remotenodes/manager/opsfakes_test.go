@@ -69,6 +69,7 @@ type fakeOps struct {
 type opsInstall struct {
 	node  model.Node
 	login agentops.Login
+	opts  agentops.InstallOptions // what an install was asked for besides the login
 }
 
 type opsPush struct {
@@ -200,30 +201,34 @@ func (f *fakeOps) Probe(ctx context.Context, host string, port int) (string, err
 	return fp, nil
 }
 
-func (f *fakeOps) InstallAgent(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) (agentops.InstallResult, error) {
+func (f *fakeOps) InstallAgent(ctx context.Context, node model.Node, login agentops.Login, opts agentops.InstallOptions, progress agentops.Progress) (agentops.InstallResult, error) {
 	f.note(fmt.Sprintf("InstallAgent %d", node.ID))
 	f.mu.Lock()
-	f.installs = append(f.installs, opsInstall{node, login})
+	f.installs = append(f.installs, opsInstall{node, login, opts})
 	res, leak := f.install, f.leakLogin
 	f.mu.Unlock()
 	var spilt []string
 	if leak {
 		spilt = []string{login.Password, login.PrivateKey, login.Passphrase}
 	}
-	// as the real one: the server is changed from "Prepare the server" on, and not before
-	reached := false
-	err := f.steps(ctx, agentops.InstallPlan(), func(s agentops.Step) {
+	// as the real one: the server is changed from "Prepare the server" on, and not before; a
+	// takeover changes it when its step is done, and a server with nothing of the kind to take
+	// (res.TookOver false) is no change
+	reached, took := false, false
+	err := f.steps(ctx, agentops.InstallPlanFor(opts), func(s agentops.Step) {
 		reached = reached || s.Name == agentops.StepPrepareServer
+		took = took || (s.Name == agentops.StepTakeOverXray && s.State == agentops.StateOK && res.TookOver)
 		progress(s)
 	}, spilt...)
-	res.Changed = res.Changed && reached
+	res.Changed = res.Changed && (reached || took)
+	res.TookOver = res.TookOver && took
 	return res, err
 }
 
 func (f *fakeOps) UndoInstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
 	f.note(fmt.Sprintf("UndoInstall %d", node.ID))
 	f.mu.Lock()
-	f.undos = append(f.undos, opsInstall{node, login})
+	f.undos = append(f.undos, opsInstall{node: node, login: login})
 	leak := f.leakLogin
 	f.mu.Unlock()
 	var spilt []string
@@ -236,7 +241,7 @@ func (f *fakeOps) UndoInstall(ctx context.Context, node model.Node, login agento
 func (f *fakeOps) Uninstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
 	f.note(fmt.Sprintf("Uninstall %d", node.ID))
 	f.mu.Lock()
-	f.uninstalls = append(f.uninstalls, opsInstall{node, login})
+	f.uninstalls = append(f.uninstalls, opsInstall{node: node, login: login})
 	leak := f.leakLogin
 	f.mu.Unlock()
 	var spilt []string
@@ -486,7 +491,7 @@ func newOpsRig(t *testing.T, mods ...func(*Config)) *opsRig {
 	t.Helper()
 	r := &opsRig{dl: newDownloads()}
 	setup := func(c *Config) {
-		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log, StepKey: guardKeys(t), ErrorCode: JobErrorCode})
+		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log, StepKey: guardKeys(t), ErrorCode: JobErrorCode, ErrorInfo: JobErrorInfo})
 		c.Jobs = r.jobs
 		c.Downloads = r.dl
 		c.NewOps = func(ca *pki.CA) Ops {

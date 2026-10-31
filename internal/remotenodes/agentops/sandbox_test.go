@@ -74,20 +74,32 @@ FAKE_UID=0 exec "$@"`,
 	"systemctl": `echo "$*" >> "$ROOT/systemctl.log"
 unit() { echo "${1%.service}"; }
 down() { grep -v "$1" "$ROOT/listening" > "$ROOT/listening.tmp" 2>/dev/null; mv "$ROOT/listening.tmp" "$ROOT/listening"; }
+# the processes a unit runs end with it, and so do the sockets they held; starting it
+# again brings them back, so a test can tell a server that was put back from one that wasn't
+reap() { mkdir -p "$ROOT/reaped"; for d in "$ROOT"/proc/[0-9]*; do [ -e "$d/unit" ] && [ "$(cat "$d/unit")" = "$1" ] && { pid=${d##*/}; grep "pid=$pid," "$ROOT/listening" >> "$ROOT/reaped/$1.listen" 2>/dev/null; down "pid=$pid,"; mv "$d" "$ROOT/reaped/$1.$pid"; }; done; }
+revive() { for f in "$ROOT"/reaped/"$1".[0-9]*; do [ -e "$f" ] && mv "$f" "$ROOT/proc/${f##*.}"; done; [ -e "$ROOT/reaped/$1.listen" ] && { cat "$ROOT/reaped/$1.listen" >> "$ROOT/listening"; rm -f "$ROOT/reaped/$1.listen"; }; return 0; }
 case "$1" in
  is-active) u=$(unit "$2"); if [ -e "$ROOT/active/$u" ]; then echo active; else echo inactive; exit 3; fi;;
  cat)
    u=$(unit "$2")
+   # like systemd: a comment with where the unit is, then the unit
    for d in etc/systemd/system run/systemd/system lib/systemd/system usr/lib/systemd/system; do
-     [ -e "$ROOT/$d/$u.service" ] && { cat "$ROOT/$d/$u.service"; exit 0; }
+     [ -e "$ROOT/$d/$u.service" ] && { echo "# /$d/$u.service"; cat "$ROOT/$d/$u.service"; exit 0; }
    done
    echo "No files found for $u.service." >&2; exit 1;;
  enable|daemon-reload) ;;
+ stop)
+   [ -n "$FAKE_STOP_FAILS" ] && { echo "Failed to stop $2: Access denied" >&2; exit 1; }
+   u=$(unit "$2")
+   rm -f "$ROOT/active/$u"; reap "$u"
+   [ "$u" = nasnet-agent ] && down nasnet-agent
+   exit 0;;
  restart|start)
    u=$(unit "$2")
+   [ -n "$FAKE_START_FAILS" ] && { echo "Failed to start $2: Job failed" >&2; exit 1; }
    [ -n "$FAKE_NO_START" ] && exit 0
-   [ -e "$ROOT/etc/systemd/system/$u.service" ] || { echo "Failed to restart $u.service: Unit $u.service not found." >&2; exit 5; }
-   mkdir -p "$ROOT/active"; touch "$ROOT/active/$u"
+   [ -e "$ROOT/etc/systemd/system/$u.service" ] || [ -e "$ROOT/lib/systemd/system/$u.service" ] || { echo "Failed to restart $u.service: Unit $u.service not found." >&2; exit 5; }
+   mkdir -p "$ROOT/active"; touch "$ROOT/active/$u"; revive "$u"
    if [ "$u" = nasnet-agent ]; then
      port=$(sed -n 's/^listen_addr: *"*:\([0-9]*\)"*.*/\1/p' "$ROOT/etc/nasnet-agent/config.yaml" | head -1)
      down nasnet-agent
@@ -95,8 +107,8 @@ case "$1" in
    fi;;
  disable)
    if [ "$2" = "--now" ]; then u=$(unit "$3"); else u=$(unit "$2"); fi
-   rm -f "$ROOT/active/$u"
-   [ "$u" = nasnet-agent ] && down nasnet-agent
+   [ "$2" = "--now" ] && { rm -f "$ROOT/active/$u"; reap "$u"; }
+   [ "$u" = nasnet-agent ] && [ "$2" = "--now" ] && down nasnet-agent
    exit 0;;
 esac
 exit 0`,

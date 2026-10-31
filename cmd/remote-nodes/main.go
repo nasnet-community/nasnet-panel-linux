@@ -293,7 +293,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	if err != nil {
 		return err
 	}
-	engine := jobs.New(jobs.Config{Log: log, StepKey: manager.StepKey, ErrorCode: manager.JobErrorCode})
+	engine := jobs.New(jobs.Config{Log: log, StepKey: manager.StepKey, ErrorCode: manager.JobErrorCode, ErrorInfo: manager.JobErrorInfo})
 	sup, err := bridgectl.New(bridgectl.Config{
 		Binary:     s.bridgeBin,
 		Credential: &bridgectl.Credential{UID: s.bridgeUID, GID: s.bridgeGID},

@@ -139,6 +139,7 @@ export const en = {
   'step.forget_node': 'Forget the node',
   'step.clean_server': 'Clean up the server',
   'step.discard_node': 'Discard the node',
+  'step.take_over_xray': "Take over the server's Xray",
   'tray.title': 'Jobs',
   'tray.recent': 'Recent',
   'tray.recentJobs': 'Recent jobs',
@@ -598,7 +599,12 @@ export const en = {
   'job.openUnfinished': 'Clean up or forget',
   'job.tryAgain': 'Try again',
   'job.gone': 'This install failed, and no node was kept.',
-  'error.server_has_xray': 'This server already runs an Xray that Remote Nodes did not install. Use a server without one.',
+  'error.server_has_xray': 'This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.',
+  'error.xray_not_stopped':
+    'An Xray is still running on this server after its service was stopped, for example in a container. Stop it there, or use another server.',
+  'error.port_in_use': 'A port this node needs is already in use on the server. Free it, or use another port.',
+  'error.login_refused': "The server didn't accept the login. Check the user name and the password or key.",
+  'error.needs_root': "This login can't act as root: the server has no sudo, or sudo didn't accept the password. Use root, or a user that can use sudo.",
   'error.server_has_agent': "This server already runs an agent that Remote Nodes did not install, such as a Linux panel's node. Use a server without one.",
   'error.server_is_node': 'This server is already one of your nodes, under another address. Change that node instead of adding the server again.',
 } satisfies Record<string, Message>

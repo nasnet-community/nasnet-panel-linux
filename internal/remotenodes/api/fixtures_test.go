@@ -44,6 +44,27 @@ func testErrorCode(err error) string {
 	return ""
 }
 
+// withFacts is an *Error that has facts for the page, as the manager's typed
+// errors have.
+type withFacts struct {
+	err  *Error
+	info jobs.ErrorInfo
+}
+
+func (e *withFacts) Error() string { return e.err.Error() }
+func (e *withFacts) Unwrap() error { return e.err }
+
+// testErrorInfo gives a job the facts of an error that has some, as the
+// manager's JobErrorInfo does for its typed errors.
+func testErrorInfo(err error) *jobs.ErrorInfo {
+	var w *withFacts
+	if errors.As(err, &w) {
+		i := w.info
+		return &i
+	}
+	return nil
+}
+
 // addUnfinished puts an install that stopped and couldn't be cleaned up beside
 // the populated nodes, as node 3.
 func (r *rig) addUnfinished() {
@@ -102,7 +123,11 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 	}, func(run *jobs.Run) error {
 		run.Fail("Check the server", errors.New(xrayHere))
 		run.Set("Discard the node", jobs.StepOK, "")
-		return &Error{CodeServerHasXray, xrayHere + " Nothing was changed on the server, and nothing was kept."}
+		// with what was found, which the page words by itself
+		return &withFacts{
+			err:  &Error{CodeServerHasXray, xrayHere + " Nothing was changed on the server, and nothing was kept."},
+			info: jobs.ErrorInfo{Found: []string{"binary", "unit"}, XrayVersion: "26.9.1"},
+		}
 	})
 	install, run, end := r.begin(jobs.Spec{Kind: jobs.KindInstall, NodeID: 2, Target: "second", Steps: []string{"Check the server", "Download the agent", "Upload the agent", "Start the agent", "Save the node"}})
 	defer end(nil)

@@ -51,6 +51,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -116,6 +117,35 @@ type InstallForm struct {
 	EntryPort int    `json:"entryPort"`
 }
 
+// ErrorInfo is what a failed job's error says, in a form the page can use
+// without reading its words: the numbers, names and fingerprints that go with
+// the error's code. Every field is optional and a job carries only the ones its
+// error has; none of them holds a secret. The hub fills it in from the typed
+// errors, never by looking at the text.
+type ErrorInfo struct {
+	// port_in_use: the port, whose it is ("agent" or "entry") and the process that
+	// holds it on the server, when the server says.
+	Port    int    `json:"port,omitempty"`
+	Role    string `json:"role,omitempty"`
+	Process string `json:"process,omitempty"`
+	// host_key_changed: the fingerprint that was agreed to, and the one the server
+	// shows now.
+	PinnedKey string `json:"pinnedKey,omitempty"`
+	ShownKey  string `json:"shownKey,omitempty"`
+	// server_has_xray: what was found ("binary", "unit", "process"), the version of
+	// the binary at the standard path when it can be read, and whether it is the
+	// build this plugin pins (its version and its checksum both match).
+	Found       []string `json:"found,omitempty"`
+	XrayVersion string   `json:"xrayVersion,omitempty"`
+	SameBuild   bool     `json:"sameBuild,omitempty"`
+	// server_is_node: the node that is on this server already.
+	NodeID   uint   `json:"nodeId,omitempty"`
+	NodeName string `json:"nodeName,omitempty"`
+	// TookOver: the install had taken over the server's own Xray when it failed.
+	// That Xray was stopped and removed as asked, and nothing puts it back.
+	TookOver bool `json:"tookOver,omitempty"`
+}
+
 // Job is what the page reads, as the API contract has it. Everything Start,
 // Get, List and Running return is a copy that the caller may change.
 type Job struct {
@@ -127,6 +157,8 @@ type Job struct {
 	// Code is the failure's API code when it has one the page words, as an
 	// error answer's code ("server_has_xray"). Left out otherwise.
 	Code string `json:"code,omitempty"`
+	// ErrorInfo goes with Code for the errors that have facts the page needs.
+	ErrorInfo *ErrorInfo `json:"errorInfo,omitempty"`
 	// NodeID is the node the job works on, and Target a name for it that the
 	// page shows when it has no node to look up. Both are left out when empty.
 	NodeID     uint       `json:"nodeId,omitempty"`
@@ -218,6 +250,9 @@ type Config struct {
 	// ErrorCode gives a failed job the code of its error, "" for none. Nil
 	// gives none.
 	ErrorCode func(err error) string
+	// ErrorInfo gives a failed job the facts of its error, nil for none. Nil
+	// gives none.
+	ErrorInfo func(err error) *ErrorInfo
 }
 
 // Engine runs jobs. Its methods are safe for concurrent use.
@@ -255,6 +290,11 @@ func (j *job) snapshot() Job {
 	if v.Install != nil {
 		f := *v.Install
 		v.Install = &f
+	}
+	if v.ErrorInfo != nil {
+		i := *v.ErrorInfo
+		i.Found = slices.Clone(i.Found)
+		v.ErrorInfo = &i
 	}
 	return v
 }
@@ -419,9 +459,11 @@ func (e *Engine) finish(j *job, err error) {
 	// the error is read before the lock is taken: finish has nobody to
 	// catch a panic, and the lock must not be left held
 	raw, code := "", ""
+	var info *ErrorInfo
 	if err != nil {
 		raw = errText(err)
 		code = e.codeOf(err)
+		info = e.infoOf(err)
 	}
 	e.mu.Lock()
 	now := e.cfg.Now()
@@ -441,6 +483,7 @@ func (e *Engine) finish(j *job, err error) {
 	v.State = StateOK
 	if err != nil {
 		v.State, v.Error, v.Code = StateFailed, text, clip(code, maxName)
+		v.ErrorInfo = j.cleanInfo(info)
 	} else {
 		v.Steps = slices.DeleteFunc(v.Steps, func(s Step) bool { return s.State == StepPending })
 	}
@@ -477,6 +520,45 @@ func (e *Engine) codeOf(err error) (code string) {
 		}
 	}()
 	return e.cfg.ErrorCode(err)
+}
+
+// infoOf is the facts of a job's error, with the same care as codeOf.
+func (e *Engine) infoOf(err error) (info *ErrorInfo) {
+	if e.cfg.ErrorInfo == nil || errors.Is(err, errInternal) {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			info = nil
+		}
+	}()
+	return e.cfg.ErrorInfo(err)
+}
+
+// maxFact is the longest a name or a fingerprint in an ErrorInfo may be.
+const maxFact = 128
+
+// cleanInfo is info as a job may show it: a copy of its own, with the secrets
+// taken out of the text in it and each text cut, and nil when it says nothing.
+// The caller holds the engine's lock.
+func (j *job) cleanInfo(info *ErrorInfo) *ErrorInfo {
+	if info == nil {
+		return nil
+	}
+	c := *info
+	c.Process, c.NodeName = j.text(c.Process, maxFact), j.text(c.NodeName, maxName)
+	c.Role, c.XrayVersion = j.text(c.Role, maxName), j.text(c.XrayVersion, maxName)
+	c.PinnedKey, c.ShownKey = j.text(c.PinnedKey, maxFact), j.text(c.ShownKey, maxFact)
+	c.Found = nil
+	for _, f := range info.Found {
+		if f = j.text(f, maxName); f != "" && len(c.Found) < 8 {
+			c.Found = append(c.Found, f)
+		}
+	}
+	if reflect.DeepEqual(c, ErrorInfo{}) {
+		return nil
+	}
+	return &c
 }
 
 // errText is what an error says. One whose Error method panics, as a nil

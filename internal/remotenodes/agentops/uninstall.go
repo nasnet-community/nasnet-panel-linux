@@ -220,5 +220,12 @@ func (u *uninstall) removeAll(ctx context.Context) (string, error) {
 	if u.xrayLeft {
 		return "Xray was on the server before, and is left as it is", nil
 	}
+	if u.mk.XrayTakenOver {
+		was := "The Xray that was on the server before"
+		if u.mk.XrayWas != "" {
+			was += " (" + u.mk.XrayWas + ")"
+		}
+		return was + " was taken over, and is not put back", nil
+	}
 	return "", nil
 }

@@ -135,6 +135,7 @@ type installRig struct {
 	files *fakeFiles
 	node  model.Node
 	login Login
+	opts  InstallOptions
 	shell *fakeShell
 
 	mu        sync.Mutex
@@ -194,7 +195,7 @@ func (r *installRig) progress(s Step) {
 
 func (r *installRig) install() (InstallResult, error) {
 	r.t.Helper()
-	return r.env.InstallAgent(context.Background(), r.node, r.login, r.progress)
+	return r.env.InstallAgent(context.Background(), r.node, r.login, r.opts, r.progress)
 }
 
 // stepNames is the steps that began, in order, once each.

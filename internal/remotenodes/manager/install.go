@@ -18,9 +18,10 @@ import (
 )
 
 // installSteps are the steps of an install, in order: the agent over SSH, the
-// link to it, the Xray and the entry over that link, and the node saved.
-func installSteps() []string {
-	return slices.Concat(agentops.InstallPlan(), []string{StepConnect}, agentops.ProvisionPlan(), []string{StepSaveNode})
+// link to it, the Xray and the entry over that link, and the node saved. An
+// install that is to take over the server's own Xray has the step for it.
+func installSteps(opts agentops.InstallOptions) []string {
+	return slices.Concat(agentops.InstallPlanFor(opts), []string{StepConnect}, agentops.ProvisionPlan(), []string{StepSaveNode})
 }
 
 var errRemovedMidInstall = errors.New("the node was removed while it was being installed")
@@ -42,7 +43,9 @@ var errRemovedMidInstall = errors.New("the node was removed while it was being i
 // login is used by the job and never kept, and every secret in it, and the
 // REALITY key the job makes, is taken out of whatever the job shows. The job
 // carries the rest of what was asked, so that the page can offer the same
-// install again.
+// install again, but for the one thing that is asked again each time: that the
+// server's own Xray may be taken over (req.TakeOverXray) is not in the form it
+// carries.
 func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, error) {
 	name, err := model.CleanName(req.Name)
 	if err != nil {
@@ -98,13 +101,14 @@ func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, 
 		return "", err
 	}
 
+	opts := agentops.InstallOptions{TakeOverXray: req.TakeOverXray}
 	spec := jobs.Spec{
-		Kind: jobs.KindInstall, NodeID: node.ID, Target: node.Name, Steps: installSteps(),
+		Kind: jobs.KindInstall, NodeID: node.ID, Target: node.Name, Steps: installSteps(opts),
 		Secrets: lg.secrets(keys.PrivateKey),
 		Install: &jobs.InstallForm{Name: node.Name, Host: node.Host, SSHPort: node.SSHPort, SSHUser: node.SSHUser, EntryPort: node.EntryPort},
 	}
 	id, err := m.startJob(spec, m.usesDownloads(func(ctx context.Context, r *jobs.Run) error {
-		return m.runInstall(ctx, r, ops, node, lg, keys)
+		return m.runInstall(ctx, r, ops, node, lg, keys, opts)
 	}))
 	if err != nil {
 		// no job will ever finish this one, so it isn't left for a person to find
@@ -143,7 +147,7 @@ func (m *Manager) checkNew(s model.State, name, host string) error {
 // set up. One that fails is cleaned up after (afterFailure), so the job ends
 // with no node or with an unfinished install, never with a node that only
 // looks like one.
-func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, lg login, keys agentops.RealityKeys) (err error) {
+func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, lg login, keys agentops.RealityKeys, opts agentops.InstallOptions) (err error) {
 	settled := false
 	defer func() {
 		// a panic ends the job, and the record mustn't go on looking like a running install
@@ -151,52 +155,61 @@ func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node mod
 			m.keepUnfinished(node.ID, model.InstallFailure{Error: "The install stopped on an internal error.", At: m.now().UTC().Truncate(time.Second)})
 		}
 	}()
-	changed, err := m.install(ctx, r, ops, node, lg.creds, keys)
+	did, err := m.install(ctx, r, ops, node, lg.creds, keys, opts)
 	if err != nil {
-		err = m.afterFailure(ctx, r, ops, node, lg.creds, changed, err, lg.secrets(keys.PrivateKey))
+		err = m.afterFailure(ctx, r, ops, node, lg.creds, did, err, lg.secrets(keys.PrivateKey))
 	}
 	settled = true
 	return err
 }
 
-// install is runInstall's work. changed says whether the server may have
-// been changed by the time it failed: the agent's install says so of its own
-// steps, and after it everything has.
-func (m *Manager) install(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, keys agentops.RealityKeys) (changed bool, err error) {
+// installed is what an install had done to the server by the time it ended.
+type installed struct {
+	// changed: the server may have been changed. The agent's install says so of its
+	// own steps, and after it everything has.
+	changed bool
+	// tookOver: the server's own Xray was stopped and taken away, which nothing puts back.
+	tookOver bool
+}
+
+// install is runInstall's work, and says how far it got on the server.
+func (m *Manager) install(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, keys agentops.RealityKeys, opts agentops.InstallOptions) (did installed, err error) {
 	progress := progressTo(r)
-	res, err := ops.InstallAgent(ctx, node, creds, progress)
+	res, err := ops.InstallAgent(ctx, node, creds, opts, progress)
+	did = installed{changed: res.Changed, tookOver: res.TookOver}
 	if err != nil {
-		return res.Changed, err
+		return did, err
 	}
+	did.changed = true
 	node.Arch = res.Arch
 
 	r.Begin(StepConnect)
 	c, err := ops.Connect(ctx, node)
 	if err != nil {
 		r.Fail(StepConnect, err)
-		return true, err
+		return did, err
 	}
 	defer c.Close()
 	r.Done(StepConnect)
 
 	st := m.cfg.Store.Read()
 	prov, err := ops.Provision(ctx, c, agentops.ProvisionInput{
-		Node: node, Keys: keys, Clients: clientsOf(st, node.ID), Bridge: bridgeOf(node),
+		Node: node, Keys: keys, Clients: clientsOf(st, node.ID), Bridge: bridgeOf(node), XrayKept: res.XrayKept,
 	}, progress)
 	if err != nil {
-		return true, err
+		return did, err
 	}
 
 	r.Begin(StepSaveNode)
 	if err := m.register(node.ID, res, prov); err != nil {
 		r.Fail(StepSaveNode, err)
-		return true, err
+		return did, err
 	}
 	// the loop and the bridge take the node up from here
 	m.Sync()
 	r.Done(StepSaveNode)
-	m.log.Info("a node is installed", "node", node.ID, "name", node.Name, "agent", res.AgentVersion, "xray", prov.XrayVersion)
-	return true, nil
+	m.log.Info("a node is installed", "node", node.ID, "name", node.Name, "agent", res.AgentVersion, "xray", prov.XrayVersion, "tookOverXray", res.TookOver)
+	return did, nil
 }
 
 // How a failed install ended, which its job's error says after the cause.
@@ -206,11 +219,16 @@ const (
 	keptAsIs         // the cleanup failed too, and the install is kept as unfinished
 )
 
+// tookOverNote is what a failed install says when it had taken over the server's
+// own Xray: that is not undone by anything, and the person is told so plainly.
+const tookOverNote = "The server's own Xray was stopped and removed, as you asked, and is not restored."
+
 // failedInstall is the error of an install job that failed: the cause, and
 // what was done about it. The cause stays reachable, for the job's code.
 type failedInstall struct {
-	cause   error
-	outcome int
+	cause    error
+	outcome  int
+	tookOver bool // the server's own Xray was taken over before it failed
 }
 
 func (e *failedInstall) Unwrap() error { return e.cause }
@@ -225,6 +243,9 @@ func (e *failedInstall) Error() string {
 	default:
 		then = "Cleaning up the server failed too, so the install is kept as unfinished: clean it up or forget it on the Nodes tab."
 	}
+	if e.tookOver {
+		then += " " + tookOverNote
+	}
 	// the cause is cut to fit, so that what was done is never what the job's error loses
 	cause := strings.TrimSpace(e.cause.Error())
 	if room := jobs.MaxError - utf8.RuneCountInString(then) - 2; utf8.RuneCountInString(cause) > room {
@@ -238,28 +259,33 @@ func (e *failedInstall) Error() string {
 
 // afterFailure is what an install job does once it has failed with cause. An
 // install that changed the server is taken off it first (UndoInstall, with the
-// login the job still holds, which puts the server back as the marker says);
-// one that changed nothing has nothing to take off. When that worked the node
-// is forgotten, as a forced removal forgets one. When it didn't, the record is
-// kept as an unfinished install, with what failed, and is no node from then on.
+// login the job still holds, which puts the server back as the marker says,
+// but for the server's own Xray when the install took it over, which stays
+// gone and is said to); one that changed nothing has nothing to take off. When
+// that worked the node is forgotten, as a forced removal forgets one. When it
+// didn't, the record is kept as an unfinished install, with what failed, and is
+// no node from then on.
 //
 // The record keeps the texts of the errors, with the secrets of the login and
 // the REALITY key taken out as the job's own texts have them: a library may
 // repeat what it was given.
-func (m *Manager) afterFailure(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, changed bool, cause error, secrets []string) error {
+func (m *Manager) afterFailure(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, did installed, cause error, secrets []string) error {
 	said := func(err error) string { return clipText(jobs.Hide(err.Error(), secrets)) }
 	failure := model.InstallFailure{Error: said(cause), At: m.now().UTC().Truncate(time.Second)}
+	if did.tookOver {
+		failure.Error = clipText(said(cause) + " " + tookOverNote)
+	}
 	if step := r.FailedStep(); step != "" {
 		failure.Step, failure.StepKey = step, StepKey(step)
 	}
 	outcome := leftAlone
-	if changed {
+	if did.changed {
 		outcome = cleanedUp
 		if err := ops.UndoInstall(ctx, node, creds, progressTo(r)); err != nil {
 			failure.Cleanup = said(err)
 			m.keepUnfinished(node.ID, failure)
 			m.log.Warn("an install failed and its server could not be cleaned up", "node", node.ID, "host", node.Host, "err", failure.Cleanup)
-			return &failedInstall{cause, keptAsIs}
+			return &failedInstall{cause, keptAsIs, did.tookOver}
 		}
 	}
 	r.Begin(StepDiscardNode)
@@ -267,11 +293,11 @@ func (m *Manager) afterFailure(ctx context.Context, r *jobs.Run, ops Ops, node m
 		r.Fail(StepDiscardNode, err)
 		failure.Cleanup = "The server was cleaned up, but the record could not be deleted: " + said(err)
 		m.keepUnfinished(node.ID, failure)
-		return &failedInstall{cause, keptAsIs}
+		return &failedInstall{cause, keptAsIs, did.tookOver}
 	}
 	r.Done(StepDiscardNode)
-	m.log.Info("an install failed and left nothing behind", "node", node.ID, "host", node.Host, "cleaned", changed)
-	return &failedInstall{cause, outcome}
+	m.log.Info("an install failed and left nothing behind", "node", node.ID, "host", node.Host, "cleaned", did.changed, "tookOverXray", did.tookOver)
+	return &failedInstall{cause, outcome, did.tookOver}
 }
 
 // keepUnfinished marks the node an unfinished install that failed so. A node

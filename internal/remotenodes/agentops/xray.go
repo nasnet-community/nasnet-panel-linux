@@ -36,10 +36,21 @@ const (
 // ErrAgentOutdated: update the agent first.
 func (e *Env) PushXray(ctx context.Context, c *agent.Client, node model.Node, restart bool, progress Progress) (err error) {
 	defer func() { err = ctxErr(ctx, err) }()
-	return e.pushXray(ctx, c, node, restart, newStepper(progress))
+	return e.pushXray(ctx, c, node, restart, false, newStepper(progress))
 }
 
-func (e *Env) pushXray(ctx context.Context, c *agent.Client, node model.Node, restart bool, st *stepper) error {
+// pushXray is PushXray's work. kept says the build on the node is known to be
+// the pinned one (checked by its checksum over SSH, which the agent's version
+// line can't show of a patched build), so it is neither fetched nor sent, and
+// the node is only asked what runs.
+func (e *Env) pushXray(ctx context.Context, c *agent.Client, node model.Node, restart, kept bool, st *stepper) error {
+	if kept {
+		st.skip(StepDownloadXray, "")
+		st.skip(StepUploadXray, "")
+		done := st.begin(StepCheckXray)
+		detail, err := e.waitXray(ctx, c, node, pin.Version, restart)
+		return done(detail, err)
+	}
 	done := st.begin(StepDownloadXray)
 	info, err := c.GetVersion(ctx)
 	if err != nil {
@@ -129,7 +140,7 @@ func pushFailure(err error) error {
 // itself, since both ends of the tunnel have to run the same build.
 func (e *Env) UpdateXray(ctx context.Context, c *agent.Client, node model.Node, progress Progress) (_ Versions, err error) {
 	defer func() { err = ctxErr(ctx, err) }()
-	if err := e.pushXray(ctx, c, node, true, newStepper(progress)); err != nil {
+	if err := e.pushXray(ctx, c, node, true, false, newStepper(progress)); err != nil {
 		return Versions{}, err
 	}
 	return e.versions(ctx, c, node)
