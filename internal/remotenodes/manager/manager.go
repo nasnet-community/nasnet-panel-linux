@@ -22,6 +22,11 @@ const (
 	DefaultEntryEvery  = 30 * time.Second
 	DefaultBridgeEvery = 2 * time.Second
 
+	// DefaultReconcileEvery is how often a connected node's clients are looked
+	// at when nothing has said they should be: a client was once seen to vanish
+	// from a node's Xray with no restart and no call to remove it.
+	DefaultReconcileEvery = 5 * time.Minute
+
 	// DefaultStatusAddr is where the bridge serves its status page. It is
 	// loopback, so only the hub in the same container can read it.
 	DefaultStatusAddr = "127.0.0.1:18090"
@@ -81,6 +86,8 @@ type Config struct {
 	StateEvery  time.Duration // looking at the state for an edit nobody announced
 	EntryEvery  time.Duration // reading the router's report
 	BridgeEvery time.Duration // the bridge's status, and the spec it should have
+
+	ReconcileEvery time.Duration // putting a node's clients right when nothing announced a reason
 }
 
 // Manager keeps the hub's live state. All its methods are safe for concurrent
@@ -181,6 +188,7 @@ func New(cfg Config) (*Manager, error) {
 	}{
 		{&cfg.PollEvery, DefaultPollEvery}, {&cfg.StateEvery, DefaultStateEvery},
 		{&cfg.EntryEvery, DefaultEntryEvery}, {&cfg.BridgeEvery, DefaultBridgeEvery},
+		{&cfg.ReconcileEvery, DefaultReconcileEvery},
 	} {
 		if *d.v <= 0 {
 			*d.v = d.def

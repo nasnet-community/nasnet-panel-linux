@@ -789,3 +789,52 @@ func TestANewCAMakesEveryLoopReconnect(t *testing.T) {
 		}
 	})
 }
+
+// A client was once seen to vanish from a node's Xray with no restart and no
+// call to remove it. Nothing announced it, so the clock puts it back.
+func TestAClientThatVanishesWithNoAnnouncementIsPutBackByTheTimedPass(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t, func(c *Config) { c.ReconcileEvery = 10 * time.Minute })
+		st := r.cfg.Store
+		n := addNode(t, st)
+		ali := addSubscription(t, st, "ali")
+		enable(t, st, ali.ID, n.ID, true)
+		ag := r.net.agent(n.ID)
+		r.start()
+		defer r.stop()
+
+		if ag.count("AddUser sub-1") != 1 {
+			t.Fatalf("the client was not added once: %v", ag.callsFrom(0))
+		}
+		// gone, with no restart seen and no call
+		ag.set(func(a *fakeAgent) { delete(a.users, "sub-1@remote-nodes") })
+
+		r.advance(9 * time.Minute)
+		if ag.count("AddUser sub-1") != 1 {
+			t.Errorf("put back before the pass was due: %v", ag.callsFrom(0))
+		}
+		r.advance(2 * time.Minute)
+		if ag.count("AddUser sub-1") != 2 {
+			t.Errorf("not put back by the timed pass: %v", ag.callsFrom(0))
+		}
+		if got := ag.emails(); !slices.Equal(got, []string{"sub-1@remote-nodes"}) {
+			t.Errorf("the node holds %v", got)
+		}
+		if r.log.count("level=INFO", "reconciled a node's clients", "added=[sub-1@remote-nodes]") != 2 {
+			t.Errorf("the put-back is not in the log:\n%s", r.log)
+		}
+
+		// a timed pass that finds everything right is not news
+		before := r.log.count("level=INFO", "reconciled a node's clients")
+		r.advance(35 * time.Minute)
+		if got := r.log.count("level=INFO", "reconciled a node's clients"); got != before {
+			t.Errorf("%d quiet passes were logged at info", got-before)
+		}
+		if got := r.log.count("level=DEBUG", "reconciled a node's clients"); got < 3 {
+			t.Errorf("only %d quiet passes in 35 minutes, want one every ten", got)
+		}
+		if ag.count("AddUser") != 2 || ag.count("RemoveUser") != 0 {
+			t.Errorf("a node that was right was changed: %v", ag.callsFrom(0))
+		}
+	})
+}
