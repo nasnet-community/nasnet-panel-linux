@@ -320,14 +320,15 @@ test.describe('the router\'s Settings tab in Persian', () => {
 })
 
 test.describe('removing a node in Persian', () => {
-  test('asks plainly, then for a login, in Persian', async ({ page }) => {
+  test('asks for the login first, and says why, in Persian', async ({ page }) => {
     await openNode(page, 2)
     await openMenu(page)
     await menuItem(page, 'حذف نود…').click()
     const d = dialog(page, 'Node 2 حذف شود؟')
     await expect(d).toContainText('ایجنت و Xray از نود پاک می‌شوند و لینک همهٔ اشتراک‌ها به آن از کار می‌افتد.')
-    await d.getByRole('button', { name: 'حذف نود', exact: true }).click()
-    await expect(d.getByText('روتر به ایجنت این نود نمی‌رسد، پس برای حذف آن با SSH وارد شوید.')).toBeVisible()
+    // no confirmation in between: the login form is what opens, with the reason for it
+    await expect(d.getByText('حذف ایجنت و Xray از سرور به دسترسی SSH نیاز دارد. برای این کار وارد شوید.')).toBeVisible()
+    await expect(d.getByRole('button', { name: 'ورود و حذف' })).toBeVisible()
     await expect(d.getByText('ورود ندارید؟ بعداً ایجنت را دستی پاک کنید.')).toBeVisible()
     await d.getByRole('button', { name: 'فراموش کردن بدون حذف' }).click()
     // one short step: the job may be over before its dialog is up

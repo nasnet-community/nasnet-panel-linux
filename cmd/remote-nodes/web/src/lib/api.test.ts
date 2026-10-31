@@ -80,7 +80,7 @@ describe('request', () => {
 
   it("turns an error body into an ApiError and keeps the server's code and extra fields", async () => {
     fetchMock.mockResolvedValue(reply(409, { code: 'needs_login', error: 'log in first', needLogin: true }))
-    const err = await api.remove(2).catch((e) => e)
+    const err = await api.remove(2, { force: true }).catch((e) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect(err.message).toBe('log in first')
     expect(err.status).toBe(409)
@@ -90,9 +90,9 @@ describe('request', () => {
 
   it('reads needs_login from the code alone', async () => {
     fetchMock.mockResolvedValue(reply(409, { code: 'needs_login', error: 'log in first' }))
-    expect(((await api.remove(2).catch((e) => e)) as ApiError).needLogin).toBe(true)
+    expect(((await api.remove(2, { force: true }).catch((e) => e)) as ApiError).needLogin).toBe(true)
     fetchMock.mockResolvedValue(reply(403, { code: 'forbidden', error: 'no' }))
-    expect(((await api.remove(2).catch((e) => e)) as ApiError).needLogin).toBe(false)
+    expect(((await api.remove(2, { force: true }).catch((e) => e)) as ApiError).needLogin).toBe(false)
   })
 
   it('names the status when the body has no message', async () => {

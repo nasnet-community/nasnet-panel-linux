@@ -319,22 +319,36 @@ test.describe('naming and removing', () => {
     await expect(card(page, 'Tehran')).toBeVisible()
   })
 
-  test('removes a node the router can reach: one confirmation, a job, and back to the list', async ({ page }) => {
+  test('asks for the SSH login first and says why, then removes the node with it', async ({ page }) => {
+    const secret = 'hunter2-not-a-real-password'
+    const calls: unknown[] = []
+    page.on('request', (r) => r.url().endsWith('/api/nodes/1/remove') && r.method() === 'POST' && calls.push(r.postDataJSON()))
     await openNode(page, 1)
     await openMenu(page)
     await menuItem(page, 'Remove node…').click()
-    const confirm = dialog(page, 'Remove Node 1?')
-    await expect(confirm).toContainText("The agent and Xray are removed from the node, and every subscription's link to it stops working.")
-    const sent = page.waitForRequest((r) => r.url().endsWith('/api/nodes/1/remove') && r.method() === 'POST')
-    await confirm.getByRole('button', { name: 'Remove node' }).click()
-    // no login was asked for, none was sent
-    expect((await sent).postDataJSON()).toEqual({})
+    const d = dialog(page, 'Remove Node 1?')
+    // the login form is the first thing there is: what removal does, why a login is needed, and no call yet
+    await expect(d).toContainText("The agent and Xray are removed from the node, and every subscription's link to it stops working.")
+    await expect(d.getByText('Removing the agent and Xray from the server needs SSH access. Log in to do it.')).toBeVisible()
+    await expect(d.getByLabel('SSH port')).toHaveValue('22')
+    await expect(d.getByLabel('Username')).toHaveValue('root')
+    await expect(d.getByText('No login? Remove the agent by hand later.')).toBeVisible()
+    await expect(d.getByRole('button', { name: 'Remove node', exact: true })).toHaveCount(0)
+    expect(calls).toEqual([])
+
+    await d.locator('input[type="password"]').fill(secret)
+    await d.getByRole('button', { name: 'Log in and remove' }).click()
     const job = dialog(page, /^(Removing the node|Node removed)/)
-    await expect(job.getByText('Remove the agent')).toBeVisible()
-    await expect(job.getByText('Forget the node')).toBeVisible()
+    // taking the agent off the server is four steps, the last of which forgets the node
+    for (const step of ['Check the server', 'Stop the agent', 'Remove the agent', 'Forget the node']) await expect(job.getByText(step)).toBeVisible()
     await expect(dialog(page, /^Node removed/)).toBeVisible({ timeout: 20000 })
     await expect(toast(page, 'Node removed · Node 1')).toBeVisible()
     await finishJob(page, /^Node removed/)
+    // one call, and it carried the login: the host key is the one the node was set up with
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ login: { sshPort: 22, sshUser: 'root', password: secret } })
+    expect((calls[0] as { login: { hostKey: string } }).login.hostKey).toMatch(/^SHA256:/)
+    expect(calls[0]).not.toHaveProperty('force')
     // the node page is gone, and the list has two
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByText('2 of 3 nodes')).toBeVisible()
@@ -342,15 +356,13 @@ test.describe('naming and removing', () => {
     await expect(card(page, 'Node 2')).toBeVisible()
   })
 
-  test('a node the router cannot reach asks for a login, and takes it with its host key checked', async ({ page }) => {
+  test('a node the router cannot reach is asked for the same login, with its host key checked', async ({ page }) => {
     const secret = 'hunter2-not-a-real-password'
     await openNode(page, 2)
     await openMenu(page)
     await menuItem(page, 'Remove node…').click()
     const d = dialog(page, 'Remove Node 2?')
-    await d.getByRole('button', { name: 'Remove node' }).click()
-    // the hub said it needs a login: the same dialog goes on to ask
-    await expect(d.getByText("The router can't reach this node's agent, so log in over SSH to remove it.")).toBeVisible()
+    await expect(d.getByText('Removing the agent and Xray from the server needs SSH access. Log in to do it.')).toBeVisible()
     await expect(d.getByLabel('SSH port')).toHaveValue('22')
     await expect(d.getByLabel('Username')).toHaveValue('root')
     await expect(d.getByText('No login? Remove the agent by hand later.')).toBeVisible()
@@ -387,15 +399,15 @@ test.describe('naming and removing', () => {
     await openMenu(page)
     await menuItem(page, 'Remove node…').click()
     const d = dialog(page, 'Remove Node 2?')
-    await d.getByRole('button', { name: 'Remove node' }).click()
     const sent = page.waitForRequest((r) => r.url().endsWith('/api/nodes/2/remove') && r.method() === 'POST')
     await d.getByRole('button', { name: 'Forget without removing' }).click()
     expect((await sent).postDataJSON()).toEqual({ force: true })
     // one step, so short that the job may be over before its dialog is up
     const job = dialog(page, /^(Removing the node|Node removed)/)
     await expect(job.getByText('Forget the node')).toBeVisible()
-    // nothing is removed from the server
+    // nothing is taken off the server
     await expect(job.getByText('Remove the agent')).toHaveCount(0)
+    await expect(job.getByText('Check the server')).toHaveCount(0)
     await expect(dialog(page, /^Node removed/)).toBeVisible({ timeout: 20000 })
     await finishJob(page, /^Node removed/)
     await expect(card(page, 'Node 2')).toHaveCount(0)
@@ -407,7 +419,6 @@ test.describe('naming and removing', () => {
     await openMenu(page)
     await menuItem(page, 'Remove node…').click()
     const d = dialog(page, 'Remove Node 2?')
-    await d.getByRole('button', { name: 'Remove node' }).click()
     await d.locator('input[type="password"]').fill('a-password')
     await d.getByRole('button', { name: 'Log in and remove' }).click()
     await expect(d).toContainText('198.51.100.7 shows a different key than last time.')
@@ -431,8 +442,26 @@ test.describe('naming and removing', () => {
     await openMenu(page)
     await menuItem(page, 'Remove node…').click()
     const d = dialog(page, 'Remove Node 3?')
-    await d.getByRole('button', { name: 'Remove node' }).click()
+    await d.locator('input[type="password"]').fill('a-password')
+    await d.getByRole('button', { name: 'Log in and remove' }).click()
     await expect(d.getByRole('alert')).toContainText('Another job is already running on this node.')
+  })
+
+  test('a hub that asks for a login all the same gets the login form back, with its reason', async ({ page }) => {
+    // the page always sends a login or force, so this answer is made up: what the page does with one is what is under test
+    await openNode(page, 1)
+    await page.route('**/api/nodes/1/remove', (route) =>
+      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'needs_login', error: 'log in first', needLogin: true }) }),
+    )
+    await openMenu(page)
+    await menuItem(page, 'Remove node…').click()
+    const d = dialog(page, 'Remove Node 1?')
+    await d.locator('input[type="password"]').fill('a-password')
+    await d.getByRole('button', { name: 'Log in and remove' }).click()
+    await expect(d.getByRole('alert')).toContainText('Removing the agent and Xray needs an SSH login.')
+    // still the form, with what was typed
+    await expect(d.locator('input[type="password"]')).toHaveValue('a-password')
+    await expect(d.getByRole('button', { name: 'Log in and remove' })).toBeEnabled()
   })
 })
 

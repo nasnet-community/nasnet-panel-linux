@@ -4,16 +4,17 @@ import {
   HostKeyCheck,
   LoginFields,
   emptyLogin,
+  forgetOnly,
   keyNeedsTrust,
   keyTrusted,
   loginError,
-  toLogin,
+  removeWithLogin,
   withoutSecrets,
   type LoginForm,
 } from '../components/login'
 import { Badge, Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang, type T } from '../i18n'
-import { ApiError, api, type HandshakeCheck, type Node, type ProbeResult, type RemoveRequest, type Started } from '../lib/api'
+import { ApiError, api, type HandshakeCheck, type Node, type ProbeResult, type Started } from '../lib/api'
 import { normalizeTarget, openConnections } from '../lib/node'
 
 /** Starts a job and shows it; throws when the hub refuses. The node page provides it. */
@@ -336,41 +337,41 @@ function useHostKey(node: Node, login: LoginForm) {
 }
 
 /**
- * Takes a node out. A node the router can reach is removed with its agent; one it can't asks for an
- * SSH login (with its host key checked first), or can be forgotten without touching the server.
+ * Takes a node out. The agent and Xray are on the server, and the hub can't take them off by itself, so
+ * this asks for an SSH login first (its host key looked at before it goes out), or forgets the node and
+ * leaves the server as it is.
  */
 export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose: () => void; onStarted: (jobId: string) => void }) {
   const { t } = useLang()
   const errorText = useErrorText()
-  const [stage, setStage] = useState<'confirm' | 'login'>('confirm')
   const [login, setLogin] = useState<LoginForm>(() => emptyLogin(node.sshPort, node.sshUser))
   const [busy, setBusy] = useState<'remove' | 'force' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const key = useHostKey(node, login)
-  const probe = stage === 'login' ? key.probe : null
+  const probe = key.probe
 
   const start = async (how: 'remove' | 'force', hostKey?: string) => {
-    const withLogin = stage === 'login' && how === 'remove'
-    if (withLogin) {
+    if (how === 'remove') {
       const problem = loginError(login)
       if (problem) return setError(t(problem))
     }
     setBusy(how)
     setError(null)
     try {
-      let req: RemoveRequest = {}
-      if (how === 'force') req = { force: true }
-      else if (withLogin) {
+      let req = forgetOnly()
+      if (how === 'remove') {
         const fingerprint = hostKey ?? (await key.check())
+        // a key that changed is shown first, and Trust and remove comes back here with it
         if (fingerprint === null) return
-        req = { login: toLogin(login, fingerprint) }
+        req = removeWithLogin(login, fingerprint)
       }
       const res = await api.remove(node.id, req)
       setLogin(withoutSecrets)
       onStarted(res.jobId)
     } catch (e) {
-      if (e instanceof ApiError && e.needLogin) setStage('login')
-      else setError(errorText(e))
+      // every request carries a login or force, so the hub has nothing to ask for; if it asks anyway, the login form is where it goes on
+      if (e instanceof ApiError && e.needLogin) key.back()
+      setError(errorText(e))
     } finally {
       setBusy(null)
     }
@@ -381,13 +382,6 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
       <Button onClick={key.back}>{t('add.back')}</Button>
       <Button variant="danger" disabled={!key.trusted || !!busy} busy={busy === 'remove'} onClick={() => void start('remove', probe.fingerprint)}>
         {t('remove.trust')}
-      </Button>
-    </>
-  ) : stage === 'confirm' ? (
-    <>
-      <Button onClick={onClose}>{t('common.cancel')}</Button>
-      <Button variant="danger" busy={busy === 'remove'} onClick={() => start('remove')}>
-        {t('remove.action')}
       </Button>
     </>
   ) : (
@@ -401,9 +395,9 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
 
   return (
     <Dialog onClose={onClose} title={t('remove.title', { name: node.name })} footer={footer}>
-      {stage === 'confirm' && <p className="text-[13px] text-muted">{t('remove.note')}</p>}
-      {probe && <HostKeyCheck host={node.host} probe={probe} acked={key.acked} onAck={key.setAcked} />}
-      {stage === 'login' && !probe && (
+      {probe ? (
+        <HostKeyCheck host={node.host} probe={probe} acked={key.acked} onAck={key.setAcked} />
+      ) : (
         <form
           id="remove-login"
           className="grid grid-cols-6 gap-3"
@@ -413,8 +407,9 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
             void start('remove')
           }}
         >
+          <p className="col-span-6 text-[13px] text-muted">{t('remove.note')}</p>
           <div className="col-span-6">
-            <Notice tone="warn">{t('remove.needsLogin')}</Notice>
+            <Notice>{t('remove.needsLogin')}</Notice>
           </div>
           <LoginFields form={login} onChange={setLogin} />
           <div className="col-span-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-[13px] text-muted">

@@ -467,9 +467,12 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     }), true
   }
 
-  // remove: forget it at once, or take the agent off the node first
+  // remove: the agent can't take itself off the server, so the hub wants a login to do it, or force to only
+  // forget the node, whether the node can be reached or not
   const req = body as { force?: boolean; login?: { password?: string; privateKey?: string; hostKey?: string } }
-  if (!req.force && !req.login && !reachable(n)) return fail(409, 'needs_login', "the router can't reach this node, so it needs an SSH login", { needLogin: true }), true
+  if (req.force && req.login) return fail(400, 'bad_request', 'Send a login or force the removal, not both.'), true
+  if (!req.force && !req.login)
+    return fail(409, 'needs_login', "The agent can't be taken off the server without an SSH login. Send one, or forget the node and leave the server as it is.", { needLogin: true }), true
   if (req.login) {
     if (!req.login.password && !req.login.privateKey) return fail(400, 'bad_request', 'give a password or a private key'), true
     if (!String(req.login.hostKey ?? '').startsWith('SHA256:')) return fail(400, 'bad_request', "confirm the node's host key first"), true
