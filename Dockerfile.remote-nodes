@@ -18,7 +18,8 @@ ARG COMMIT=unknown
 ARG SOURCE_URL=https://github.com/nasnet-community/nasnet-panel-linux
 
 # The web page, built into one self-contained index.html and packed with
-# brotli, which is the form the hub embeds.
+# brotli, which is the form the hub embeds. pack also writes dist/NOTICES.txt,
+# the licences of the libraries and the font the page carries.
 FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS web
 WORKDIR /web
 COPY cmd/remote-nodes/web/package.json cmd/remote-nodes/web/package-lock.json ./
@@ -60,11 +61,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       upx -q --lzma /out/$b; \
       upx -q -t /out/$b; \
     done
-# The licences of what was just linked, read from the module cache.
+# The licences of what was just linked, read from the module cache, and the
+# page's own, which the web stage wrote.
 RUN --mount=type=cache,target=/go/pkg/mod \
     set -eux; \
     export CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH"; \
     sh scripts/remote-nodes-licenses.sh /out/licenses
+COPY --from=web /web/dist/NOTICES.txt /out/licenses/web-notices.txt
 
 # What the image ships besides busybox, so CI can export it and check the
 # sizes and the licence files.

@@ -1,7 +1,9 @@
 #!/bin/sh
 # Collects what the Remote Nodes image carries in /licenses: this repository's
 # LICENSE, a NOTICES file with the licence of Go itself and of every module the
-# hub and the bridge link, and a short README. Dockerfile.remote-nodes runs it.
+# hub and the bridge link, and a short README. Dockerfile.remote-nodes runs it,
+# and then adds web-notices.txt, which the web stage writes (npm run notices in
+# cmd/remote-nodes/web): the licences of the page's libraries and font.
 #
 #   scripts/remote-nodes-licenses.sh OUTDIR [package ...]
 #
@@ -101,6 +103,10 @@ NOTICES  The licence of Go, and of every third-party module linked into the
          MIT) and Xray-core (github.com/xtls/xray-core, Mozilla Public
          License 2.0). Xray-core's source is at https://github.com/XTLS/Xray-core,
          at the commit or tag its version in NOTICES names.
+web-notices.txt
+         The licence of every library built into the web page, with the
+         version it was built with, and the notice of the Vazirmatn font
+         the page embeds a subset of.
 EOF
 
 echo "remote-nodes-licenses: $(wc -l <"$tmp/modules" | tr -d ' ') modules, $files licence files, $(wc -c <"$notices" | tr -d ' ') bytes in $notices"
