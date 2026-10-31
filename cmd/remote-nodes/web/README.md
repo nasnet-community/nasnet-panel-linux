@@ -29,12 +29,13 @@ runs. Its header comment lists the sample data and the scenarios (an address con
 `changed`, `offline` and so on makes the add-node flow go that way). `mock-node.ts` answers the node
 page and the router's Settings tab (traffic, renaming, settings, updates, removal, backup); its header
 lists what `POST /api/__node` can do to a node, such as putting it in the Xray mismatch state. `POST /api/__reset` puts the data
-back and takes `{ fresh, nodes, maxNodes, entry, pace }` to set up other states (the browser tests use
+back and takes `{ fresh, nodes, maxNodes, entry, pace, unfinished }` to set up other states (the browser tests use
 it). The calls that change subscriptions (add, rename, delete, the switch per node, the links) are in
 `mock-subscriptions.ts`. It is not part of the build.
 
-The mock follows the hub where the page can tell: an install is the hub's fifteen steps and a failed one leaves its node
-unfinished, a removal needs an SSH login or `force` whether or not the node can be reached, and a step goes by the key the
+The mock follows the hub where the page can tell: an install is the hub's fifteen steps, a failed one cleans the server
+up and leaves no node (or, when the cleanup fails too, an unfinished install that only Clean up or Forget takes out), a
+server with its own Xray or agent is refused with a code of its own, a removal needs an SSH login or `force` whether or not the node can be reached, and a step goes by the key the
 hub sends beside its name (`STEPS` in `mock-api.ts` is a copy of `internal/remotenodes/manager/stepkeys.go`).
 
 ## Against a real hub

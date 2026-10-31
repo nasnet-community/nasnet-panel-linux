@@ -28,6 +28,8 @@ const HUB_STEPS: Record<string, string> = {
   restart_agent: 'Restart the agent',
   renew_cert: 'Renew the certificate',
   forget_node: 'Forget the node',
+  clean_server: 'Clean up the server',
+  discard_node: 'Discard the node',
 }
 
 const job = (o: Partial<Job>): Job => ({ id: 'j1', kind: 'install', state: 'running', steps: [], startedAt: '2026-10-01T00:00:00Z', ...o })

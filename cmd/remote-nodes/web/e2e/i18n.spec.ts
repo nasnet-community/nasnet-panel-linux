@@ -137,11 +137,16 @@ test('an install that fails, in Persian, keeps the hub\'s English where it has n
   await dialog(page, 'افزودن نود').getByRole('button', { name: 'اتصال و نصب' }).click()
   const failed = dialog(page, 'نصب ناموفق بود')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('ناموفق در مرحله ۷ از ۱۵')
+  await expect(failed).toContainText('ناموفق در مرحله ۷ از ۱۷')
   await expect(failed).toContainText("The agent doesn't answer on TCP port 9090 (dial tcp fail.example.com:9090: i/o timeout).")
   await expect(failed).toContainText('این روتر از طریق آپ‌لینک داخلی به نود می‌رسد، پس آدرس آن باید در فهرست داخلی باشد.')
-  // the hub keeps the node, so the way on is to open it
-  await expect(failed.getByRole('button', { name: 'باز کردن نود' })).toBeVisible()
+  // what was done about it is in the page's words, and so are the cleanup's steps
+  await expect(failed).toContainText('سرور پاک‌سازی شد و چیزی نگه داشته نشد.')
+  await expect(failed).toContainText('پاک‌سازی سرور')
+  await expect(failed).toContainText('کنار گذاشتن نود')
+  // no node was kept, so the way on is another try
+  await expect(failed.getByRole('button', { name: 'تلاش دوباره' })).toBeVisible()
+  await expect(failed.getByRole('button', { name: 'باز کردن نود' })).toHaveCount(0)
 })
 
 test('arrow keys follow the reading direction in the tabs', async ({ page }) => {

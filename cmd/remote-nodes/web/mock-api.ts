@@ -18,16 +18,21 @@
 // Add-node scenarios, picked by the address you type:
 //   address contains "offline" -> the host key check can't connect
 //   address contains "changed" -> the host key differs from last time
-//   address contains "fail"    -> fails at "Check the agent" (dial timeout)
-//   address contains "late"    -> fails at "Choose a handshake target"
-//   (a failed install keeps its node, never finished, as the hub does: only removing it works)
+//   address contains "fail"    -> fails at "Check the agent" (dial timeout), then cleans the server up
+//   address contains "late"    -> fails at "Choose a handshake target", then cleans the server up
+//   address contains "hasxray" -> refused at "Check the server": it runs an Xray of its own (server_has_xray)
+//   address contains "hasagent"-> refused at "Check the server": it runs another agent (server_has_agent)
+//   address contains "stuck"   -> fails at "Upload the agent", and the cleanup fails too: the install is
+//                                 kept as unfinished, which only Clean up or Forget takes out
+//   (as the hub does, a failed install leaves no node behind unless its cleanup failed too)
 //   address contains "poll"    -> the job's event stream answers 503, so the page polls
 //   password "wrong"           -> the login is refused before any job starts
 //   an existing address        -> refused: it is already a node here
 //
-// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace }:
+// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished }:
 //   fresh     the first-run state above
 //   nodes     0 to 3: how many of the sample nodes stay (1 keeps only Node 1)
+//   unfinished true: an install that didn't finish beside them ("Old install", 192.0.2.77, id 9)
 //   maxNodes  the router's cap (3)
 //   entry     "off", "domestic-offline", "vpn-offline", "stale" or "old-routeros"
 //   pace      how long install steps take, as a multiple of the usual (1)
@@ -84,6 +89,8 @@ export interface MockNode {
   agentStart: number
   /** the install job, while it runs */
   installJob?: string
+  /** an install that stopped and wasn't cleaned up: no node, and only Clean up or Forget work */
+  failure?: { step?: { key: string; name: string }; error: string; cleanup: string; at: number }
   rate: { up: number; down: number }
   today: { up: number; down: number }
   month: { up: number; down: number }
@@ -132,6 +139,8 @@ export const STEPS = {
   restartAgent: { key: 'restart_agent', name: 'Restart the agent' },
   renewCert: { key: 'renew_cert', name: 'Renew the certificate' },
   forgetNode: { key: 'forget_node', name: 'Forget the node' },
+  cleanServer: { key: 'clean_server', name: 'Clean up the server' },
+  discardNode: { key: 'discard_node', name: 'Discard the node' },
 } as const
 
 export let nodes: MockNode[] = []
@@ -177,7 +186,7 @@ function sub(name: string, o: Partial<MockSub> = {}): MockSub {
   return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month: 0, on: new Set(), ...o }
 }
 
-function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number } = {}) {
+function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean } = {}) {
   const now = Date.now()
   nodes = []
   subs = []
@@ -223,6 +232,10 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   const wanted = [n1, n2, n3].slice(0, keep)
   nodes = wanted
   nextNodeId = wanted.length + 1
+  if (o.unfinished) {
+    nodes.push(stuck({ id: 9, name: 'Old install', host: '192.0.2.77', hostKey: 'SHA256:Old1nstallKeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', createdAt: now - 2 * H }, now - 2 * H + 90e3))
+    nextNodeId = 10
+  }
 
   const names: [string, number[], Partial<MockSub>][] = [
     ['Sara', [1, 2], { onlineOn: 1, conns: 3, lastSeen: now, today: 1.2 * GB, month: 38 * GB }],
@@ -278,6 +291,25 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   if (keep >= 2) jobs.set(...finished('seed-node-2', 'install', 2, 'Node 2', 3 * DAY, 168e3))
   if (keep >= 1) jobs.set(...finished('seed-update-1', 'update-agent', 1, '', DAY, 41e3))
 }
+
+/** An install that stopped at the agent's upload and whose cleanup couldn't reach the server either. */
+function stuck(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>, at: number): MockNode {
+  return node({
+    ...o,
+    registered: false,
+    agentVersion: '',
+    xrayVersion: '',
+    failure: {
+      step: STEPS.uploadAgent,
+      error: "Couldn't upload the agent: the connection broke.",
+      cleanup: `Can't reach SSH on ${o.host} port 22 (dial tcp ${o.host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.`,
+      at,
+    },
+  })
+}
+
+/** A record that is a node: set up, or with its install running. */
+export const isNode = (n: MockNode) => !n.failure
 
 // --- views ---
 
@@ -370,7 +402,11 @@ export function view(n: MockNode, detail = false): Node {
       monthDown: Math.round(n.month.down),
       updatedAt: live ? iso(Date.now() - 2000) : null,
     },
-    installing: installingView(n),
+    installing: n.failure ? undefined : installingView(n),
+  }
+  if (n.failure) {
+    const f = n.failure
+    out.unfinished = { stepKey: f.step?.key ?? '', step: f.step?.name ?? '', error: f.error, cleanup: f.cleanup, at: iso(f.at) }
   }
   if (detail) out.events = n.events.slice(0, 50)
   return out
@@ -447,7 +483,7 @@ export function configView(): AppConfig {
     version: VERSION,
     commit: 'a1b2c3d',
     maxNodes,
-    nodeCount: nodes.length,
+    nodeCount: nodes.filter(isNode).length,
     maxSubscriptions: MAX_SUBSCRIPTIONS,
     subscriptionCount: subs.length,
     entry: entryView(),
@@ -495,7 +531,19 @@ export interface Step {
 const snapshot = (j: MockJob): Job => ({ ...j.view, steps: j.view.steps.map((s) => ({ ...s })) })
 const emit = (j: MockJob) => j.listeners.forEach((l) => l(snapshot(j)))
 
-export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void } = {}) {
+/** What a job does after a step failed: more steps (a cleanup), and the error and code it ends with. */
+export interface Recovery {
+  steps: Step[]
+  /** the job's error, from the failed step's text and whether the steps worked */
+  error: (cause: string, worked: boolean) => string
+  code?: string
+}
+
+export function startJob(
+  kind: JobKind,
+  steps: Step[],
+  o: { nodeId?: number; target?: string; noStream?: boolean; end?: () => void; install?: Job['install']; recover?: (failed: Step) => Recovery } = {},
+) {
   const j: MockJob = {
     view: {
       id: hex(16),
@@ -506,17 +554,49 @@ export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; tar
       nodeId: o.nodeId ?? 0,
       target: o.target ?? '',
       startedAt: iso(Date.now()),
+      install: o.install,
     },
     listeners: new Set(),
     noStream: !!o.noStream,
   }
   jobs.set(j.view.id, j)
-  const finish = (error?: string) => {
+  const finish = (error?: string, code?: string) => {
     o.end?.()
     j.view.state = error ? 'failed' : 'ok'
     if (error) j.view.error = error
+    if (code) j.view.code = code
     j.view.finishedAt = iso(Date.now())
     emit(j)
+  }
+  // like the hub: what comes after a failure is added at the end, after the steps never reached
+  const recover = async (failed: Step) => {
+    const r = o.recover?.(failed)
+    if (!r) return finish(failed.fail || 'failed')
+    let worked = true
+    for (const step of r.steps) {
+      j.view.steps.push({ key: step.key, name: step.name, state: 'pending' })
+      if (!(await runStep(step))) {
+        worked = false
+        break
+      }
+    }
+    finish(r.error(failed.fail || '', worked), r.code)
+  }
+  // runs one step; false when it failed
+  const runStep = async (step: Step) => {
+    const s = j.view.steps.find((x) => x.name === step.name)!
+    s.state = 'running'
+    emit(j)
+    await sleep((step.ms ?? 380) * pace)
+    if (step.fail) {
+      Object.assign(s, { state: 'failed', detail: step.fail })
+      emit(j)
+      return false
+    }
+    Object.assign(s, { state: 'ok', detail: step.detail })
+    step.then?.(j)
+    emit(j)
+    return true
   }
   void (async () => {
     await sleep(300 * pace)
@@ -535,7 +615,8 @@ export function startJob(kind: JobKind, steps: Step[], o: { nodeId?: number; tar
       } else await sleep(ms)
       if (step.fail) {
         Object.assign(s, { state: 'failed', detail: step.fail })
-        return finish(step.fail)
+        emit(j)
+        return recover(step)
       }
       Object.assign(s, { state: 'ok', detail: step.detail ?? (step.progress ? `${step.progress.total} ${step.progress.unit}` : undefined) })
       step.then?.(j)
@@ -560,8 +641,17 @@ function streamJob(req: IncomingMessage, res: ServerResponse, j: MockJob) {
   write(snapshot(j))
 }
 
+// What the hub says after an install failed, as manager/install.go words it.
+const NOTHING_CHANGED = 'Nothing was changed on the server, and nothing was kept.'
+const CLEANED = 'The server was cleaned up and nothing was kept.'
+const KEPT = 'Cleaning up the server failed too, so the install is kept as unfinished: clean it up or forget it on the Nodes tab.'
+const XRAY_HERE = 'This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray, an xray.service unit). Use a server without one.'
+const AGENT_HERE = "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one."
+
 // The install is the hub's fifteen steps. The node is saved at the start, as installing, and the job has its
-// id from then on; it is set up at the last step. An install that fails leaves the node as it is, unfinished.
+// id from then on; it is set up at the last step. An install that fails takes off the server what it put
+// there and forgets the node; one that fails before it changed anything only forgets it. When the cleanup
+// fails too, the record is kept as an unfinished install.
 function install(b: Record<string, any>) {
   const host = String(b.host).trim()
   const name = String(b.name || host)
@@ -581,14 +671,43 @@ function install(b: Record<string, any>) {
   nodes.push(n)
   installing.add(host)
   const late = host.includes('late')
+  const refused = host.includes('hasxray') ? XRAY_HERE : host.includes('hasagent') ? AGENT_HERE : ''
+  const forget = () => {
+    const i = nodes.indexOf(n)
+    if (i >= 0) nodes.splice(i, 1)
+  }
+  // the steps before "Prepare the server" only look at the server
+  const looked = new Set<string>([STEPS.checkServer.name, STEPS.downloadAgent.name, STEPS.createCertificate.name])
+  const recover = (failed: Step): Recovery => {
+    if (looked.has(failed.name)) {
+      return { steps: [{ ...STEPS.discardNode, ms: 150, then: forget }], error: (cause) => `${cause} ${NOTHING_CHANGED}`, code: refused ? (host.includes('hasxray') ? 'server_has_xray' : 'server_has_agent') : undefined }
+    }
+    const fails = host.includes('stuck')
+    return {
+      steps: [
+        { ...STEPS.cleanServer, ms: 500, fail: fails && `Can't reach SSH on ${host} port 22 (dial tcp ${host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.` },
+        { ...STEPS.discardNode, ms: 150, then: forget },
+      ],
+      error: (cause, worked) => {
+        if (!worked) n.failure = { step: STEPS[stepOf(failed)], error: cause, cleanup: `Can't reach SSH on ${host} port 22 (dial tcp ${host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.`, at: Date.now() }
+        return `${cause} ${worked ? CLEANED : KEPT}`
+      },
+    }
+  }
   const id = startJob(
     'install',
     [
-      { ...STEPS.checkServer, detail: 'amd64 · Debian GNU/Linux 12 (bookworm)', ms: 300 },
+      { ...STEPS.checkServer, detail: 'amd64 · Debian GNU/Linux 12 (bookworm)', ms: 300, fail: refused },
       { ...STEPS.downloadAgent, detail: `v${AGENT} · 18 MB`, ms: 400 },
       { ...STEPS.createCertificate, detail: 'Valid until 2027-10-31', ms: 200 },
       { ...STEPS.prepareServer, ms: 200 },
-      { ...STEPS.uploadAgent, detail: '18.0 MB sent', ms: 900, progress: { total: '18.0', unit: 'MB' } },
+      {
+        ...STEPS.uploadAgent,
+        detail: '18.0 MB sent',
+        ms: 900,
+        progress: { total: '18.0', unit: 'MB' },
+        fail: host.includes('stuck') && "Couldn't upload the agent: the connection broke.",
+      },
       { ...STEPS.startAgent, ms: 300 },
       {
         ...STEPS.checkAgent,
@@ -616,6 +735,8 @@ function install(b: Record<string, any>) {
       nodeId: n.id,
       target: name,
       noStream: host.includes('poll'),
+      install: { name, host, sshPort: n.sshPort, sshUser: n.sshUser, entryPort: n.entryPort },
+      recover,
       end: () => {
         installing.delete(host)
         delete n.installJob
@@ -625,6 +746,9 @@ function install(b: Record<string, any>) {
   n.installJob = id
   return id
 }
+
+/** The STEPS entry a step is, by its name. */
+const stepOf = (s: Step) => (Object.keys(STEPS) as (keyof typeof STEPS)[]).find((k) => STEPS[k].name === s.name) ?? 'checkServer'
 
 // --- the licence text ---
 
@@ -691,7 +815,8 @@ export function mockApi(): Plugin {
         if (path === 'probe' && method === 'POST') {
           const host = String(body.host ?? '').trim()
           if (host.includes('offline')) return fail(502, 'node_unreachable', `could not connect to ${host}:${body.sshPort}: connection refused`)
-          const here = nodes.find((n) => n.host === host && n.registered)
+          // an unfinished install keeps its pinned key too, which its cleanup is held to
+          const here = nodes.find((n) => n.host === host && (n.registered || n.failure))
           // only a pinned key makes a host known
           const pinned = here?.hostKey ?? ''
           return send(200, {
@@ -718,14 +843,16 @@ export function mockApi(): Plugin {
 
         if (path === 'nodes' && method === 'GET') return send(200, nodes.map((n) => view(n)))
         if (path === 'nodes' && method === 'POST') {
-          if (nodes.length >= maxNodes) return fail(409, 'node_limit', `this router runs at most ${maxNodes} nodes`)
+          // an unfinished install is no node, and doesn't count
+          if (nodes.filter(isNode).length >= maxNodes) return fail(409, 'node_limit', `this router runs at most ${maxNodes} nodes`)
           const host = String(body.host ?? '').trim()
           if (!host) return fail(400, 'bad_request', 'give the node address')
-          if (nodes.some((n) => n.host === host)) return fail(409, 'bad_request', `${host} is already a node here`)
           if (installing.has(host)) return fail(409, 'busy', `an install to ${host} is still running`)
+          if (nodes.some((n) => n.host === host && n.failure)) return fail(400, 'bad_request', "An install on that server didn't finish. Clean it up or forget it on the Nodes tab first.")
+          if (nodes.some((n) => n.host === host)) return fail(409, 'bad_request', `${host} is already a node here`)
           const name = String(body.name ?? '').trim()
           if (tooLong(name)) return fail(400, 'bad_request', NAME_TOO_LONG)
-          if (nodes.some((n) => n.name === name)) return fail(409, 'name_taken', `a node named ${name} already exists`)
+          if (nodes.some((n) => n.name === name && isNode(n))) return fail(409, 'name_taken', `a node named ${name} already exists`)
           if (!body.password && !body.privateKey) return fail(400, 'bad_request', 'give a password or a private key')
           if (!String(body.hostKey ?? '').startsWith('SHA256:')) return fail(400, 'bad_request', "confirm the node's host key first")
           const port = body.entryPort === undefined ? 443 : Number(body.entryPort)

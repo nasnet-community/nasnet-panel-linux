@@ -71,7 +71,11 @@ export function jobLine(t: T, fmt: Format, job: Job, now: number): string {
     const step = m ? t('job.step', { n, m }) : t('job.starting')
     return start ? t('job.soFar', { step, time: fmt.clock((now - start) / 1000) }) : step
   }
-  if (job.state === 'failed') return m ? t('job.failedAt', { n, m }) : t('job.failed')
+  if (job.state === 'failed') {
+    // the step that failed, not the one after the steps that worked: a cleanup may have run after it
+    const at = job.steps.findIndex((s) => s.state === 'failed')
+    return m ? t('job.failedAt', { n: at >= 0 ? at + 1 : n, m }) : t('job.failed')
+  }
   const end = job.finishedAt ? Date.parse(job.finishedAt) : 0
   return start && end ? t('job.took', { time: fmt.clock((end - start) / 1000) }) : t('job.done')
 }
@@ -79,5 +83,9 @@ export function jobLine(t: T, fmt: Format, job: Job, now: number): string {
 // The steps where the router itself reaches the node: the SSH login, and the link to the agent.
 const LINK_STEPS = ['check_server', 'check_agent', 'connect_agent']
 
+// What the server turned out to have, which the router could only find by reaching it.
+const REACHED = ['server_has_xray', 'server_has_agent']
+
 /** The job failed where the router talks to the node: it could not reach it, or the address isn't on the domestic list. */
-export const failedAtLink = (job: Job) => job.state === 'failed' && job.steps.some((s) => s.state === 'failed' && LINK_STEPS.includes(s.key))
+export const failedAtLink = (job: Job) =>
+  job.state === 'failed' && !REACHED.includes(job.code ?? '') && job.steps.some((s) => s.state === 'failed' && LINK_STEPS.includes(s.key))

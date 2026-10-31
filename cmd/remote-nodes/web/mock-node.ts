@@ -350,7 +350,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
 
   // everything below needs the agent, except taking a node out
   const remove = rest === 'remove'
-  if (!remove && !n.registered) return fail(409, 'bad_request', 'this node was never fully installed; it can only be removed'), true
+  if (!remove && !n.registered) return fail(409, 'bad_request', "This install didn't finish. It can only be cleaned up or forgotten."), true
   if (!remove && !reachable(n)) return fail(502, 'node_unreachable', `the router can't reach ${n.host}`), true
   if (busy.has(n.id) || n.installJob) return fail(409, 'busy', `a job is already running on ${n.name}`), true
 

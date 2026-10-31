@@ -17,7 +17,8 @@ import { Button, Dialog, Disclosure, ErrorBox, Field, Input, useToast } from '..
 import { useConfig } from '../hooks/useConfig'
 import { useNow } from '../hooks/usePoll'
 import { useErrorText, useLang, type T } from '../i18n'
-import { MAX_NAME_LENGTH, api, type Node, type ProbeResult } from '../lib/api'
+import { MAX_NAME_LENGTH, api, type InstallForm, type Node, type ProbeResult } from '../lib/api'
+import { installOutcome, realNodes } from '../lib/install'
 import { jobLine } from '../lib/jobs'
 
 type Stage = 'form' | 'hostkey' | 'installing'
@@ -25,10 +26,12 @@ type Stage = 'form' | 'hostkey' | 'installing'
 interface Props {
   /** the nodes there are now, to pick a name that isn't taken; null while the list loads */
   nodes: Node[] | null
+  /** what a failed install was asked for, to start from again (Try again); the login's secrets are typed again */
+  initial?: InstallForm | null
   onClose: () => void
   /** The install job started: the node is in the list, installing. */
   onStarted: () => void
-  /** The install job ended; the node may be saved even if it failed late. */
+  /** The install job ended, set up or cleaned away (or kept as an unfinished install). */
   onInstalled: () => void
   onOpenNode: (id: number) => void
 }
@@ -41,8 +44,9 @@ export function AddNodeDialog({ open, ...props }: Props & { open: boolean }) {
   return open ? <AddNode {...props} /> : null
 }
 
-/** "Node 3": the first number whose name is free. */
-function suggestName(nodes: Node[], t: T) {
+/** "Node 3": the first number whose name is free. An unfinished install is no node, and its name is free too. */
+function suggestName(all: Node[], t: T) {
+  const nodes = realNodes(all)
   let n = nodes.length + 1
   while (nodes.some((x) => x.name === t('node.defaultName', { n }))) n += 1
   return t('node.defaultName', { n })
@@ -51,7 +55,7 @@ function suggestName(nodes: Node[], t: T) {
 /** The port subscriptions connect to: 1 to 65535, and not the one SSH uses. */
 const badPort = (p: number, ssh: number) => !Number.isInteger(p) || p < 1 || p > 65535 || p === ssh
 
-function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) {
+function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }: Props) {
   const { t, fmt } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
@@ -59,8 +63,10 @@ function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) 
   const now = useNow()
   const entryOn = useConfig()?.entry.on
   const suggested = suggestName(nodes ?? [], t)
-  const [form, setForm] = useState({ host: '', name: '', entryPort: '443' })
-  const [login, setLogin] = useState<LoginForm>(() => emptyLogin(22, lastUser))
+  const [form, setForm] = useState(() =>
+    initial ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443) } : { host: '', name: '', entryPort: '443' },
+  )
+  const [login, setLogin] = useState<LoginForm>(() => (initial ? emptyLogin(initial.sshPort || 22, initial.sshUser || lastUser) : emptyLogin(22, lastUser)))
   const [stage, setStage] = useState<Stage>('form')
   const [key, setKey] = useState<ProbeResult | null>(null)
   const [ackChanged, setAckChanged] = useState(false)
@@ -157,20 +163,27 @@ function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) 
           {t('add.trust')}
         </Button>
       </>
-    ) : finished && job.nodeId ? (
+    ) : finished && job.state === 'ok' && job.nodeId ? (
+      <Button variant="primary" onClick={() => onOpenNode(job.nodeId!)}>
+        {t('job.openNode')}
+      </Button>
+    ) : finished && installOutcome(job) === 'kept' && job.nodeId ? (
+      // its server waits for a cleanup, so another try can't start yet
       <>
-        {job.state === 'failed' && <Button onClick={onClose}>{t('common.close')}</Button>}
+        <Button onClick={onClose}>{t('common.close')}</Button>
         <Button variant="primary" onClick={() => onOpenNode(job.nodeId!)}>
-          {t('job.openNode')}
+          {t('job.openUnfinished')}
         </Button>
       </>
     ) : finished ? (
+      // the form as it was sent; the login's secrets are typed again
       <>
         <Button onClick={onClose}>{t('common.close')}</Button>
         <Button
           variant="primary"
           onClick={() => {
             setJobId(null)
+            setError(null)
             setStage('form')
           }}
         >
@@ -249,7 +262,6 @@ function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) 
         <div className="flex flex-col gap-4">
           <JobSteps job={job} />
           {job?.state === 'ok' && <p className="text-[13px] text-muted">{entryOn === false ? t('add.doneNoEntry') : t('add.doneNote')}</p>}
-          {job?.state === 'failed' && job.nodeId ? <p className="text-[13px] text-muted">{t('add.savedNote')}</p> : null}
           {!finished && <p className="border-t border-border pt-3 text-[13px] text-muted">{t('job.keepsGoingInstall')}</p>}
         </div>
       )}

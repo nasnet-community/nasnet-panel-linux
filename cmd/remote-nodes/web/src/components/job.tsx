@@ -1,18 +1,34 @@
 import { useConfig } from '../hooks/useConfig'
-import { useLang } from '../i18n'
+import { codeText, useLang } from '../i18n'
 import { JOB_LOST, type Job } from '../lib/api'
+import { installOutcome } from '../lib/install'
 import { failedAtLink, stepLabel, stepPercent } from '../lib/jobs'
 import { Circle, CircleCheck, CircleX } from './icons'
 import { Bar, ErrorBox, Notice, Spinner, cx } from './ui'
 
-/** A job's steps as they run, pending ones greyed, its error, and the domestic-list hint after a link failure. */
+/**
+ * Whether the failed step's text already says what the job's error does. A failed install's error goes on
+ * to say what was done about it, which the page words itself, so the step covering its start is enough.
+ */
+function covered(job: Job, detail: string | undefined, outcome: boolean) {
+  if (!detail || !job.error) return false
+  return job.error === detail || (outcome && !detail.endsWith('…') && job.error.startsWith(detail))
+}
+
+/**
+ * A job's steps as they run, pending ones greyed, its error, what a failed install left behind, and the
+ * domestic-list hint after a link failure.
+ */
 export function JobSteps({ job }: { job: Job | null }) {
   const { t } = useLang()
   const xray = useConfig()?.xray
   if (!job) return <Spinner />
   const failed = job.steps.find((s) => s.state === 'failed')
+  const outcome = installOutcome(job)
+  // a code the page has words for says it in the page's language
+  const worded = codeText(t, job.code)
   // a job the plugin lost track of has no words of its own: the page supplies them
-  const error = job.error === JOB_LOST ? t('job.lost') : job.error
+  const error = job.error === JOB_LOST ? t('job.lost') : worded ?? (covered(job, failed?.detail, !!outcome) ? null : job.error)
   return (
     <div className="flex flex-col gap-4">
       <ol className="flex flex-col gap-3">
@@ -50,6 +66,7 @@ export function JobSteps({ job }: { job: Job | null }) {
       </ol>
       {/* the failed step usually carries the same text already */}
       {job.state === 'failed' && error && error !== failed?.detail && <ErrorBox>{error}</ErrorBox>}
+      {outcome && <Notice tone={outcome === 'kept' ? 'warn' : 'info'}>{t(`job.outcome.${outcome}`)}</Notice>}
       {failedAtLink(job) && <Notice tone="warn">{t('job.domesticHint')}</Notice>}
     </div>
   )

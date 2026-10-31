@@ -7,8 +7,9 @@ import { useConfigState } from '../hooks/useConfig'
 import { usePoll } from '../hooks/usePoll'
 import { navigate, parseRoute, type NodeTab } from '../hooks/useRoute'
 import { useErrorText, useLang, type MsgKey } from '../i18n'
-import { api, type Job, type Node } from '../lib/api'
+import { ApiError, api, type Job, type Node } from '../lib/api'
 import { health, nodeNotes, unreachable, type NodeAct } from '../lib/health'
+import { isUnfinished } from '../lib/install'
 import { jobTitle } from '../lib/jobs'
 import { agentUptime } from '../lib/node'
 import { AttentionList, type AttentionItem } from './Attention'
@@ -16,6 +17,7 @@ import { HandshakeDialog, PortDialog, RemoveDialog, RenameDialog, RenewDialog, R
 import { NodeSettingsTab } from './NodeSettingsTab'
 import { NodeStatusTab } from './NodeStatusTab'
 import { NodeSubscriptionsTab } from './NodeSubscriptionsTab'
+import { InstallGone, UnfinishedDialogs, UnfinishedView, type UnfinishedModal } from './Unfinished'
 
 type Modal =
   | { kind: 'rename' | 'remove' | 'rotate' | 'renew' | 'port' | 'target' }
@@ -55,6 +57,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
   const config = useConfigState()
   const nid = Number(id)
   const [modal, setModal] = useState<Modal | null>(null)
+  const [unfinishedModal, setUnfinishedModal] = useState<UnfinishedModal | null>(null)
   const [checking, setChecking] = useState(false)
   // a running install moves every few seconds; otherwise the page can idle
   const pace = useRef(5000)
@@ -130,12 +133,35 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       {t('node.all')}
     </RouteLink>
   )
-  if (!node) {
+  // a node that is gone may be an install that failed and was cleaned away: its job says how it went
+  const gone = detail.error instanceof ApiError && detail.error.status === 404
+  const failedInstall = gone ? jobs.list.find((j) => j.kind === 'install' && j.nodeId === nid && j.state === 'failed') : undefined
+  if (failedInstall) return <InstallGone job={failedInstall} target={jobs.target(failedInstall) || last.current?.name || ''} />
+  if (!node || gone) {
     return (
       <div className="flex flex-col gap-5">
         {back}
         {detail.error != null ? <ErrorBox>{errorText(detail.error)}</ErrorBox> : <Spinner />}
       </div>
+    )
+  }
+
+  // an install that didn't finish is no node: no tabs, no subscriptions, no updates, no settings
+  if (isUnfinished(node)) {
+    return (
+      <>
+        <UnfinishedView node={node} onAct={setUnfinishedModal} />
+        <UnfinishedDialogs
+          modal={unfinishedModal}
+          onClose={() => setUnfinishedModal(null)}
+          onEnded={(j) => {
+            config.reload()
+            if (j.state !== 'ok') return void detail.reload()
+            const here = parseRoute(window.location.hash)
+            if (here.page === 'node' && here.id === id) navigate({ page: 'root', tab: 'nodes' })
+          }}
+        />
+      </>
     )
   }
 
