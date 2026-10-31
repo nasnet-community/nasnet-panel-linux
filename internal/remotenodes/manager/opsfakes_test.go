@@ -260,7 +260,18 @@ func (f *fakeOps) PushConfig(ctx context.Context, c Client, in nodecfg.Input) er
 	f.mu.Lock()
 	f.pushes = append(f.pushes, opsPush{c, in})
 	f.mu.Unlock()
-	return f.reach(ctx, "PushConfig")
+	// the real one builds the config first, and refuses an input that can't make one
+	if _, err := nodecfg.Build(in); err != nil {
+		return err
+	}
+	err := f.reach(ctx, "PushConfig")
+	f.mu.Lock()
+	leak := f.leakKeys
+	f.mu.Unlock()
+	if err != nil && leak {
+		err = &leaked{err, []string{in.PrivateKey}}
+	}
+	return err
 }
 
 func (f *fakeOps) CheckTarget(ctx context.Context, c Client, target string) (agentops.HandshakeCheck, error) {
