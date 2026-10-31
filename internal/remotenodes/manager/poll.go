@@ -5,6 +5,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -255,8 +256,9 @@ func firstOf(a, b string) string {
 
 // reconcile brings the clients on the node's entry into line with the
 // subscriptions that are switched on there. A failure is logged and left to the
-// next connection; it never stops the loop.
-func (m *Manager) reconcile(ctx context.Context, l *nodeLive, c Client) {
+// next connection; it never stops the loop. A quiet pass, one nothing but the
+// clock asked for, is logged at info only when it changed something.
+func (m *Manager) reconcile(ctx context.Context, l *nodeLive, c Client, quiet bool) {
 	// a switch made while this works from what it read would be undone by it
 	unlock, err := m.lockNodes(ctx, l.id)
 	if err != nil {
@@ -281,7 +283,11 @@ func (m *Manager) reconcile(ctx context.Context, l *nodeLive, c Client) {
 	if ctx.Err() != nil {
 		return
 	}
-	m.log.Info("reconciled a node's clients", "node", l.id, "wanted", len(want),
+	level := slog.LevelInfo
+	if quiet && err == nil && len(diff.Added)+len(diff.Removed)+len(diff.Replaced) == 0 {
+		level = slog.LevelDebug
+	}
+	m.log.Log(ctx, level, "reconciled a node's clients", "node", l.id, "wanted", len(want),
 		"added", diff.Added, "removed", diff.Removed, "replaced", diff.Replaced, "foreign", diff.Foreign)
 	if err != nil {
 		m.log.Warn("a node's clients could not all be reconciled; the next connection tries again", "node", l.id, "err", err)

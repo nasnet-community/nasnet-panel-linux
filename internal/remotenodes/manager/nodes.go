@@ -299,11 +299,12 @@ func (m *Manager) connect(ctx context.Context, n model.Node) (Client, error) {
 // a failed one or finds Xray restarted, the node's clients are brought into
 // line with the state. A node that has been out of reach may have come back
 // from a restart with the clients it had in its config file, and a restart is
-// when a drift is likely.
+// when a drift is likely. They are looked at again every ReconcileEvery as well,
+// for a drift that nothing announced.
 func (m *Manager) serve(ctx context.Context, l *nodeLive, c Client, backoff *time.Duration) {
 	t := &tap{Client: c}
 	pending := true
-	var versionAt time.Time
+	var versionAt, reconciledAt time.Time
 	for {
 		restarted, err := m.poll(ctx, l, t)
 		switch {
@@ -318,14 +319,17 @@ func (m *Manager) serve(ctx context.Context, l *nodeLive, c Client, backoff *tim
 			m.seen(l)
 			*backoff = connectMin
 			pending = pending || restarted
-			if now := m.now(); pending || now.Sub(versionAt) >= versionEvery {
+			now := m.now()
+			due := now.Sub(reconciledAt) >= m.cfg.ReconcileEvery
+			if pending || now.Sub(versionAt) >= versionEvery {
 				m.refreshVersion(ctx, l, c)
 				versionAt = now
 			}
 			m.saveVersions(l)
-			if pending {
-				m.reconcile(ctx, l, c)
-				pending = false
+			if pending || due {
+				// a pass that only the clock asked for says so only if it found something
+				m.reconcile(ctx, l, c, !pending)
+				pending, reconciledAt = false, now
 			}
 		}
 		if m.wait(ctx, l, m.cfg.PollEvery) != waitedOut {
