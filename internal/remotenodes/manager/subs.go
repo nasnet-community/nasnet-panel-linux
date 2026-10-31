@@ -112,8 +112,8 @@ var (
 	errNotTaken    = &api.Error{Code: api.CodeNodeUnreachable, Msg: "The node did not take the change, so the link was not replaced."}
 )
 
-func clientOf(subID uint, uuid string) subscriptions.Client {
-	return subscriptions.Client{Email: nodecfg.SubscriptionEmail(int(subID)), UUID: uuid}
+func clientOf(subID uint, clientID string) subscriptions.Client {
+	return subscriptions.Client{Email: nodecfg.SubscriptionEmail(int(subID)), UUID: clientID}
 }
 
 // newClientID is a subscription's login on one node, which is what its link
