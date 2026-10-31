@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -207,5 +208,75 @@ func TestReleaseLetsGoOfWhatIsHeld(t *testing.T) {
 	}
 	if n := f.count("/agent-linux-arm64.gz"); n != 2 {
 		t.Errorf("downloads: %d, want one before the release and one after", n)
+	}
+}
+
+// Asking which agent is out costs the manifest and its signature and nothing
+// else: no agent is downloaded and none is held.
+func TestLatestAgentReadsOnlyTheManifest(t *testing.T) {
+	f := newFixture(t)
+	f.publish("v1.3.1", "amd64", "arm64")
+	h := NewHolder(f.srv.Client(), f.source())
+
+	v, err := h.LatestAgent(bg, "arm64")
+	if err != nil || v != "v1.3.1" {
+		t.Fatalf("LatestAgent = %q, %v", v, err)
+	}
+	if got, want := f.requested(), []string{"/release.json", "/release.json.sig"}; !slices.Equal(got, want) {
+		t.Errorf("requests %v, want %v", got, want)
+	}
+	if len(h.held) != 0 {
+		t.Errorf("held %d things after a lookup", len(h.held))
+	}
+
+	// it follows the release, as the holder does for the agent itself
+	f.publish("v1.4.0", "arm64")
+	if v, err := h.LatestAgent(bg, "arm64"); err != nil || v != "v1.4.0" {
+		t.Errorf("after a new release: %q, %v", v, err)
+	}
+	if n := f.count("/agent-linux-arm64.gz") + f.count("/agent-linux-amd64.gz"); n != 0 {
+		t.Errorf("an agent was downloaded %d times", n)
+	}
+}
+
+// What would stop an install stops the lookup, with the same errors, so the
+// hub never offers an update it couldn't push.
+func TestLatestAgentRefusesWhatAnInstallWould(t *testing.T) {
+	f := newFixture(t)
+	h := NewHolder(f.srv.Client(), f.source())
+
+	f.publish("v1.2.9", "arm64")
+	if _, err := h.LatestAgent(bg, "arm64"); !errors.Is(err, ErrAgentTooOld) {
+		t.Errorf("an old release: %v, want ErrAgentTooOld", err)
+	}
+	f.publish("v1.3.1") // no gzipped agents at all
+	if _, err := h.LatestAgent(bg, "arm64"); !errors.Is(err, ErrNoGzAgents) {
+		t.Errorf("a release with no gzipped agents: %v, want ErrNoGzAgents", err)
+	}
+	f.publish("v1.3.1", "amd64") // not for this architecture
+	if _, err := h.LatestAgent(bg, "arm64"); !errors.Is(err, ErrNoGzAgents) {
+		t.Errorf("a release with no agent for the arch: %v, want ErrNoGzAgents", err)
+	}
+	if _, err := h.LatestAgent(bg, "mips"); !errors.Is(err, ErrUnsupportedArch) {
+		t.Errorf("an architecture there are no agents for: %v", err)
+	}
+
+	// a manifest nobody trusted signed is not believed, whatever it says
+	f.publish("v1.3.1", "arm64")
+	other := NewHolder(f.srv.Client(), Source{Base: f.srv.URL}) // the real keys, which didn't sign it
+	if _, err := other.LatestAgent(bg, "arm64"); !errors.Is(err, ErrManifest) {
+		t.Errorf("an unsigned release: %v, want ErrManifest", err)
+	}
+
+	f.hook("/release.json", func(w http.ResponseWriter, r *http.Request) { http.Error(w, "no", http.StatusBadGateway) })
+	if _, err := h.LatestAgent(bg, "arm64"); err == nil {
+		t.Error("a bad gateway was taken for a release")
+	}
+	f.unhook("/release.json")
+
+	ctx, cancel := context.WithCancel(bg)
+	cancel()
+	if _, err := h.LatestAgent(ctx, "arm64"); !errors.Is(err, context.Canceled) {
+		t.Errorf("a cancelled context: %v", err)
 	}
 }
