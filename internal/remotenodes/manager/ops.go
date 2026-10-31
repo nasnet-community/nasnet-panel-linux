@@ -210,14 +210,18 @@ func neverInstalled() error {
 // keys on is the code: a node that can't be reached, an agent that is too old
 // or runs another Xray than the router's. Anything else of agentops's is
 // shown as the sentence it is, under the hub's own code.
+//
+// The typed errors come before the context's own. A dial that times out is
+// both a node that can't be reached and, to errors.Is, a context deadline, and
+// the first is what it is: an address the router can't reach (one that isn't
+// on the domestic list) gives exactly this.
 func opFailure(err error) error {
 	var apiErr *api.Error
 	var invalid *model.InvalidError
 	switch {
 	case err == nil:
 		return nil
-	case errors.As(err, &apiErr), errors.As(err, &invalid), errors.Is(err, model.ErrNotFound), errors.Is(err, jobs.ErrBusy),
-		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.As(err, &apiErr), errors.As(err, &invalid), errors.Is(err, model.ErrNotFound), errors.Is(err, jobs.ErrBusy):
 		return err
 	case errors.Is(err, agentops.ErrHostKeyChanged):
 		return &api.Error{Code: api.CodeHostKeyChanged, Msg: clipText(err.Error())}
@@ -227,6 +231,8 @@ func opFailure(err error) error {
 		return &api.Error{Code: api.CodeVersionMismatch, Msg: clipText(err.Error())}
 	case errors.Is(err, agentops.ErrAgentOutdated):
 		return &api.Error{Code: api.CodeAgentTooOld, Msg: clipText(err.Error())}
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return err // the request's own context ended, which the API leaves unanswered
 	case errors.Is(err, nodecfg.ErrInvalid):
 		return badRequest(sentence(strings.TrimPrefix(err.Error(), nodecfg.ErrInvalid.Error()+": ")))
 	}
