@@ -465,7 +465,7 @@ func newOpsRig(t *testing.T, mods ...func(*Config)) *opsRig {
 	t.Helper()
 	r := &opsRig{dl: newDownloads()}
 	setup := func(c *Config) {
-		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log})
+		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log, StepKey: guardKeys(t)})
 		c.Jobs = r.jobs
 		c.Downloads = r.dl
 		c.NewOps = func(ca *pki.CA) Ops {

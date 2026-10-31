@@ -34,10 +34,10 @@ func TestSecretsAreHiddenInEveryTextAJobReports(t *testing.T) {
 
 	mid, _ := g.e.Get(job.ID)
 	if want := []Step{
-		{"upload", StepRunning, "logged in with …"},
-		{"agent", StepRunning, "key was …"},
-		{"xray", StepFailed, "auth: tried … and …: denied"},
-		{"config", StepFailed, "pass phrase …"},
+		{Name: "upload", State: StepRunning, Detail: "logged in with …"},
+		{Name: "agent", State: StepRunning, Detail: "key was …"},
+		{Name: "xray", State: StepFailed, Detail: "auth: tried … and …: denied"},
+		{Name: "config", State: StepFailed, Detail: "pass phrase …"},
 	}; !slices.Equal(mid.Steps, want) {
 		t.Fatalf("steps = %v\nwant    %v", mid.Steps, want)
 	}

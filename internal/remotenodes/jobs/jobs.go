@@ -96,9 +96,11 @@ func (s StepState) valid() bool {
 	return s == StepPending || s == StepRunning || s == StepOK || s == StepFailed
 }
 
-// Step is one line of a job. The page words steps itself, by Name; Detail is
-// the hub's own text and may start with a share done, as in "62% · 8.4 MB".
+// Step is one line of a job. The page words steps itself, by Key, and shows
+// Name, which is English, for a key it has no words for. Detail is the hub's
+// own text and may start with a share done, as in "62% · 8.4 MB".
 type Step struct {
+	Key    string    `json:"key"`
 	Name   string    `json:"name"`
 	State  StepState `json:"state"`
 	Detail string    `json:"detail,omitempty"`
@@ -191,6 +193,10 @@ type Config struct {
 	// after they ended.
 	Keep   int
 	MaxAge time.Duration
+	// StepKey gives a step its machine key from its name, when the step is
+	// created. The key is what the page words a step by, and it never changes
+	// once a build has sent it. Nil gives every step an empty key.
+	StepKey func(name string) string
 }
 
 // Engine runs jobs. Its methods are safe for concurrent use.
@@ -278,7 +284,7 @@ func (e *Engine) Start(spec Spec, fn func(ctx context.Context, r *Run) error) (J
 		return Job{}, err
 	}
 	j := &job{view: Job{
-		ID: id, Kind: spec.Kind, State: StateRunning, Steps: plan(spec.Steps),
+		ID: id, Kind: spec.Kind, State: StateRunning, Steps: e.plan(spec.Steps),
 		NodeID: spec.NodeID, Target: spec.Target, StartedAt: e.cfg.Now().UTC(),
 	}, hide: newHider(spec.Secrets)}
 	e.byID[id] = j
@@ -311,18 +317,27 @@ func (e *Engine) newID() (string, error) {
 }
 
 // plan makes the pending steps of a spec.
-func plan(names []string) []Step {
+func (e *Engine) plan(names []string) []Step {
 	v := Job{Steps: make([]Step, 0, len(names))}
 	for _, n := range names {
-		v.step(n)
+		v.step(n, e.keyOf)
 	}
 	return v.Steps
 }
 
-// step finds the step called name and adds it, pending, when the job has no
-// such step. It returns nil for an empty name, and for a new name once there
-// are MaxSteps. The pointer is good until the next step is added.
-func (v *Job) step(name string) *Step {
+// keyOf is the key a step goes by, empty when the engine has no way to say.
+func (e *Engine) keyOf(name string) string {
+	if e.cfg.StepKey == nil {
+		return ""
+	}
+	return e.cfg.StepKey(name)
+}
+
+// step finds the step called name and adds it, pending and with the key that
+// keyOf gives it, when the job has no such step. It returns nil for an empty
+// name, and for a new name once there are MaxSteps. The pointer is good until
+// the next step is added.
+func (v *Job) step(name string, keyOf func(string) string) *Step {
 	name = clip(name, maxName)
 	if name == "" {
 		return nil
@@ -335,7 +350,7 @@ func (v *Job) step(name string) *Step {
 	if len(v.Steps) >= MaxSteps {
 		return nil
 	}
-	v.Steps = append(v.Steps, Step{Name: name, State: StepPending})
+	v.Steps = append(v.Steps, Step{Key: keyOf(name), Name: name, State: StepPending})
 	return &v.Steps[len(v.Steps)-1]
 }
 

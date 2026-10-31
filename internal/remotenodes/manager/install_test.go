@@ -84,7 +84,7 @@ func TestAddingANodeInstallsItAndSavesItSetUpOnlyWhenAllHasWorked(t *testing.T) 
 			t.Errorf("a node that isn't set up already has what the install finds out: %+v", n)
 		}
 		live := r.m.NodeLive(n.ID)
-		if in := live.Installing; in == nil || in.JobID != jobID || in.Step != 5 || in.Steps != len(installSteps()) || in.Label != agentops.StepUploadAgent {
+		if in := live.Installing; in == nil || in.JobID != jobID || in.Step != 5 || in.Steps != len(installSteps()) || in.Label != agentops.StepUploadAgent || in.Key != "upload_agent" {
 			t.Errorf("installing = %+v", in)
 		}
 		if _, ok := r.m.Client(n.ID); ok || r.net.tries(n.ID) != 0 || len(r.bridge.tags()) != 0 {

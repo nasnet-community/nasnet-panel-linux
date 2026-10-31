@@ -6,9 +6,10 @@ package jobs
 // use, so a progress callback may call it from another goroutine. Once the
 // function has returned the job is over, and a late call does nothing.
 //
-// A step is named by a word the page knows, and one the plan did not list is
-// added at the end. Each call changes only what its name says, and the steps
-// may go in any order: a retry can begin a step that failed.
+// A step is named in English, and gets its key from Config.StepKey when it is
+// created. One the plan did not list is added at the end. Each call changes
+// only what its name says, and the steps may go in any order: a retry can
+// begin a step that failed.
 type Run struct {
 	e *Engine
 	j *job
@@ -69,7 +70,7 @@ func (r *Run) change(step string, f func(*Step)) {
 		return
 	}
 	n := len(j.view.Steps)
-	s := j.view.step(step)
+	s := j.view.step(step, e.keyOf)
 	if s == nil {
 		return
 	}
