@@ -149,21 +149,27 @@ func (m *Manager) noteVersions(l *nodeLive, agentVer, xrayVer string) {
 	stored := *n
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if agentVer != "" {
 		if was := firstOf(l.agentVer, stored.AgentVersion); was != "" && was != agentVer {
 			m.eventLocked(l.id, EventAgentUpdated, was+" to "+agentVer)
 		}
 		l.agentVer = agentVer
 	}
+	xrayMoved := false
 	if xrayVer != "" {
 		if was := firstOf(l.xrayVer, stored.XrayVersion); was != "" && was != xrayVer {
 			m.eventLocked(l.id, EventXrayChanged, was+" to "+xrayVer)
 		}
+		xrayMoved = l.xrayVer != xrayVer
 		l.xrayVer = xrayVer
 	}
 	if l.agent != nil {
 		l.agent.Version, l.agent.XrayVersion = l.agentVer, l.xrayVer
+	}
+	m.mu.Unlock()
+	if xrayMoved {
+		// whether the node may be in the bridge depends on it
+		m.kickBridge()
 	}
 }
 

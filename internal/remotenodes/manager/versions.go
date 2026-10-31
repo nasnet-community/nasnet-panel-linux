@@ -76,3 +76,6 @@ func checkXray(version string) xrayState {
 	}
 	return xrayMismatch
 }
+
+// xrayPin is the version the plugin installs, for messages.
+func xrayPin() string { return pin.Version }

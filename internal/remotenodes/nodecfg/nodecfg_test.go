@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/bridgespec"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/nodecfg"
 )
 
@@ -297,6 +298,40 @@ func TestEmails(t *testing.T) {
 	} {
 		if id, ok := nodecfg.ParseBridgeEmail(s); ok {
 			t.Errorf("ParseBridgeEmail(%q) = %d, true", s, id)
+		}
+	}
+}
+
+// The portal registers this tag and the bridge's spec dials with it, so each
+// side has to accept it for every node it can have, and it has to be one per
+// node.
+func TestBridgeReverseTagSuitsTheNodeAndTheBridge(t *testing.T) {
+	if got, want := nodecfg.BridgeReverseTag(7), "rvs-to-node-7"; got != want {
+		t.Errorf("BridgeReverseTag(7) = %q, want %q", got, want)
+	}
+	seen := map[string]int{}
+	for _, id := range []int{1, 2, 3, 10, 99, 123456, 4294967295} {
+		tag := nodecfg.BridgeReverseTag(id)
+		if other, dup := seen[tag]; dup {
+			t.Errorf("nodes %d and %d have the tag %q", other, id, tag)
+		}
+		seen[tag] = id
+
+		in := sample()
+		in.Bridge.ReverseTag = tag
+		if _, err := nodecfg.Build(in); err != nil {
+			t.Errorf("the node's config refuses %q: %v", tag, err)
+		}
+		spec := &bridgespec.Spec{
+			Version: bridgespec.Version, DialAddr: "192.168.50.18", StatusAddr: "127.0.0.1:18090",
+			Exit: bridgespec.Exit{Addr: "192.168.50.17"}, DNS: bridgespec.DNS{Servers: []string{"1.1.1.1"}},
+			Nodes: []bridgespec.Node{{
+				Tag: "node-1", Addr: "203.0.113.1", Port: 443, UUID: uuidBridge, ReverseTag: tag, ShortID: "a1b2c3d4", ServerName: "www.example.com",
+				PublicKey: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+			}},
+		}
+		if err := spec.Validate(); err != nil {
+			t.Errorf("the bridge's spec refuses %q: %v", tag, err)
 		}
 	}
 }

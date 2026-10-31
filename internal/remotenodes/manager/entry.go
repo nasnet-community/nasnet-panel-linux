@@ -102,11 +102,14 @@ func (m *Manager) setEntry(e routerfacts.Entry) {
 	m.mu.Unlock()
 	switch {
 	case !changed:
+		return
 	case e.On:
 		m.log.Info("the router's entry is on")
 	default:
 		m.log.Info("the router's entry is off", "why", e.Reason)
 	}
+	// the bridge runs only while the entry is on
+	m.kickBridge()
 }
 
 func apiEntry(e routerfacts.Entry) api.Entry {
@@ -126,7 +129,8 @@ func apiEntry(e routerfacts.Entry) api.Entry {
 	return out
 }
 
-// Entry is the router's entry gate as the page shows it. It is on when a
+// Entry is the router's entry gate as the page shows it, with the state of
+// the bridge filled in. It is on when a
 // Domestic link and a VPN are up, the router's routes are ready and RouterOS
 // is new enough; a report that is old is warned of, and doesn't turn it off,
 // since the router's own rules fail closed.
@@ -134,6 +138,7 @@ func (m *Manager) Entry() api.Entry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	e := m.entry
+	e.Bridge = m.bridgeWordLocked()
 	e.Routes = append([]api.Route(nil), e.Routes...)
 	if e.CheckedAt != nil {
 		at := *e.CheckedAt
