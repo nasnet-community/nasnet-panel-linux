@@ -12,7 +12,8 @@
     "notices": "node scripts/notices.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:real": "playwright test -c playwright.real.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
