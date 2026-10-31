@@ -45,6 +45,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/artifacts"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/bridgectl"
@@ -53,6 +54,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/manager"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netroles"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/routerfacts"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/store"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/ui"
@@ -85,7 +87,7 @@ type settings struct {
 	factsPath string   // FACTS_PATH: the router's report, default <DATA_DIR>/router/state
 
 	// release is where an install fetches the agent from: RELEASE_BASE_URL, or
-	// the project's latest release. Nothing reads it until the installs are wired in.
+	// the project's latest release.
 	release artifacts.Source
 }
 
@@ -203,13 +205,40 @@ func main() {
 	}
 }
 
-// notConnectedYet stands in for the connector that opens a node's agent, which
-// comes with the node operations. Until then no node is ever reached, and each
-// one the state holds reads as unreachable.
-type notConnectedYet struct{}
+// boundTo is the address a role's connections leave from: its own when an
+// interface here holds it, and otherwise none, which leaves the choice to the
+// system, as on a laptop or in a lab. The router sends each role's address
+// where it should go, so on the router the address is always held.
+func boundTo(a netroles.Addr) netip.Addr {
+	if a.Local {
+		return a.IP
+	}
+	return netip.Addr{}
+}
 
-func (notConnectedYet) Connect(context.Context, model.Node) (manager.Client, error) {
-	return nil, errors.New("not connected yet")
+// opsFor makes the node operations for a CA. Everything bound for a node leaves
+// from the nodes' address, and the agent and Xray builds come from the holder of
+// the downloads, which fetches them over the foreign link. The manager asks for
+// the operations again when another CA takes its place, since the Env keeps the
+// hub's certificate that it made from the one it was given.
+func opsFor(nodes netip.Addr, files agentops.Files, log *slog.Logger) func(*pki.CA) manager.Ops {
+	return func(ca *pki.CA) manager.Ops {
+		return manager.EnvOps(&agentops.Env{Local: nodes, CA: ca, Files: files, Log: log})
+	}
+}
+
+// connectorOf opens a node's agent with the operations the manager has for the
+// CA it holds when asked, so that after a backup replaces the CA the next link
+// is made under the new one. While the CA can't be used the answer is a plain
+// error, and the node reads as one that can't be reached.
+func connectorOf(ops func() (manager.Ops, error)) manager.Connector {
+	return manager.ConnectorFunc(func(ctx context.Context, n model.Node) (manager.Client, error) {
+		o, err := ops()
+		if err != nil {
+			return nil, err
+		}
+		return o.Connect(ctx, n)
+	})
 }
 
 // counted is the state file with the usage file's writes added to its own.
@@ -258,9 +287,14 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 		return err
 	}
 	addrs := s.addrs.Check(netroles.Held(), func(msg string) { log.Warn(msg) })
-	mgr, err := manager.New(manager.Config{
+	downloads := artifacts.NewHolder(artifacts.NewClient(boundTo(addrs.Downloads)), s.release)
+	// the connector asks the manager for the operations, and the manager is made with the connector
+	var mgr *manager.Manager
+	mgr, err = manager.New(manager.Config{
 		Store: st, Usage: coll, Jobs: engine, Bridge: sup, Facts: routerfacts.NewReader(s.factsPath),
-		Connector: notConnectedYet{},
+		Connector: connectorOf(func() (manager.Ops, error) { return mgr.Ops() }),
+		NewOps:    opsFor(boundTo(addrs.Nodes), downloads, log),
+		Downloads: downloads,
 		Resolver:  addrs.Nodes.Resolver(),
 		Addrs:     addrs, DNS: s.bridgeDNS,
 		Log: log,
@@ -270,7 +304,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	}
 	handler := api.New(api.Config{
 		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
-		Subs: mgr, Backup: mgr,
+		Subs: mgr, Backup: mgr, NodeOps: mgr,
 		BasePath: s.basePath, Index: index, Log: log,
 		Licenses: os.DirFS(s.licensesDir),
 	})

@@ -28,6 +28,9 @@ import (
 // operations make. In the hub it is an agentops.Env; a test puts a fake there
 // that records the calls and can fail on any step.
 
+// The API changes nodes through the manager.
+var _ api.NodeOps = (*Manager)(nil)
+
 // Ops is what the operations ask of agentops. EnvOps makes one from an
 // agentops.Env, and a test has its own.
 //

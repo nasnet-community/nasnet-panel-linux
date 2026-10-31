@@ -338,13 +338,6 @@ func TestTheRoutersReportIsReadFromFactsPath(t *testing.T) {
 	}
 }
 
-func TestAPlaceholderConnectorNeverConnects(t *testing.T) {
-	c, err := notConnectedYet{}.Connect(context.Background(), model.Node{ID: 1})
-	if c != nil || err == nil || err.Error() != "not connected yet" {
-		t.Errorf("Connect = %v, %v", c, err)
-	}
-}
-
 // What /health counts is the writes of both files.
 func TestHealthCountsTheStateFileAndTheUsageFile(t *testing.T) {
 	dir := t.TempDir()

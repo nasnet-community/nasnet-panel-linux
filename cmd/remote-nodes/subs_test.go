@@ -25,8 +25,9 @@ const (
 )
 
 // seedNode puts a node that is installed into a data folder before a hub starts
-// on it, as an install would have left it. The hub can't reach it, since its
-// connector is the placeholder, which is what an unreachable node looks like.
+// on it, as an install would have left it. The hub can't reach it, since the
+// address is in a range for documentation, which is what an unreachable node
+// looks like.
 func seedNode(t *testing.T, dir string) {
 	t.Helper()
 	st, err := store.Open(dir)
