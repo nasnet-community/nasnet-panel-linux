@@ -1,4 +1,4 @@
-import { card, dialog, expect, fillAddNode, openAddNode, reset, stateHolds, test, toast } from './fixtures'
+import { card, dialog, expect, fillAddNode, liftLimit, openAddNode, reset, stateHolds, test, toast } from './fixtures'
 
 // the fifteen steps of an install, as the hub names them, with the Xray version the page adds
 const STEPS = [
@@ -179,6 +179,25 @@ test('a job whose stream is refused is followed by polling', async ({ page }) =>
   await expect(dialog(page, 'Installing Node 3')).toBeVisible()
   await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
   await expect(toast(page, 'Node 3 added')).toBeVisible()
+})
+
+test('holds the name to 64 characters, and shows the hub\'s sentence if a longer one gets through', async ({ page }) => {
+  await openAddNode(page)
+  const form = await fillAddNode(page, '192.0.2.41')
+  const name = form.getByLabel('Name', { exact: true })
+  await expect(name).toHaveAttribute('maxlength', '64')
+  // typed, a longer name stops at the limit
+  await name.pressSequentially('x'.repeat(70))
+  expect(await name.inputValue()).toHaveLength(64)
+  // one that got past the field is refused by the hub, in its own words
+  await liftLimit(name)
+  await name.fill('y'.repeat(65))
+  await form.getByRole('button', { name: 'Connect and install' }).click()
+  await expect(form.getByRole('alert')).toContainText('The name can have at most 64 characters.')
+  // and 64 is fine
+  await name.fill('z'.repeat(64))
+  await form.getByRole('button', { name: 'Connect and install' }).click()
+  await expect(dialog(page, `Installing ${'z'.repeat(64)}`)).toBeVisible()
 })
 
 test('says what is wrong with the form before asking the hub', async ({ page }) => {

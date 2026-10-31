@@ -303,6 +303,9 @@ export interface NodeSettings {
   sni?: string
 }
 
+/** The longest a node or subscription name may be, in characters: the hub's model.MaxNameRunes. */
+export const MAX_NAME_LENGTH = 64
+
 const node = (id: number) => `nodes/${id}`
 const sub = (id: number) => `subscriptions/${id}`
 

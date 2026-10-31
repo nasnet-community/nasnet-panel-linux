@@ -1,4 +1,4 @@
-import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test'
+import { test as base, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 
 /** Every test starts from the mock's sample data and fails on page errors. */
 export const test = base.extend<{ errors: string[] }>({
@@ -42,6 +42,9 @@ export const reset = (request: APIRequestContext, state: Reset = {}) => request.
 
 /** The header the page sends on every API call except the job stream; a test calling the API directly needs it too. */
 export const PAGE = { 'X-RemoteNodes-UI': '1' }
+
+/** Lets a field take more than its maxlength, which a script or a page of another build could put in it: filling stops at the limit. */
+export const liftLimit = (field: Locator) => field.evaluate((el) => el.removeAttribute('maxlength'))
 
 export const dialog = (page: Page, name: string | RegExp) => page.getByRole('dialog', { name })
 

@@ -30,7 +30,7 @@
 import { createHash } from 'node:crypto'
 import type { ServerResponse } from 'node:http'
 import type { HandshakeCheck, JobKind, Node, Traffic } from './src/lib/api'
-import { STEPS, claimNodeId, configView, event, node as makeNode, nodes, startJob, subs, view, type MockNode, type Step } from './mock-api'
+import { NAME_TOO_LONG, STEPS, claimNodeId, configView, event, node as makeNode, nodes, startJob, subs, tooLong, view, type MockNode, type Step } from './mock-api'
 
 const DAY = 86400e3
 const H = 3600e3
@@ -334,7 +334,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
   if (rest === '' && method === 'PATCH') {
     const name = String(body.name ?? '').trim()
     if (!name) return fail(400, 'bad_request', 'give the node a name'), true
-    if (name.length > 100) return fail(400, 'bad_request', 'the name must be at most 100 characters'), true
+    if (tooLong(name)) return fail(400, 'bad_request', NAME_TOO_LONG), true
     if (nodes.some((x) => x !== n && x.name.toLowerCase() === name.toLowerCase())) return fail(409, 'name_taken', `a node named ${name} already exists`), true
     n.name = name
     return send(200, detail(n)), true

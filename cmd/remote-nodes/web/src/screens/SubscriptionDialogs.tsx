@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
-import { ApiError, subscriptions, type Subscription } from '../lib/api'
+import { ApiError, MAX_NAME_LENGTH, subscriptions, type Subscription } from '../lib/api'
 import { defaultNodeIds, type NodeInfo } from '../lib/subscriptions'
 import { ShareDialog, type ShareTarget } from './ShareDialog'
 
@@ -54,7 +54,7 @@ function NameForm({
       }}
     >
       <Field label={t('subs.name')} hint={t('subs.add.nameHint')} error={error}>
-        {(p) => <Input {...p} dir="auto" value={value} onChange={(e) => onChange(e.target.value)} maxLength={100} />}
+        {(p) => <Input {...p} dir="auto" value={value} onChange={(e) => onChange(e.target.value)} maxLength={MAX_NAME_LENGTH} />}
       </Field>
       {children}
     </form>

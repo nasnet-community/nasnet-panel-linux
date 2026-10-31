@@ -30,7 +30,8 @@ test('no page of the node or the router settings scrolls sideways, in either lan
 })
 
 test('a name as long as a name can be does not push the page or its dialogs sideways', async ({ page }) => {
-  const long = 'A'.repeat(100)
+  // the longest name the hub takes
+  const long = 'A'.repeat(64)
   await openNode(page, 1)
   await openMenu(page)
   await menuItem(page, 'Rename').click()

@@ -36,6 +36,8 @@ export interface SubscriptionCall<S extends Sub, N extends HostNode> {
   subs: S[]
   nodes: N[]
   max: number
+  /** the longest a name may be, in characters */
+  maxName: number
   /** a subscription with the next free id, not yet in the list */
   make: (name: string, o: { createdAt: number; on: Set<number> }) => S
   view: (s: S) => Subscription
@@ -67,7 +69,7 @@ export function subscriptionRoutes<S extends Sub, N extends HostNode>(c: Subscri
   /** what is wrong with the name in the body, if anything */
   const badName = () =>
     !name ? refuse(400, 'bad_request', 'give the subscription a name')
-    : name.length > 100 ? refuse(400, 'bad_request', 'the name must be at most 100 characters')
+    : [...name].length > c.maxName ? refuse(400, 'bad_request', `The name can have at most ${c.maxName} characters.`)
     : false
 
   if (path === 'subscriptions' && method === 'POST') {

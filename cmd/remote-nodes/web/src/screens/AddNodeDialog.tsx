@@ -17,7 +17,7 @@ import { Button, Dialog, Disclosure, ErrorBox, Field, Input, useToast } from '..
 import { useConfig } from '../hooks/useConfig'
 import { useNow } from '../hooks/usePoll'
 import { useErrorText, useLang, type T } from '../i18n'
-import { api, type Node, type ProbeResult } from '../lib/api'
+import { MAX_NAME_LENGTH, api, type Node, type ProbeResult } from '../lib/api'
 import { jobLine } from '../lib/jobs'
 
 type Stage = 'form' | 'hostkey' | 'installing'
@@ -219,7 +219,7 @@ function AddNode({ nodes, onClose, onStarted, onInstalled, onOpenNode }: Props) 
             }
           />
           <Field label={t('add.name')} className="col-span-6">
-            {(p) => <Input {...p} dir="auto" value={form.name} onChange={set('name')} placeholder={suggested} maxLength={100} />}
+            {(p) => <Input {...p} dir="auto" value={form.name} onChange={set('name')} placeholder={suggested} maxLength={MAX_NAME_LENGTH} />}
           </Field>
           <Disclosure title={t('add.advanced')} className="col-span-6 border-t border-border pt-3">
             <Field label={t('add.entryPort')} hint={t('add.entryPortHint')}>
