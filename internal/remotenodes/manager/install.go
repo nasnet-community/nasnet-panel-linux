@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
@@ -147,7 +148,7 @@ func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node mod
 	defer func() {
 		// a panic ends the job, and the record mustn't go on looking like a running install
 		if !settled {
-			m.keepUnfinished(node.ID, model.InstallFailure{Error: "The install stopped on an internal error.", At: m.now().UTC()})
+			m.keepUnfinished(node.ID, model.InstallFailure{Error: "The install stopped on an internal error.", At: m.now().UTC().Truncate(time.Second)})
 		}
 	}()
 	changed, err := m.install(ctx, r, ops, node, lg.creds, keys)
@@ -247,7 +248,7 @@ func (e *failedInstall) Error() string {
 // repeat what it was given.
 func (m *Manager) afterFailure(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, changed bool, cause error, secrets []string) error {
 	said := func(err error) string { return clipText(jobs.Hide(err.Error(), secrets)) }
-	failure := model.InstallFailure{Error: said(cause), At: m.now().UTC()}
+	failure := model.InstallFailure{Error: said(cause), At: m.now().UTC().Truncate(time.Second)}
 	if step := r.FailedStep(); step != "" {
 		failure.Step, failure.StepKey = step, StepKey(step)
 	}
