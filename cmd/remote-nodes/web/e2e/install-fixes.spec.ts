@@ -274,6 +274,19 @@ test.describe('a login the server does not accept', () => {
     }
   })
 
+  test('is emptied out of its fields as soon as it is sent', async ({ page }) => {
+    await send(page, '192.0.2.41', 'wrong')
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 20000 })
+    const field = await d.locator('input[type="password"]').elementHandle()
+    await d.locator('input[type="password"]').fill('typed-for-the-fix-0005')
+    expect(await field!.evaluate((el: HTMLInputElement) => el.value)).toBe('typed-for-the-fix-0005')
+    await d.getByRole('button', { name: 'Continue', exact: true }).click()
+    // the element is gone from the page by then, but a page that keeps elements keeps what they were given
+    await expect.poll(() => field!.evaluate((el: HTMLInputElement) => el.value)).toBe('')
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  })
+
   test('can be a key instead, which replaces the password whole', async ({ page }) => {
     await send(page, '192.0.2.41', 'wrong')
     const d = dialog(page, 'Installation failed')

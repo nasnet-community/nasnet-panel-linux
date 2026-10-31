@@ -6,6 +6,7 @@ import {
   HostKeyCheck,
   LoginFields,
   emptyLogin,
+  clearSecrets,
   keyNeedsTrust,
   keyTrusted,
   loginError,
@@ -126,8 +127,9 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       const { jobId: id } = await api.install(req)
       held.current = req
       waiting.current = null
-      // the secrets are kept in `held` and nowhere else
+      // the secrets are kept in `held` and nowhere else, not in the form's state or its fields
       setLogin(withoutSecrets)
+      clearSecrets(document.getElementById('add-node'))
       setNamed(req.name)
       setJobId(id)
       setStage('installing')

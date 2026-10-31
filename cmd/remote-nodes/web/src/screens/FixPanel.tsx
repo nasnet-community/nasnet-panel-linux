@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { KeyRound } from '../components/icons'
+import { clearSecrets } from '../components/login'
 import { Button, ErrorBox, Field, Input, Notice, Textarea, cx } from '../components/ui'
 import { useConfig } from '../hooks/useConfig'
 import { useLang } from '../i18n'
@@ -208,6 +209,8 @@ function LoginAgain({ sent, busy, onGo }: { sent: Sent; busy: boolean; onGo: (lo
       const phrase = field('passphrase')
       if (phrase) login.passphrase = phrase
     }
+    // read: the fields have nothing more to keep
+    clearSecrets(e.currentTarget)
     onGo(login)
   }
   const pick = (m: 'password' | 'key') => (
