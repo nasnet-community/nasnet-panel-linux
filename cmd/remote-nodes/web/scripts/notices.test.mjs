@@ -1,7 +1,7 @@
 // Tests for notices.mjs: the parts that read and format on small made-up packages, and the real
 // page, which must not carry a package without a notice or with a licence nobody agreed to.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,9 +18,11 @@ import {
   loadPackage,
   prepare,
   problems,
+  readCssNotices,
   readFont,
   readPackage,
   repoUrl,
+  standardLicense,
 } from './notices.mjs'
 
 const made = []
@@ -28,11 +30,12 @@ afterAll(() => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true })
 })
 
-/** A scratch tree of files: a string is written as it is, anything else as JSON. */
+/** A scratch tree of files: a string is written as it is, null leaves the file out, anything else is written as JSON. */
 function tree(files) {
   const dir = mkdtempSync(join(tmpdir(), 'notices-test-'))
   made.push(dir)
   for (const [path, body] of Object.entries(files)) {
+    if (body === null) continue
     mkdirSync(dirname(join(dir, path)), { recursive: true })
     writeFileSync(join(dir, path), typeof body === 'string' ? body : JSON.stringify(body))
   }
@@ -47,6 +50,11 @@ const MIT = [
   'Permission is hereby granted, free of charge, to any person obtaining a copy of this software and',
   'associated documentation files, to deal in the Software without restriction.',
 ].join('\n')
+
+/** The same text under another copyright holder, for the made-up licences that have to be told apart. */
+const licenceOf = (holder) => MIT.replace('Someone', holder)
+
+const CSS = "included in the page's CSS"
 
 /** A package.json for a made-up package, with a licence unless it is told not to. */
 const manifest = (name, more = {}) => ({ name, version: '1.0.0', license: 'MIT', ...more })
@@ -212,6 +220,16 @@ describe('finding the notice of a package', () => {
     })
   })
 
+  it('adds the standard MIT text to a header, and nothing for a licence it has no text of', () => {
+    const header = '// Copyright (c) 2009 Someone\n// Licensed under the MIT license\n'
+    const mit = loadPackage(tree({ 'package.json': manifest('a'), 'index.js': header }))
+    expect(mit.standard).toEqual(standardLicense('MIT', 'Copyright (c) 2009 Someone\nLicensed under the MIT license'))
+    expect(mit.standard.text).toMatch(/^MIT License\n\nCopyright \(c\) 2009 Someone\n\nPermission is hereby granted/)
+    expect(loadPackage(tree({ 'package.json': manifest('a', { license: 'ISC' }), 'index.js': header })).standard).toBeNull()
+    // with a licence file of its own there is nothing to stand in for
+    expect(loadPackage(tree({ 'package.json': manifest('a'), LICENSE: MIT, 'index.js': header })).standard).toBeNull()
+  })
+
   it('looks at the module file and index.js too, and prefers the comment that names a copyright holder', () => {
     const dir = tree({
       'package.json': manifest('a', { main: 'main.js', module: 'esm/a.mjs' }),
@@ -248,6 +266,38 @@ describe('the comment at the top of a file', () => {
   for (const [name, [source, want]] of Object.entries(cases)) {
     it(`reads ${name}`, () => expect(headerComment(source)).toBe(want))
   }
+})
+
+describe('the standard text for a package that only names its licence', () => {
+  const header = 'QR Code\n\nCopyright (c) 2009 Someone Else\n\nURL: http://example.test/\n\nLicensed under the MIT license:\n http://example.test/mit'
+
+  it('is the MIT permission text under the copyright line of the header', () => {
+    const got = standardLicense('MIT', header)
+    expect(got.id).toBe('MIT')
+    expect(got.text.split('\n').slice(0, 4)).toEqual(['MIT License', '', 'Copyright (c) 2009 Someone Else', ''])
+    expect(got.text).toContain('Permission is hereby granted, free of charge, to any person obtaining a copy')
+    expect(got.text).toContain('OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.')
+    expect(got.text.endsWith('SOFTWARE.')).toBe(true)
+  })
+
+  it('takes every copyright line the header starts one with, or else the lines that mention it', () => {
+    const two = standardLicense('MIT', 'Copyright (c) 2009 One\nCopyright (c) 2011 Two\nThis file is copyright of nobody')
+    expect(two.text.split('\n').slice(0, 5)).toEqual(['MIT License', '', 'Copyright (c) 2009 One', 'Copyright (c) 2011 Two', ''])
+    expect(standardLicense('MIT', 'This file is Copyright 2020 Someone, and (c) another').text).toContain('\n\nThis file is Copyright 2020 Someone, and (c) another\n\n')
+  })
+
+  it('knows MIT in any case, and nothing else', () => {
+    expect(standardLicense('mit', header)).not.toBeNull()
+    expect(standardLicense(' MIT ', header)).not.toBeNull()
+    for (const other of ['ISC', 'Apache-2.0', 'BSD-3-Clause', '(MIT OR Apache-2.0)', 'MIT AND ISC', 'SEE LICENSE IN LICENSE', '', undefined]) {
+      expect(standardLicense(other, header), String(other)).toBeNull()
+    }
+  })
+
+  it('is not made up out of nothing: a header with no copyright line gets no text', () => {
+    expect(standardLicense('MIT', 'A small helper\n\nLicensed under the MIT license')).toBeNull()
+    expect(standardLicense('MIT', '')).toBeNull()
+  })
 })
 
 describe('collecting the runtime packages', () => {
@@ -322,6 +372,112 @@ describe('collecting the runtime packages', () => {
   })
 })
 
+describe("what the page's CSS carries", () => {
+  const tailwind = (more = {}) => ({
+    'package.json': manifest('app'),
+    'node_modules/tailwindcss/package.json': manifest('tailwindcss', {
+      version: '3.4.19',
+      homepage: 'https://tailwindcss.com',
+      repository: { type: 'git', url: 'https://github.com/tailwindlabs/tailwindcss.git#v3' },
+    }),
+    'node_modules/tailwindcss/LICENSE': licenceOf('Tailwind Authors'),
+    ...more,
+  })
+
+  it("is Tailwind with its own licence, and modern-normalize with the licence file Tailwind ships next to Preflight", () => {
+    const dir = tree(tailwind({ 'node_modules/tailwindcss/src/css/LICENSE': licenceOf('Preflight Authors') }))
+    const [tw, normalize] = readCssNotices(dir)
+    expect(tw).toMatchObject({
+      name: 'tailwindcss',
+      version: '3.4.19',
+      license: 'MIT',
+      homepage: 'https://tailwindcss.com',
+      repository: 'https://github.com/tailwindlabs/tailwindcss',
+      label: CSS,
+    })
+    expect(tw.files).toEqual([{ name: 'LICENSE', text: licenceOf('Tailwind Authors') }])
+    expect(normalize).toMatchObject({ name: 'modern-normalize', version: '', installed: false, license: 'MIT', label: CSS })
+    expect(normalize.files).toEqual([{ name: 'tailwindcss/src/css/LICENSE', text: licenceOf('Preflight Authors') }])
+    expect(normalize.note.join(' ')).toContain('Preflight, the base styles in the page\'s CSS, is derived from modern-normalize.')
+    expect(normalize.note.join(' ')).toContain('the licence file Tailwind ships next to Preflight, tailwindcss/src/css/LICENSE.')
+    expect(problems([], FONT, [tw, normalize])).toEqual([])
+  })
+
+  it('looks in lib/css when Tailwind ships no src', () => {
+    const [, normalize] = readCssNotices(tree(tailwind({ 'node_modules/tailwindcss/lib/css/LICENSE': licenceOf('Preflight Authors') })))
+    expect(normalize.files).toEqual([{ name: 'tailwindcss/lib/css/LICENSE', text: licenceOf('Preflight Authors') }])
+    expect(normalize.note.join(' ')).toContain('tailwindcss/lib/css/LICENSE.')
+  })
+
+  it("falls back on Tailwind's own licence when it ships none for Preflight, and says so, with no copyright line of its own", () => {
+    const [tw, normalize] = readCssNotices(tree(tailwind()))
+    expect(normalize.files).toEqual([{ name: 'tailwindcss/LICENSE', text: licenceOf('Tailwind Authors') }])
+    expect(normalize.note.join(' ')).toContain('Tailwind ships no separate licence file for Preflight, so the text below is Tailwind\'s own licence, tailwindcss/LICENSE.')
+    // every copyright line in what is written is one that a file has
+    const text = format([], FONT, [tw, normalize])
+    const given = new Set(licenceOf('Tailwind Authors').split('\n').filter((l) => /^Copyright/.test(l)))
+    const written = text.split('\n').filter((l) => /^Copyright \(c\)/.test(l))
+    expect(written.length).toBeGreaterThan(0)
+    for (const line of written) expect(given.has(line), line).toBe(true)
+  })
+
+  it("names Tailwind's own licence file as it is called when that stands in", () => {
+    const dir = tree(tailwind({ 'node_modules/tailwindcss/LICENSE': null }))
+    // a made-up Tailwind that keeps its licence in LICENSE.md
+    writeFileSync(join(dir, 'node_modules/tailwindcss/LICENSE.md'), licenceOf('Tailwind Authors'))
+    const [, normalize] = readCssNotices(dir)
+    expect(normalize.files).toEqual([{ name: 'tailwindcss/LICENSE.md', text: licenceOf('Tailwind Authors') }])
+    expect(normalize.note.join(' ')).toContain("is Tailwind's own licence, tailwindcss/LICENSE.md.")
+  })
+
+  it("uses modern-normalize's own licence when it is installed", () => {
+    const dir = tree(
+      tailwind({
+        'node_modules/modern-normalize/package.json': manifest('modern-normalize', { version: '3.0.1', repository: 'sindresorhus/modern-normalize' }),
+        'node_modules/modern-normalize/license': licenceOf('Normalize Author'),
+        'node_modules/tailwindcss/src/css/LICENSE': licenceOf('Preflight Authors'),
+      }),
+    )
+    const [, normalize] = readCssNotices(dir)
+    expect(normalize).toMatchObject({ name: 'modern-normalize', version: '3.0.1', license: 'MIT', label: CSS, repository: 'https://github.com/sindresorhus/modern-normalize' })
+    expect(normalize.installed).toBeUndefined()
+    expect(normalize.files).toEqual([{ name: 'license', text: licenceOf('Normalize Author') }])
+    expect(normalize.note).toEqual(["Tailwind's Preflight, the base styles in the page's CSS, is derived from", 'modern-normalize.'])
+  })
+
+  it('stops when Tailwind is not installed', () => {
+    expect(() => readCssNotices(tree({ 'package.json': manifest('app') }))).toThrow(/tailwindcss is not installed.*npm ci/)
+  })
+
+  it('finds Tailwind where Node would, like any other package', () => {
+    const dir = tree({ 'package.json': manifest('app'), 'node_modules/tailwindcss/package.json': manifest('tailwindcss', { version: '3.0.0' }), 'node_modules/tailwindcss/LICENSE': MIT })
+    expect(readCssNotices(dir)[0]).toMatchObject({ name: 'tailwindcss', version: '3.0.0' })
+  })
+
+  it('is held to the same rules as the libraries', () => {
+    const gpl = tree(tailwind({ 'node_modules/tailwindcss/package.json': manifest('tailwindcss', { version: '3.4.19', license: 'GPL-3.0-only' }) }))
+    expect(problems([], FONT, readCssNotices(gpl))).toEqual([expect.stringMatching(/^tailwindcss 3\.4\.19: licence "GPL-3\.0-only" is not one of MIT, ISC.*decision first/)])
+    const short = tree(tailwind({ 'node_modules/tailwindcss/LICENSE': 'MIT' }))
+    expect(problems([], FONT, readCssNotices(short))).toEqual(
+      expect.arrayContaining(['tailwindcss 3.4.19: LICENSE is too short to be a licence text', 'modern-normalize: tailwindcss/LICENSE is too short to be a licence text']),
+    )
+    const none = tree(tailwind({ 'node_modules/tailwindcss/LICENSE': '' }))
+    expect(problems([], FONT, readCssNotices(none))).toEqual([
+      'tailwindcss 3.4.19: it has no licence file and no comment at the top of its main file',
+      'modern-normalize: Tailwind ships no licence text to stand for it (no src/css/LICENSE, and no LICENSE of its own)',
+    ])
+  })
+
+  it('wants a version of what is installed, not of the stand-in, and the MIT licence under the name it is listed with', () => {
+    const rec = (more) => loaded({ name: 'modern-normalize', version: '', installed: false, label: CSS, ...more })
+    expect(problems([], FONT, [rec()])).toEqual([])
+    expect(problems([], FONT, [loaded({ name: 'tailwindcss', version: '', label: CSS })])).toEqual([expect.stringContaining('has no name or no version')])
+    expect(problems([], FONT, [rec({ files: [{ name: 'tailwindcss/src/css/LICENSE', text: `BSD 3-Clause. ${'x'.repeat(120)}` }] })])).toEqual([
+      'modern-normalize: tailwindcss/src/css/LICENSE is not the MIT licence that modern-normalize is listed under',
+    ])
+  })
+})
+
 describe('the font', () => {
   it('is its notice, the copyright line in it, where it is from, and the files that are embedded', () => {
     const dir = tree({
@@ -349,7 +505,8 @@ describe('the font', () => {
 describe('what stops the notices', () => {
   it('is nothing for packages with a licence file, or a copyright header, under an allowed licence', () => {
     const header = { file: 'index.js', text: 'Copyright (c) 2020 Someone' }
-    const list = [loaded(), loaded({ name: 'bare', files: [], header }), loaded({ name: 'dual', license: '(MIT OR GPL-3.0-only)' })]
+    const standard = standardLicense('MIT', header.text)
+    const list = [loaded(), loaded({ name: 'bare', files: [], header, standard }), loaded({ name: 'dual', license: '(MIT OR GPL-3.0-only)' })]
     expect(problems(list, FONT)).toEqual([])
   })
 
@@ -364,6 +521,17 @@ describe('what stops the notices', () => {
     expect(problems([loaded({ files: [{ name: 'LICENSE', text: 'MIT' }] })], FONT)).toEqual(['lib 1.0.0: LICENSE is too short to be a licence text'])
     const nobody = problems([loaded({ files: [], header: { file: 'index.js', text: 'A small helper' } })], FONT)
     expect(nobody).toEqual(['lib 1.0.0: it has no licence file, and the comment at the top of index.js names no copyright holder'])
+  })
+
+  it('names a package with only a header, when the standard text of its licence is not known here', () => {
+    const header = { file: 'index.js', text: 'Copyright (c) 2020 Someone' }
+    expect(problems([loaded({ license: 'ISC', files: [], header, standard: standardLicense('ISC', header.text) })], FONT)).toEqual([
+      'lib 1.0.0: it has no licence file, and the standard text of "ISC" is only known here for MIT with a copyright line in the header',
+    ])
+    // MIT, but a header that mentions no copyright is refused for that, not for the text
+    expect(problems([loaded({ files: [], header: { file: 'index.js', text: 'MIT' }, standard: null })], FONT)).toEqual([
+      'lib 1.0.0: it has no licence file, and the comment at the top of index.js names no copyright holder',
+    ])
   })
 
   it('wants one usable file among several', () => {
@@ -390,6 +558,7 @@ describe('the text', () => {
     repository: 'https://github.com/x/bare',
     files: [],
     header: { file: 'index.js', text: 'Copyright (c) 2020 Someone\nLicensed under the MIT license.' },
+    standard: standardLicense('MIT', 'Copyright (c) 2020 Someone\nLicensed under the MIT license.'),
   })
   const full = loaded({
     name: 'full-lib',
@@ -421,6 +590,14 @@ describe('the text', () => {
         '',
         'Copyright (c) 2020 Someone',
         'Licensed under the MIT license.',
+        '',
+        'The package declares the MIT licence but ships no text of it. The standard',
+        'MIT text follows, under the copyright notice from the comment above. It is',
+        'the standard text, not a file of the package.',
+        '',
+        '--- standard MIT licence text, not a file of the package ---',
+        '',
+        ...bare.standard.text.split('\n'),
         '',
         rule,
         'full-lib 1.0.0',
@@ -462,6 +639,77 @@ describe('the text', () => {
     )
   })
 
+  it("puts what the CSS carries after the libraries and before the font, labelled, and says so in the preface", () => {
+    const tailwind = loaded({
+      name: 'tailwindcss',
+      version: '3.4.19',
+      homepage: 'https://tailwindcss.com',
+      repository: 'https://github.com/tailwindlabs/tailwindcss',
+      files: [{ name: 'LICENSE', text: 'Tailwind licence' }],
+      label: CSS,
+      note: ['Tailwind note.'],
+    })
+    const normalize = loaded({
+      name: 'modern-normalize',
+      version: '',
+      installed: false,
+      files: [{ name: 'tailwindcss/src/css/LICENSE', text: 'Preflight licence' }],
+      label: CSS,
+      note: ['Normalize note, two', 'lines.'],
+    })
+    const out = format([full], FONT, [tailwind, normalize])
+    expect(out.startsWith(
+      [
+        'The licences of the software built into the Remote Nodes web page: the',
+        'libraries it bundles, the base styles its CSS gets from Tailwind CSS, and',
+        'the font it embeds. The page itself is free software under the GNU Affero',
+        'General Public License, version 3 or later: see LICENSE.',
+        '',
+        rule,
+        'full-lib 1.0.0',
+      ].join('\n'),
+    )).toBe(true)
+    expect(out).toContain(
+      [
+        rule,
+        "tailwindcss 3.4.19 (included in the page's CSS)",
+        rule,
+        '',
+        'License:    MIT',
+        'Homepage:   https://tailwindcss.com',
+        'Repository: https://github.com/tailwindlabs/tailwindcss',
+        '',
+        'Tailwind note.',
+        '',
+        '--- LICENSE ---',
+        '',
+        'Tailwind licence',
+        '',
+        rule,
+        "modern-normalize (included in the page's CSS)",
+        rule,
+        '',
+        'License:    MIT',
+        '',
+        'Normalize note, two',
+        'lines.',
+        '',
+        '--- tailwindcss/src/css/LICENSE ---',
+        '',
+        'Preflight licence',
+        '',
+        rule,
+        'Vazirmatn (font)',
+      ].join('\n'),
+    )
+    const at = (s) => out.indexOf(s)
+    expect(at('full-lib 1.0.0')).toBeLessThan(at('tailwindcss 3.4.19'))
+    expect(at('tailwindcss 3.4.19')).toBeLessThan(at('modern-normalize (included'))
+    expect(at('modern-normalize (included')).toBeLessThan(at('Vazirmatn (font)'))
+    // without any, the preface doesn't mention them
+    expect(format([full], FONT)).not.toContain('Tailwind')
+  })
+
   it('is the same every time, with one newline at the end and nothing from the clock or the machine', () => {
     const once = format([bare, full], FONT)
     expect(format([bare, full], FONT)).toBe(once)
@@ -491,11 +739,12 @@ describe('the page as it is', () => {
   })
 
   it('has every notice in the text, word for word, and the font with its files', () => {
-    const { packages, font, text } = real()
-    for (const p of packages) {
-      expect(text).toContain(`${p.name} ${p.version}`)
+    const { packages, css, font, text } = real()
+    for (const p of [...packages, ...css]) {
+      expect(text).toContain([p.name, p.version].filter(Boolean).join(' '))
       for (const f of p.files) expect(text, `${p.name}: ${f.name}`).toContain(f.text)
       if (p.header) expect(text).toContain(p.header.text)
+      if (p.standard) expect(text).toContain(p.standard.text)
     }
     expect(text).toContain('Vazirmatn (font)')
     expect(text).toContain(font.copyright)
@@ -503,6 +752,47 @@ describe('the page as it is', () => {
     for (const file of font.files) expect(text).toContain(file)
     // the font notice is the one in the source, whole
     expect(text).toContain(font.text)
+  })
+
+  it("lists Tailwind CSS and modern-normalize as included in the page's CSS, with the licences node_modules has", () => {
+    const { css, text } = real()
+    expect(css.map((p) => p.name)).toEqual(['tailwindcss', 'modern-normalize'])
+    for (const p of css) expect(text).toContain(`${[p.name, p.version].filter(Boolean).join(' ')} (included in the page's CSS)`)
+    const [tailwind, normalize] = css
+    expect(tailwind.version).toMatch(/^\d+\.\d+\.\d+/)
+    expect(tailwind.files).toEqual([{ name: 'LICENSE', text: clean(readFileSync(join(web, 'node_modules', 'tailwindcss', 'LICENSE'), 'utf8')) }])
+    // modern-normalize has no package of its own here, so the licence Tailwind ships for Preflight stands in, and the notice says so
+    if (normalize.installed === false) {
+      expect(normalize.files).toHaveLength(1)
+      expect(normalize.files[0].name).toMatch(/^tailwindcss\/(?:src\/css\/|lib\/css\/)?LICENSE$/)
+      expect(clean(readFileSync(join(web, 'node_modules', normalize.files[0].name), 'utf8'))).toBe(normalize.files[0].text)
+      expect(normalize.note.join(' ')).toContain(`${normalize.files[0].name}.`)
+    }
+    expect(normalize.note.join(' ')).toContain('is derived from modern-normalize')
+  })
+
+  it("still has Preflight in the page's CSS, which is why those two are listed", () => {
+    const sheet = readFileSync(join(web, 'src', 'index.css'), 'utf8')
+    const config = readFileSync(join(web, 'tailwind.config.ts'), 'utf8')
+    expect(sheet, "src/index.css has no @tailwind base: if Preflight is gone from the CSS, take the CSS notices out of notices.mjs").toMatch(/^@tailwind base;?\s*$/m)
+    expect(config, 'tailwind.config.ts switches Preflight off: take the CSS notices out of notices.mjs').not.toMatch(/preflight\s*:\s*false/)
+  })
+
+  it('has the MIT text word for word as the MIT licences in node_modules have it', () => {
+    const body = (t) => t.slice(t.indexOf('Permission is hereby granted'))
+    const ours = body(standardLicense('MIT', 'Copyright (c) 2000 Someone').text)
+    const files = ['preact/LICENSE', 'tailwindcss/LICENSE', 'tailwindcss/src/css/LICENSE'].filter((f) => existsSync(join(web, 'node_modules', f)))
+    expect(files.length).toBeGreaterThan(1)
+    for (const f of files) expect(body(clean(readFileSync(join(web, 'node_modules', f), 'utf8'))), f).toBe(ours)
+  })
+
+  it('gives every package that has only a header the standard text, under its own copyright line', () => {
+    for (const p of real().packages.filter((x) => x.header)) {
+      expect(p.standard, p.name).not.toBeNull()
+      const line = p.header.text.split('\n').map((l) => l.trim()).find((l) => /^copyright/i.test(l))
+      expect(p.standard.text, p.name).toContain(`\n\n${line}\n\nPermission is hereby granted`)
+      expect(real().text, p.name).toContain('--- standard MIT licence text, not a file of the package ---')
+    }
   })
 
   it('imports only runtime dependencies, so nothing is bundled without a notice', () => {
@@ -556,6 +846,6 @@ describe('the page as it is', () => {
     run()
     expect(readFileSync(out, 'utf8')).toBe(first)
     expect(first).toBe(real().text)
-    expect(said).toContain(`${real().packages.length} packages and the Vazirmatn font, ${Buffer.byteLength(first)} bytes`)
+    expect(said).toContain(`${real().packages.length} packages, ${real().css.length} for the page's CSS and the Vazirmatn font, ${Buffer.byteLength(first)} bytes`)
   })
 })

@@ -60,20 +60,32 @@ docker build -f Dockerfile.remote-nodes --target binary --output type=local,dest
 
 ## Licence notices
 
-MIT, ISC and the OFL want their notice to travel with copies, so the page's own libraries and font are
-written into `dist/NOTICES.txt`: for each package its name, version, SPDX licence, homepage or repository
-and the text of its licence file, and for Vazirmatn the notice in `src/fonts/OFL.txt` with its copyright
-line. A package that ships no licence file (qrcode-generator) gets the comment at the top of its main
-source file instead, labelled as that, with the licence its `package.json` declares. The packages are the
-`dependencies` of `package.json` and what those depend on in turn, read from `node_modules`. Peer
-dependencies are not followed: the page aliases `react` to Preact, so the `react` that npm installs for
-lucide-react's peer dependency is not in the bundle. The file has no dates and is sorted, so the same
-install gives the same bytes.
+MIT, ISC and the OFL want their notice to travel with copies, so what the page carries is written into
+`dist/NOTICES.txt`: for each library its name, version, SPDX licence, homepage or repository and the text
+of its licence file; what its CSS carries from Tailwind; and for Vazirmatn the notice in `src/fonts/OFL.txt`
+with its copyright line. The libraries are the `dependencies` of `package.json` and what those depend on in
+turn, read from `node_modules`. Peer dependencies are not followed: the page aliases `react` to Preact, so
+the `react` that npm installs for lucide-react's peer dependency is not in the bundle. The file has no
+dates and is sorted, so the same install gives the same bytes.
+
+A library that ships no licence file (qrcode-generator) gets the comment at the top of its main source file,
+and, since that only names the licence, the standard MIT text under the copyright line the comment gives,
+labelled as the standard text and not a file of the package. Only MIT has its standard text in the script;
+a library with only a header and another licence is refused until its text is found or added.
+
+Tailwind CSS is a build tool, not a dependency, but it writes its Preflight base styles into the page's CSS,
+and Preflight is derived from modern-normalize. Both are listed, labelled "included in the page's CSS", with
+the licence texts `node_modules` has: Tailwind's own `LICENSE`, and for modern-normalize, which isn't
+installed on its own, the licence file Tailwind ships next to Preflight (`tailwindcss/src/css/LICENSE`) or,
+if a Tailwind has none, Tailwind's own licence, and the notice says which it is. No copyright line is
+written by the script: each one comes from a file. If the page's CSS stops having Preflight (no
+`@tailwind base`, or `preflight: false`), a test says to take those two out of `scripts/notices.mjs`.
 
 `npm run notices` stops when a package has no usable notice or a licence outside `ALLOWED_LICENSES` in
 `scripts/notices.mjs` (MIT, ISC, OFL-1.1, Apache-2.0, BSD-2-Clause, BSD-3-Clause), and `npm test` makes the
-same checks. `npm test` also fails when the page imports a package that isn't in `dependencies`, which
-would be bundled with no notice. A new dependency needs its licence agreed and added to that list first.
+same checks, for what the CSS carries too. `npm test` also fails when the page imports a package that isn't
+in `dependencies`, which would be bundled with no notice. A new dependency needs its licence agreed and
+added to that list first.
 
 ## Where it comes from
 

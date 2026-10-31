@@ -3,7 +3,8 @@
 # LICENSE, a NOTICES file with the licence of Go itself and of every module the
 # hub and the bridge link, and a short README. Dockerfile.remote-nodes runs it,
 # and then adds web-notices.txt, which the web stage writes (npm run notices in
-# cmd/remote-nodes/web): the licences of the page's libraries and font.
+# cmd/remote-nodes/web): the licences of the page's libraries, of the styles its
+# CSS gets from Tailwind, and of its font.
 #
 #   scripts/remote-nodes-licenses.sh OUTDIR [package ...]
 #
@@ -105,8 +106,9 @@ NOTICES  The licence of Go, and of every third-party module linked into the
          at the commit or tag its version in NOTICES names.
 web-notices.txt
          The licence of every library built into the web page, with the
-         version it was built with, and the notice of the Vazirmatn font
-         the page embeds a subset of.
+         version it was built with, the licences of Tailwind CSS and
+         modern-normalize, whose base styles are in the page's CSS, and
+         the notice of the Vazirmatn font the page embeds a subset of.
 
 The hub shows these files as one text at /licenses, under the address of its
 page; the Notices link in the page's About card opens it. It reads them from
