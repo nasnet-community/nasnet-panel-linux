@@ -14,7 +14,7 @@ import {
 } from '../components/login'
 import { Badge, Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang, type T } from '../i18n'
-import { ApiError, api, type HandshakeCheck, type Node, type ProbeResult, type Started } from '../lib/api'
+import { ApiError, MAX_NAME_LENGTH, api, type HandshakeCheck, type Node, type ProbeResult, type Started } from '../lib/api'
 import { normalizeTarget, openConnections } from '../lib/node'
 
 /** Starts a job and shows it; throws when the hub refuses. The node page provides it. */
@@ -302,7 +302,7 @@ export function RenameDialog({ node, onClose, onRenamed }: { node: Node; onClose
     >
       <div className="flex flex-col gap-3">
         <Field label={t('add.name')}>
-          {(p) => <Input {...p} dir="auto" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && !same && void save()} />}
+          {(p) => <Input {...p} dir="auto" value={name} maxLength={MAX_NAME_LENGTH} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && !same && void save()} />}
         </Field>
         {error && <ErrorBox>{error}</ErrorBox>}
       </div>

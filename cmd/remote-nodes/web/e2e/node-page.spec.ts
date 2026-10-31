@@ -1,4 +1,4 @@
-import { attention, card, dialog, expect, reset, stateHolds, test, toast } from './fixtures'
+import { attention, card, dialog, expect, liftLimit, reset, stateHolds, test, toast } from './fixtures'
 import { confirmDialog, finishJob, menuItem, openMenu, openNode, setNode, verdictChip } from './node-helpers'
 
 const chipButton = (page: import('@playwright/test').Page, name: string) => page.getByRole('button', { name, exact: true })
@@ -295,6 +295,22 @@ test.describe('actions that are jobs', () => {
 })
 
 test.describe('naming and removing', () => {
+  test('holds the new name to 64 characters, and shows the hub\'s sentence for a longer one', async ({ page }) => {
+    await openNode(page, 1)
+    await openMenu(page)
+    await menuItem(page, 'Rename').click()
+    const d = dialog(page, 'Rename node')
+    await expect(d.getByLabel('Name')).toHaveAttribute('maxlength', '64')
+    // a name that got past the field is answered by the hub in its own words
+    await liftLimit(d.getByLabel('Name'))
+    await d.getByLabel('Name').fill('x'.repeat(65))
+    await d.getByRole('button', { name: 'Save' }).click()
+    await expect(d.getByRole('alert')).toContainText('The name can have at most 64 characters.')
+    await d.getByLabel('Name').fill('x'.repeat(64))
+    await d.getByRole('button', { name: 'Save' }).click()
+    await expect(d).toBeHidden()
+  })
+
   test('renames a node from the menu, and refuses a name that is taken', async ({ page }) => {
     await openNode(page, 1)
     await openMenu(page)

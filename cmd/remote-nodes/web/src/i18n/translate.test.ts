@@ -124,6 +124,8 @@ describe('errorText', () => {
 
   it("shows the server's sentence for other codes and plain errors", () => {
     expect(errorText(t, err('bad_request', 'give the server address'))).toBe('give the server address')
+    // a name over the limit gets past the field only by a paste or a script; the hub's sentence says what is wrong
+    expect(errorText(t, err('bad_request', 'The name can have at most 64 characters.'))).toBe('The name can have at most 64 characters.')
     expect(errorText(t, new Error('network down'))).toBe('network down')
     expect(errorText(t, 'oops')).toBe('oops')
   })

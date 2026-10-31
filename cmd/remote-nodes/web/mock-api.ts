@@ -57,6 +57,10 @@ const AGENT = '1.3.0'
 const XRAY = '26.10.21'
 const NEW_KEY = 'SHA256:u3Rq0Q1uV3Jc0mYw7b6o8xk3j2m9Pq5c1f0aZyXwVb8'
 const MAX_SUBSCRIPTIONS = 10
+/** The longest a name may be, in characters, and what the hub says of one that is longer. */
+export const MAX_NAME = 64
+export const tooLong = (name: string) => [...name].length > MAX_NAME
+export const NAME_TOO_LONG = `The name can have at most ${MAX_NAME} characters.`
 
 export interface MockNode {
   id: number
@@ -682,7 +686,7 @@ export function mockApi(): Plugin {
         }
         if (path === 'health') return send(200, { ok: true, version: VERSION, commit: 'a1b2c3d', writes: 0 })
         if (path === 'config' && method === 'GET') return send(200, configView())
-        if (subscriptionRoutes({ method, path, body, send, fail, subs, nodes, max: MAX_SUBSCRIPTIONS, make: sub, view: subView, nodeView: view })) return
+        if (subscriptionRoutes({ method, path, body, send, fail, subs, nodes, max: MAX_SUBSCRIPTIONS, maxName: MAX_NAME, make: sub, view: subView, nodeView: view })) return
 
         if (path === 'probe' && method === 'POST') {
           const host = String(body.host ?? '').trim()
@@ -720,7 +724,7 @@ export function mockApi(): Plugin {
           if (nodes.some((n) => n.host === host)) return fail(409, 'bad_request', `${host} is already a node here`)
           if (installing.has(host)) return fail(409, 'busy', `an install to ${host} is still running`)
           const name = String(body.name ?? '').trim()
-          if (name.length > 100) return fail(400, 'bad_request', 'the name must be at most 100 characters')
+          if (tooLong(name)) return fail(400, 'bad_request', NAME_TOO_LONG)
           if (nodes.some((n) => n.name === name)) return fail(409, 'name_taken', `a node named ${name} already exists`)
           if (!body.password && !body.privateKey) return fail(400, 'bad_request', 'give a password or a private key')
           if (!String(body.hostKey ?? '').startsWith('SHA256:')) return fail(400, 'bad_request', "confirm the node's host key first")

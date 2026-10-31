@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { PAGE, dialog, expect, reset, test, toast } from './fixtures'
+import { PAGE, dialog, expect, liftLimit, reset, test, toast } from './fixtures'
 import { addViaApi, fillToLimit, flipper, isTable, listed, openNodeSubscriptions, openSubscriptions, pick, row } from './subs'
 
 const tile = (page: Page, label: string) => page.locator('main .grid > div').filter({ hasText: label })
@@ -330,6 +330,31 @@ test('a rename keeps to the rules: a name is needed, one in use is refused, an u
   await page.keyboard.press('Enter')
   await expect(toast(page, 'Renamed to SARA')).toBeVisible()
   expect(patches).toBe(2)
+})
+
+test('holds a name to 64 characters, in the add dialog and in a rename, and shows the hub\'s sentence for a longer one', async ({ page }) => {
+  await openSubscriptions(page)
+  // adding
+  await page.getByRole('button', { name: 'Add subscription' }).first().click()
+  const add = dialog(page, 'Add a subscription')
+  await expect(add.getByLabel('Name')).toHaveAttribute('maxlength', '64')
+  await add.getByLabel('Name').pressSequentially('x'.repeat(70))
+  expect(await add.getByLabel('Name').inputValue()).toHaveLength(64)
+  // one that got past the field is refused by the hub in its own words
+  await liftLimit(add.getByLabel('Name'))
+  await add.getByLabel('Name').fill('y'.repeat(65))
+  await add.getByRole('button', { name: 'Add subscription' }).click()
+  await expect(add.getByRole('alert')).toContainText('The name can have at most 64 characters.')
+  await add.getByRole('button', { name: 'Cancel' }).click()
+
+  // renaming
+  await pick(page, 'Sara', 'Rename')
+  const rename = dialog(page, 'Rename Sara')
+  await expect(rename.getByLabel('Name')).toHaveAttribute('maxlength', '64')
+  await liftLimit(rename.getByLabel('Name'))
+  await rename.getByLabel('Name').fill('y'.repeat(65))
+  await rename.getByRole('button', { name: 'Save' }).click()
+  await expect(rename.getByRole('alert')).toContainText('The name can have at most 64 characters.')
 })
 
 test('deletes a subscription after asking, and the count drops', async ({ page }) => {
