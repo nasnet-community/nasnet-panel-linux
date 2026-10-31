@@ -51,6 +51,23 @@ func (h *Holder) Agent(ctx context.Context, arch string) (*Agent, error) {
 	return v.(*Agent), nil
 }
 
+// LatestAgent is the version of the agent the release carries for arch,
+// such as "v1.3.1", read from release.json and its signature alone. No agent
+// is downloaded and nothing is held, so it is cheap enough to ask now and
+// then, which is how the hub finds out that a node is behind.
+//
+// The checks are Agent's: a release that isn't signed by a trusted key
+// (ErrManifest), is older than MinAgentVersion (ErrAgentTooOld) or has no
+// gzipped agent for arch (ErrNoGzAgents) is an error here too, since the hub
+// couldn't push it.
+func (h *Holder) LatestAgent(ctx context.Context, arch string) (string, error) {
+	e, err := h.f.entry(ctx, h.c, h.src, arch)
+	if err != nil {
+		return "", err
+	}
+	return e.version, nil
+}
+
 // Xray is FetchXray, except that a build already held is handed back.
 func (h *Holder) Xray(ctx context.Context, arch string) (*Xray, error) {
 	if err := checkArch(arch); err != nil {
