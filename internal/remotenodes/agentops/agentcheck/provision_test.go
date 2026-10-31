@@ -80,3 +80,46 @@ func TestProvisionWithTheRealAgent(t *testing.T) {
 		t.Errorf("steps done %q, want %q", done, agentops.ProvisionPlan())
 	}
 }
+
+// A node whose Xray the install kept (the pinned build, checked by checksum over
+// SSH) is provisioned without a build being fetched or sent, and the real agent
+// is still asked what runs: Download Xray and Upload Xray are done as steps with
+// nothing to do, Check Xray is a real one.
+func TestProvisionOfAKeptBuildWithTheRealAgentSendsNothing(t *testing.T) {
+	r := startRig(t, options{profile: config.ProfileManaged, version: pin.Version, files: build{plain: []byte("never sent")}})
+	c := r.connect()
+	r.startXray(c)
+	r.node.EntryPort = standIn(t)
+	small := tlsTarget(t, &tls.Config{Certificates: []tls.Certificate{selfSigned(t, ecKey(t), "small.example.test", 0)}, MinVersion: tls.VersionTLS13})
+	in := agentops.ProvisionInput{
+		Node: r.node, Targets: []string{small}, SNI: "small.example.test", XrayKept: true,
+		Clients: []nodecfg.Client{{UUID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", Email: nodecfg.SubscriptionEmail(1)}},
+		Bridge:  nodecfg.Bridge{UUID: "11111111-2222-4333-8444-555555555555", Email: nodecfg.BridgeEmail(7), ReverseTag: "r7"},
+	}
+	var steps []agentops.Step
+	res, err := r.env.Provision(bg, c, in, func(s agentops.Step) { steps = append(steps, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.XrayVersion != pin.Version {
+		t.Errorf("the node reports Xray %q", res.XrayVersion)
+	}
+	last := map[string]agentops.Step{}
+	began := map[string]bool{}
+	for _, s := range steps {
+		last[s.Name] = s
+		began[s.Name] = began[s.Name] || s.State == agentops.StateRunning
+	}
+	for _, name := range []string{agentops.StepDownloadXray, agentops.StepUploadXray} {
+		if last[name].State != agentops.StateOK || last[name].Detail != "Not needed" || began[name] {
+			t.Errorf("%s: %+v (began %v)", name, last[name], began[name])
+		}
+	}
+	// Check Xray looked at the node: it began, and says what runs
+	if !began[agentops.StepCheckXray] || last[agentops.StepCheckXray].Detail != "Xray "+pin.Version {
+		t.Errorf("Check Xray: %+v (began %v)", last[agentops.StepCheckXray], began[agentops.StepCheckXray])
+	}
+	if st, err := c.GetStatus(bg); err != nil || !st.XrayRunning {
+		t.Errorf("status %+v, %v", st, err)
+	}
+}
