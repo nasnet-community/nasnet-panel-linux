@@ -635,6 +635,54 @@ func TestXrayRestartsAreCountedAndACrashLoopIsSeenAndForgotten(t *testing.T) {
 	})
 }
 
+// The hub restarts Xray itself when it pushes a config and the agent when it
+// updates one. Rotating the keys, changing a port and updating the agent within
+// ten minutes read as "Xray keeps crashing" on a real node, since all three
+// move what the hub watches. They are not a crash loop, though the node's
+// clients are looked at again after each, since a restarted Xray has lost the
+// ones added to it while it ran.
+func TestRestartsTheHubCausesAreNotACrashLoop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		r := newRig(t)
+		n := addNode(t, r.cfg.Store)
+		ag := r.net.agent(n.ID)
+		r.start()
+		defer r.stop()
+
+		restart := func(pid int64) {
+			ag.set(func(a *fakeAgent) { a.pid, a.started, a.uptime = pid, a.started+60, 1 })
+			r.advance(5 * time.Second)
+		}
+		done := r.m.expectRestarts(n.ID)
+		restart(101)
+		restart(102)
+		restart(103)
+		done()
+		// the poll that sees the last one can come after the operation has ended
+		restart(104)
+		p, _ := r.m.peek(n.ID)
+		if p.restarts != 0 || p.agent.Xray.CrashLoop {
+			t.Fatalf("after four restarts the hub caused: %+v", p)
+		}
+		if got := ag.count("ListUsers"); got != 5 {
+			t.Errorf("clients looked at %d times, want at the start and after each of the four restarts", got)
+		}
+
+		// once the grace is over a restart nobody asked for counts again, and
+		// three of them are a crash loop
+		r.advance(restartGrace)
+		restart(105)
+		if p, _ := r.m.peek(n.ID); p.restarts != 1 || p.agent.Xray.CrashLoop {
+			t.Fatalf("after a restart of its own: %+v", p)
+		}
+		restart(106)
+		restart(107)
+		if p, _ := r.m.peek(n.ID); p.restarts != 3 || !p.agent.Xray.CrashLoop {
+			t.Fatalf("after three restarts of its own: %+v", p)
+		}
+	})
+}
+
 func TestABundleWithNoStatusLeavesTheLastReportAlone(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		r := newRig(t)

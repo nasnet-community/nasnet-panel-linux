@@ -252,7 +252,9 @@ func (m *Manager) beginPush(ctx context.Context, id uint) (*push, error) {
 		unlock()
 		return nil, err
 	}
-	return &push{node: *n, link: c, old: old, unlock: unlock}, nil
+	// the push restarts Xray
+	done := m.expectRestarts(id)
+	return &push{node: *n, link: c, old: old, unlock: func() { done(); unlock() }}, nil
 }
 
 // pushOrUndo pushes a config to a node. When the push fails after the node may
