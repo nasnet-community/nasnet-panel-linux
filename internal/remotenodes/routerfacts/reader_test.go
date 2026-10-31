@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -255,6 +256,33 @@ func TestAChangeWithinTheFilesTimeGrainIsStillSeen(t *testing.T) {
 	}
 	if g.fs.opens != opens {
 		t.Fatalf("a settled file was opened %d more times", g.fs.opens-opens)
+	}
+}
+
+// The address is what the hub watches for a change, and a new one is as long
+// as the old one more often than not.
+func TestANewAddressOfTheSameLengthIsReadAgain(t *testing.T) {
+	g := newRig(t)
+	was, is := netip.MustParseAddr("192.168.1.20"), netip.MustParseAddr("192.168.1.33")
+	text := func(a netip.Addr) string { return "domestic=1\ndomestic_addr=" + a.String() + "\n" }
+	old := now.Add(-time.Hour)
+	writeReport(t, g.path, text(was), old)
+	if f := g.read(t); f.DomesticAddr != was {
+		t.Fatalf("first read: %v", f.DomesticAddr)
+	}
+	writeReport(t, g.path, text(is), old.Add(time.Minute))
+	if f := g.read(t); f.DomesticAddr != is {
+		t.Fatalf("a new address under a new time wasn't noticed: %v", f.DomesticAddr)
+	}
+
+	// and inside the time's grain, where only the contents differ
+	g.clock = now
+	mod := now.Add(-time.Second)
+	writeReport(t, g.path, text(was), mod)
+	g.read(t)
+	writeReport(t, g.path, text(is), mod)
+	if f := g.read(t); f.DomesticAddr != is {
+		t.Fatalf("a rewrite inside the time's grain was missed: %v", f.DomesticAddr)
 	}
 }
 
