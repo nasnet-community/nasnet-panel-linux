@@ -41,7 +41,7 @@ test('the language button switches the whole page to Persian: right to left, Per
   await expect(two).toContainText('به‌روزرسانی موجود است')
   const three = card(page, 'Node 3')
   await expect(three).toContainText('در حال نصب')
-  await expect(three).toContainText('مرحله ۵ از ۸ · ارسال Xray 26.10.21 · ۶۲٪')
+  await expect(three).toContainText('مرحله ۱۰ از ۱۵ · ارسال Xray 26.10.21 · ۶۲٪')
   await expect(three).toContainText('شروع شد ۱ دقیقه پیش')
   await expect(page.getByRole('button', { name: 'در حال نصب Node 3' })).toBeVisible()
   // no Latin digit is left in prose
@@ -117,8 +117,8 @@ test('the add dialog and its install job in Persian', async ({ page, request }) 
 
   const job = dialog(page, 'در حال نصب نود ۳')
   await expect(job).toBeVisible()
-  await expect(job).toContainText(/مرحله [۰-۹] از ۸ · [۰-۹]:[۰-۹]{2} تاکنون/)
-  await expect(job.getByText('دریافت نسخهٔ امضاشده')).toBeVisible()
+  await expect(job).toContainText(/مرحله [۰-۹]+ از ۱۵ · [۰-۹]:[۰-۹]{2} تاکنون/)
+  await expect(job.getByText('بررسی سرور')).toBeVisible()
   await expect(job.getByText('ارسال Xray 26.10.21')).toBeVisible()
   await expect(job).toContainText('می‌توانید این را ببندید. نصب ادامه می‌یابد')
   const done = dialog(page, 'نود اضافه شد')
@@ -137,10 +137,11 @@ test('an install that fails, in Persian, keeps the hub\'s English where it has n
   await dialog(page, 'افزودن نود').getByRole('button', { name: 'اتصال و نصب' }).click()
   const failed = dialog(page, 'نصب ناموفق بود')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('ناموفق در مرحله ۴ از ۸')
-  await expect(failed).toContainText('dial fail.example.com:8443: i/o timeout')
+  await expect(failed).toContainText('ناموفق در مرحله ۷ از ۱۵')
+  await expect(failed).toContainText("The agent doesn't answer on TCP port 9090 (dial tcp fail.example.com:9090: i/o timeout).")
   await expect(failed).toContainText('این روتر از طریق آپ‌لینک داخلی به نود می‌رسد، پس آدرس آن باید در فهرست داخلی باشد.')
-  await expect(failed.getByRole('button', { name: 'تلاش دوباره' })).toBeVisible()
+  // the hub keeps the node, so the way on is to open it
+  await expect(failed.getByRole('button', { name: 'باز کردن نود' })).toBeVisible()
 })
 
 test('arrow keys follow the reading direction in the tabs', async ({ page }) => {

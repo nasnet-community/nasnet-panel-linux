@@ -206,15 +206,22 @@ describe('what a node reports', () => {
   })
 
   it('words the steps of the jobs the node page starts, in both languages', () => {
+    const steps = [
+      { key: 'renew_cert', name: 'Renew the certificate' },
+      { key: 'save_node', name: 'Save the node' },
+      { key: 'create_keys', name: 'Create the keys' },
+      { key: 'apply_config', name: 'Apply the configuration' },
+      { key: 'stop_agent', name: 'Stop the agent' },
+      { key: 'remove_agent', name: 'Remove the agent' },
+      { key: 'forget_node', name: 'Forget the node' },
+    ]
     for (const lang of ['en', 'fa'] as const) {
       const t = words(lang)
-      for (const step of ['cert', 'reconnect', 'keys', 'remove', 'forget']) {
-        // a step the page has no words for shows as its name, capitalised
-        expect(stepLabel(t, step), `${step} in ${lang}`).not.toBe(step.charAt(0).toUpperCase() + step.slice(1))
-      }
+      // a step the page has no words for shows as the hub's English name
+      for (const step of steps) if (lang === 'fa') expect(stepLabel(t, step), `${step.key} in ${lang}`).not.toBe(step.name)
     }
-    expect(stepLabel(words('en'), 'cert')).toBe('Issue a new certificate')
-    expect(stepLabel(words('en'), 'forget')).toBe('Forget the node')
+    expect(stepLabel(words('en'), steps[0])).toBe('Renew the certificate')
+    expect(stepLabel(words('en'), steps[6])).toBe('Forget the node')
   })
 })
 

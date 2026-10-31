@@ -112,7 +112,7 @@ describe('followJob', () => {
     const es = FakeEventSource.last!
     expect(es.url).toBe('api/jobs/j%201/events')
     es.send(job('running'))
-    es.send(job('running', [{ name: 'check', state: 'ok' }]))
+    es.send(job('running', [{ key: 'check_server', name: 'Check the server', state: 'ok' }]))
     es.send(job('failed'))
     expect(seen).toEqual(['running', 'running', 'failed'])
     expect(es.closed).toBe(true)
@@ -176,13 +176,13 @@ describe('followJob', () => {
     fetchMock.mockResolvedValue(reply(404, { code: 'not_found', error: 'no such job' }))
     const seen: Job[] = []
     followJob('j1', (j) => seen.push(j), { pollMs: 100 })
-    FakeEventSource.last!.send(job('running', [{ name: 'check', state: 'running' }]))
+    FakeEventSource.last!.send(job('running', [{ key: 'check_server', name: 'Check the server', state: 'running' }]))
     FakeEventSource.last!.onerror?.()
     await vi.advanceTimersByTimeAsync(500)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const final = seen[seen.length - 1]
     expect(final.state).toBe('failed')
-    expect(final.steps).toEqual([{ name: 'check', state: 'running' }])
+    expect(final.steps).toEqual([{ key: 'check_server', name: 'Check the server', state: 'running' }])
     expect(final.error).toBe(JOB_LOST)
   })
 

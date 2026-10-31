@@ -5,30 +5,70 @@ import type { Job } from './api'
 import { makeFormat } from './format'
 import { failedAtLink, jobLine, jobStep, jobTitle, stepLabel, stepPercent } from './jobs'
 
+// the steps of every plan the hub has, as it names them: key, then English name
+// (internal/remotenodes/manager/stepkeys.go is the table these are checked against there)
+const HUB_STEPS: Record<string, string> = {
+  check_server: 'Check the server',
+  download_agent: 'Download the agent',
+  create_certificate: 'Create the certificate',
+  prepare_server: 'Prepare the server',
+  upload_agent: 'Upload the agent',
+  start_agent: 'Start the agent',
+  check_agent: 'Check the agent',
+  connect_agent: 'Connect to the agent',
+  download_xray: 'Download Xray',
+  upload_xray: 'Upload Xray',
+  check_xray: 'Check Xray',
+  choose_target: 'Choose a handshake target',
+  create_keys: 'Create the keys',
+  apply_config: 'Apply the configuration',
+  save_node: 'Save the node',
+  stop_agent: 'Stop the agent',
+  remove_agent: 'Remove the agent',
+  restart_agent: 'Restart the agent',
+  renew_cert: 'Renew the certificate',
+  forget_node: 'Forget the node',
+}
+
 const job = (o: Partial<Job>): Job => ({ id: 'j1', kind: 'install', state: 'running', steps: [], startedAt: '2026-10-01T00:00:00Z', ...o })
 const t = (lang: Lang) => (k: Parameters<typeof translate>[1], p?: Record<string, string | number>) => translate(lang, k, p)
 
 describe('steps', () => {
-  it('words the steps the hub names, with the Xray version in the one that sends it', () => {
-    expect(stepLabel(t('en'), 'release')).toBe('Fetch the signed release')
-    expect(stepLabel(t('en'), 'agent')).toBe('Start the agent')
-    expect(stepLabel(t('en'), 'xray', '26.10.21')).toBe('Send Xray 26.10.21')
+  it('words the steps the hub keys, with the Xray version in the ones that name it', () => {
+    expect(stepLabel(t('en'), { key: 'download_agent', name: 'Download the agent' })).toBe('Download the agent')
+    expect(stepLabel(t('en'), { key: 'upload_xray', name: 'Upload Xray' }, '26.10.21')).toBe('Upload Xray 26.10.21')
     // before the config has loaded there is no version, and no stray space
-    expect(stepLabel(t('en'), 'xray')).toBe('Send Xray')
-    expect(stepLabel(t('fa'), 'xray', '26.10.21')).toBe('ارسال Xray 26.10.21')
+    expect(stepLabel(t('en'), { key: 'upload_xray', name: 'Upload Xray' })).toBe('Upload Xray')
+    expect(stepLabel(t('fa'), { key: 'upload_xray', name: 'Upload Xray' }, '26.10.21')).toBe('ارسال Xray 26.10.21')
+    expect(stepLabel(t('fa'), { key: 'save_node', name: 'Save the node' })).toBe('ذخیرهٔ نود')
   })
 
-  it('shows a name it does not know as the name', () => {
-    expect(stepLabel(t('en'), 'agent-upload')).toBe('Agent upload')
-    expect(stepLabel(t('fa'), 'rotate_keys')).toBe('Rotate keys')
+  it('shows the hub\'s name for a key it has no words for, and for a step with no key', () => {
+    expect(stepLabel(t('fa'), { key: 'rotate_the_moon', name: 'Rotate the moon' })).toBe('Rotate the moon')
+    expect(stepLabel(t('en'), { name: 'Rotate the moon' })).toBe('Rotate the moon')
+    expect(stepLabel(t('en'), { key: '', name: 'Rotate the moon' })).toBe('Rotate the moon')
+    // a key is looked up as a key, not as a property of the table
+    expect(stepLabel(t('en'), { key: 'constructor', name: 'Constructor' })).toBe('Constructor')
+    expect(stepLabel(t('en'), { key: 'toString', name: 'To string' })).toBe('To string')
+  })
+
+  it('has words in both languages for every key, and none of them is the key or the English one', () => {
+    for (const [key, name] of Object.entries(HUB_STEPS)) {
+      const en = stepLabel(t('en'), { key, name }, '26.10.21')
+      const fa = stepLabel(t('fa'), { key, name }, '26.10.21')
+      // the page's English is the hub's, with the Xray version added to the steps that name Xray
+      expect(en, key).toBe(name.endsWith('Xray') ? `${name} 26.10.21` : name)
+      expect(fa, key).not.toBe(en)
+      expect(fa, key).not.toMatch(/^step\./)
+    }
   })
 
   it('finds the step a job is on and how far through it is', () => {
     const steps = [
-      { name: 'a', state: 'ok' as const },
-      { name: 'b', state: 'ok' as const },
-      { name: 'c', state: 'running' as const, detail: '62% · 8.4 of 13.6 MB' },
-      { name: 'd', state: 'pending' as const },
+      { key: 'a', name: 'a', state: 'ok' as const },
+      { key: 'b', name: 'b', state: 'ok' as const },
+      { key: 'c', name: 'c', state: 'running' as const, detail: '62% · 8.4 of 13.6 MB' },
+      { key: 'd', name: 'd', state: 'pending' as const },
     ]
     expect(jobStep(job({ steps }))).toEqual({ n: 3, m: 4 })
     // between steps: the next one after those done
@@ -71,9 +111,9 @@ describe('titles', () => {
 describe('the line under a job\'s title', () => {
   const NOW = Date.parse('2026-10-01T00:01:02Z')
   const steps = [
-    { name: 'a', state: 'ok' as const },
-    { name: 'b', state: 'running' as const },
-    { name: 'c', state: 'pending' as const },
+    { key: 'a', name: 'a', state: 'ok' as const },
+    { key: 'b', name: 'b', state: 'running' as const },
+    { key: 'c', name: 'c', state: 'pending' as const },
   ]
 
   it('counts the steps and the time so far while it runs', () => {
@@ -83,7 +123,7 @@ describe('the line under a job\'s title', () => {
   })
 
   it('says where it failed and how long it took when it is done', () => {
-    const failed = [{ name: 'a', state: 'ok' as const }, { name: 'b', state: 'failed' as const }, { name: 'c', state: 'pending' as const }]
+    const failed = [{ key: 'a', name: 'a', state: 'ok' as const }, { key: 'b', name: 'b', state: 'failed' as const }, { key: 'c', name: 'c', state: 'pending' as const }]
     expect(jobLine(t('en'), makeFormat('en'), job({ state: 'failed', steps: failed }), NOW)).toBe('Failed at step 2 of 3')
     expect(jobLine(t('en'), makeFormat('en'), job({ state: 'failed' }), NOW)).toBe('Failed')
     const done = job({ state: 'ok', steps: steps.map((s) => ({ ...s, state: 'ok' as const })), finishedAt: '2026-10-01T00:03:12Z' })
@@ -94,11 +134,21 @@ describe('the line under a job\'s title', () => {
 })
 
 describe('a failure at the link', () => {
-  const step = (name: string, state: 'ok' | 'failed' | 'pending') => ({ name, state })
-  it('is one where the router talks to the node', () => {
-    expect(failedAtLink(job({ state: 'failed', steps: [step('release', 'ok'), step('agent', 'failed')] }))).toBe(true)
-    expect(failedAtLink(job({ state: 'failed', steps: [step('upload', 'failed')] }))).toBe(true)
-    expect(failedAtLink(job({ state: 'failed', steps: [step('handshake', 'failed')] }))).toBe(false)
-    expect(failedAtLink(job({ state: 'running', steps: [step('agent', 'failed')] }))).toBe(false)
+  const step = (key: string, state: 'ok' | 'failed' | 'pending') => ({ key, name: HUB_STEPS[key] ?? key, state })
+  it('is one where the router itself reaches the node: the SSH login and the link to the agent', () => {
+    expect(failedAtLink(job({ state: 'failed', steps: [step('check_server', 'failed'), step('download_agent', 'pending')] }))).toBe(true)
+    expect(failedAtLink(job({ state: 'failed', steps: [step('check_server', 'ok'), step('check_agent', 'failed')] }))).toBe(true)
+    expect(failedAtLink(job({ state: 'failed', steps: [step('connect_agent', 'failed')] }))).toBe(true)
+  })
+
+  it('is not one at any other step, however it fails', () => {
+    for (const key of Object.keys(HUB_STEPS).filter((k) => !['check_server', 'check_agent', 'connect_agent'].includes(k)))
+      expect(failedAtLink(job({ state: 'failed', steps: [step(key, 'failed')] })), key).toBe(false)
+  })
+
+  it('is not one for a step that worked, a job still running, or the names the page used to expect', () => {
+    expect(failedAtLink(job({ state: 'failed', steps: [step('check_server', 'ok'), step('save_node', 'failed')] }))).toBe(false)
+    expect(failedAtLink(job({ state: 'running', steps: [step('check_agent', 'failed')] }))).toBe(false)
+    expect(failedAtLink(job({ state: 'failed', steps: [{ key: 'upload', name: 'upload', state: 'failed' }, { key: 'agent', name: 'agent', state: 'failed' }] }))).toBe(false)
   })
 })

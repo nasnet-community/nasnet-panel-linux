@@ -28,7 +28,7 @@ export function JobSteps({ job }: { job: Job | null }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className={cx(step.state === 'running' && 'font-semibold', step.state === 'pending' && 'text-faint')}>
-                  {stepLabel(t, step.name, xray)}
+                  {stepLabel(t, step, xray)}
                   <span className="sr-only">{t('job.sr', { state: t(`job.state.${step.state}`) })}</span>
                 </div>
                 {step.detail && step.state !== 'pending' && (

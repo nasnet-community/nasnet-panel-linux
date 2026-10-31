@@ -115,6 +115,9 @@ export interface RemoveRequest {
 export type JobState = 'running' | 'ok' | 'failed'
 
 export interface JobStep {
+  /** what the page words the step by: stable, lower-case words joined by underscores ("upload_agent") */
+  key: string
+  /** the step in the hub's English, which the page shows for a key it has no words for */
   name: string
   state: JobState | 'pending'
   /** may start with a percentage: "62% · 8.4 of 13.6 MB" */
@@ -222,8 +225,8 @@ export interface Node {
   updates: { agent: boolean; xray: boolean; agentVersion: string; xrayVersion: string }
   usage: NodeUsage
   events?: NodeEvent[]
-  /** present while the install job runs */
-  installing?: { jobId: string; step: number; steps: number; label: string; percent: number | null }
+  /** present while the install job runs: the running step by its key and its English name */
+  installing?: { jobId: string; step: number; steps: number; key: string; label: string; percent: number | null }
 }
 
 export interface HandshakeCheck {

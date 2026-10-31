@@ -57,7 +57,7 @@ const plain = (s: string) => s.replace(/[‎‏‪-‮⁦-⁩]/g, '')
 describe("what is wrong with a node", () => {
   it('is nothing for a node that works, and nothing yet for one being installed', () => {
     expect(issues(node())).toEqual([])
-    expect(issues(node({ installing: { jobId: 'j', step: 5, steps: 8, label: '', percent: 62 }, registered: false, agent: null }))).toEqual([])
+    expect(issues(node({ installing: { jobId: 'j', step: 5, steps: 15, key: 'upload_xray', label: '', percent: 62 }, registered: false, agent: null }))).toEqual([])
   })
 
   it('says an unfinished install is the only thing that matters about it', () => {
@@ -149,7 +149,7 @@ describe('the notes on the node page', () => {
   })
 
   it('say a node is being installed and offer its job', () => {
-    const n = only(node({ installing: { jobId: 'j', step: 5, steps: 8, label: 'Send Xray', percent: 62 }, registered: false, agent: null }))
+    const n = only(node({ installing: { jobId: 'j', step: 5, steps: 15, key: 'upload_xray', label: 'Send Xray', percent: 62 }, registered: false, agent: null }))
     expect(n).toMatchObject({ id: 'installing', tone: 'info', title: 'This node is being installed', acts: [{ id: 'showJob' }] })
   })
 
@@ -255,7 +255,7 @@ describe('the notes on the node page', () => {
 
   it('read in Persian, with the digits of its language, for every state', () => {
     const states = [
-      node({ installing: { jobId: 'j', step: 1, steps: 8, label: '', percent: null }, registered: false, agent: null }),
+      node({ installing: { jobId: 'j', step: 1, steps: 15, key: 'upload_xray', label: '', percent: null }, registered: false, agent: null }),
       node({ registered: false, agent: null }),
       node({ tunnel: tunnel({ state: 'off', reason: 'agent_down' }), lastSeenAt: ago(22) }),
       node({ xrayVersion: '26.10.18', tunnel: tunnel({ state: 'off', reason: 'xray_mismatch' }) }),

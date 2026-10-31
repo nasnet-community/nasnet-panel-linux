@@ -61,7 +61,7 @@ describe('a node\'s health', () => {
   })
 
   it('says a node is installing, whatever else is true of it', () => {
-    expect(en(node({ installing: { jobId: 'j', step: 5, steps: 8, label: 'x', percent: 62 }, registered: false }))).toEqual({ tone: 'idle', label: 'Installing', reason: '' })
+    expect(en(node({ installing: { jobId: 'j', step: 5, steps: 15, key: 'upload_xray', label: 'x', percent: 62 }, registered: false }))).toEqual({ tone: 'idle', label: 'Installing', reason: '' })
   })
 
   it('calls a node whose install never finished not finished', () => {

@@ -21,7 +21,7 @@ function InstallProgress({ node }: { node: Node }) {
   const job = jobs.get(i.jobId)
   const running = job?.steps.find((s) => s.state === 'running')
   const { n, m } = job ? jobStep(job) : { n: i.step, m: i.steps }
-  const label = running ? stepLabel(t, running.name, xray) : i.label
+  const label = stepLabel(t, running ?? { key: i.key, name: i.label }, xray)
   const pct = running ? stepPercent(running.detail) : i.percent
   const text = [t('job.step', { n, m }), label, pct === null ? '' : fmt.percent(pct)].filter(Boolean).join(' · ')
   return (

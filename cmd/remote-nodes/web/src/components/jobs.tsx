@@ -228,7 +228,7 @@ export function JobTray() {
                   <Bar pct={pct} />
                   {step && (
                     <div dir="auto" className="truncate text-xs text-muted">
-                      {stepLabel(t, step.name, xray)}
+                      {stepLabel(t, step, xray)}
                       {step.detail ? ` · ${step.detail}` : ''}
                     </div>
                   )}
