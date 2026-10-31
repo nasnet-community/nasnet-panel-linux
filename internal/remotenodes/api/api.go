@@ -10,6 +10,7 @@ package api
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -33,6 +34,7 @@ type Config struct {
 	Commit   string
 	BasePath string       // "" or "/a/b", already cleaned by ui.BasePath
 	Index    http.Handler // the web page; nil serves none
+	Licenses fs.FS        // the licence files GET /licenses shows, read on each request; nil serves none
 	Log      *slog.Logger
 	Now      func() time.Time
 	// JobPing is how long a job's event stream may sit quiet before it sends a
@@ -45,7 +47,7 @@ type API struct{ cfg Config }
 // New serves every route at / and, when there is a base path, under it too:
 // the router's proxy may or may not strip its prefix. Routes under /api are
 // only for requests from the page (see allowed), except a job's event stream,
-// which an EventSource reads (see guardedStream); /health is open.
+// which an EventSource reads (see guardedStream); /health and /licenses are open.
 func New(cfg Config) http.Handler {
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
@@ -72,6 +74,7 @@ func New(cfg Config) http.Handler {
 		handle(pattern, h)
 	}
 	route("GET /health", a.health)
+	route("GET /licenses", a.licenses) // not under /api, so open like the page
 	route("GET /api/config", a.config)
 	route("GET /api/jobs", a.listJobs)
 	route("GET /api/jobs/{id}", a.getJob)
