@@ -103,6 +103,22 @@ type Manager struct {
 	entry    api.Entry // the router's entry gate as last read; its Bridge is filled in when it is asked for
 	entryKey string    // what the last reading said, to log a change once
 	entrySet bool
+	bv       bridgeView
+
+	// What the bridge's loop keeps to itself, under bridgeMu: one look at a
+	// time, so that two can't start the bridge twice.
+	bridgeMu    sync.Mutex
+	bridgeKick  chan struct{}
+	appliedHash string    // hash of the spec the supervisor holds, "" when it runs none
+	failedHash  string    // hash of one that couldn't be started
+	retryAt     time.Time // not before this is it tried again
+	startSaid   string    // the last failure to start that was logged
+	whySaid     string    // the last reason for not running that was logged
+	gapSaid     map[uint]string
+
+	// What a node's host name last resolved to.
+	resMu sync.Mutex
+	res   map[uint]*resolved
 }
 
 // New checks the config and makes a manager. It makes the CA if the state has
@@ -146,7 +162,10 @@ func New(cfg Config) (*Manager, error) {
 			*d.v = d.def
 		}
 	}
-	m := &Manager{cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{}}
+	m := &Manager{
+		cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{},
+		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{},
+	}
 	m.checkCA()
 	m.evalEntry(context.Background())
 	return m, nil
@@ -168,6 +187,7 @@ func (m *Manager) Run(ctx context.Context) {
 	m.Sync()
 	m.spawn(m.watchState)
 	m.spawn(m.watchEntry)
+	m.spawn(m.watchBridge)
 	<-run.Done()
 	// nothing may start while the rest are waited for
 	m.runMu.Lock()

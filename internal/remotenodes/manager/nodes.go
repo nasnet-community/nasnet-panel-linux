@@ -72,6 +72,7 @@ type nodeLive struct {
 	restarts   int         // restarts of Xray seen since the hub started
 	restartAt  []time.Time // when, oldest first, for the last few minutes
 
+	tunnel tunnelMark
 	events eventRing
 }
 
@@ -153,6 +154,8 @@ func (m *Manager) Sync() {
 	for _, l := range retired {
 		m.spawn(func(context.Context) { m.forget(l) })
 	}
+	// nodes came, went or moved, and with them what the bridge should carry
+	m.kickBridge()
 }
 
 // startLocked starts the loop of a node. The caller holds mu.

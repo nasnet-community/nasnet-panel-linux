@@ -25,6 +25,14 @@ func BridgeEmail(nodeID int) string {
 	return fmt.Sprintf("rvs-t%d@reverse", nodeID)
 }
 
+// BridgeReverseTag is the reverse tag of a node's bridge client: the name the
+// portal gives its outbound toward the bridge. The node's config registers it
+// and the bridge's spec dials with it, so both ends take it from here and can't
+// drift apart.
+func BridgeReverseTag(nodeID int) string {
+	return fmt.Sprintf("rvs-to-node-%d", nodeID)
+}
+
 // ParseSubscriptionEmail is the inverse of SubscriptionEmail.
 func ParseSubscriptionEmail(email string) (id int, ok bool) {
 	s, ok := strings.CutPrefix(email, "sub-")
