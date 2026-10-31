@@ -18,6 +18,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/subscriptions"
 )
 
+// The API changes subscriptions and hands out links through the manager.
+var _ api.SubscriptionOps = (*Manager)(nil)
+
 // A change to a subscription goes into the state first and then to each node
 // the manager holds a connection to. A node it can't reach keeps the change as
 // a wish: its loop puts the node's clients right with the state after every

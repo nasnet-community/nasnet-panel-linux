@@ -464,7 +464,8 @@ func TestNoViewTypeHasASecretField(t *testing.T) {
 // or under the base path, for a hub that holds secrets of every kind.
 func TestNoSecretReachesABrowser(t *testing.T) {
 	for _, b := range []string{"", base} {
-		r := newRig(t, b)
+		fake := &fakeSubs{}
+		r := newRigWith(t, b, withSubs(fake))
 		r.populate()
 		held := r.st.Read()
 		if held.Nodes[0].RealityPrivateKey != privateKey || held.Nodes[0].SSHHostKey != hostKeyPin || held.Enablements[0].ClientUUID != uuidA ||
@@ -483,6 +484,10 @@ func TestNoSecretReachesABrowser(t *testing.T) {
 		_, _, bodies[b+"/api/nothing"] = r.call("GET", b+"/api/nothing", map[string]string{UIHeader: "1"})
 		_, _, bodies[b+"/api/config (no header)"] = r.call("GET", b+"/api/config", nil)
 		_, _, bodies[b+"/ (the page)"] = r.call("GET", b+"/", nil)
+		// the calls that change a subscription answer in the same way
+		for what, body := range subscriptionBodies(r, fake, b) {
+			bodies[what] = body
+		}
 
 		if !strings.Contains(string(bodies[b+"/api/nodes"]), "PUBLICKEY") {
 			t.Fatal("the public key should be shown: it is part of every link anyway")

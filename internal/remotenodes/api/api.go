@@ -40,6 +40,10 @@ type Config struct {
 	// JobPing is how long a job's event stream may sit quiet before it sends a
 	// comment, which keeps a proxy from closing it. Zero means 15 seconds.
 	JobPing time.Duration
+
+	// Subs changes subscriptions and hands out their links. With nil those
+	// routes are left out, and answer as any path that isn't there.
+	Subs SubscriptionOps
 }
 
 type API struct{ cfg Config }
@@ -84,6 +88,7 @@ func New(cfg Config) http.Handler {
 	route("GET /api/nodes/{id}/subscriptions", a.nodeSubscriptions)
 	route("GET /api/nodes/{id}/traffic", a.nodeTraffic)
 	route("GET /api/subscriptions", a.subscriptions)
+	a.subscriptionRoutes(route)
 	mux.HandleFunc("/", a.noRoute)
 	if cfg.Index != nil {
 		mux.Handle("GET /{$}", cfg.Index)
