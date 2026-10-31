@@ -61,7 +61,7 @@ const CASES: [string, Reset['entry'], { heading: string; chips: [string, string]
     {
       heading: 'Entry is off',
       chips: [['Domestic link', 'online'], ['VPN', 'WireGuard']],
-      items: ['RouterOS 7.9 is too old', 'Remote Nodes needs RouterOS 7.11 or newer. Update RouterOS, then reload this page.'],
+      items: ['RouterOS 7.9 is too old', 'Remote Nodes needs RouterOS 7.20 or newer. Update RouterOS, then reload this page.'],
     },
   ],
   [

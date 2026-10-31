@@ -25,7 +25,7 @@ export const config: AppConfig = {
     "bridge": "running",
     "routerOS": {
       "version": "7.24.5",
-      "min": "7.11",
+      "min": "7.20",
       "ok": true
     },
     "routes": [

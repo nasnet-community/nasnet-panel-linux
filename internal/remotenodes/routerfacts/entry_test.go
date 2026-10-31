@@ -30,7 +30,7 @@ func TestEverythingUpTurnsTheEntryOn(t *testing.T) {
 	if e.Domestic != LinkOnline || e.VPN != (VPN{LinkOnline, "wireguard", "wg-vpn"}) {
 		t.Errorf("domestic = %q, vpn = %+v", e.Domestic, e.VPN)
 	}
-	if e.RouterOS != (RouterOS{"7.24.5", "7.11", true}) {
+	if e.RouterOS != (RouterOS{"7.24.5", "7.20", true}) {
 		t.Errorf("routerOS = %+v", e.RouterOS)
 	}
 	if e.Stale || e.CheckedAt == nil || !e.CheckedAt.Equal(now.Add(-2*time.Minute)) {
@@ -49,10 +49,10 @@ func TestTheEntryIsOnOnlyWhenEverythingIs(t *testing.T) {
 		f := Facts{
 			Domestic: on(0), VPN: on(1),
 			RouteForeign: on(2), RouteVPN: on(3), RouteDomestic: on(4),
-			ROS: "7.10", Updated: now,
+			ROS: "7.19", Updated: now,
 		}
 		if on(5) {
-			f.ROS = "7.11"
+			f.ROS = "7.20"
 		}
 		e := f.Entry(now, MinRouterOS)
 
@@ -122,13 +122,13 @@ func TestTheVPNKindAndNameGoToThePageAsTheyAre(t *testing.T) {
 
 func TestARouterOSThatIsTooOldKeepsTheEntryOff(t *testing.T) {
 	for ros, wantOK := range map[string]bool{
-		"7.11": true, "7.24.5": true, "7.12rc1": true, "7.12beta3": true,
-		"7.10.2": false, "7.11rc1": false, "6.49.10": false, "": false, "garbage": false,
+		"7.20": true, "7.24.5": true, "7.21rc1": true, "7.21beta3": true,
+		"7.19.2": false, "7.20rc1": false, "6.49.10": false, "": false, "garbage": false,
 	} {
 		f := everythingUp()
 		f.ROS = ros
 		e := f.Entry(now, MinRouterOS)
-		if e.On != wantOK || e.RouterOS.OK != wantOK || e.RouterOS.Version != ros || e.RouterOS.Min != "7.11" {
+		if e.On != wantOK || e.RouterOS.OK != wantOK || e.RouterOS.Version != ros || e.RouterOS.Min != "7.20" {
 			t.Errorf("ros %q: on = %v, routerOS = %+v", ros, e.On, e.RouterOS)
 		}
 	}
@@ -226,9 +226,9 @@ func TestWhyTheEntryIsOff(t *testing.T) {
 		"VPN down":           {func(f *Facts) { f.VPN = false }, "the VPN is down"},
 		"no Domestic":        {func(f *Facts) { f.Domestic, f.RouteDomestic = false, false }, "the router has no Domestic link"},
 		"Domestic down":      {func(f *Facts) { f.Domestic = false }, "the Domestic link is down"},
-		"old RouterOS":       {func(f *Facts) { f.ROS = "7.10.2" }, "RouterOS 7.10.2 is older than the 7.11 this plugin needs"},
+		"old RouterOS":       {func(f *Facts) { f.ROS = "7.19.2" }, "RouterOS 7.19.2 is older than the 7.20 this plugin needs"},
 		"no version":         {func(f *Facts) { f.ROS = "" }, "the router did not report its RouterOS version"},
-		"odd version":        {func(f *Facts) { f.ROS = "banana" }, `RouterOS "banana" can't be compared with the 7.11 this plugin needs`},
+		"odd version":        {func(f *Facts) { f.ROS = "banana" }, `RouterOS "banana" can't be compared with the 7.20 this plugin needs`},
 		"no downloads route": {func(f *Facts) { f.RouteForeign = false }, "the router's route for downloads (192.168.50.16) is not ready"},
 		"no exit route":      {func(f *Facts) { f.RouteVPN = false }, "the router's route for entry-exit (192.168.50.17) is not ready"},
 		"no nodes route":     {func(f *Facts) { f.RouteDomestic = false }, "the router's route for nodes (192.168.50.18) is not ready"},
@@ -243,7 +243,7 @@ func TestWhyTheEntryIsOff(t *testing.T) {
 
 	// every problem is listed, the version first, and a down link isn't blamed twice
 	f := Facts{ROS: "7.9", RouteForeign: true, Updated: now}
-	want := "RouterOS 7.9 is older than the 7.11 this plugin needs; the router has no Domestic link; the router has no VPN"
+	want := "RouterOS 7.9 is older than the 7.20 this plugin needs; the router has no Domestic link; the router has no VPN"
 	if e := f.Entry(now, MinRouterOS); e.Reason != want {
 		t.Errorf("reason = %q\n want    %q", e.Reason, want)
 	}
@@ -303,7 +303,7 @@ func TestTheEntryIsTheContractsJSON(t *testing.T) {
 	if v := m["vpn"].(map[string]any); v["state"] != "online" || v["kind"] != "wireguard" || v["label"] != "wg-vpn" {
 		t.Errorf("vpn = %v", v)
 	}
-	if r := m["routerOS"].(map[string]any); r["version"] != "7.24.5" || r["min"] != "7.11" || r["ok"] != true {
+	if r := m["routerOS"].(map[string]any); r["version"] != "7.24.5" || r["min"] != "7.20" || r["ok"] != true {
 		t.Errorf("routerOS = %v", r)
 	}
 	if r := routes[2].(map[string]any); !maps.Equal(r, map[string]any{"address": "192.168.50.18", "usedFor": "nodes", "via": "domestic", "ready": true}) {

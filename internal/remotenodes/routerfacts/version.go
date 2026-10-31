@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// MinRouterOS is the oldest RouterOS the plugin runs on: the one that lets a
-// veth hold several addresses. It is the same number as the manifest's
-// minRouterOS.
-const MinRouterOS = "7.11"
+// MinRouterOS is the oldest RouterOS the plugin runs on: the first with every
+// container setting it uses (a veth with several addresses, mount lists, and
+// the memory limits). It is the same number as the manifest's minRouterOS.
+const MinRouterOS = "7.20"
 
 // The order of what comes before a release, lowest first. A release is 0.
 const (

@@ -303,7 +303,7 @@ func TestAHubWithNothingConfiguredShowsTheEntryAsMissingFacts(t *testing.T) {
 		t.Fatalf("GET /api/config = %d %s", code, body)
 	}
 	e := cfg.Entry
-	if e.On || e.Domestic != "missing" || e.VPN.State != "missing" || e.Bridge != "stopped" || e.CheckedAt != nil || e.Stale || e.RouterOS.Min != "7.11" || e.RouterOS.OK || len(e.Routes) != 3 {
+	if e.On || e.Domestic != "missing" || e.VPN.State != "missing" || e.Bridge != "stopped" || e.CheckedAt != nil || e.Stale || e.RouterOS.Min != "7.20" || e.RouterOS.OK || len(e.Routes) != 3 {
 		t.Errorf("entry = %+v", e)
 	}
 	if cfg.Xray != pin.Version {

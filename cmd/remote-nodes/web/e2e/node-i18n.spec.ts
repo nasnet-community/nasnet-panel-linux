@@ -259,7 +259,7 @@ test.describe('the router\'s Settings tab in Persian', () => {
     await expect(row(entry, 'آپ‌لینک داخلی')).toContainText('آنلاین')
     await expect(row(entry, 'وی پی ان')).toContainText('وایرگارد · آنلاین')
     await expect(row(entry, 'RouterOS')).toContainText('7.24.5')
-    await expect(row(entry, 'RouterOS')).toContainText('به نسخهٔ 7.11 یا جدیدتر نیاز دارد.')
+    await expect(row(entry, 'RouterOS')).toContainText('به نسخهٔ 7.20 یا جدیدتر نیاز دارد.')
     await expect(row(entry, 'بررسی')).toContainText('۲ دقیقه پیش')
     const routes = panel(page, 'مسیرهای روتر')
     await expect(routes).toContainText('هر آدرس قاعدهٔ خودش را دارد. اگر مسیری نباشد، آن ترافیک مسدود می‌شود.')

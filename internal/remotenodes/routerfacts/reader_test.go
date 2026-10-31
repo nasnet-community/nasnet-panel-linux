@@ -113,7 +113,7 @@ func TestAMissingFileGivesAnEntryThatIsOff(t *testing.T) {
 	if e.Domestic != LinkMissing || e.VPN != (VPN{State: LinkMissing}) || e.Bridge != BridgeStopped {
 		t.Errorf("domestic = %q, vpn = %+v, bridge = %q", e.Domestic, e.VPN, e.Bridge)
 	}
-	if e.RouterOS != (RouterOS{Min: "7.11"}) {
+	if e.RouterOS != (RouterOS{Min: "7.20"}) {
 		t.Errorf("routerOS = %+v", e.RouterOS)
 	}
 	if len(e.Routes) != 3 {
@@ -323,7 +323,7 @@ func scripted(gen func(open int) string) (*Reader, *scriptFS) {
 
 const (
 	reportUp   = "domestic=1\nvpn=1\nroute_foreign=1\nroute_vpn=1\nroute_domestic=1\nros=7.24.5\nupdated=1793361600\n"
-	reportDown = "domestic=0\nvpn=0\nroute_foreign=0\nroute_vpn=0\nroute_domestic=0\nros=7.11.0\nupdated=1793361900\n"
+	reportDown = "domestic=0\nvpn=0\nroute_foreign=0\nroute_vpn=0\nroute_domestic=0\nros=7.20.0\nupdated=1793361900\n"
 )
 
 func TestAReportCaughtBeingRewrittenIsNeverReturned(t *testing.T) {
