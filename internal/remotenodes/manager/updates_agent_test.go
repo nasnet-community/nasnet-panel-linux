@@ -87,7 +87,7 @@ func newAgentWorld(t *testing.T) *agentWorld {
 	w.files = &stubFiles{t: t, buildFiles: buildFiles{
 		agentVersion: "v1.3.1", agentPlain: []byte("#!/bin/sh\necho an agent\n"), xrayPlain: append([]byte("\x7fELF"), make([]byte, 4096)...), sig: make([]byte, 64),
 	}}
-	w.jobs = jobs.New(jobs.Config{Now: cfg.Now, Log: cfg.Log})
+	w.jobs = jobs.New(jobs.Config{Now: cfg.Now, Log: cfg.Log, StepKey: guardKeys(t)})
 	var m *Manager
 	cfg.Jobs = w.jobs
 	// the first look at the node's stats fails, since the stand-in has none, so the loop is told to wait: what a test needs is the link it holds

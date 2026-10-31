@@ -702,9 +702,10 @@ func TestTheJSONIsTheContracts(t *testing.T) {
 			t.Errorf("step %d has the keys %v, want %v", i, got, want)
 		}
 	}
-	check2(0, "name", "state", "detail") // has a detail
-	check2(1, "name", "state")           // done, no detail
-	check2(2, "name", "state")           // pending, none either
+	// a step also has the key the page words it by, which is more than the contract's JobStep says
+	check2(0, "key", "name", "state", "detail") // has a detail
+	check2(1, "key", "name", "state")           // done, no detail
+	check2(2, "key", "name", "state")           // pending, none either
 	if s := steps[0].(map[string]any); s["name"] != "release" || s["state"] != "running" || s["detail"] != "62% · 8.4 of 13.6 MB" {
 		t.Errorf("step 0 = %v", s)
 	}

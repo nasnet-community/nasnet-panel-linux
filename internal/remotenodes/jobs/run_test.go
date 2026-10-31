@@ -3,6 +3,8 @@
 package jobs
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,22 +27,101 @@ func TestStepsMoveThroughTheirStates(t *testing.T) {
 	r.Begin("a")
 	same("Begin", running("a"), pending("b"), pending("c"))
 	r.Detail("a", "38% · 5 of 13 MB")
-	same("Detail leaves the state", Step{"a", StepRunning, "38% · 5 of 13 MB"}, pending("b"), pending("c"))
+	same("Detail leaves the state", Step{Name: "a", State: StepRunning, Detail: "38% · 5 of 13 MB"}, pending("b"), pending("c"))
 	r.Done("a")
-	same("Done leaves the text", Step{"a", StepOK, "38% · 5 of 13 MB"}, pending("b"), pending("c"))
+	same("Done leaves the text", Step{Name: "a", State: StepOK, Detail: "38% · 5 of 13 MB"}, pending("b"), pending("c"))
 	r.Fail("b", errors.New("it broke"))
-	same("Fail", Step{"a", StepOK, "38% · 5 of 13 MB"}, Step{"b", StepFailed, "it broke"}, pending("c"))
+	same("Fail", Step{Name: "a", State: StepOK, Detail: "38% · 5 of 13 MB"}, Step{Name: "b", State: StepFailed, Detail: "it broke"}, pending("c"))
 	// a retry may begin a step that failed
 	r.Begin("b")
 	r.Detail("b", "")
 	r.Done("b")
-	same("a retry", Step{"a", StepOK, "38% · 5 of 13 MB"}, ok("b"), pending("c"))
+	same("a retry", Step{Name: "a", State: StepOK, Detail: "38% · 5 of 13 MB"}, ok("b"), pending("c"))
 	r.Set("c", StepRunning, "x")
 	r.Set("c", StepFailed, "y")
-	same("Set", Step{"a", StepOK, "38% · 5 of 13 MB"}, ok("b"), Step{"c", StepFailed, "y"})
+	same("Set", Step{Name: "a", State: StepOK, Detail: "38% · 5 of 13 MB"}, ok("b"), Step{Name: "c", State: StepFailed, Detail: "y"})
 	r.Set("c", StepPending, "")
-	same("Set back to pending", Step{"a", StepOK, "38% · 5 of 13 MB"}, ok("b"), pending("c"))
+	same("Set back to pending", Step{Name: "a", State: StepOK, Detail: "38% · 5 of 13 MB"}, ok("b"), pending("c"))
 	end(nil)
+}
+
+// The key is the page's handle on a step, so it is given when the step is
+// made, whether the plan listed it or a call added it, and it stays through
+// every change of state.
+func TestAStepGetsItsKeyWhenItIsMade(t *testing.T) {
+	var asked []string
+	g := newRig(t, func(c *Config) {
+		c.StepKey = func(name string) string {
+			asked = append(asked, name)
+			return "key_of_" + strings.ToLower(name)
+		}
+	})
+	job, r, end := g.begin(t, Spec{Kind: KindInstall, Steps: []string{"Plan", "Other"}})
+	keys := func() []string {
+		var out []string
+		for _, s := range g.stepsOf(t, job.ID) {
+			out = append(out, s.Key)
+		}
+		return out
+	}
+	if got, want := keys(), []string{"key_of_plan", "key_of_other"}; !slices.Equal(got, want) {
+		t.Fatalf("planned keys = %v, want %v", got, want)
+	}
+	if job.Steps[0].Key != "key_of_plan" {
+		t.Errorf("the job Start returned has no key: %+v", job.Steps)
+	}
+	r.Begin("Plan")
+	r.Detail("Plan", "1%")
+	r.Done("Plan")
+	r.Set("Late", StepRunning, "x") // one the plan missed
+	r.Fail("Late", errors.New("boom"))
+	if got, want := keys(), []string{"key_of_plan", "key_of_other", "key_of_late"}; !slices.Equal(got, want) {
+		t.Fatalf("keys after the calls = %v, want %v", got, want)
+	}
+	// asked once for each step made, not for each call about it
+	if want := []string{"Plan", "Other", "Late"}; !slices.Equal(asked, want) {
+		t.Errorf("StepKey was asked about %v, want %v", asked, want)
+	}
+	end(nil)
+}
+
+// A job that ends carries its keys to the page, in the JSON of every step.
+func TestEveryStepIsSentWithItsKey(t *testing.T) {
+	for name, hook := range map[string]func(string) string{
+		"with a key for it": func(n string) string { return "k_" + n },
+		"with no hook":      nil,
+	} {
+		g := newRig(t, func(c *Config) { c.StepKey = hook })
+		job := g.run(t, Spec{Kind: KindInstall, Steps: []string{"a", "b"}}, func(_ context.Context, r *Run) error {
+			r.Begin("a")
+			r.Done("a")
+			r.Fail("c", errors.New("boom"))
+			return errors.New("boom")
+		})
+		b, err := json.Marshal(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct{ Steps []map[string]any }
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Steps) != 3 {
+			t.Fatalf("%s: %s", name, b)
+		}
+		for _, s := range got.Steps {
+			key, there := s["key"].(string)
+			if !there {
+				t.Errorf("%s: a step is sent with no key field: %v", name, s)
+			}
+			if hook != nil && key != "k_"+s["name"].(string) {
+				t.Errorf("%s: key %q for step %q", name, key, s["name"])
+			}
+			if hook == nil && key != "" {
+				t.Errorf("%s: key %q with no hook", name, key)
+			}
+		}
+	}
 }
 
 func TestFailWithNoErrorHasNoText(t *testing.T) {
@@ -48,7 +129,7 @@ func TestFailWithNoErrorHasNoText(t *testing.T) {
 	job, r, end := g.begin(t, Spec{Kind: KindUpdateAgent, Steps: []string{"a"}})
 	r.Detail("a", "old")
 	r.Fail("a", nil)
-	if got := g.stepsOf(t, job.ID); !slices.Equal(got, []Step{{"a", StepFailed, ""}}) {
+	if got := g.stepsOf(t, job.ID); !slices.Equal(got, []Step{{Name: "a", State: StepFailed, Detail: ""}}) {
 		t.Fatalf("steps = %v", got)
 	}
 	end(nil)
@@ -61,7 +142,7 @@ func TestAStepThePlanMissedIsAddedAtTheEnd(t *testing.T) {
 	r.Done("other")
 	r.Detail("quiet", "just a note")
 	r.Set("set", StepFailed, "why")
-	want := []Step{pending("a"), pending("b"), running("extra"), ok("other"), {"quiet", StepPending, "just a note"}, {"set", StepFailed, "why"}}
+	want := []Step{pending("a"), pending("b"), running("extra"), ok("other"), {Name: "quiet", State: StepPending, Detail: "just a note"}, {Name: "set", State: StepFailed, Detail: "why"}}
 	if got := g.stepsOf(t, job.ID); !slices.Equal(got, want) {
 		t.Fatalf("steps = %v, want %v", got, want)
 	}
@@ -110,7 +191,7 @@ func TestSetTakesAnotherPackagesProgressAsItIs(t *testing.T) {
 	for _, p := range []progress{{"upload", "running", ""}, {"upload", "ok", "18 MB"}, {"agent", "running", ""}, {"agent", "failed", "dial timeout"}} {
 		r.Set(p.Name, StepState(p.State), p.Detail)
 	}
-	if got, want := g.stepsOf(t, job.ID), []Step{{"upload", StepOK, "18 MB"}, {"agent", StepFailed, "dial timeout"}}; !slices.Equal(got, want) {
+	if got, want := g.stepsOf(t, job.ID), []Step{{Name: "upload", State: StepOK, Detail: "18 MB"}, {Name: "agent", State: StepFailed, Detail: "dial timeout"}}; !slices.Equal(got, want) {
 		t.Fatalf("steps = %v, want %v", got, want)
 	}
 	end(nil)

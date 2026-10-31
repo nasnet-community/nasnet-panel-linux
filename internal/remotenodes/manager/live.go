@@ -102,8 +102,8 @@ func (m *Manager) installing(id uint) *api.Installing {
 var percent = regexp.MustCompile(`^([0-9]{1,3})%`)
 
 // installingOf counts an install's steps the way the page does: the step that
-// is running, or else the one after those that are done. The label is that
-// step's name and the share done is the number a step's text starts with
+// is running, or else the one after those that are done. The key and the label
+// are that step's, and the share done is the number a step's text starts with
 // ("62% · 8.4 of 13.6 MB"), if there is one.
 func installingOf(j jobs.Job) *api.Installing {
 	in := &api.Installing{JobID: j.ID, Steps: len(j.Steps)}
@@ -122,7 +122,7 @@ func installingOf(j jobs.Job) *api.Installing {
 	}
 	switch {
 	case at >= 0:
-		in.Step, in.Label = at+1, j.Steps[at].Name
+		in.Step, in.Key, in.Label = at+1, j.Steps[at].Key, j.Steps[at].Name
 	default:
 		in.Step = len(j.Steps) // every step is done
 	}

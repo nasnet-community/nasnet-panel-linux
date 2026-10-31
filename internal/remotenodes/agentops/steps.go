@@ -24,9 +24,10 @@ const (
 // upload reports from the one that sends it.
 type Progress func(Step)
 
-// The step names the page shows as they are. Each operation's plan lists the
-// ones it goes through, in order, so the manager can show what is still to
-// come.
+// The step names are plain English. The page words each step by the key that
+// the manager gives it (manager.StepKey) and shows the name for a key it has no
+// words for. Each operation's plan lists the steps it goes through, in order,
+// so the manager can show what is still to come.
 const (
 	StepCheckServer   = "Check the server"
 	StepDownloadAgent = "Download the agent"

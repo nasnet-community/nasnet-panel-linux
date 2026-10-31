@@ -231,10 +231,10 @@ func TestWhatAgentopsReportsIsWhatTheJobShows(t *testing.T) {
 		must(t, err)
 		j := r.failed(id)
 		want := []jobs.Step{
-			{Name: agentops.StepDownloadAgent, State: jobs.StepOK, Detail: "v1.3.1 · 18 MB"},
-			{Name: agentops.StepUploadAgent, State: jobs.StepFailed, Detail: "The connection broke."},
-			{Name: agentops.StepRestartAgent, State: jobs.StepPending},
-			{Name: agentops.StepCheckAgent, State: jobs.StepPending},
+			{Key: "download_agent", Name: agentops.StepDownloadAgent, State: jobs.StepOK, Detail: "v1.3.1 · 18 MB"},
+			{Key: "upload_agent", Name: agentops.StepUploadAgent, State: jobs.StepFailed, Detail: "The connection broke."},
+			{Key: "restart_agent", Name: agentops.StepRestartAgent, State: jobs.StepPending},
+			{Key: "check_agent", Name: agentops.StepCheckAgent, State: jobs.StepPending},
 		}
 		if fmt.Sprint(j.Steps) != fmt.Sprint(want) {
 			t.Errorf("steps = %+v\nwant    %+v", j.Steps, want)

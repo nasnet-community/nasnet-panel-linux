@@ -164,10 +164,13 @@ type NodeEvent struct {
 	Detail string    `json:"detail"`
 }
 
+// Installing is how far an install has got: the step it is on, by the key the
+// page words it by and by its English name, which is the label.
 type Installing struct {
 	JobID   string `json:"jobId"`
 	Step    int    `json:"step"`
 	Steps   int    `json:"steps"`
+	Key     string `json:"key"`
 	Label   string `json:"label"`
 	Percent *int   `json:"percent"`
 }

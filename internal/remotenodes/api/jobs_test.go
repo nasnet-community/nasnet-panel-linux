@@ -558,8 +558,8 @@ func TestTheListAndAJobAreTheContractsJobs(t *testing.T) {
 				t.Errorf("a job with no steps has steps = %#v, want []", list[1]["steps"])
 			}
 			steps := list[0]["steps"].([]any)
-			wantKeys(t, "a step with a detail", steps[0].(map[string]any), "name state detail")
-			wantKeys(t, "a step with none", steps[1].(map[string]any), "name state")
+			wantKeys(t, "a step with a detail", steps[0].(map[string]any), "key name state detail")
+			wantKeys(t, "a step with none", steps[1].(map[string]any), "key name state")
 
 			one := decode[map[string]any](t, r.get(prefix+"/api/jobs/"+job.ID))
 			if !reflect.DeepEqual(one, list[0]) {

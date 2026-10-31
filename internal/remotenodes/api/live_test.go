@@ -153,7 +153,7 @@ func TestLiveFillsTheLivePartsOfEveryView(t *testing.T) {
 		Updates: Updates{Agent: true, AgentVersion: "1.3.1"},
 		Usage:   NodeUsage{Live: true, Online: 1, Connections: 3, RateUp: 10, RateDown: 20, TodayUp: 1, TodayDown: 2, MonthUp: 3, MonthDown: 4, UpdatedAt: at(-1)},
 	}).forNode(2, NodeLive{
-		Installing: &Installing{JobID: "abc", Step: 2, Steps: 8, Label: "upload", Percent: ptr(40)},
+		Installing: &Installing{JobID: "abc", Step: 2, Steps: 8, Key: "upload_agent", Label: "Upload the agent", Percent: ptr(40)},
 	})
 	live.events[1] = []NodeEvent{{At: *at(-1), Kind: "tunnel_up", Detail: ""}, {At: *at(-30), Kind: "node_back", Detail: "x"}}
 	live.traffic[1] = Traffic{StepSec: 5, Samples: []TrafficSample{{At: *at(-1), Up: 7, Down: 8}}}
@@ -184,7 +184,7 @@ func TestLiveFillsTheLivePartsOfEveryView(t *testing.T) {
 			t.Errorf("node 1 lost what the model says: %+v", n)
 		}
 		m := nodes[1]
-		if m.Installing == nil || m.Installing.JobID != "abc" || m.Installing.Step != 2 || m.Installing.Steps != 8 || m.Installing.Label != "upload" ||
+		if m.Installing == nil || m.Installing.JobID != "abc" || m.Installing.Step != 2 || m.Installing.Steps != 8 || m.Installing.Key != "upload_agent" || m.Installing.Label != "Upload the agent" ||
 			m.Installing.Percent == nil || *m.Installing.Percent != 40 {
 			t.Errorf("node 2 = %+v", m)
 		}
@@ -204,6 +204,10 @@ func TestLiveFillsTheLivePartsOfEveryView(t *testing.T) {
 		two := decode[Node](t, r.get(b+"/api/nodes/2"))
 		if two.Installing == nil || two.Events == nil || len(*two.Events) != 0 {
 			t.Errorf("node 2's page = %+v", two)
+		}
+		// the step it is on goes by its key, with the English name beside it
+		if in := two.Installing; in.Key != "upload_agent" || in.Label != "Upload the agent" {
+			t.Errorf("node 2's installing = %+v", in)
 		}
 
 		tr := decode[Traffic](t, r.get(b+"/api/nodes/1/traffic"))

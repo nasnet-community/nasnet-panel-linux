@@ -12,9 +12,8 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
 
-// The steps that the manager adds to the ones agentops reports. They are
-// words for the page like the rest: the page shows a name it doesn't know as
-// it is.
+// The steps that the manager adds to the ones agentops reports. Like theirs,
+// each is plain English with a key of its own in stepkeys.go.
 const (
 	StepConnect    = "Connect to the agent"
 	StepSaveNode   = "Save the node"

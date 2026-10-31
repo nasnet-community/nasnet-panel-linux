@@ -180,8 +180,21 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 	if job["state"] != "failed" || job["kind"] != "install" || job["target"] != "Closed" || !strings.HasPrefix(job["error"].(string), "Can't reach SSH on 127.0.0.1") {
 		t.Fatalf("job = %v", job)
 	}
-	if steps := job["steps"].([]any); steps[0].(map[string]any)["state"] != "failed" || len(steps) != 15 {
+	steps := job["steps"].([]any)
+	if steps[0].(map[string]any)["state"] != "failed" || len(steps) != 15 {
 		t.Errorf("steps = %v", steps)
+	}
+	// every step goes by a key, which the page words it by: main gives the engine the manager's
+	keys := map[string]bool{}
+	for i, s := range steps {
+		key, _ := s.(map[string]any)["key"].(string)
+		if key == "" || keys[key] {
+			t.Errorf("step %d has the key %q, which is empty or the same as another's: %v", i, key, steps)
+		}
+		keys[key] = true
+	}
+	if first, last := steps[0].(map[string]any), steps[14].(map[string]any); first["key"] != "check_server" || first["name"] != "Check the server" || last["key"] != "save_node" {
+		t.Errorf("first and last steps = %v, %v", first, last)
 	}
 	if strings.Contains(fmt.Sprint(job), "hunter2") {
 		t.Errorf("the login shows in the job: %v", job)
@@ -204,6 +217,9 @@ func TestTheHubRunsTheNodeOperationsOnTheRealThing(t *testing.T) {
 	job = waitJob(t, url, jsonOf(t, body)["jobId"].(string))
 	if job["state"] != "ok" || job["kind"] != "remove" || job["target"] != "Closed" {
 		t.Fatalf("job = %v", job)
+	}
+	if forget := job["steps"].([]any); len(forget) != 1 || forget[0].(map[string]any)["key"] != "forget_node" {
+		t.Errorf("the steps of a removal that only forgets = %v", forget)
 	}
 	if _, _, body = callHub(t, "GET", url+"/api/nodes", ""); string(body) != "[]\n" {
 		t.Errorf("nodes = %s", body)
