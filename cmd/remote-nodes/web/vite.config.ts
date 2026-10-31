@@ -24,5 +24,5 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:8080' },
   },
   build: { target: 'es2020', chunkSizeWarningLimit: 1024 },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'] },
 })
