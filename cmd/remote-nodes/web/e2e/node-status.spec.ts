@@ -85,6 +85,21 @@ test.describe('the Status tab of a node that works', () => {
     await expect(row(cert, 'Renews')).toContainText('30 days before it ends')
   })
 
+  test('shows a dash for what the hub has no source for, and not a row of zeros', async ({ page, request }) => {
+    await setNode(request, { id: 1, unmeasured: true })
+    await openNode(page, 1, 'status')
+    const agent = panel(page, 'Agent')
+    await expect(row(agent, 'Running for')).toContainText(/^Running for–$/)
+    await expect(row(agent, 'Memory')).toContainText(/^Memory–$/)
+    // no news of the settings is not news that they are waiting
+    await expect(row(agent, 'Settings')).toContainText(/^Settings–$/)
+    await expect(row(agent, 'Settings').locator('dd')).not.toHaveClass(/text-warn-text/)
+    await expect(row(panel(page, 'Tunnel to this router'), 'Round trip')).toContainText(/^Round trip–$/)
+    // the node's header has no "up 0s" either, though it still has the agent's version
+    await expect(page.getByText('up 0s', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('agent 1.3.0', { exact: true })).toBeVisible()
+  })
+
   test('lists what happened to the node, newest first, in the language of the page', async ({ page }) => {
     await openNode(page, 1, 'status')
     const events = panel(page, 'Recent events').getByRole('listitem')

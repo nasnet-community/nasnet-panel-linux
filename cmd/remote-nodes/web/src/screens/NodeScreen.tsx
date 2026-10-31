@@ -10,6 +10,7 @@ import { useErrorText, useLang, type MsgKey } from '../i18n'
 import { api, type Job, type Node } from '../lib/api'
 import { health, nodeNotes, unreachable, type NodeAct } from '../lib/health'
 import { jobTitle } from '../lib/jobs'
+import { agentUptime } from '../lib/node'
 import { AttentionList, type AttentionItem } from './Attention'
 import { HandshakeDialog, PortDialog, RemoveDialog, RenameDialog, RenewDialog, RotateDialog, ServerNameDialog, UpdateDialog, type StartJob } from './NodeDialogs'
 import { NodeSettingsTab } from './NodeSettingsTab'
@@ -226,7 +227,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
                 {xrayDue && chip('xray')}
               </span>
             )}
-            {agent && !down && <span>{t('node.up', { time: fmt.duration(agent.uptimeSec) })}</span>}
+            {agent && !down && agentUptime(agent) !== null && <span>{t('node.up', { time: fmt.duration(agent.uptimeSec) })}</span>}
           </div>
         </div>
         <div role="group" aria-label={t('node.actions')} className="grid grid-cols-[1fr_auto] gap-2 sm:flex">

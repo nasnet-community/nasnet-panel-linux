@@ -431,7 +431,6 @@ export const fa: Record<MsgKey, Message> = {
   'status.memory': 'حافظه',
   'status.settings': 'تنظیمات',
   'status.applied': 'اعمال شده',
-  'status.waitingToApply': 'در انتظار اعمال',
   'status.state': 'وضعیت',
   'status.running': 'در حال اجرا',
   'status.crashing': 'مدام از کار می‌افتد',

@@ -1,5 +1,5 @@
 import type { MsgKey, T } from '../i18n'
-import type { Node, Traffic } from './api'
+import type { AgentState, Node, Traffic } from './api'
 import type { Format } from './format'
 
 /** Dotted version numbers compared part by part: "26.10.9" is older than "26.10.21". A "v" and a "-rc1" are ignored. */
@@ -25,6 +25,21 @@ export const versionRelation = (have: string, want: string): 'older' | 'same' | 
 
 /** Connections a restart cuts off: those subscriptions have open now, or the tunnel's count when the agent can't say. */
 export const openConnections = (n: Node) => (n.usage.live ? n.usage.connections : n.tunnel.streams)
+
+/** The tunnel's round trip in milliseconds, or null when there is none to show. The hub can't time one and sends 0 for it. */
+export const roundTrip = (tunnel: Node['tunnel']) => (tunnel.state === 'up' && tunnel.rttMs > 0 ? tunnel.rttMs : null)
+
+// What the hub has no source for in an agent's report (its own uptime and memory, and whether the node runs the
+// settings last pushed) it sends as 0 and false. These read that as "not known", so a page of zeros is not shown.
+
+/** How long the agent has run, in seconds, or null when the hub can't say. */
+export const agentUptime = (a: AgentState) => (a.uptimeSec > 0 ? a.uptimeSec : null)
+
+/** The memory the agent holds, in bytes, or null when the hub can't say. */
+export const agentMemory = (a: AgentState) => (a.rssBytes > 0 ? a.rssBytes : null)
+
+/** Whether the node runs the settings the hub pushed: yes, no (the error the push gave is `lastPushError`), or null when nothing says. */
+export const settingsState = (a: AgentState): 'applied' | 'failed' | null => (a.settingsApplied ? 'applied' : a.lastPushError ? 'failed' : null)
 
 /** How many days before its end the hub renews a node's certificate. */
 export const renewLeadDays = (cert: Node['cert']) => Math.round((Date.parse(cert.notAfter) - Date.parse(cert.renewsAt)) / 86400e3)

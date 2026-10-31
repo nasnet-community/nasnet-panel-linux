@@ -442,7 +442,6 @@ export const en = {
   'status.memory': 'Memory',
   'status.settings': 'Settings',
   'status.applied': 'applied',
-  'status.waitingToApply': 'waiting to apply',
   'status.state': 'State',
   'status.running': 'running',
   'status.crashing': 'keeps crashing',

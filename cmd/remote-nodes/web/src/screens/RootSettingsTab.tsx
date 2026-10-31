@@ -5,6 +5,7 @@ import { useLang, type MsgKey, type T } from '../i18n'
 import type { AppConfig, Entry } from '../lib/api'
 import { sourceUrl } from '../lib/node'
 import { BackupCard } from './BackupCard'
+import { routerOSTooOld } from './Entry'
 
 type Reach = Entry['domestic']
 
@@ -35,8 +36,8 @@ function EntrySection({ entry }: { entry: Entry }) {
       <Item label={t('entry.bridge')}>
         <Badge tone={entry.bridge === 'running' ? 'online' : 'idle'}>{t(`entry.${entry.bridge}`)}</Badge>
       </Item>
-      <Item label="RouterOS" tone={entry.routerOS.ok ? undefined : 'danger'} hint={t('rs.routerOS.hint', { min: entry.routerOS.min })}>
-        <span dir="ltr">{entry.routerOS.version}</span>
+      <Item label="RouterOS" tone={routerOSTooOld(entry) ? 'danger' : undefined} hint={t('rs.routerOS.hint', { min: entry.routerOS.min })}>
+        <span dir="ltr">{entry.routerOS.version || '–'}</span>
       </Item>
       <Item label={t('rs.checked')} tone={entry.stale ? 'warn' : undefined} hint={entry.stale && t('rs.stale')}>
         {entry.checkedAt ? fmt.relative(entry.checkedAt, Date.now(), true) : t('entry.notChecked')}

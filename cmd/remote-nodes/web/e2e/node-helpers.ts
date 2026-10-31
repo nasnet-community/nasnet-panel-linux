@@ -17,6 +17,7 @@ export interface NodeState {
   dialFailures?: number
   noSubscriptions?: boolean
   bridgeDown?: boolean
+  unmeasured?: boolean
 }
 
 /** Puts one of the mock's nodes in a state, after the test's reset. */

@@ -34,11 +34,14 @@ export function entryChips(e: Entry, t: T): { key: string; tone: VerdictTone; la
   ]
 }
 
+/** RouterOS is older than the plugin needs. Before the router has reported there is no version, and nothing to say. */
+export const routerOSTooOld = (e: Entry) => !e.routerOS.ok && e.routerOS.version !== ''
+
 /** Why entry is off, as items for the attention list. */
 export function entryAttention(e: Entry, t: T): AttentionItem[] {
   const setup = [{ label: t('attn.openSetup'), href: PANEL_SETUP }]
   const out: AttentionItem[] = []
-  if (!e.routerOS.ok)
+  if (routerOSTooOld(e))
     out.push({ tone: 'warn', title: t('attn.routerOS.title', { version: e.routerOS.version }), detail: t('attn.routerOS.detail', { min: e.routerOS.min }) })
   if (e.domestic === 'missing') out.push({ tone: 'warn', title: t('attn.noDomestic.title'), detail: t('attn.noDomestic.detail'), acts: setup })
   else if (e.domestic === 'offline') out.push({ tone: 'warn', title: t('attn.domesticDown.title'), detail: t('attn.domesticDown.detail'), acts: setup })

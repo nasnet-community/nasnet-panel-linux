@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { translate } from '../i18n/translate'
 import type { Lang } from '../i18n/lang'
 import type { Entry } from '../lib/api'
-import { entryAttention, entryChips } from './Entry'
+import { entryAttention, entryChips, routerOSTooOld } from './Entry'
 
 const entry = (o: Partial<Entry> = {}): Entry => ({
   on: true,
@@ -60,6 +60,15 @@ describe('what needs attention', () => {
     expect(titles(off)).toEqual(['This router has no Domestic link', 'This router has no VPN'])
     for (const item of entryAttention(off, t('en'))) expect(item.acts).toEqual([{ label: 'Open setup', href: '/' }])
     expect(titles(off, 'fa')).toEqual(['این روتر آپ‌لینک داخلی ندارد', 'این روتر وی پی ان ندارد'])
+  })
+
+  // a hub that has not heard from the router yet sends no version and ok: false
+  it('says nothing of RouterOS before the router has reported its version', () => {
+    const unheard = entry({ on: false, routerOS: { version: '', min: '7.11', ok: false }, checkedAt: null, domestic: 'missing', vpn: { state: 'missing', kind: '', label: '' }, bridge: 'stopped' })
+    expect(titles(unheard)).toEqual(['This router has no Domestic link', 'This router has no VPN'])
+    expect(routerOSTooOld(unheard)).toBe(false)
+    expect(routerOSTooOld(entry({ routerOS: { version: '7.9', min: '7.11', ok: false } }))).toBe(true)
+    expect(routerOSTooOld(entry())).toBe(false)
   })
 
   it('is an item for a part that is down, and one for a RouterOS that is too old', () => {
