@@ -23,6 +23,11 @@ const (
 	EventSubscriptionOn  = "subscription_on"
 	EventSubscriptionOff = "subscription_off"
 	EventKeysRotated     = "keys_rotated"
+
+	// EventXrayRestarted is the hub restarting a node's Xray because the
+	// router's address on the Domestic link changed. Its detail is "old to
+	// new", the two addresses.
+	EventXrayRestarted = "xray_restarted"
 )
 
 const (

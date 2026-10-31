@@ -16,6 +16,7 @@ import (
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/nodecfg"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
@@ -36,6 +37,7 @@ type fakeAgent struct {
 	pid, started int64
 	uptime       int64
 	listErr      error // the next ListUsers fails with it, once
+	restartErr   error // every RestartXray fails with it, until it is cleared
 	buffered     []*agent.TrafficRecord
 	online       map[string]map[string]int64 // email -> client address -> when, as the agent lists who is connected
 
@@ -181,6 +183,27 @@ func (c *fakeConn) ListUsers(ctx context.Context, tag string) ([]*pb.UserInfo, e
 		return nil
 	})
 	return out, err
+}
+
+// RestartXray is a new Xray process: the pid and the start time move, and the
+// subscriptions' clients, which were added to the old one while it ran, are
+// gone, which is what the hub puts right afterwards. The bridge's client is in
+// the config file and stays. One that fails leaves the old process as it was.
+func (c *fakeConn) RestartXray(ctx context.Context, validateConfig bool) error {
+	return c.do(fmt.Sprintf("RestartXray validate=%t", validateConfig), func(a *fakeAgent) error {
+		if a.restartErr != nil {
+			return a.restartErr
+		}
+		a.pid++
+		a.started += 60
+		a.uptime = 1
+		for email := range a.users {
+			if _, ok := nodecfg.ParseSubscriptionEmail(email); ok {
+				delete(a.users, email)
+			}
+		}
+		return nil
+	})
 }
 
 func (c *fakeConn) Close() error {
@@ -423,6 +446,7 @@ type peek struct {
 	agentVer    string
 	xrayVer     string
 	restarts    int
+	resetDue    bool // the router's address changed and this node's Xray is yet to be restarted for it
 }
 
 func (m *Manager) peek(id uint) (peek, bool) {
@@ -434,7 +458,7 @@ func (m *Manager) peek(id uint) (peek, bool) {
 	}
 	p := peek{
 		seen: l.seen, misses: l.misses, unreachable: l.unreachable, connected: l.client != nil,
-		agentVer: l.agentVer, xrayVer: l.xrayVer, restarts: l.restarts,
+		agentVer: l.agentVer, xrayVer: l.xrayVer, restarts: l.restarts, resetDue: l.reset.due(),
 	}
 	if l.agent != nil {
 		a := *l.agent

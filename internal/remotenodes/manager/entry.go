@@ -53,6 +53,7 @@ func (m *Manager) evalEntry(ctx context.Context) {
 		return
 	case err == nil:
 		e = f.Entry(now, routerfacts.MinRouterOS)
+		m.noteDomesticAddr(f.DomesticAddr)
 	default:
 		e = routerfacts.Facts{}.Entry(now, routerfacts.MinRouterOS)
 		e.Stale = false // there is no report to be old

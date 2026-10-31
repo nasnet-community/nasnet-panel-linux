@@ -10,7 +10,8 @@
 // totals no more often than every few minutes.
 //
 // One Manager does everything, with its methods grouped by concern: nodes.go
-// keeps a loop for each node, entry.go reads the router's report, bridge.go
+// keeps a loop for each node, entry.go reads the router's report, domestic.go
+// restarts a node's Xray when the router's address changes, bridge.go
 // builds the bridge's spec and runs the supervisor, tunnel.go says what each
 // node's tunnel is doing and live.go answers the API. subs.go changes what the
 // subscriptions ask of the nodes and backup.go exports the state and restores

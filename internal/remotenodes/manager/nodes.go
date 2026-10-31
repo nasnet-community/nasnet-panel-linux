@@ -78,6 +78,10 @@ type nodeLive struct {
 	expecting     int
 	expectedUntil time.Time
 
+	// reset is what the node's Xray owes to a change of the router's address,
+	// see domestic.go.
+	reset addrReset
+
 	tunnel tunnelMark
 	events eventRing
 }
@@ -301,10 +305,15 @@ func (m *Manager) connect(ctx context.Context, n model.Node) (Client, error) {
 // from a restart with the clients it had in its config file, and a restart is
 // when a drift is likely. They are looked at again every ReconcileEvery as well,
 // for a drift that nothing announced.
+//
+// A node marked by a change of the router's address (see domestic.go) has its
+// Xray restarted after its first good poll, once per connection and per
+// change, and its clients are put back at once like after any restart.
 func (m *Manager) serve(ctx context.Context, l *nodeLive, c Client, backoff *time.Duration) {
 	t := &tap{Client: c}
 	pending := true
 	var versionAt, reconciledAt time.Time
+	tried := 0 // the change of the router's address this connection has restarted Xray for, or tried to
 	for {
 		restarted, err := m.poll(ctx, l, t)
 		switch {
@@ -318,6 +327,10 @@ func (m *Manager) serve(ctx context.Context, l *nodeLive, c Client, backoff *tim
 		default:
 			m.seen(l)
 			*backoff = connectMin
+			if seq := m.resetDue(l); seq > tried {
+				tried = seq
+				restarted = m.resetXray(ctx, l, c, seq) || restarted
+			}
 			pending = pending || restarted
 			now := m.now()
 			due := now.Sub(reconciledAt) >= m.cfg.ReconcileEvery
