@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netroles"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 )
@@ -98,6 +99,10 @@ type Manager struct {
 	caErr  error
 	caText string // the certificate text of the state's CA that ca was loaded from
 	caSaid string // the last problem with the CA that was logged, so it is said once
+
+	entry    api.Entry // the router's entry gate as last read; its Bridge is filled in when it is asked for
+	entryKey string    // what the last reading said, to log a change once
+	entrySet bool
 }
 
 // New checks the config and makes a manager. It makes the CA if the state has
@@ -143,6 +148,7 @@ func New(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{}}
 	m.checkCA()
+	m.evalEntry(context.Background())
 	return m, nil
 }
 
@@ -161,6 +167,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 	m.Sync()
 	m.spawn(m.watchState)
+	m.spawn(m.watchEntry)
 	<-run.Done()
 	// nothing may start while the rest are waited for
 	m.runMu.Lock()
