@@ -326,10 +326,10 @@ func (s *Supervisor) loop(r *runState, ch child) {
 		if ch != nil {
 			select {
 			case <-ch.exited():
-				s.noteExit(ch)
 				if time.Since(startedAt) >= b.Healthy {
 					delay = b.Min
 				}
+				s.noteExit(ch, time.Now().Add(delay))
 				ch = nil
 			case c := <-r.cmds:
 				if !s.handle(c, ch, &ch) {
@@ -425,17 +425,21 @@ func (s *Supervisor) terminate(ch child) {
 		ch.kill()
 		<-ch.exited()
 	}
-	s.noteExit(ch)
+	s.noteExit(ch, time.Time{})
 }
 
-func (s *Supervisor) noteExit(ch child) {
+// noteExit records how a child ended. The child's death puts the supervisor in
+// backoff, so the time of the next try goes in with it, under the same lock: a
+// status read in between would say backoff and no time. A child that was
+// stopped on purpose has no next try, and passes the zero time.
+func (s *Supervisor) noteExit(ch child, retryAt time.Time) {
 	what := "exited"
 	if err := ch.err(); err != nil {
 		what = err.Error()
 	}
 	s.mu.Lock()
 	s.lastExit, s.lastExitAt = what, time.Now()
-	s.state, s.pid = StateBackoff, 0
+	s.state, s.pid, s.retryAt = StateBackoff, 0, retryAt
 	s.mu.Unlock()
 	s.logf("the bridge ended: %s", what)
 }
