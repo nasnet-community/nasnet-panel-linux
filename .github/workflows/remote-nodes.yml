@@ -281,6 +281,14 @@ jobs:
           for want in 'The Go Authors' 'github.com/nasnet-community/mtproto-remote-plugin' 'github.com/xtls/xray-core' 'Mozilla Public License'; do
             grep -q "$want" "$dir/NOTICES" || { echo "::error::NOTICES has no $want"; exit 1; }
           done
+          # the page's own: each library with its version, and the font with its licence
+          for want in lucide-react preact qrcode-generator; do
+            grep -Eq "^$want [0-9]+\.[0-9]+" "$dir/web-notices.txt" || { echo "::error::web-notices.txt has no $want"; exit 1; }
+          done
+          for want in 'Vazirmatn (font)' 'SIL OPEN FONT LICENSE Version 1.1'; do
+            grep -Fq "$want" "$dir/web-notices.txt" || { echo "::error::web-notices.txt has no $want"; exit 1; }
+          done
+          grep -q 'web-notices.txt' "$dir/README" || { echo "::error::the README does not name web-notices.txt"; exit 1; }
           cat "$dir/README"
 
       # upx -t only reads the archive: run the packed programs on their own

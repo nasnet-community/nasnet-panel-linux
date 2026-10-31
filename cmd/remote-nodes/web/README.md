@@ -36,7 +36,8 @@ it). The calls that change subscriptions (add, rename, delete, the switch per no
 
 `Dockerfile.remote-nodes`, at the repository root, builds the page here with `npm ci`, `npm run build`
 and `npm run pack`, copies `dist/index.html.br` to `internal/remotenodes/ui/index.html.br`, and builds
-the hub with it. Without that file the hub embeds a placeholder page.
+the hub with it. Without that file the hub embeds a placeholder page. `pack` also writes
+`dist/NOTICES.txt`, which the image keeps as `/licenses/web-notices.txt` next to the Go side's `NOTICES`.
 
 To run the hub with the real page and no Docker, from the repository root (git ignores the copy):
 
