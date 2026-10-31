@@ -69,8 +69,14 @@ type nodeLive struct {
 	haveStatus bool
 	lastPID    int64
 	lastStart  int64
-	restarts   int         // restarts of Xray seen since the hub started
+	restarts   int         // restarts of Xray seen since the hub started, not counting the ones it caused
 	restartAt  []time.Time // when, oldest first, for the last few minutes
+
+	// The hub restarts a node's Xray or agent itself when it pushes a config or
+	// updates one of them. A restart seen while expecting is above zero, or
+	// before expectedUntil, is that: it is not counted towards a crash loop.
+	expecting     int
+	expectedUntil time.Time
 
 	tunnel tunnelMark
 	events eventRing

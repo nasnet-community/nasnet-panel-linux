@@ -92,9 +92,13 @@ func (m *Manager) noteBundle(l *nodeLive, b *agent.StatsBundle) (restarted bool)
 		movedPID := l.lastPID > 0 && pid > 0 && pid != l.lastPID
 		movedStart := l.lastStart > 0 && started > 0 && started != l.lastStart
 		if movedPID || movedStart {
+			// the node's clients are looked at again either way: a restarted Xray has
+			// none that were added to it while it ran
 			restarted = true
-			l.restarts++
-			l.restartAt = append(l.restartAt, now)
+			if l.expecting == 0 && !now.Before(l.expectedUntil) {
+				l.restarts++
+				l.restartAt = append(l.restartAt, now)
+			}
 		}
 	}
 	l.haveStatus, l.lastPID, l.lastStart = true, st.GetXrayPid(), st.GetLastRestartTime()
@@ -120,6 +124,28 @@ func (m *Manager) noteBundle(l *nodeLive, b *agent.StatsBundle) (restarted bool)
 	}
 	m.noteVersions(l, "", xray)
 	return restarted
+}
+
+// restartGrace is how long after one of the hub's own operations a restart is
+// still taken as its doing: the poll that sees it can be a poll behind.
+const restartGrace = 30 * time.Second
+
+// expectRestarts says the hub is about to restart a node's Xray or its agent,
+// as a config push or an update does. What restarts until done is called, and
+// for restartGrace after, is the hub's own doing and doesn't count towards a
+// crash loop. Three of those in ten minutes (rotate the keys, change a port,
+// update the agent) used to read as "Xray keeps crashing".
+func (m *Manager) expectRestarts(id uint) (done func()) {
+	m.mu.Lock()
+	l := m.recordLocked(id)
+	l.expecting++
+	m.mu.Unlock()
+	return func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		l.expecting--
+		l.expectedUntil = m.now().Add(restartGrace)
+	}
 }
 
 // refreshVersion asks the agent its version, which a bundle doesn't carry.

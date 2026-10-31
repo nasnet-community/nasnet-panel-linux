@@ -579,6 +579,39 @@ func TestRotatingTheKeysChangesWhatEveryLinkCarries(t *testing.T) {
 	})
 }
 
+// A config push restarts Xray on purpose. Rotating the keys and changing a
+// port each do it, and neither is a crash, however often they are done.
+func TestPushesTheHubMakesAreNotCountedAsXrayCrashes(t *testing.T) {
+	for _, what := range []string{"rotate", "settings"} {
+		t.Run(what, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := newSetUp(t)
+				s.start()
+				defer s.stop()
+				release := s.ops.holdAt("PushConfig")
+				var id string
+				var err error
+				if what == "rotate" {
+					id, err = s.m.RotateKeys(context.Background(), s.node.ID)
+				} else {
+					id, err = s.m.ChangeSettings(context.Background(), s.node.ID, api.SettingsRequest{EntryPort: ptrTo(8443)})
+				}
+				must(t, err)
+				for pid := int64(101); pid <= 103; pid++ {
+					s.net.agent(s.node.ID).set(func(a *fakeAgent) { a.pid, a.started = pid, a.started+60 })
+					s.advance(5 * time.Second)
+				}
+				release()
+				s.ok(id)
+				s.advance(5 * time.Second)
+				if p, _ := s.m.peek(s.node.ID); p.restarts != 0 || p.agent.Xray.CrashLoop {
+					t.Errorf("a %s left the node looking like it crash-loops: %+v", what, p)
+				}
+			})
+		})
+	}
+}
+
 func TestRotatingTheKeysFailsWithTheNodeAndTheStateAsTheyWere(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := newSetUp(t)

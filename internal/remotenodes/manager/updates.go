@@ -293,6 +293,7 @@ func (m *Manager) runUpdateAgent(ctx context.Context, r *jobs.Run, ops Ops, id u
 	if err != nil {
 		return err
 	}
+	defer m.expectRestarts(id)() // the agent restarts itself, and its start time is what the hub reads
 	v, err := ops.UpdateAgent(ctx, c, n, progressTo(r))
 	if err != nil {
 		return err
@@ -316,6 +317,7 @@ func (m *Manager) runUpdateXray(ctx context.Context, r *jobs.Run, ops Ops, id ui
 	if err != nil {
 		return err
 	}
+	defer m.expectRestarts(id)()
 	v, err := ops.UpdateXray(ctx, c, n, progressTo(r))
 	if err != nil {
 		return err

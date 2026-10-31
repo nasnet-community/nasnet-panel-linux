@@ -421,6 +421,40 @@ func TestUpdatingTheAgentRunsTheStepsAndTheNodeAndTheStateAgree(t *testing.T) {
 	})
 }
 
+// An update restarts the agent, or Xray, on purpose. While the job runs the
+// hub sees the node's Xray start time move, and that is not a crash.
+func TestUpdatesTheHubRunsAreNotCountedAsXrayCrashes(t *testing.T) {
+	for _, kind := range []string{"agent", "xray"} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				r, n := updatable(t)
+				r.dl.set("arm64", "v1.3.1", nil)
+				r.start()
+				defer r.stop()
+				must(t, r.m.CheckUpdates(context.Background(), n.ID))
+
+				at := agentops.StepRestartAgent
+				if kind == "xray" {
+					at = agentops.StepUploadXray
+				}
+				release := r.ops.holdAt(at)
+				id, err := r.m.UpdateNode(context.Background(), n.ID, kind)
+				must(t, err)
+				for pid := int64(101); pid <= 103; pid++ {
+					r.net.agent(n.ID).set(func(a *fakeAgent) { a.pid, a.started = pid, a.started+60 })
+					r.advance(5 * time.Second)
+				}
+				release()
+				r.ok(id)
+				r.advance(5 * time.Second)
+				if p, _ := r.m.peek(n.ID); p.restarts != 0 || p.agent.Xray.CrashLoop {
+					t.Errorf("an update of the %s left the node looking like it crash-loops: %+v", kind, p)
+				}
+			})
+		})
+	}
+}
+
 // The bridge keeps a node out while its Xray is another build, and has it
 // the moment it is the pin: that is what the Sync after an Xray update is for.
 func TestUpdatingXrayBringsTheNodeIntoTheBridge(t *testing.T) {
