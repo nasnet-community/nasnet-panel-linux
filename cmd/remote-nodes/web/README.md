@@ -20,6 +20,7 @@ and sends `X-RemoteNodes-UI: 1` with every request except the job event stream, 
 | `npm run typecheck` | `tsc -b`. |
 | `npm test` | Unit tests (vitest). |
 | `npm run e2e` | Browser tests (Playwright) against the mock API, in a desktop window and at phone width (Pixel 7). Needs Chromium: `npx playwright install chromium`, or set `CHROMIUM_PATH`. |
+| `npm run e2e:real` | The same browser, in the same two sizes, against a hub that is already running (no mock): `e2e-real/real-hub.spec.ts`. See Against a real hub. |
 
 ## The mock API
 
@@ -35,6 +36,24 @@ it). The calls that change subscriptions (add, rename, delete, the switch per no
 The mock follows the hub where the page can tell: an install is the hub's fifteen steps and a failed one leaves its node
 unfinished, a removal needs an SSH login or `force` whether or not the node can be reached, and a step goes by the key the
 hub sends beside its name (`STEPS` in `mock-api.ts` is a copy of `internal/remotenodes/manager/stepkeys.go`).
+
+## Against a real hub
+
+`e2e-real/real-hub.spec.ts` drives the built page against a hub on a lab network, with a real node behind it.
+It lives outside `e2e/`, so the mock suite doesn't run it. It reads where things are from the environment:
+
+| Variable | What it is |
+|---|---|
+| `RN_BASE_URL` | The hub's address, with its base path and a trailing slash when it has one. Default `http://127.0.0.1:8080/`. |
+| `RN_NODE_NAME` | The name of the node that is installed already. Default `node-a`. |
+| `RN_NODE_HOST` | Its address, for installing it again. |
+| `RN_NODE_PASSWORD` | Its SSH password, for the removal and the install. |
+| `RN_DESTRUCTIVE=1` | Also remove the node through the page and install it again. |
+
+It checks that the hub serves the page (at the base path too), that the API refuses a call without the page's header,
+that the add-subscription flow shows a link and a QR code that match what the hub says, that the switch keeps the link,
+and that Persian at phone width runs right to left and doesn't overflow. The page's console errors and the hub's
+answers of 400 and up are reported.
 
 ## What the hub sends
 
