@@ -55,6 +55,28 @@ func (c *testClock) Advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
+// shiftClock is simNow with a jump the test can make: a clock that was set
+// wrong and then right again.
+type shiftClock struct {
+	mu    sync.Mutex
+	start time.Time
+	shift time.Duration
+}
+
+func newShiftClock() *shiftClock { return &shiftClock{start: time.Now()} }
+
+func (c *shiftClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return epoch.Add(time.Since(c.start) + c.shift)
+}
+
+func (c *shiftClock) Shift(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.shift += d
+}
+
 // logBuf is what the manager logged, safe to read while it still logs.
 type logBuf struct {
 	mu sync.Mutex

@@ -93,6 +93,7 @@ type Manager struct {
 
 	// mu guards the live data below and everything the page reads.
 	mu     sync.RWMutex
+	nodes  map[uint]*nodeLive
 	ca     *pki.CA
 	caErr  error
 	caText string // the certificate text of the state's CA that ca was loaded from
@@ -140,7 +141,7 @@ func New(cfg Config) (*Manager, error) {
 			*d.v = d.def
 		}
 	}
-	m := &Manager{cfg: cfg, log: cfg.Log}
+	m := &Manager{cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{}}
 	m.checkCA()
 	return m, nil
 }
@@ -241,13 +242,4 @@ func (m *Manager) watchState(ctx context.Context) {
 			m.Sync()
 		}
 	}
-}
-
-// Sync takes in the state as it is now. A slice that has edited the state
-// calls it, so that a node it added is polled, and one it removed is let go,
-// without waiting for the next look.
-func (m *Manager) Sync() {
-	m.syncMu.Lock()
-	defer m.syncMu.Unlock()
-	m.checkCA()
 }
