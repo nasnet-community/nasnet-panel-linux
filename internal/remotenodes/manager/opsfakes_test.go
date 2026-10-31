@@ -270,6 +270,10 @@ func (f *fakeOps) PushConfig(ctx context.Context, c Client, in nodecfg.Input) er
 		return err
 	}
 	err := f.reach(ctx, "PushConfig")
+	// the push is among the node's calls once it is done, so a test can say what came before it and after
+	if fc, ok := c.(*fakeConn); ok && err == nil {
+		fc.a.set(func(a *fakeAgent) { a.calls = append(a.calls, "PushConfig") })
+	}
 	f.mu.Lock()
 	leak := f.leakKeys
 	f.mu.Unlock()

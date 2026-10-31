@@ -159,21 +159,15 @@ func (m *Manager) ChangeSettings(_ context.Context, id uint, req api.SettingsReq
 }
 
 func (m *Manager) runSettings(ctx context.Context, r *jobs.Run, ops Ops, id uint, ch settingsChange) error {
-	st := m.cfg.Store.Read()
-	n := st.FindNode(id)
-	if n == nil {
-		return errNodeGone
-	}
-	c, err := m.link(*n)
-	if err != nil {
-		return err
-	}
-	old, err := inputFor(st, *n)
-	if err != nil {
-		return err
-	}
-
 	if ch.targetMoved {
+		n, err := m.nodeFor(id)
+		if err != nil {
+			return err
+		}
+		c, err := m.link(n)
+		if err != nil {
+			return err
+		}
 		r.Begin(agentops.StepChooseTarget)
 		chk, err := ops.CheckTarget(ctx, c, ch.target)
 		if err == nil && !chk.OK {
@@ -187,10 +181,15 @@ func (m *Manager) runSettings(ctx context.Context, r *jobs.Run, ops Ops, id uint
 		r.Done(agentops.StepChooseTarget)
 	}
 
-	next := old
+	p, err := m.beginPush(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer p.unlock()
+	next := p.old
 	next.EntryPort, next.RealityDest, next.ServerNames = ch.entryPort, ch.target, []string{ch.sni}
 	r.Begin(agentops.StepApplyConfig)
-	if err := m.pushOrUndo(ctx, ops, c, old, next); err != nil {
+	if err := m.pushOrUndo(ctx, ops, p.link, p.old, next); err != nil {
 		r.Fail(agentops.StepApplyConfig, err)
 		return err
 	}
@@ -206,7 +205,7 @@ func (m *Manager) runSettings(ctx context.Context, r *jobs.Run, ops Ops, id uint
 		return nil
 	})
 	if err != nil {
-		err = m.restore(ctx, ops, c, old, err)
+		err = m.restore(ctx, ops, p.link, p.old, err)
 		r.Fail(StepSaveNode, err)
 		return err
 	}
@@ -217,8 +216,47 @@ func (m *Manager) runSettings(ctx context.Context, r *jobs.Run, ops Ops, id uint
 	return nil
 }
 
-// apply pushes a config to a node. When the push fails after the node may have
-// taken the config, the old one is pushed back.
+// push is a node's turn at being pushed a config, with what the push needs.
+type push struct {
+	node   model.Node
+	link   Client
+	old    nodecfg.Input // what the node runs now, as the state makes it
+	unlock func()
+}
+
+// beginPush takes the node's turn at having its clients changed, and reads
+// under it what the node should be running. A config replaces every client a
+// node has, so a subscription switched on while one is pushed would be lost to
+// it, and the node's loop would have to put it back. Under the node's lock a
+// switch comes before the config is read, and so is in it, or after the push,
+// and so is added to the node that runs it. The caller lets go with unlock once
+// it has pushed and saved, or given up.
+func (m *Manager) beginPush(ctx context.Context, id uint) (*push, error) {
+	unlock, err := m.lockNodes(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	st := m.cfg.Store.Read()
+	n := st.FindNode(id)
+	if n == nil {
+		unlock()
+		return nil, errNodeGone
+	}
+	c, err := m.link(*n)
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	old, err := inputFor(st, *n)
+	if err != nil {
+		unlock()
+		return nil, err
+	}
+	return &push{node: *n, link: c, old: old, unlock: unlock}, nil
+}
+
+// pushOrUndo pushes a config to a node. When the push fails after the node may
+// have taken the config, the old one is pushed back.
 func (m *Manager) pushOrUndo(ctx context.Context, ops Ops, c Client, old, next nodecfg.Input) error {
 	err := ops.PushConfig(ctx, c, next)
 	if err == nil || untouched(err) || ctx.Err() != nil {
@@ -338,23 +376,15 @@ func (m *Manager) runRotate(ctx context.Context, r *jobs.Run, ops Ops, id uint, 
 	}
 	r.Done(agentops.StepCreateKeys)
 
-	st := m.cfg.Store.Read()
-	n := st.FindNode(id)
-	if n == nil {
-		return errNodeGone
-	}
-	c, err := m.link(*n)
+	p, err := m.beginPush(ctx, id)
 	if err != nil {
 		return err
 	}
-	old, err := inputFor(st, *n)
-	if err != nil {
-		return err
-	}
-	next := old
+	defer p.unlock()
+	next := p.old
 	next.PrivateKey, next.ShortIDs = keys.PrivateKey, []string{keys.ShortID}
 	r.Begin(agentops.StepApplyConfig)
-	if err := m.pushOrUndo(ctx, ops, c, old, next); err != nil {
+	if err := m.pushOrUndo(ctx, ops, p.link, p.old, next); err != nil {
 		r.Fail(agentops.StepApplyConfig, err)
 		return err
 	}
@@ -370,7 +400,7 @@ func (m *Manager) runRotate(ctx context.Context, r *jobs.Run, ops Ops, id uint, 
 		return nil
 	})
 	if err != nil {
-		err = m.restore(ctx, ops, c, old, err)
+		err = m.restore(ctx, ops, p.link, p.old, err)
 		r.Fail(StepSaveNode, err)
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
@@ -712,5 +713,121 @@ func TestANodeWithNoKeyOnRecordCantBeGivenAConfig(t *testing.T) {
 		if j := s.failed(id); !strings.Contains(j.Error, "client id for the router's bridge") {
 			t.Errorf("job error %q", j.Error)
 		}
+	})
+}
+
+// A config replaces every client a node has, so what is switched on while one
+// is pushed would be lost to it. The push has the node's turn, and a switch
+// that comes during it waits and is made on the node that runs the config.
+func TestASubscriptionSwitchedDuringAPushWaitsForItAndIsAddedAfter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newSetUp(t)
+		s.start()
+		defer s.stop()
+		ctx := context.Background()
+		release := s.ops.holdAt("PushConfig")
+
+		id, err := s.m.ChangeSettings(ctx, s.node.ID, api.SettingsRequest{EntryPort: ptrTo(8443)})
+		must(t, err)
+		synctest.Wait() // the push is under way
+
+		done := make(chan error, 1)
+		go func() { _, err := s.m.SetEnabled(ctx, 3, s.node.ID, true); done <- err }()
+		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("the switch didn't wait for the push (%v)", err)
+		default:
+		}
+		st := s.cfg.Store.Read()
+		if e := st.FindEnablement(3, s.node.ID); e == nil || e.Enabled {
+			t.Errorf("the switch was made while the config was pushed: %+v", e)
+		}
+
+		release()
+		s.ok(id)
+		must(t, <-done)
+		// the config was read before the switch, and says so
+		if got := s.ops.pushes[0].in.Clients; fmt.Sprint(got) != fmt.Sprint(s.clientsWanted()) {
+			t.Errorf("the push had the clients %+v", got)
+		}
+		// and the client was added to the node after the push, which is the only way it is on the node that runs it
+		calls := s.net.agent(s.node.ID).callsFrom(0)
+		push, add := slices.Index(calls, "PushConfig"), slices.Index(calls, "AddUser sub-3@remote-nodes")
+		if push < 0 || add < 0 || add < push {
+			t.Errorf("the node's calls were %v: the client should be added after the push", calls)
+		}
+		st = s.cfg.Store.Read()
+		if e := st.FindEnablement(3, s.node.ID); e == nil || !e.Enabled {
+			t.Errorf("after the push: %+v", e)
+		}
+	})
+}
+
+// A switch that is under way when a change starts is in the config, which is
+// read when it is the change's turn and not before.
+func TestAPushIsBuiltFromWhatTheStateSaysWhenItsTurnComes(t *testing.T) {
+	for _, kind := range []string{"settings", "rotation"} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				s := newSetUp(t)
+				s.start()
+				defer s.stop()
+				ctx := context.Background()
+				// somebody is switching the third subscription on, and has the node's turn
+				unlock, err := s.m.lockNodes(ctx, s.node.ID)
+				must(t, err)
+				var id string
+				if kind == "settings" {
+					id, err = s.m.ChangeSettings(ctx, s.node.ID, api.SettingsRequest{EntryPort: ptrTo(8443)})
+				} else {
+					id, err = s.m.RotateKeys(ctx, s.node.ID)
+				}
+				must(t, err)
+				synctest.Wait()
+				if s.ops.called("PushConfig") != 0 {
+					t.Fatal("the config was pushed while somebody else had the node's turn")
+				}
+				enable(t, s.cfg.Store, 3, s.node.ID, true)
+				unlock()
+				s.ok(id)
+				want := append(s.clientsWanted(), nodecfg.Client{UUID: clientIDOf(3, s.node.ID), Email: "sub-3@remote-nodes"})
+				if got := s.ops.pushes[0].in.Clients; fmt.Sprint(got) != fmt.Sprint(want) {
+					t.Errorf("the push had the clients %+v, want %+v", got, want)
+				}
+			})
+		})
+	}
+}
+
+// The node's turn is given back by a change that fails, or a switch after it
+// would wait for ever.
+func TestAFailedPushGivesTheNodesTurnBack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newSetUp(t)
+		s.start()
+		defer s.stop()
+		ctx := context.Background()
+		s.ops.failAt("PushConfig", &agentops.ConfigRejectedError{Message: "no"})
+		id, err := s.m.ChangeSettings(ctx, s.node.ID, api.SettingsRequest{EntryPort: ptrTo(8443)})
+		must(t, err)
+		s.failed(id)
+		id, err = s.m.RotateKeys(ctx, s.node.ID)
+		must(t, err)
+		s.failed(id)
+		s.ops.failAt("PushConfig", nil)
+		s.disk.failNext(1, errors.New("the disk is full"))
+		id, err = s.m.RotateKeys(ctx, s.node.ID)
+		must(t, err)
+		s.failed(id)
+		// a change of the state that can't be written, and one that fails before the node's turn comes
+		s.net.agent(s.node.ID).setDown(true)
+		s.advance(30 * time.Second)
+
+		unlock, err := s.m.lockNodes(ctx, s.node.ID)
+		if err != nil {
+			t.Fatalf("the node's turn was kept: %v", err)
+		}
+		unlock()
 	})
 }
