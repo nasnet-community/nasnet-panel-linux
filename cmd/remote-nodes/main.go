@@ -37,15 +37,26 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/artifacts"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/bridgectl"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/bridgespec"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/manager"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netroles"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/routerfacts"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/store"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/ui"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/usage"
 )
 
 // version and commit are set at build time with
@@ -60,7 +71,29 @@ type settings struct {
 	listen   string // LISTEN_ADDR, default :8080
 	dataDir  string // DATA_DIR, default /data
 	basePath string // BASE_PATH: where the router's proxy mounts the plugin
+
+	// The plugin's three source addresses, as the manifest gives them to the
+	// veth. They aren't checked against the interfaces here until run starts.
+	addrs netroles.Set // ADDR_FOREIGN, ADDR_EXIT, ADDR_NODES
+
+	bridgeBin string   // BRIDGE_BIN: the bridge program, default /remote-nodes-bridge
+	bridgeUID uint32   // BRIDGE_UID, BRIDGE_GID: who it runs as when the hub is root on Linux
+	bridgeGID uint32   //
+	bridgeDNS []string // BRIDGE_DNS: the resolvers its exit asks, through the VPN
+	factsPath string   // FACTS_PATH: the router's report, default <DATA_DIR>/router/state
+
+	// release is where an install fetches the agent from: RELEASE_BASE_URL, or
+	// the project's latest release. Nothing reads it until the installs are wired in.
+	release artifacts.Source
 }
+
+const (
+	// defaultBridgeBin is where the image puts the bridge program, beside the hub.
+	defaultBridgeBin = "/remote-nodes-bridge"
+	// defaultBridgeID is nobody and nogroup, which own nothing, so the bridge
+	// can read nothing of the hub's.
+	defaultBridgeID = 65534
+)
 
 func orDefault(v, def string) string {
 	if v = strings.TrimSpace(v); v != "" {
@@ -71,8 +104,9 @@ func orDefault(v, def string) string {
 
 func fromEnv(getenv func(string) string) (settings, error) {
 	s := settings{
-		listen:  orDefault(getenv("LISTEN_ADDR"), ":8080"),
-		dataDir: orDefault(getenv("DATA_DIR"), "/data"),
+		listen:    orDefault(getenv("LISTEN_ADDR"), ":8080"),
+		dataDir:   orDefault(getenv("DATA_DIR"), "/data"),
+		bridgeBin: orDefault(getenv("BRIDGE_BIN"), defaultBridgeBin),
 	}
 	if _, _, err := net.SplitHostPort(s.listen); err != nil {
 		return settings{}, fmt.Errorf("LISTEN_ADDR %q: %w", s.listen, err)
@@ -81,7 +115,74 @@ func fromEnv(getenv func(string) string) (settings, error) {
 	if s.basePath, err = ui.BasePath(getenv("BASE_PATH")); err != nil {
 		return settings{}, err
 	}
+	if s.addrs, err = netroles.FromEnv(getenv); err != nil {
+		return settings{}, err
+	}
+	if s.bridgeUID, err = idFromEnv(getenv, "BRIDGE_UID"); err != nil {
+		return settings{}, err
+	}
+	if s.bridgeGID, err = idFromEnv(getenv, "BRIDGE_GID"); err != nil {
+		return settings{}, err
+	}
+	if s.bridgeDNS, err = dnsFromEnv(getenv("BRIDGE_DNS"), s.addrs.Exit.IP); err != nil {
+		return settings{}, err
+	}
+	s.factsPath = orDefault(getenv("FACTS_PATH"), routerfacts.Path(s.dataDir))
+	if s.release, err = artifacts.SourceFromEnv(getenv); err != nil {
+		return settings{}, err
+	}
 	return s, nil
+}
+
+// idFromEnv reads a user or group id, 65534 when it is not set.
+func idFromEnv(getenv func(string) string, name string) (uint32, error) {
+	v := strings.TrimSpace(getenv(name))
+	if v == "" {
+		return defaultBridgeID, nil
+	}
+	id, err := strconv.ParseUint(v, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%s %q is not a user or group id", name, v)
+	}
+	return uint32(id), nil
+}
+
+// dnsFromEnv reads BRIDGE_DNS, a list of resolvers separated by commas, each an
+// address with an optional port, or the defaults when it is empty. The bridge's exit sends the queries and
+// refuses the ranges it blocks (the router's own LAN among them), and the
+// resolvers have to be of the exit's family, so a list that can't work is
+// refused here, not when the bridge first tries to start.
+func dnsFromEnv(v string, exit netip.Addr) ([]string, error) {
+	var out []string
+	for _, f := range strings.Split(v, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	if len(out) == 0 {
+		// the defaults are IPv4, so they are held to the same rules: an IPv6
+		// exit has to be given resolvers of its own
+		out = append(out, manager.DefaultDNS...)
+	}
+	if len(out) > bridgespec.MaxDNSServers {
+		return nil, fmt.Errorf("BRIDGE_DNS has %d resolvers, and at most %d are used", len(out), bridgespec.MaxDNSServers)
+	}
+	blocked := bridgespec.DefaultBlocked()
+	for _, f := range out {
+		ap, err := bridgespec.ParseServer(f)
+		if err != nil {
+			return nil, fmt.Errorf("BRIDGE_DNS %q is not an IP address with an optional port", f)
+		}
+		if ap.Addr().IsUnspecified() || ap.Addr().IsMulticast() || ap.Addr().Is4() != exit.Is4() {
+			return nil, fmt.Errorf("BRIDGE_DNS %q is not a unicast address of the same family as %s", f, netroles.EnvExit)
+		}
+		for _, b := range blocked {
+			if netip.MustParsePrefix(b).Contains(ap.Addr()) {
+				return nil, fmt.Errorf("BRIDGE_DNS %q is inside %s, which the bridge's exit refuses to reach", f, b)
+			}
+		}
+	}
+	return out, nil
 }
 
 func main() {
@@ -99,8 +200,38 @@ func main() {
 	}
 }
 
-// run serves until ctx ends, then lets requests in flight finish. listening,
-// if set, is told the address once the port is open.
+// notConnectedYet stands in for the connector that opens a node's agent, which
+// comes with the node operations. Until then no node is ever reached, and each
+// one the state holds reads as unreachable.
+type notConnectedYet struct{}
+
+func (notConnectedYet) Connect(context.Context, model.Node) (manager.Client, error) {
+	return nil, errors.New("not connected yet")
+}
+
+// counted is the state file with the usage file's writes added to its own.
+// /health reports the sum, which is what a soak test reads the rate of flash
+// writes from.
+type counted struct {
+	*store.Store
+	usage *usage.Collector
+}
+
+func (c counted) Writes() uint64 { return c.Store.Writes() + c.usage.Writes() }
+
+// logf is a log.Printf-style function that writes to a slog logger.
+func logf(log *slog.Logger, level slog.Level, from string) func(string, ...any) {
+	return func(format string, args ...any) {
+		log.Log(context.Background(), level, fmt.Sprintf(format, args...), "from", from)
+	}
+}
+
+// shutdownGrace is how long stopping the server, the jobs and the manager may
+// take together. The container isn't given long.
+const shutdownGrace = 5 * time.Second
+
+// run serves until ctx ends, then stops everything in order. listening, if
+// set, is told the address once the port is open.
 func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.Addr)) error {
 	index, err := ui.New(s.basePath)
 	if err != nil {
@@ -110,8 +241,32 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	if err != nil {
 		return err
 	}
+	coll, err := usage.Open(usage.Config{Dir: s.dataDir, Logf: logf(log, slog.LevelWarn, "usage")})
+	if err != nil {
+		return err
+	}
+	engine := jobs.New(jobs.Config{Log: log})
+	sup, err := bridgectl.New(bridgectl.Config{
+		Binary:     s.bridgeBin,
+		Credential: &bridgectl.Credential{UID: s.bridgeUID, GID: s.bridgeGID},
+		Logf:       logf(log, slog.LevelInfo, "bridge"),
+	})
+	if err != nil {
+		return err
+	}
+	addrs := s.addrs.Check(netroles.Held(), func(msg string) { log.Warn(msg) })
+	mgr, err := manager.New(manager.Config{
+		Store: st, Usage: coll, Jobs: engine, Bridge: sup, Facts: routerfacts.NewReader(s.factsPath),
+		Connector: notConnectedYet{},
+		Resolver:  addrs.Nodes.Resolver(),
+		Addrs:     addrs, DNS: s.bridgeDNS,
+		Log: log,
+	})
+	if err != nil {
+		return err
+	}
 	handler := api.New(api.Config{
-		Store: st, Version: version, Commit: commit,
+		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
 		BasePath: s.basePath, Index: index, Log: log,
 	})
 	ln, err := net.Listen("tcp", s.listen)
@@ -124,21 +279,75 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	log.Info("remote-nodes listening", "version", version, "commit", commit, "addr", ln.Addr().String(), "base", s.basePath, "data", s.dataDir)
 
+	// the counters flush once more on their way out, so they have a context
+	// of their own, which is ended after the manager has
+	collCtx, stopColl := context.WithCancel(context.Background())
+	collDone := make(chan struct{})
+	go func() {
+		defer close(collDone)
+		coll.Run(collCtx)
+	}()
+	go mgr.Run(context.Background())
+
+	log.Info("remote-nodes listening", "version", version, "commit", commit, "addr", ln.Addr().String(), "base", s.basePath, "data", s.dataDir,
+		"bridge", s.bridgeBin, "facts", s.factsPath, "nodes_addr", addrs.Nodes.String(), "exit_addr", addrs.Exit.String(), "downloads_addr", addrs.Downloads.String())
+
+	var serveErr error
 	select {
-	case err := <-errc:
-		return err
+	case serveErr = <-errc:
 	case <-ctx.Done():
+		log.Info("remote-nodes stopping")
 	}
-	log.Info("remote-nodes stopping")
-	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	sctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if err := srv.Shutdown(sctx); err != nil {
-		return err
+	stopErr := stopInOrder(sctx, log,
+		// stop accepting requests, let those in flight finish, and end the jobs: an
+		// event stream only ends with its job, so Shutdown waits on the engine
+		stage{"requests and jobs", func(ctx context.Context) error {
+			shut := make(chan error, 1)
+			go func() { shut <- srv.Shutdown(ctx) }()
+			jobsErr := engine.Close(ctx)
+			return errors.Join(<-shut, jobsErr)
+		}},
+		stage{"manager", mgr.Close},
+		stage{"usage counters", func(ctx context.Context) error {
+			stopColl()
+			select {
+			case <-collDone:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}},
+		// last, so the tunnels carry traffic for as long as the hub does
+		stage{"bridge", func(context.Context) error { sup.Stop(); return nil }},
+	)
+	if serveErr == nil {
+		serveErr = <-errc
 	}
-	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
+	if errors.Is(serveErr, http.ErrServerClosed) {
+		serveErr = nil
 	}
-	return nil
+	return errors.Join(serveErr, stopErr)
+}
+
+// stage is one thing to stop.
+type stage struct {
+	name string
+	stop func(context.Context) error
+}
+
+// stopInOrder stops each stage after the one before it has stopped. A stage
+// that fails, or runs out of time, doesn't keep the later ones from stopping:
+// each is logged and the failures are returned together.
+func stopInOrder(ctx context.Context, log *slog.Logger, stages ...stage) error {
+	var errs []error
+	for _, st := range stages {
+		if err := st.stop(ctx); err != nil {
+			log.Error("stopping failed", "what", st.name, "err", err)
+			errs = append(errs, fmt.Errorf("%s: %w", st.name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
