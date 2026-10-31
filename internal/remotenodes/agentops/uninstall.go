@@ -11,8 +11,10 @@ import (
 
 // Uninstall takes the agent off a server over SSH and puts it back as it
 // found it: the unit, the config and certificates, the data and log folders,
-// the binary, the firewall rules the install opened, and Xray's binary,
-// service and config only where the marker says the install put them there.
+// the binary, the firewall rules the install opened, the kernel setting the
+// install made (its file always, and the live value if it is still the
+// install's), and Xray's binary, service and config only where the marker says
+// the install put them there.
 // It never touches a server's own Xray, and it leaves a server's other agent
 // alone: an agent that trusts another hub's CA is ErrOtherHub.
 //
@@ -137,9 +139,17 @@ func (u *uninstall) remove(ctx context.Context) error {
 
 func (u *uninstall) removeAll(ctx context.Context) (string, error) {
 	s := u.s
+	// what the kernel setting was before the install, and the kernel's default
+	// for an install that never read it
+	was := retries2Value(u.mk.TCPRetries2Was)
+	if was == "" {
+		was = retries2Default
+	}
 	steps := []struct{ what, cmd string }{
 		{"Couldn't remove the agent", cmdRmAgent},
 		{"Couldn't remove the agent's folders", cmdRmDirs},
+		{"Couldn't remove the agent's kernel setting", cmdRmSysctl},
+		{"Couldn't put net.ipv4.tcp_retries2 back", cmdRestoreRetries2(was)},
 	}
 	if u.mk.XrayBinary {
 		steps = append(steps, struct{ what, cmd string }{"Couldn't remove Xray", cmdRmXray})

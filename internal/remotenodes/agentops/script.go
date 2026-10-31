@@ -50,7 +50,30 @@ const (
 	// its data files with a drop-in, each time it starts Xray.
 	xrayDropIn    = "/etc/systemd/system/xray.service.d/asset-location.conf"
 	xrayDropInDir = "/etc/systemd/system/xray.service.d"
+
+	// The kernel setting the install makes for the tunnel, see tuneKernel:
+	// the live value, and the file that keeps it across a reboot.
+	retries2Path = "/proc/sys/net/ipv4/tcp_retries2"
+	sysctlDir    = "/etc/sysctl.d"
+	sysctlPath   = sysctlDir + "/60-nasnet-agent.conf"
 )
+
+// How many times the kernel resends what nobody acknowledges before it gives
+// a connection up: the install's value, which is about a minute with the usual
+// timeouts, and the kernel's own, which is about fifteen minutes.
+const (
+	retries2Want    = "5"
+	retries2Default = "15"
+)
+
+// sysctlText is the file that keeps retries2Want across a reboot. Both the
+// file and the live value go when the agent does, if nobody changed them.
+const sysctlText = `# Written by the Remote Nodes plugin with the agent, and removed with it.
+# A tunnel connection whose other end has gone away, such as the router's
+# after its address changed, is given up after about a minute and not about
+# fifteen. The kernel's default is 15.
+net.ipv4.tcp_retries2 = ` + retries2Want + `
+`
 
 // shq quotes s for a POSIX shell.
 func shq(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -92,6 +115,15 @@ var (
 	// cmdAgentRuns only has to start: it shows a binary that can't run here
 	// (a noexec mount, a wrong build) before anything depends on it.
 	cmdAgentRuns = shq(agentBin) + " version"
+
+	// cmdReadRetries2 reads the kernel setting as the server has it, and says
+	// nothing on a server that doesn't have it.
+	cmdReadRetries2 = "cat " + shq(retries2Path) + " 2>/dev/null || true"
+	// cmdSetRetries2 makes the install's value live. The same write is what
+	// sysctl does, without needing it to be installed.
+	cmdSetRetries2 = "echo " + shq(retries2Want) + " > " + shq(retries2Path)
+	// cmdMkSysctlDir only makes the folder where a server has none.
+	cmdMkSysctlDir = "mkdir -p -m 0755 " + shq(sysctlDir)
 )
 
 // cmdPresent names which of the paths the install cares about are there
@@ -139,7 +171,32 @@ var (
 	cmdRmData    = "rm -rf " + shq(dataDir)
 	cmdRmEmpty   = "rmdir " + quoted(confDir, dataDir, logDir) + " 2>/dev/null || true"
 	cmdReload    = "systemctl daemon-reload 2>/dev/null || true"
+	cmdRmSysctl  = "rm -f " + quoted(sysctlPath, sysctlPath+".new")
 )
+
+// cmdRestoreRetries2 puts the kernel setting back to what it was, but only when
+// it still has the value the install gave it: one that someone has changed
+// since is theirs. The file that kept it across a reboot is gone by then, so
+// without this the value would stay until the server restarts.
+func cmdRestoreRetries2(was string) string {
+	return "[ \"$(cat " + shq(retries2Path) + " 2>/dev/null)\" = " + shq(retries2Want) + " ] && echo " + shq(was) + " > " + shq(retries2Path) + " || true"
+}
+
+// retries2Value is a kernel setting's text if it is a plain number, and ""
+// otherwise. What the server says, and what the marker on it says, is not put
+// into a command as it is.
+func retries2Value(s string) string {
+	s = strings.TrimSpace(s)
+	if n := len(s); n == 0 || n > 3 {
+		return ""
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return s
+}
 
 // The paths whose presence the install asks about before it writes anything.
 var presentPaths = []string{agentBin, agentUnitPath, xrayBin, xrayUnitPath, xrayConfPath}
@@ -275,6 +332,12 @@ type marker struct {
 	XrayUnit   bool  `json:"xray_unit"`   // the service file for Xray
 	XrayConfig bool  `json:"xray_config"` // Xray's config file
 	Firewall   []int `json:"firewall,omitempty"`
+
+	// TCPRetries2Was is net.ipv4.tcp_retries2 as the server had it before the
+	// install set it, which is what removal gives back if it is still the
+	// install's. Empty when the install couldn't read it, or is older than the
+	// setting: removal then gives back the kernel's default.
+	TCPRetries2Was string `json:"tcp_retries2_was,omitempty"`
 }
 
 const markerVersion = 1

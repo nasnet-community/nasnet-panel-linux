@@ -153,6 +153,19 @@ func TestTheMarkerRoundTripsAndIsPlain(t *testing.T) {
 	if got := union([]int{9090, 443}, []int{443, 22}); !slices.Equal(got, []int{22, 443, 9090}) {
 		t.Errorf("union %v", got)
 	}
+
+	// what the kernel setting was is kept, and a marker from before it has none
+	in.TCPRetries2Was = "8"
+	out, err = parseMarker(string(in.bytes()))
+	if err != nil || out == nil || out.TCPRetries2Was != "8" || !strings.Contains(string(in.bytes()), `"tcp_retries2_was": "8"`) {
+		t.Fatalf("%+v, %v", out, err)
+	}
+	if strings.Contains(string((&marker{Version: markerVersion}).bytes()), "tcp_retries2_was") {
+		t.Error("a marker that has no value for the setting says so")
+	}
+	if out, err = parseMarker(`{"version": 1, "node_id": 3, "agent": true}`); err != nil || out == nil || out.TCPRetries2Was != "" {
+		t.Errorf("a marker from before the setting: %+v, %v", out, err)
+	}
 }
 
 func TestSentenceAndTail(t *testing.T) {

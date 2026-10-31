@@ -47,6 +47,7 @@ func TestAnInstallRunsExactlyTheseCommands(t *testing.T) {
 		{true, `cat '/var/lib/nasnet-agent/remote-nodes.json' 2>/dev/null || true`},
 		{true, `ss -ltnp 2>/dev/null`},
 		{false, `command -v ufw`},
+		{false, `cat '/proc/sys/net/ipv4/tcp_retries2' 2>/dev/null || true`}, // what the kernel setting is now, for removal to give back
 		// 4. the marker first, then the folders, config and certificates (the contents go on stdin)
 		{true, `install -d -m 0755 '/var/lib/nasnet-agent'`},
 		{true, `umask 077 && cat > '/var/lib/nasnet-agent/remote-nodes.json.new' && chmod 0644 '/var/lib/nasnet-agent/remote-nodes.json.new' && mv -f '/var/lib/nasnet-agent/remote-nodes.json.new' '/var/lib/nasnet-agent/remote-nodes.json'`},
@@ -55,6 +56,10 @@ func TestAnInstallRunsExactlyTheseCommands(t *testing.T) {
 		{true, `umask 077 && cat > '/etc/nasnet-agent/ca.crt.new' && chmod 0644 '/etc/nasnet-agent/ca.crt.new' && mv -f '/etc/nasnet-agent/ca.crt.new' '/etc/nasnet-agent/ca.crt'`},
 		{true, `umask 077 && cat > '/etc/nasnet-agent/server.crt.new' && chmod 0644 '/etc/nasnet-agent/server.crt.new' && mv -f '/etc/nasnet-agent/server.crt.new' '/etc/nasnet-agent/server.crt'`},
 		{true, `umask 077 && cat > '/etc/nasnet-agent/server.key.new' && mv -f '/etc/nasnet-agent/server.key.new' '/etc/nasnet-agent/server.key'`},
+		// the kernel setting for the tunnel: live, then in the file systemd reads at boot
+		{true, `echo '5' > '/proc/sys/net/ipv4/tcp_retries2'`},
+		{true, `mkdir -p -m 0755 '/etc/sysctl.d'`},
+		{true, `umask 077 && cat > '/etc/sysctl.d/60-nasnet-agent.conf.new' && chmod 0644 '/etc/sysctl.d/60-nasnet-agent.conf.new' && mv -f '/etc/sysctl.d/60-nasnet-agent.conf.new' '/etc/sysctl.d/60-nasnet-agent.conf'`},
 		// 5. the agent streams through gzip on the server, whose hash of it is checked before it moves into place
 		{true, `umask 077 && gzip -dc > '/usr/local/bin/.nasnet-agent.upload'`},
 		{true, `sha256sum '/usr/local/bin/.nasnet-agent.upload'`},
@@ -108,13 +113,14 @@ func TestAnInstallLeavesTheServerAsTheAgentNeedsIt(t *testing.T) {
 		"/etc/systemd/system/nasnet-agent.service": 0o644,
 		"/etc/systemd/system/xray.service":         0o644,
 		"/var/lib/nasnet-agent/remote-nodes.json":  0o644,
+		"/etc/sysctl.d/60-nasnet-agent.conf":       0o644,
 	} {
 		if got := sb.mode(p); got != want {
 			t.Errorf("%s is %v, want %v", p, got, want)
 		}
 	}
 	// no half-written files and no upload left
-	for _, p := range sb.tree("/etc/nasnet-agent", "/var/lib/nasnet-agent", "/usr/local/bin", "/etc/systemd/system") {
+	for _, p := range sb.tree("/etc/nasnet-agent", "/var/lib/nasnet-agent", "/usr/local/bin", "/etc/systemd/system", "/etc/sysctl.d") {
 		if strings.HasSuffix(p, ".new") || strings.HasSuffix(p, ".upload") {
 			t.Errorf("left behind: %s", p)
 		}
@@ -219,6 +225,17 @@ func TestAnInstallLeavesTheServerAsTheAgentNeedsIt(t *testing.T) {
 	if mk.NodeID != 3 || !mk.Agent || !mk.XrayBinary || !mk.XrayUnit || !mk.XrayConfig || mk.CASHA256 != caFingerprint(r.ca.Certificate()) ||
 		mk.AgentPort != 9090 || mk.EntryPort != 443 || len(mk.Firewall) != 0 || mk.Version != markerVersion {
 		t.Errorf("marker: %+v", mk)
+	}
+	// the kernel setting: given up on after about a minute and not fifteen, live and kept for the next boot, and
+	// the marker says what it was
+	if got := sb.read("/proc/sys/net/ipv4/tcp_retries2"); got != "5\n" {
+		t.Errorf("net.ipv4.tcp_retries2 is %q", got)
+	}
+	if mk.TCPRetries2Was != "15" {
+		t.Errorf("the marker says the setting was %q", mk.TCPRetries2Was)
+	}
+	if got := sb.read("/etc/sysctl.d/60-nasnet-agent.conf"); got != sysctlText || !strings.Contains(got, "\nnet.ipv4.tcp_retries2 = 5\n") {
+		t.Errorf("the sysctl file:\n%s", got)
 	}
 
 	// and what the manager is told

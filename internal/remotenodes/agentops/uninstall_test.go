@@ -366,17 +366,27 @@ func TestAnInstallThatDiesAnywhereCanBeUninstalled(t *testing.T) {
 			rules := r.sb.read("/ufw.rules")
 
 			calls := 0
+			var failed string
 			r.shell.failOn = func(cmd string) error {
 				if calls++; calls == n {
+					failed = cmd
 					return errors.New("connection lost")
 				}
 				return nil
 			}
 			res, err := r.install()
 			// a question that only asks (is there a gzip, is there a ufw) has its failure taken as
-			// an answer, and the install goes on; one that changes the server can't be
-			if err == nil && n >= first {
+			// an answer, and the install goes on; one that changes the server can't be, but for the
+			// kernel setting, which the node can do without and the step says it didn't get
+			optional := strings.Contains(failed, "tcp_retries2") || strings.Contains(failed, "sysctl.d")
+			if err == nil && n >= first && !optional {
 				t.Fatalf("the install didn't notice that command %d failed", n)
+			}
+			if err != nil && optional {
+				t.Fatalf("the install failed over the kernel setting at command %d: %v", n, err)
+			}
+			if optional && r.lastStep(StepPrepareServer).Detail == "" {
+				t.Errorf("the step doesn't say the kernel setting was not made (command %d)", n)
 			}
 			// the result never says the server is as it was when it isn't
 			if changed := len(diff(before, r.sb.snapshot())) > 0; changed && !res.Changed {
