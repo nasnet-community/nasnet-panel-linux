@@ -340,8 +340,21 @@ function useHostKey(node: Node, login: LoginForm) {
  * Takes a node out. The agent and Xray are on the server, and the hub can't take them off by itself, so
  * this asks for an SSH login first (its host key looked at before it goes out), or forgets the node and
  * leaves the server as it is.
+ *
+ * As `cleanup` it is an unfinished install's Clean up: the same login and key check, then the hub takes
+ * off what the install put there and deletes the record. Forgetting one has a dialog of its own.
  */
-export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose: () => void; onStarted: (jobId: string) => void }) {
+export function RemoveDialog({
+  node,
+  cleanup = false,
+  onClose,
+  onStarted,
+}: {
+  node: Node
+  cleanup?: boolean
+  onClose: () => void
+  onStarted: (jobId: string) => void
+}) {
   const { t } = useLang()
   const errorText = useErrorText()
   const [login, setLogin] = useState<LoginForm>(() => emptyLogin(node.sshPort, node.sshUser))
@@ -381,20 +394,20 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
     <>
       <Button onClick={key.back}>{t('add.back')}</Button>
       <Button variant="danger" disabled={!key.trusted || !!busy} busy={busy === 'remove'} onClick={() => void start('remove', probe.fingerprint)}>
-        {t('remove.trust')}
+        {t(cleanup ? 'cleanup.trust' : 'remove.trust')}
       </Button>
     </>
   ) : (
     <>
       <Button onClick={onClose}>{t('common.cancel')}</Button>
       <Button variant="danger" type="submit" form="remove-login" busy={busy === 'remove'} disabled={!!busy}>
-        {t('remove.login')}
+        {t(cleanup ? 'cleanup.login' : 'remove.login')}
       </Button>
     </>
   )
 
   return (
-    <Dialog onClose={onClose} title={t('remove.title', { name: node.name })} footer={footer}>
+    <Dialog onClose={onClose} title={cleanup ? t('cleanup.title', { host: node.host }) : t('remove.title', { name: node.name })} footer={footer}>
       {probe ? (
         <HostKeyCheck host={node.host} probe={probe} acked={key.acked} onAck={key.setAcked} />
       ) : (
@@ -407,17 +420,21 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
             void start('remove')
           }}
         >
-          <p className="col-span-6 text-[13px] text-muted">{t('remove.note')}</p>
-          <div className="col-span-6">
-            <Notice>{t('remove.needsLogin')}</Notice>
-          </div>
+          <p className="col-span-6 text-[13px] text-muted">{t(cleanup ? 'cleanup.note' : 'remove.note')}</p>
+          {!cleanup && (
+            <div className="col-span-6">
+              <Notice>{t('remove.needsLogin')}</Notice>
+            </div>
+          )}
           <LoginFields form={login} onChange={setLogin} />
-          <div className="col-span-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-[13px] text-muted">
-            <span>{t('remove.noLogin')}</span>
-            <Button size="sm" busy={busy === 'force'} disabled={!!busy} onClick={() => start('force')}>
-              {t('remove.forget')}
-            </Button>
-          </div>
+          {!cleanup && (
+            <div className="col-span-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-[13px] text-muted">
+              <span>{t('remove.noLogin')}</span>
+              <Button size="sm" busy={busy === 'force'} disabled={!!busy} onClick={() => start('force')}>
+                {t('remove.forget')}
+              </Button>
+            </div>
+          )}
         </form>
       )}
       {error && (
@@ -426,5 +443,29 @@ export function RemoveDialog({ node, onClose, onStarted }: { node: Node; onClose
         </div>
       )}
     </Dialog>
+  )
+}
+
+/** Forgets an unfinished install: the record goes, and the server is left as it is, which it says. */
+export function ForgetDialog({ node, onClose, onStarted }: { node: Node; onClose: () => void; onStarted: (jobId: string) => void }) {
+  const { t } = useLang()
+  const errorText = useErrorText()
+  return (
+    <Confirm
+      danger
+      title={t('forget.title', { name: node.name })}
+      action={t('forget.action')}
+      onClose={onClose}
+      onConfirm={async () => {
+        try {
+          const { jobId } = await api.remove(node.id, forgetOnly())
+          onStarted(jobId)
+        } catch (e) {
+          throw new Error(errorText(e))
+        }
+      }}
+    >
+      <p>{t('forget.note')}</p>
+    </Confirm>
   )
 }

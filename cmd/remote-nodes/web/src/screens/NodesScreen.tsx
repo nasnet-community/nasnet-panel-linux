@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronRight, Info, Plus, RemoteNodesLogo, TriangleAlert } from '../components/icons'
 import { useJobs } from '../components/jobs'
 import { RouteLink } from '../components/link'
@@ -7,10 +7,13 @@ import { usePoll } from '../hooks/usePoll'
 import { navigate } from '../hooks/useRoute'
 import { useConfig } from '../hooks/useConfig'
 import { useErrorText, useLang } from '../i18n'
-import { api, type AppConfig, type Node } from '../lib/api'
+import { api, type AppConfig, type InstallForm, type Node } from '../lib/api'
 import { health } from '../lib/health'
+import { isUnfinished } from '../lib/install'
 import { jobStep, stepLabel, stepPercent } from '../lib/jobs'
+import { onRetry, takeRetry } from '../lib/retry'
 import { AddNodeDialog } from './AddNodeDialog'
+import { UnfinishedDialogs, UnfinishedList, type UnfinishedModal } from './Unfinished'
 
 /** How far an install has got, from the job when the tray has it (in the page's words), else from the node. */
 function InstallProgress({ node }: { node: Node }) {
@@ -97,20 +100,47 @@ function NodeCard({ node }: { node: Node }) {
   )
 }
 
-/** The Nodes tab: the node cards, how many of the cap are used, and the dialog that adds one. */
+/**
+ * The Nodes tab: the node cards, how many of the cap are used, the dialog that adds one, and below
+ * them the installs that didn't finish, which are no nodes and don't count.
+ */
 export function NodesScreen({ config, onChanged }: { config: AppConfig | null; onChanged: () => void }) {
   const { t } = useLang()
   const errorText = useErrorText()
   // an install moves every few seconds; otherwise the list can idle
   const pace = useRef(10000)
-  const { data: nodes, error, loading, reload } = usePoll(api.nodes, pace.current)
-  pace.current = nodes?.some((n) => n.installing) ? 2000 : 10000
+  const { data: all, error, loading, reload } = usePoll(api.nodes, pace.current)
+  pace.current = all?.some((n) => n.installing) ? 2000 : 10000
+  const nodes = all?.filter((n) => !isUnfinished(n)) ?? null
+  const unfinished = all?.filter(isUnfinished) ?? []
   const [adding, setAdding] = useState(false)
+  // Try again: what a failed install was asked for, and a new dialog for it each time
+  const [initial, setInitial] = useState<InstallForm | null>(null)
+  const [opened, setOpened] = useState(0)
+  const [modal, setModal] = useState<UnfinishedModal | null>(null)
 
   const max = config?.maxNodes ?? 0
   const count = nodes?.length ?? config?.nodeCount ?? 0
   const full = max > 0 && count >= max
-  const add = () => !full && setAdding(true)
+  const add = () => {
+    if (full) return
+    setInitial(null)
+    setOpened((n) => n + 1)
+    setAdding(true)
+  }
+
+  // a Try again from the job tray or a node page lands here
+  useEffect(() => {
+    const take = () => {
+      const form = takeRetry()
+      if (!form) return
+      setInitial(form)
+      setOpened((n) => n + 1)
+      setAdding(true)
+    }
+    take()
+    return onRetry(take)
+  }, [])
 
   return (
     <div className="flex flex-col gap-5">
@@ -167,9 +197,21 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
         </div>
       )}
 
+      {unfinished.length > 0 && <UnfinishedList nodes={unfinished} onAct={setModal} />}
+      <UnfinishedDialogs
+        modal={modal}
+        onClose={() => setModal(null)}
+        onEnded={() => {
+          void reload()
+          onChanged()
+        }}
+      />
+
       <AddNodeDialog
+        key={opened}
         open={adding}
-        nodes={nodes}
+        initial={initial}
+        nodes={all}
         onClose={() => setAdding(false)}
         onStarted={() => {
           void reload()

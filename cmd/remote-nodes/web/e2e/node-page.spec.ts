@@ -169,22 +169,19 @@ test.describe('the header card and the list of notes', () => {
     await expect(job).toContainText('62% · 8.4 of 13.6 MB')
   })
 
-  test('a node whose install never finished can only be removed', async ({ page, request }) => {
+  test('a node whose install never finished is shown as an unfinished install, not as a node', async ({ page, request }) => {
     await setNode(request, { id: 1, registered: false })
-    await openNode(page, 1)
+    await page.goto('/#/nodes/1')
+    await expect(page.getByRole('heading', { level: 1, name: "Node 1's install didn't finish" })).toBeVisible()
     await expect(page.getByText('Not finished', { exact: true })).toBeVisible()
-    const note = attention(page)
-    await expect(note).toContainText("This node's install never finished")
-    await expect(note).toContainText("It can't be repaired. Remove it, then add it again.")
-    await page.getByRole('tab', { name: 'Status' }).click()
-    await expect(page.getByText('Nothing to show: the install never finished.')).toBeVisible()
-    // what is off says it is the install, not the router's reach
-    await expect(page.getByRole('button', { name: 'Check for updates' })).toHaveAttribute('title', 'The install never finished')
-    await openMenu(page)
-    await expect(menuItem(page, 'Rotate keys')).toContainText('The install never finished')
-    await page.keyboard.press('Escape')
-    await note.getByRole('button', { name: 'Remove node…' }).click()
-    await expect(dialog(page, 'Remove Node 1?')).toBeVisible()
+    // nothing of a node: no tabs, no updates, no settings, no subscriptions
+    await expect(page.getByRole('tab')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Check for updates' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'More actions' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add subscription' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Clean up…' })).toBeVisible()
+    await page.getByRole('button', { name: 'Forget…' }).click()
+    await expect(page.getByRole('alertdialog', { name: 'Forget Node 1?' })).toContainText("Only this record is deleted. The server isn't touched")
   })
 
   test('says why Xray is not up: crashing, stopped, or settings the agent could not apply', async ({ page, request }) => {

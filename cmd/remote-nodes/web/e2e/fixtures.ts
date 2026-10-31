@@ -35,6 +35,8 @@ export interface Reset {
   entry?: 'off' | 'domestic-offline' | 'vpn-offline' | 'stale' | 'old-routeros'
   /** how long install steps take, as a multiple of the mock's usual */
   pace?: number
+  /** an install that didn't finish beside the nodes: "Old install", 192.0.2.77, id 9 */
+  unfinished?: boolean
 }
 
 /** Puts the mock back to its sample data, or to the state asked for; installs run at twice the usual speed. */

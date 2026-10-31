@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { makeFormat, type Format } from '../lib/format'
-import { errorText, type T } from './errors'
+import { codeText, errorText, type T } from './errors'
 import { LANGS, LANG_KEY, detectLang, type Lang } from './lang'
 import { translate, type MsgKey, type Params } from './translate'
 
-export { LANGS, type Lang, type MsgKey, type Params, type T }
+export { LANGS, codeText, type Lang, type MsgKey, type Params, type T }
 
 interface LangValue {
   lang: Lang

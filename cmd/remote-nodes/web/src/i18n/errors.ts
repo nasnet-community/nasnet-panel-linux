@@ -16,10 +16,15 @@ const WORDED = new Set([
   'version_mismatch',
   'agent_too_old',
   'host_key_changed',
+  'server_has_xray',
+  'server_has_agent',
   'busy',
   'backup_bad_passphrase',
   'backup_bad_file',
 ])
+
+/** The page's words for an error code, or null for a code it has none for. */
+export const codeText = (t: T, code: string | undefined): string | null => (code && WORDED.has(code) ? t(`error.${code}` as MsgKey) : null)
 
 /** What to tell the user about a failed call: the page's wording for the error code, else the server's sentence. */
 export function errorText(t: T, e: unknown): string {

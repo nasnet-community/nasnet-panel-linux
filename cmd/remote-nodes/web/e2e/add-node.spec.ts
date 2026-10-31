@@ -135,41 +135,56 @@ test('a changed host key stops the install until it is trusted on purpose', asyn
   await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 20000 })
 })
 
-test('an install that fails shows the step, the reason and a hint, and keeps the node, unfinished', async ({ page }) => {
+test('an install that fails after changing the server cleans it up, keeps no node, and offers to try again', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'fail.example.com')
+  await form.getByLabel('Name', { exact: true }).fill('Frankfurt')
+  await form.getByRole('button', { name: 'Advanced' }).click()
+  await form.getByLabel('Entry port').fill('8443')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   const failed = dialog(page, 'Installation failed')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('Failed at step 7 of 15')
+  await expect(failed).toContainText('Failed at step 7 of 17')
   await expect(failed.getByText("The agent doesn't answer on TCP port 9090 (dial tcp fail.example.com:9090: i/o timeout).")).toBeVisible()
-  // the steps after it were never started
+  // the steps after it were never started, and the cleanup came after them
   await expect(failed.getByText('Upload Xray 26.10.21')).toHaveClass(/text-faint/)
+  await expect(failed.getByText('Clean up the server')).toBeVisible()
+  await expect(failed.getByText('Discard the node')).toBeVisible()
+  await expect(failed).toContainText('The server was cleaned up, and nothing was kept.')
   await expect(failed).toContainText('This router reaches the node over its Domestic link, so the address must be on the domestic list.')
   await expect(toast(page, 'Installation failed')).toBeVisible()
-  // the hub saves the node before it installs it, so it stays, never finished, and counts toward the cap
-  await expect(failed).toContainText('The node is saved. Open it to see where it stands.')
-  await expect(failed.getByRole('button', { name: 'Try again' })).toHaveCount(0)
-  await expect(page.getByText('3 of 3 nodes')).toBeVisible()
-  await expect(card(page, 'Node 3')).toContainText('Not finished')
-  await failed.getByRole('button', { name: 'Open node' }).click()
-  await expect(page).toHaveURL(/#\/nodes\/3$/)
-  await expect(page.getByText("This node's install never finished")).toBeVisible()
+  // no node is left behind: the list and the cap are as they were
+  await expect(failed.getByRole('button', { name: 'Open node' })).toHaveCount(0)
+  await expect(page.getByText('2 of 3 nodes')).toBeVisible()
+  await expect(card(page, 'Frankfurt')).toHaveCount(0)
+  await expect(page.getByText("Installs that didn't finish")).toHaveCount(0)
+
+  // Try again: the form as it was sent, the password typed again
+  await failed.getByRole('button', { name: 'Try again' }).click()
+  const again = dialog(page, 'Add a node')
+  await expect(again.getByLabel('Server address')).toHaveValue('fail.example.com')
+  await expect(again.getByLabel('Name', { exact: true })).toHaveValue('Frankfurt')
+  await expect(again.getByLabel('SSH port')).toHaveValue('22')
+  await expect(again.getByLabel('Username')).toHaveValue('root')
+  await expect(again.locator('input[type="password"]')).toHaveValue('')
+  await again.getByRole('button', { name: 'Advanced' }).click()
+  await expect(again.getByLabel('Entry port')).toHaveValue('8443')
+  expect(await stateHolds(page, 'a-password')).toBe(false)
 })
 
-test('an install that fails late fails there, and has no hint about the domestic list', async ({ page }) => {
+test('an install that fails late fails there, cleans up, and has no hint about the domestic list', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'late.example.com')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   const failed = dialog(page, 'Installation failed')
   await expect(failed).toBeVisible({ timeout: 20000 })
-  await expect(failed).toContainText('Failed at step 12 of 15')
+  await expect(failed).toContainText('Failed at step 12 of 17')
   await expect(failed).toContainText("www.example.com:443 didn't answer from this node")
-  await expect(failed).toContainText('The node is saved. Open it to see where it stands.')
+  await expect(failed).toContainText('The server was cleaned up, and nothing was kept.')
   // the domestic hint belongs to the steps where the router reaches the node
   await expect(failed).not.toContainText('Domestic link')
-  await failed.getByRole('button', { name: 'Open node' }).click()
-  await expect(page).toHaveURL(/#\/nodes\/3$/)
+  await expect(failed.getByRole('button', { name: 'Try again' })).toBeVisible()
+  await expect(page.getByText('2 of 3 nodes')).toBeVisible()
 })
 
 test('a job whose stream is refused is followed by polling', async ({ page }) => {

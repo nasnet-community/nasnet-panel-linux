@@ -2,9 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { navigate } from '../hooks/useRoute'
 import { useNow } from '../hooks/usePoll'
 import { useConfig } from '../hooks/useConfig'
-import { useLang } from '../i18n'
+import { codeText, useLang } from '../i18n'
 import { JOB_LOST, api, followJob, type Job } from '../lib/api'
+import { installOutcome, retryForm } from '../lib/install'
 import { jobLine, jobStep, jobTitle, stepLabel, stepPercent } from '../lib/jobs'
+import { askRetry } from '../lib/retry'
 import { CircleCheck, CircleX, History } from './icons'
 import { JobSteps } from './job'
 import { Bar, Button, Dialog, Spinner, cx, useToast } from './ui'
@@ -118,6 +120,7 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
   const { t, fmt } = useLang()
   const now = useNow()
   const running = job.state === 'running'
+  const form = retryForm(job)
   return (
     <Dialog
       onClose={onClose}
@@ -126,7 +129,8 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
       closeLabel={running ? t('job.closeKeepsGoing') : t('common.close')}
       footer={
         <>
-          {job.kind === 'install' && job.nodeId && job.state !== 'running' ? (
+          {job.kind === 'install' && job.nodeId && (job.state === 'ok' || installOutcome(job) === 'kept') ? (
+            // a node that was set up, or an install kept unfinished for a cleanup
             <Button
               variant="primary"
               onClick={() => {
@@ -134,9 +138,20 @@ function JobDialog({ job, target, onClose }: { job: Job; target: string; onClose
                 navigate({ page: 'node', id: job.nodeId! })
               }}
             >
-              {t('job.openNode')}
+              {t(job.state === 'ok' ? 'job.openNode' : 'job.openUnfinished')}
             </Button>
           ) : null}
+          {form && (
+            <Button
+              variant="primary"
+              onClick={() => {
+                onClose()
+                askRetry(form)
+              }}
+            >
+              {t('job.tryAgain')}
+            </Button>
+          )}
           <Button variant={running || job.kind === 'install' ? 'secondary' : 'primary'} onClick={onClose}>
             {running ? t('common.close') : t('job.done')}
           </Button>
@@ -244,7 +259,7 @@ export function JobTray() {
                   const ok = j.state === 'ok'
                   const at = j.finishedAt ?? j.startedAt
                   const ago = fmt.relative(at, now)
-                  const error = j.error === JOB_LOST ? t('job.lost') : j.error
+                  const error = j.error === JOB_LOST ? t('job.lost') : (codeText(t, j.code) ?? j.error)
                   return (
                     <li key={j.id} className="flex items-start gap-3 px-1 py-2.5">
                       {ok ? <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-ok-text" /> : <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-bad-text" />}
@@ -261,9 +276,23 @@ export function JobTray() {
                         </div>
                       </div>
                       {!ok && (
-                        <Button size="sm" variant="ghost" onClick={() => openJob(j.id)}>
-                          {t('tray.open')}
-                        </Button>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => openJob(j.id)}>
+                            {t('tray.open')}
+                          </Button>
+                          {retryForm(j) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setShow(false)
+                                askRetry(retryForm(j)!)
+                              }}
+                            >
+                              {t('job.tryAgain')}
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </li>
                   )
