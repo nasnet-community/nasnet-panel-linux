@@ -16,6 +16,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netbind"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 )
 
 // Files is where an install takes the agent and Xray from. An
@@ -60,12 +61,24 @@ type Env struct {
 	probeSSH   func(context.Context, installer.Target) (string, error)
 	verify     func(context.Context, model.Node, *artifacts.Agent) (Versions, error)
 	startWait  time.Duration // how long a started agent has to listen; 0 is 30 s
+	// the build of Xray this plugin pins for an architecture; a test makes its own,
+	// since the real binary can't be made in one
+	pinnedBuild func(arch string) (version, sha string)
 
 	dialOnce sync.Once
 	dial     *net.Dialer
 
 	mu  sync.Mutex // guards hub
 	hub *hubCert
+}
+
+// pinnedXray is the Xray version this plugin pins and the checksum of its
+// binary for an architecture ("" for an architecture it has none for).
+func (e *Env) pinnedXray(arch string) (version, sha string) {
+	if e.pinnedBuild != nil {
+		return e.pinnedBuild(arch)
+	}
+	return pin.Version, pin.BinarySHA256[arch]
 }
 
 func (e *Env) now() time.Time {

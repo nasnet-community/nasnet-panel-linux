@@ -30,6 +30,13 @@ type InstallResult struct {
 	XrayVersion  string // empty until Xray is pushed
 	NodeUUID     string
 
+	// TookOver says the server's own Xray was stopped and (as far as the install
+	// got) taken away, which a failure afterwards doesn't put back.
+	TookOver bool
+	// XrayKept says that Xray's binary was the pinned build and stays where it
+	// was, so Provision neither fetches nor sends one.
+	XrayKept bool
+
 	CertSerial    string
 	CertNotBefore time.Time
 	CertNotAfter  time.Time
@@ -56,9 +63,17 @@ type InstallResult struct {
 // node. A login is used for this call and not kept. A server this hub's marker
 // shows is already another of its nodes (Env.LiveNode) is refused
 // (ErrServerIsNode): it is the same server under another address.
-func (e *Env) InstallAgent(ctx context.Context, node model.Node, login Login, progress Progress) (InstallResult, error) {
+//
+// With opts.TakeOverXray an Xray of the server's own is not refused but taken
+// over, after the steps that only look and fetch: its service is stopped, and
+// it, its config and its drop-ins are removed, with no copy kept. The binary
+// stays when it is the pinned build (the same version and checksum), and is
+// replaced otherwise. The marker then records the Xray as this plugin's, so a
+// later removal takes it off like any other node's. The plan has the step
+// (InstallPlanFor) only when it was asked for.
+func (e *Env) InstallAgent(ctx context.Context, node model.Node, login Login, opts InstallOptions, progress Progress) (InstallResult, error) {
 	var res InstallResult
-	in := &install{e: e, node: node, login: login, st: newStepper(progress), res: &res}
+	in := &install{e: e, node: node, login: login, opts: opts, st: newStepper(progress), res: &res}
 	err := in.run(ctx)
 	if in.s != nil {
 		in.s.close()
@@ -76,6 +91,7 @@ type install struct {
 	e     *Env
 	node  model.Node
 	login Login
+	opts  InstallOptions
 	st    *stepper
 	res   *InstallResult
 
@@ -86,6 +102,7 @@ type install struct {
 
 	state    serverState
 	repair   bool
+	foreign  *foreignXray // the server's own Xray, which a takeover is to remove
 	listen   map[int][]string
 	ufwOpen  []int // the ports to open in ufw
 	mk       marker
@@ -100,7 +117,7 @@ func (in *install) run(ctx context.Context) error {
 		return err
 	}
 	for _, step := range []func(context.Context) error{
-		in.check, in.download, in.certificate, in.prepare, in.upload, in.start, in.verify,
+		in.check, in.download, in.certificate, in.takeOver, in.prepare, in.upload, in.start, in.verify,
 	} {
 		if err := step(ctx); err != nil {
 			return err
@@ -190,12 +207,12 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 	// address, which a failed install would clean away
 	if mine && in.state.marker != nil && in.state.marker.NodeID != in.node.ID && in.e.LiveNode != nil {
 		if name, ok := in.e.LiveNode(in.state.marker.NodeID); ok {
-			return "", newErr(ErrServerIsNode, nil, "This server is already the node %q here, under another address. Change that node instead of adding the server again.", name)
+			return "", &ServerIsNodeError{NodeID: in.state.marker.NodeID, Name: name}
 		}
 	}
 	// only the marker vouches for an Xray: the CA file alone says nothing of it
 	if in.state.marker == nil || !mine {
-		if err := in.checkNoXray(ctx); err != nil {
+		if err := in.checkXray(ctx); err != nil {
 			return "", err
 		}
 	}
@@ -221,32 +238,30 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 	if in.repair {
 		detail += " · agent already installed"
 	}
+	if in.foreign != nil {
+		detail += " · " + in.foreign.planned()
+	}
 	return detail, nil
 }
 
-// checkNoXray stops the install on a server that runs an Xray of its own.
-// The install writes Xray's binary, config and service at the standard paths,
-// so it would take that one over, and removing the node would take it away.
-func (in *install) checkNoXray(ctx context.Context) error {
-	out, err := in.s.run(ctx, "Couldn't look for Xray on the server", cmdXraySigns)
-	if err != nil {
+// checkXray stops the install on a server that runs an Xray of its own, which
+// the install would take over: it writes Xray's binary, config and service at
+// the standard paths, and removing the node would take that one away. It says
+// what it found, and which build the binary is. When the install was asked to
+// take the Xray over, it reads what that would remove and goes on instead.
+func (in *install) checkXray(ctx context.Context) error {
+	fx, err := in.lookForXray(ctx)
+	if err != nil || fx == nil {
 		return err
 	}
-	unit, process := xraySigns(out)
-	var found []string
-	if in.state.present[xrayBin] {
-		found = append(found, xrayBin)
+	if !in.opts.TakeOverXray {
+		return &fx.ServerHasXrayError
 	}
-	if unit {
-		found = append(found, "an xray.service unit")
+	if err := in.readTakeover(ctx, fx); err != nil {
+		return err
 	}
-	if process {
-		found = append(found, "a running xray process")
-	}
-	if len(found) == 0 {
-		return nil
-	}
-	return newErr(ErrServerHasXray, nil, "This server already runs an Xray that Remote Nodes did not install (%s). Use a server without one.", strings.Join(found, ", "))
+	in.foreign = fx
+	return nil
 }
 
 func orUnknown(s string) string {
@@ -258,8 +273,10 @@ func orUnknown(s string) string {
 
 // checkPorts stops the install when a port it needs is taken. A repair of
 // this hub's own agent expects its own processes there: the agent on its port
-// and Xray on the entry port. Anything else named on one of them is in the
-// way, and so is anything at all on a server with no agent of ours.
+// and Xray on the entry port. So does a takeover, for the Xray that is about to
+// be stopped, which the server names as xray. Anything else named on one of
+// them is in the way (a docker-proxy, say), and so is anything at all on a
+// server with no agent of ours, and a holder the server won't name.
 func (in *install) checkPorts() error {
 	for _, p := range []struct {
 		port      int
@@ -274,11 +291,12 @@ func (in *install) checkPorts() error {
 		}
 		var foreign []string
 		for _, name := range procs {
-			if name != p.own {
+			if name != p.own && !(name == "xray" && in.foreign != nil) {
 				foreign = append(foreign, name)
 			}
 		}
-		if in.repair && len(foreign) == 0 {
+		// a takeover only lets pass what it saw named: a holder it can't tell is not its Xray
+		if len(foreign) == 0 && (in.repair || (in.foreign != nil && len(procs) > 0)) {
 			continue
 		}
 		return &PortInUseError{Port: p.port, Role: p.role, Process: strings.Join(foreign, ", ")}
@@ -324,6 +342,9 @@ func (in *install) plan() {
 	if retries2Was == "" {
 		retries2Was = in.retries2
 	}
+	// an Xray that is to be taken over is the plugin's from then on: its binary
+	// (kept or replaced), its unit and its config are what the install puts there
+	takeover := in.foreign != nil
 	in.mk = marker{
 		Version:     markerVersion,
 		NodeID:      in.node.ID,
@@ -332,12 +353,18 @@ func (in *install) plan() {
 		AgentPort:   in.node.AgentPort,
 		EntryPort:   in.node.EntryPort,
 		Agent:       true,
-		XrayBinary:  old.XrayBinary || absent(xrayBin),
-		XrayUnit:    old.XrayUnit || absent(xrayUnitPath),
-		XrayConfig:  old.XrayConfig || absent(xrayConfPath),
+		XrayBinary:  old.XrayBinary || absent(xrayBin) || takeover,
+		XrayUnit:    old.XrayUnit || absent(xrayUnitPath) || takeover,
+		XrayConfig:  old.XrayConfig || absent(xrayConfPath) || takeover,
 		Firewall:    union(old.Firewall, in.ufwOpen),
 
+		XrayTakenOver: old.XrayTakenOver || takeover,
+		XrayWas:       old.XrayWas,
+
 		TCPRetries2Was: retries2Was,
+	}
+	if takeover && in.foreign.Version != "" {
+		in.mk.XrayWas = in.foreign.Version
 	}
 	if !old.InstalledAt.IsZero() {
 		in.mk.InstalledAt = old.InstalledAt

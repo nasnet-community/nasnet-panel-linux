@@ -108,14 +108,15 @@ func TestStepKeysAreSnakeCaseAndNeverShared(t *testing.T) {
 // (say, a literal) is caught too.
 func TestEveryPlannedStepHasAKey(t *testing.T) {
 	for name, plan := range map[string][]string{
-		"install":          agentops.InstallPlan(),
-		"uninstall":        agentops.UninstallPlan(),
-		"provision":        agentops.ProvisionPlan(),
-		"update the agent": agentops.UpdateAgentPlan(),
-		"update xray":      agentops.UpdateXrayPlan(),
-		"the whole add":    installSteps(),
-		"remove":           removeSteps(false),
-		"forget":           removeSteps(true),
+		"install":           agentops.InstallPlan(),
+		"uninstall":         agentops.UninstallPlan(),
+		"provision":         agentops.ProvisionPlan(),
+		"update the agent":  agentops.UpdateAgentPlan(),
+		"update xray":       agentops.UpdateXrayPlan(),
+		"the whole add":     installSteps(agentops.InstallOptions{}),
+		"add with takeover": installSteps(agentops.InstallOptions{TakeOverXray: true}),
+		"remove":            removeSteps(false),
+		"forget":            removeSteps(true),
 	} {
 		if len(plan) == 0 {
 			t.Errorf("%s: an empty plan", name)

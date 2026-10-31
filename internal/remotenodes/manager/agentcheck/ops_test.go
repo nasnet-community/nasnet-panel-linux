@@ -183,11 +183,11 @@ func steps(progress agentops.Progress, plan []string) {
 	}
 }
 
-func (s *sshStandIn) InstallAgent(_ context.Context, node model.Node, login agentops.Login, progress agentops.Progress) (agentops.InstallResult, error) {
+func (s *sshStandIn) InstallAgent(_ context.Context, node model.Node, login agentops.Login, opts agentops.InstallOptions, progress agentops.Progress) (agentops.InstallResult, error) {
 	s.mu.Lock()
 	s.installs = append(s.installs, login)
 	s.mu.Unlock()
-	steps(progress, agentops.InstallPlan())
+	steps(progress, agentops.InstallPlanFor(opts))
 	return agentops.InstallResult{
 		Changed: true, Arch: "amd64", AgentVersion: server.Version,
 		CertSerial: s.cert.Serial, CertNotBefore: s.cert.NotBefore, CertNotAfter: s.cert.NotAfter,

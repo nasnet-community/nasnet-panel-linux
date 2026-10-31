@@ -32,6 +32,10 @@ const (
 	CodeServerHasXray       = "server_has_xray"  // an install found an Xray it did not put there
 	CodeServerIsNode        = "server_is_node"   // an install found the server is already another node here
 	CodeServerHasAgent      = "server_has_agent" // an install found another hub's agent, or one nobody vouches for
+	CodeXrayNotStopped      = "xray_not_stopped" // a takeover stopped the server's Xray service, and an Xray runs still
+	CodePortInUse           = "port_in_use"      // a port the node needs is held by something else on the server
+	CodeLoginRefused        = "login_refused"    // the server did not accept the SSH login
+	CodeNeedsRoot           = "needs_root"       // the login can't act as root: no sudo, or sudo refused the password
 	CodeBusy                = "busy"
 	CodeBackupBadPassphrase = "backup_bad_passphrase"
 	CodeBackupBadFile       = "backup_bad_file"
@@ -54,6 +58,10 @@ var statuses = map[string]int{
 	CodeServerHasXray:       http.StatusConflict,
 	CodeServerIsNode:        http.StatusConflict,
 	CodeServerHasAgent:      http.StatusConflict,
+	CodeXrayNotStopped:      http.StatusConflict,
+	CodePortInUse:           http.StatusConflict,
+	CodeLoginRefused:        http.StatusConflict,
+	CodeNeedsRoot:           http.StatusConflict,
 	CodeBusy:                http.StatusConflict,
 	CodeBackupBadPassphrase: http.StatusBadRequest,
 	CodeBackupBadFile:       http.StatusBadRequest,

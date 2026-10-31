@@ -82,7 +82,7 @@ describe('a failed install', () => {
   })
 
   it('is refused in words of its own for a server with an Xray or an agent', () => {
-    expect(codeText(en.t, 'server_has_xray')).toBe('This server already runs an Xray that Remote Nodes did not install. Use a server without one.')
+    expect(codeText(en.t, 'server_has_xray')).toBe('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')
     expect(codeText(fa.t, 'server_has_agent')).toContain('Remote Nodes')
     expect(codeText(en.t, 'internal')).toBeNull()
     expect(codeText(en.t, undefined)).toBeNull()

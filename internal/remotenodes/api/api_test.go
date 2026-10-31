@@ -111,7 +111,7 @@ func newRigWith(t *testing.T, basePath string, mod func(*Config, *jobs.Engine)) 
 	}
 	r := &rig{t: t, st: st, log: &syncBuf{}}
 	logger := slog.New(slog.NewTextHandler(r.log, nil))
-	r.jobs = jobs.New(jobs.Config{Now: func() time.Time { return now }, Log: logger, StepKey: testStepKey, ErrorCode: testErrorCode})
+	r.jobs = jobs.New(jobs.Config{Now: func() time.Time { return now }, Log: logger, StepKey: testStepKey, ErrorCode: testErrorCode, ErrorInfo: testErrorInfo})
 	cfg := Config{
 		Store: st, Jobs: r.jobs, Version: "1.2.3", Commit: "abc1234", BasePath: basePath, Index: index,
 		Log: logger, Now: func() time.Time { return now },

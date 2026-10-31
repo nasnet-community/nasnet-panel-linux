@@ -35,9 +35,12 @@ var (
 	ErrOtherHub        = errors.New("agentops: the server's agent belongs to another hub")
 	// An install found something on the server that it would take over: an
 	// agent or an Xray that this plugin did not put there.
-	ErrServerHasAgent  = errors.New("agentops: the server already runs an agent this plugin did not install")
-	ErrServerHasXray   = errors.New("agentops: the server already runs an Xray this plugin did not install")
-	ErrServerIsNode    = errors.New("agentops: the server is already another node of this hub")
+	ErrServerHasAgent = errors.New("agentops: the server already runs an agent this plugin did not install")
+	ErrServerHasXray  = errors.New("agentops: the server already runs an Xray this plugin did not install")
+	ErrServerIsNode   = errors.New("agentops: the server is already another node of this hub")
+	// A takeover stopped the server's Xray service, and an Xray runs still: in a
+	// container, by hand, or from another unit. Nothing else was changed.
+	ErrXrayNotStopped  = errors.New("agentops: an Xray still runs on the server after its service was stopped")
 	ErrUploadCorrupt   = errors.New("agentops: an upload arrived damaged")
 	ErrAgentNotStarted = errors.New("agentops: the agent did not start")
 
@@ -111,6 +114,79 @@ func (e *PortInUseError) Error() string {
 		"Free it, or pick another port for the node.", e.Port, e.Role, who)
 }
 func (e *PortInUseError) Is(target error) bool { return target == ErrPortInUse }
+
+// ServerHasXrayError is a server that runs an Xray of its own: this plugin
+// did not install it, and the install would take over its binary, config and
+// service. It says what was found, and whether the binary at the standard path
+// is the build this plugin pins, since a takeover keeps that one as it is.
+type ServerHasXrayError struct {
+	// What was found: the file at the standard path, a service called
+	// xray.service wherever systemd keeps it, a process named xray.
+	Binary, Unit, Process bool
+	// Version is the one that binary says it is, empty when there is none or it
+	// can't be read.
+	Version string
+	// SameBuild says that binary has the pinned version and the pinned checksum.
+	SameBuild bool
+}
+
+// Found names what was found, as the API's error info does.
+func (e *ServerHasXrayError) Found() []string {
+	var out []string
+	for _, f := range []struct {
+		on   bool
+		name string
+	}{{e.Binary, "binary"}, {e.Unit, "unit"}, {e.Process, "process"}} {
+		if f.on {
+			out = append(out, f.name)
+		}
+	}
+	return out
+}
+
+func (e *ServerHasXrayError) Error() string {
+	var found []string
+	if e.Binary {
+		found = append(found, xrayBin)
+	}
+	if e.Unit {
+		found = append(found, "an xray.service unit")
+	}
+	if e.Process {
+		found = append(found, "a running xray process")
+	}
+	msg := "This server already runs an Xray that Remote Nodes did not install"
+	if len(found) > 0 {
+		msg += " (" + strings.Join(found, ", ") + ")"
+	}
+	return msg + ". " + e.buildSentence() + " Use a server without one, or take it over."
+}
+
+// buildSentence says which Xray the binary is, and whether it is the pinned build.
+func (e *ServerHasXrayError) buildSentence() string {
+	switch {
+	case e.SameBuild:
+		return "It is Xray " + e.Version + ", the same build as this plugin's."
+	case e.Version != "":
+		return "It is Xray " + e.Version + ", not the same build as this plugin's."
+	case e.Binary:
+		return "Its version can't be read, so it isn't taken for the same build as this plugin's."
+	}
+	return "Its binary isn't at " + xrayBin + ", so it isn't the same build as this plugin's."
+}
+func (e *ServerHasXrayError) Is(target error) bool { return target == ErrServerHasXray }
+
+// ServerIsNodeError is a server that this hub's marker shows is already
+// another node of its own, which is the same server under another address.
+type ServerIsNodeError struct {
+	NodeID uint
+	Name   string
+}
+
+func (e *ServerIsNodeError) Error() string {
+	return fmt.Sprintf("This server is already the node %q here, under another address. Change that node instead of adding the server again.", e.Name)
+}
+func (e *ServerIsNodeError) Is(target error) bool { return target == ErrServerIsNode }
 
 // UnreachableError is a node that doesn't answer where it should.
 type UnreachableError struct {

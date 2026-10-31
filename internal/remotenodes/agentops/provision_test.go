@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops/fakeagent"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
@@ -141,6 +142,58 @@ func TestProvisionLeavesXrayAloneWhenTheNodeHasThePinnedBuild(t *testing.T) {
 		if last := p.lastStep(name); last.State != StateOK {
 			t.Errorf("%s ended %+v", name, last)
 		}
+	}
+}
+
+// An Xray the install kept (the pinned build, checked by checksum over SSH) is
+// not fetched or sent, whatever the agent's version line says, and the node is
+// still asked what runs.
+func TestProvisionOfAKeptBuildSendsNothingAndStillChecksWhatRuns(t *testing.T) {
+	p := newProvisionRig(t)
+	p.ag.Configure(func(a *fakeagent.Agent) {
+		a.XrayLine = "Xray " + pin.Version + " (Xray, Penetrates Everything.) 1b1647c (go1.27.1 linux/amd64)"
+	})
+	p.in.XrayKept = true
+	if _, err := p.provision(); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.ag.Pushes()) != 0 || len(p.files.asked) != 0 {
+		t.Errorf("sent %d builds, fetched %v", len(p.ag.Pushes()), p.files.asked)
+	}
+	// the two steps that move the build stay in the list, done, with the words for a step with nothing to do
+	for _, name := range []string{StepDownloadXray, StepUploadXray} {
+		if last := p.lastStep(name); last.State != StateOK || last.Detail != skippedDetail {
+			t.Errorf("%s ended %+v", name, last)
+		}
+	}
+	// and the one that looks is a real one: it began, and it says what the node runs
+	if !slices.Contains(p.stepNames(), StepCheckXray) {
+		t.Errorf("Check Xray never began: %q", p.stepNames())
+	}
+	if last := p.lastStep(StepCheckXray); last.State != StateOK || last.Detail != "Xray "+pin.Version {
+		t.Errorf("Check Xray ended %+v", last)
+	}
+}
+
+// A node that doesn't run what the install kept is a failure to say, and no
+// reason to send it a build over what is there.
+func TestAKeptBuildThatTheNodeDoesNotReportIsAFailureAndNotAPush(t *testing.T) {
+	p := newProvisionRig(t)
+	p.env.Settle = 300 * time.Millisecond
+	p.ag.Configure(func(a *fakeagent.Agent) {
+		a.XrayLine = "Xray 26.9.1 (Xray, Penetrates Everything.) 0000000 (go1.27.1 linux/amd64)"
+	})
+	p.in.XrayKept = true
+	_, err := p.provision()
+	var vm *VersionMismatchError
+	if !errors.As(err, &vm) || vm.Got != "26.9.1" || vm.Want != pin.Version {
+		t.Fatalf("err = %v", err)
+	}
+	if len(p.ag.Pushes()) != 0 || len(p.files.asked) != 0 {
+		t.Errorf("sent %d builds, fetched %v", len(p.ag.Pushes()), p.files.asked)
+	}
+	if last := p.lastStep(StepCheckXray); last.State != StateFailed {
+		t.Errorf("Check Xray ended %+v", last)
 	}
 }
 

@@ -104,6 +104,11 @@ export interface InstallRequest extends Login {
   host: string
   /** 443 when left out */
   entryPort?: number
+  /**
+   * The person agreed that an Xray the server runs of its own may be taken over: stopped, its config, service
+   * and drop-ins removed with no copy kept, its binary replaced unless it is the pinned build. Left out is no.
+   */
+  takeOverXray?: boolean
 }
 
 export interface RemoveRequest {
@@ -135,6 +140,29 @@ export interface InstallForm {
   entryPort: number
 }
 
+/**
+ * The facts of a failed job's error that the page needs beyond its code, sent by the hub from its typed errors.
+ * Every field is optional, a job has the ones its error has, and none holds a secret.
+ */
+export interface ErrorInfo {
+  /** port_in_use: the port, whose it is, and the process that holds it on the server when the server says */
+  port?: number
+  role?: 'agent' | 'entry'
+  process?: string
+  /** host_key_changed: the fingerprint that was agreed to, and the one the server shows now */
+  pinnedKey?: string
+  shownKey?: string
+  /** server_has_xray: what was found, the version of the binary at the standard path, and whether it is the pinned build */
+  found?: ('binary' | 'unit' | 'process')[]
+  xrayVersion?: string
+  sameBuild?: boolean
+  /** server_is_node: the node that is on the server already */
+  nodeId?: number
+  nodeName?: string
+  /** the install took over the server's own Xray before it failed: that Xray is gone and nothing puts it back */
+  tookOver?: boolean
+}
+
 export interface Job {
   id: string
   kind: JobKind
@@ -143,6 +171,8 @@ export interface Job {
   error?: string
   /** a failed job's error code, when it has one the page words ("server_has_xray") */
   code?: string
+  /** the facts that go with the code, for the errors that have some */
+  errorInfo?: ErrorInfo
   /** 0 or missing while the job has no node (yet) */
   nodeId?: number
   /** the install's node name, else "" */

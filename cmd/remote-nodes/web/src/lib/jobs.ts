@@ -29,6 +29,7 @@ const STEP_KEYS: Record<string, MsgKey> = {
   forget_node: 'step.forget_node',
   clean_server: 'step.clean_server',
   discard_node: 'step.discard_node',
+  take_over_xray: 'step.take_over_xray',
 }
 
 /** The words for a step key, or undefined for one the page has none for. */

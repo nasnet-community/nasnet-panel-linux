@@ -820,6 +820,13 @@ export const jobs: Job[] = [
     ],
     "error": "This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray). Use a server without one. Nothing was changed on the server, and nothing was kept.",
     "code": "server_has_xray",
+    "errorInfo": {
+      "found": [
+        "binary",
+        "unit"
+      ],
+      "xrayVersion": "26.9.1"
+    },
     "nodeId": 4,
     "target": "third",
     "startedAt": "2026-10-30T12:00:00Z",

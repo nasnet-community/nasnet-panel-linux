@@ -36,6 +36,12 @@ type ProvisionInput struct {
 
 	Clients []nodecfg.Client // the subscriptions on this node, one client each
 	Bridge  nodecfg.Bridge   // the client the router's bridge logs in as
+
+	// XrayKept says the Xray at the standard path is the pinned build, which the
+	// install checked over SSH by its version and its checksum when it took over
+	// the server's own. It is then neither downloaded nor sent; Check Xray still
+	// has the node report what runs.
+	XrayKept bool
 }
 
 // ProvisionResult is what the manager keeps of a node that is now an entry.
@@ -59,8 +65,9 @@ type ProvisionResult struct {
 //
 // It refuses an input that can't make a config, and keys that don't pair up,
 // before it touches the node. The pinned Xray goes on first, and a node that
-// already has it is not sent it again; if no target works from the node, it
-// stops there, with that Xray on and the node otherwise as it was.
+// already has it is not sent it again (one whose build the install checked is
+// not sent it either: ProvisionInput.XrayKept); if no target works from the
+// node, it stops there, with that Xray on and the node otherwise as it was.
 func (e *Env) Provision(ctx context.Context, c *agent.Client, in ProvisionInput, progress Progress) (_ ProvisionResult, err error) {
 	defer func() { err = ctxErr(ctx, err) }()
 	st := newStepper(progress)
@@ -72,7 +79,7 @@ func (e *Env) Provision(ctx context.Context, c *agent.Client, in ProvisionInput,
 	// Xray comes first: the target is judged by what the node can do, and the
 	// config needs the build that will read it. A new node has no config for
 	// Xray to start with, so it is not started here.
-	if err := e.pushXray(ctx, c, node, false, st); err != nil {
+	if err := e.pushXray(ctx, c, node, false, in.XrayKept, st); err != nil {
 		return ProvisionResult{}, err
 	}
 

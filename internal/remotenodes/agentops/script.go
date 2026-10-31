@@ -133,6 +133,36 @@ var (
 		"cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true"
 	// cmdXrayUnit reads the unit at the path the install writes its own to.
 	cmdXrayUnit = "cat " + shq(xrayUnitPath) + " 2>/dev/null || true"
+
+	// What a server's own Xray is, for the refusal to say and a takeover to act
+	// on. None of them changes anything; each says nothing on a server that has
+	// no such thing.
+	//
+	// cmdXrayVersion is the first line of what the binary at the standard path
+	// says of itself, and cmdXrayHash its checksum: together they say whether it
+	// is the build this plugin pins.
+	cmdXrayVersion = "[ -x " + shq(xrayBin) + " ] && " + shq(xrayBin) + " version 2>/dev/null | head -n 1; true"
+	cmdXrayHash    = "sha256sum " + shq(xrayBin) + " 2>/dev/null; true"
+	// cmdXrayUnitFile is where the unit is: the first line of what systemd shows
+	// of it is a comment with its path.
+	cmdXrayUnitFile = "systemctl cat xray.service 2>/dev/null | head -n 1; true"
+	// the drop-ins that change the unit, and the files of the config folder
+	cmdXrayDropIns   = "ls -1A " + shq(xrayDropInDir) + " 2>/dev/null; true"
+	cmdXrayConfFiles = "ls -1A " + shq(xrayConfDir) + " 2>/dev/null; true"
+	cmdXrayActive    = "systemctl is-active xray.service 2>/dev/null; true"
+	// cmdXrayRunning says whether a process named xray runs, whoever started it.
+	cmdXrayRunning = "cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true"
+
+	// A takeover's commands. The service is stopped first, and only when it is
+	// plain that no Xray runs any more is anything taken away; the config folder
+	// is emptied and stays, since it may be a mount.
+	cmdTakeStop      = "systemctl stop xray.service"
+	cmdTakeStart     = "systemctl start xray.service"
+	cmdTakeDisable   = "systemctl disable xray.service 2>/dev/null; true"
+	cmdTakeRmDropIns = "rm -rf " + shq(xrayDropInDir)
+	cmdTakeRmUnit    = "rm -f " + quoted(xrayUnitPath, xrayUnitPath+".new")
+	cmdTakeRmConfig  = "rm -rf " + shq(xrayConfDir) + "/* " + shq(xrayConfDir) + "/.[!.]* " + shq(xrayConfDir) + "/..?*"
+	cmdTakeRmBinary  = "rm -f " + shq(xrayBin)
 )
 
 // xraySigns reads cmdXraySigns' answer.
@@ -146,6 +176,43 @@ func xraySigns(out string) (unit, process bool) {
 		}
 	}
 	return unit, process
+}
+
+// sha256Of reads the checksum from what sha256sum printed, lower-case, and
+// gives "" for anything that isn't one.
+func sha256Of(out string) string {
+	f := strings.Fields(out)
+	if len(f) == 0 || len(f[0]) != 64 {
+		return ""
+	}
+	h := strings.ToLower(f[0])
+	for _, c := range h {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return ""
+		}
+	}
+	return h
+}
+
+// unitFileOf reads the path out of the first line of `systemctl cat`, which is
+// a comment holding it: "# /etc/systemd/system/xray.service".
+func unitFileOf(out string) string {
+	line := strings.TrimSpace(strings.SplitN(out, "\n", 2)[0])
+	if p, ok := strings.CutPrefix(line, "# "); ok && strings.HasPrefix(p, "/") {
+		return strings.TrimSpace(p)
+	}
+	return ""
+}
+
+// namesIn is the lines of a listing, one name each.
+func namesIn(out string) []string {
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if n := strings.TrimSpace(line); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 // cmdPresent names which of the paths the install cares about are there
@@ -354,6 +421,15 @@ type marker struct {
 	XrayUnit   bool  `json:"xray_unit"`   // the service file for Xray
 	XrayConfig bool  `json:"xray_config"` // Xray's config file
 	Firewall   []int `json:"firewall,omitempty"`
+
+	// XrayTakenOver says the Xray on the server was the server's own and the
+	// install took it over on purpose (stopped it, removed its config, service
+	// and drop-ins, and its binary unless it was the pinned build). The three
+	// flags above are true then as for any other install: what is there now is
+	// the plugin's, and removal takes it off. XrayWas is the version it was,
+	// when it could be read, for what is said when it is gone.
+	XrayTakenOver bool   `json:"xray_taken_over,omitempty"`
+	XrayWas       string `json:"xray_was,omitempty"`
 
 	// TCPRetries2Was is net.ipv4.tcp_retries2 as the server had it before the
 	// install set it, which is what removal gives back if it is still the

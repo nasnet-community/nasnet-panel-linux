@@ -315,6 +315,43 @@ func TestOptionalPartsOfARequestAreOptional(t *testing.T) {
 	}
 }
 
+// The person's agreement to take over the server's own Xray travels in the
+// request, and is off unless it is there: a request without it, and one that
+// says no, take nothing over, and one that isn't a yes or a no is refused.
+func TestAnInstallRequestMayAskToTakeOverTheServersXray(t *testing.T) {
+	const rest = `"sshPort":22,"sshUser":"root","password":"p","hostKey":"SHA256:x","name":"n","host":"h"`
+	for _, c := range []struct {
+		name string
+		body string
+		code int
+		take bool
+	}{
+		{"asked", `{` + rest + `,"takeOverXray":true}`, 202, true},
+		{"said no", `{` + rest + `,"takeOverXray":false}`, 202, false},
+		{"not said", `{` + rest + `}`, 202, false},
+		{"not a boolean", `{` + rest + `,"takeOverXray":"yes"}`, 400, false},
+		{"a number", `{` + rest + `,"takeOverXray":1}`, 400, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r, ops := opsRig(t, "")
+			if code, _, body := r.page("POST", "/api/nodes", c.body); code != c.code {
+				t.Fatalf("%d %s, want %d", code, body, c.code)
+			}
+			if got := ops.install.TakeOverXray; got != c.take {
+				t.Errorf("take over = %v, want %v", got, c.take)
+			}
+			if c.code != 202 && len(ops.called()) != 0 {
+				t.Errorf("a refused request reached the manager: %v", ops.called())
+			}
+		})
+	}
+	// and what is logged of a request says it, and still no secret
+	req := InstallRequest{Login: aLogin(), Name: "n", Host: "h", TakeOverXray: true}
+	if s := fmt.Sprint(req); !strings.Contains(s, "take over Xray true") || strings.Contains(s, secretPassword) {
+		t.Errorf("a request prints as %q", s)
+	}
+}
+
 func TestEveryNodeCallIsForThePageOnly(t *testing.T) {
 	for _, b := range []string{"", base} {
 		r, ops := opsRig(t, b)
@@ -503,6 +540,10 @@ func TestTheManagersFailuresAreAnsweredWithTheContractsCodes(t *testing.T) {
 		{"a host key that changed", &Error{CodeHostKeyChanged, "Another key."}, 409, "host_key_changed", false},
 		{"another Xray", &Error{CodeVersionMismatch, "Another Xray."}, 409, "version_mismatch", false},
 		{"an agent that is too old", &Error{CodeAgentTooOld, "Too old."}, 409, "agent_too_old", false},
+		{"an Xray that still runs", &Error{CodeXrayNotStopped, "Still running."}, 409, "xray_not_stopped", false},
+		{"a port in use", &Error{CodePortInUse, "Port 443 is in use."}, 409, "port_in_use", false},
+		{"a login the server refused", &Error{CodeLoginRefused, "The login was refused."}, 409, "login_refused", false},
+		{"a login that can't act as root", &Error{CodeNeedsRoot, "No sudo."}, 409, "needs_root", false},
 		{"a refusal of the hub's own", &Error{CodeInternal, "The hub can't use its CA."}, 500, "internal", false},
 		{"something nobody foresaw", errors.New("open /data/state.json: permission denied"), 500, "internal", false},
 	} {
