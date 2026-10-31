@@ -91,6 +91,7 @@ type Manager struct {
 	wg     sync.WaitGroup
 
 	syncMu sync.Mutex // one Sync at a time
+	apply  applyLocks // one change at a time on a node's clients, see subs.go
 
 	// mu guards the live data below and everything the page reads.
 	mu     sync.RWMutex

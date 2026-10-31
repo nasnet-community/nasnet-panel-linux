@@ -274,42 +274,57 @@ func nodeView(n model.Node, enabled int, now time.Time, live Live) Node {
 func subscriptionViews(st model.State, live Live) []Subscription {
 	out := make([]Subscription, 0, len(st.Subscriptions))
 	for _, sub := range st.Subscriptions {
-		v := Subscription{ID: sub.ID, Name: sub.Name, CreatedAt: sub.CreatedAt.UTC(), Nodes: []SubscriptionNode{}}
-		// Where it is switched on, a node that answers says whether it is
-		// connected; one that doesn't leaves it unknown.
-		connected, unknown := false, false
-		for _, n := range st.Nodes {
-			if n.State != model.NodeRegistered {
-				continue
-			}
-			e := st.FindEnablement(sub.ID, n.ID)
-			row := SubscriptionNode{NodeID: n.ID, Enabled: e != nil && e.Enabled}
-			if live != nil {
-				u := live.SubscriptionOn(sub.ID, n.ID)
-				row.LastSeenAt = u.LastSeenAt
-				row.TodayUp, row.TodayDown, row.MonthUp, row.MonthDown = u.TodayUp, u.TodayDown, u.MonthUp, u.MonthDown
-				if row.Enabled {
-					if u.Live {
-						row.Online, row.Connections = &u.Online, &u.Connections
-						connected = connected || u.Online
-					} else {
-						unknown = true
-					}
-				}
-			}
-			v.Nodes = append(v.Nodes, row)
-		}
-		if live != nil {
-			t := live.SubscriptionTotal(sub.ID)
-			v.LastSeenAt = t.LastSeenAt
-			v.TodayUp, v.TodayDown, v.MonthUp, v.MonthDown = t.TodayUp, t.TodayDown, t.MonthUp, t.MonthDown
-			if connected || !unknown {
-				v.Online = &connected
-			}
-		}
-		out = append(out, v)
+		out = append(out, subscriptionView(st, sub, live))
 	}
 	return out
+}
+
+// ViewSubscription is one subscription as the list shows it, live parts and
+// all, for the code that changes one and has to answer with the result. It
+// reports false for an id the state doesn't hold.
+func ViewSubscription(st model.State, id uint, live Live) (Subscription, bool) {
+	sub := st.FindSubscription(id)
+	if sub == nil {
+		return Subscription{}, false
+	}
+	return subscriptionView(st, *sub, live), true
+}
+
+func subscriptionView(st model.State, sub model.Subscription, live Live) Subscription {
+	v := Subscription{ID: sub.ID, Name: sub.Name, CreatedAt: sub.CreatedAt.UTC(), Nodes: []SubscriptionNode{}}
+	// Where it is switched on, a node that answers says whether it is
+	// connected; one that doesn't leaves it unknown.
+	connected, unknown := false, false
+	for _, n := range st.Nodes {
+		if n.State != model.NodeRegistered {
+			continue
+		}
+		e := st.FindEnablement(sub.ID, n.ID)
+		row := SubscriptionNode{NodeID: n.ID, Enabled: e != nil && e.Enabled}
+		if live != nil {
+			u := live.SubscriptionOn(sub.ID, n.ID)
+			row.LastSeenAt = u.LastSeenAt
+			row.TodayUp, row.TodayDown, row.MonthUp, row.MonthDown = u.TodayUp, u.TodayDown, u.MonthUp, u.MonthDown
+			if row.Enabled {
+				if u.Live {
+					row.Online, row.Connections = &u.Online, &u.Connections
+					connected = connected || u.Online
+				} else {
+					unknown = true
+				}
+			}
+		}
+		v.Nodes = append(v.Nodes, row)
+	}
+	if live != nil {
+		t := live.SubscriptionTotal(sub.ID)
+		v.LastSeenAt = t.LastSeenAt
+		v.TodayUp, v.TodayDown, v.MonthUp, v.MonthDown = t.TodayUp, t.TodayDown, t.MonthUp, t.MonthDown
+		if connected || !unknown {
+			v.Online = &connected
+		}
+	}
+	return v
 }
 
 // nodeSubscriptionViews is a node's list: every subscription, switched on
