@@ -109,7 +109,8 @@ web-notices.txt
          the page embeds a subset of.
 
 The hub shows these files as one text at /licenses, under the address of its
-page. It reads them from LICENSES_DIR, which the image sets to /licenses.
+page; the Notices link in the page's About card opens it. It reads them from
+LICENSES_DIR, which the image sets to /licenses.
 EOF
 
 echo "remote-nodes-licenses: $(wc -l <"$tmp/modules" | tr -d ' ') modules, $files licence files, $(wc -c <"$notices" | tr -d ' ') bytes in $notices"

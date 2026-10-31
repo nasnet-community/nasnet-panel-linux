@@ -39,7 +39,8 @@ and `npm run pack`, copies `dist/index.html.br` to `internal/remotenodes/ui/inde
 the hub with it. Without that file the hub embeds a placeholder page. `pack` also writes
 `dist/NOTICES.txt`, which the image keeps as `/licenses/web-notices.txt` next to the Go side's `NOTICES`.
 The hub serves the files of that directory as one plain text at `GET /licenses` (under `BASE_PATH` too, with
-no header needed).
+no header needed). The Notices link in the page's About card opens it: a relative `licenses` link, so the
+base tag decides where it goes, and the mock API answers it with a short sample.
 
 To run the hub with the real page and no Docker, from the repository root (git ignores the copy):
 

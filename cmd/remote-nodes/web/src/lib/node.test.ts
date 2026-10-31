@@ -12,7 +12,6 @@ import {
   cmpVersion,
   eventLabel,
   niceMax,
-  noticesUrl,
   normalizeTarget,
   openConnections,
   plot,
@@ -263,17 +262,15 @@ describe("the node page's numbers, in words", () => {
   })
 })
 
-describe('links to the source', () => {
-  it("point at the build's own commit when it has one", () => {
+describe('the link to the source', () => {
+  it("points at the build's own commit when it has one", () => {
     expect(sourceUrl('a1b2c3d')).toBe(`${REPO_URL}/tree/a1b2c3d`)
     expect(sourceUrl('A1B2C3D4E5F60718293A4B5C6D7E8F9012345678')).toBe(`${REPO_URL}/tree/A1B2C3D4E5F60718293A4B5C6D7E8F9012345678`)
-    expect(noticesUrl('a1b2c3d')).toBe(`${REPO_URL}/blob/a1b2c3d/LICENSE`)
   })
 
-  it('fall back to the repository for a build without one', () => {
+  it('falls back to the repository for a build without one', () => {
     for (const commit of ['', 'dev', 'unknown', 'a1b2c3']) {
       expect(sourceUrl(commit), commit).toBe(REPO_URL)
-      expect(noticesUrl(commit), commit).toBe(`${REPO_URL}/blob/main/LICENSE`)
     }
   })
 })

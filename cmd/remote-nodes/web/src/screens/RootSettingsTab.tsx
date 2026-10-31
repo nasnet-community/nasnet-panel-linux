@@ -3,7 +3,7 @@ import { Head, Item, Section } from '../components/section'
 import { Badge, Card, Spinner, type Tone } from '../components/ui'
 import { useLang, type MsgKey, type T } from '../i18n'
 import type { AppConfig, Entry } from '../lib/api'
-import { noticesUrl, sourceUrl } from '../lib/node'
+import { sourceUrl } from '../lib/node'
 import { BackupCard } from './BackupCard'
 
 type Reach = Entry['domestic']
@@ -118,7 +118,8 @@ function AboutSection({ config }: { config: AppConfig }) {
               {t('about.source')}
               <ExternalLink className="h-3.5 w-3.5 rtl:-scale-x-100" />
             </a>
-            <a href={noticesUrl(config.commit)} target="_blank" rel="noopener noreferrer" className="underline">
+            {/* relative, so the base tag sends it to this hub's /licenses whatever the base path is */}
+            <a href="licenses" target="_blank" rel="noopener noreferrer" className="underline">
               {t('about.notices')}
             </a>
           </div>

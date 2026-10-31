@@ -32,9 +32,10 @@
 //   pace      how long install steps take, as a multiple of the usual (1)
 // Every call but the job event stream needs the page's X-RemoteNodes-UI header, as the hub
 // does; the stream can't carry one (EventSource), so it is refused only when the browser says
-// the request came from another site.
+// the request came from another site. GET /licenses, which the Notices link opens in a new
+// tab, is plain text and needs none, as on the hub; the text is a short sample.
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Plugin } from 'vite'
+import type { Connect, Plugin } from 'vite'
 import { nodeApi } from './mock-node'
 import type { AgentState, AppConfig, Entry, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
 import { subscriptionRoutes } from './mock-subscriptions'
@@ -588,6 +589,25 @@ function install(b: Record<string, any>) {
   return id
 }
 
+// --- the licence text ---
+
+// What the hub serves at /licenses: the files of its licence directory, each under a heading. Much shorter.
+const RULE = '#'.repeat(64)
+const LICENSES =
+  ['LICENSE', 'NOTICES', 'web-notices.txt']
+    .map((name) => `${RULE}\n# ${name}\n${RULE}\n\nSample licence text for ${name}. The hub serves the files of its licence directory here.\n`)
+    .join('\n')
+
+// only the exact path, as the hub's route is: not /licenses/ or what is under it
+function licensesRoute(req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) {
+  const here = new URL(req.originalUrl ?? req.url ?? '/', 'http://mock').pathname === '/licenses'
+  if (!here || (req.method !== 'GET' && req.method !== 'HEAD')) return next()
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.end(req.method === 'HEAD' ? undefined : LICENSES)
+}
+
 // --- the middleware ---
 
 export function mockApi(): Plugin {
@@ -596,6 +616,7 @@ export function mockApi(): Plugin {
     configureServer(server) {
       const ticker = setInterval(tick, 2500)
       server.httpServer?.on('close', () => clearInterval(ticker))
+      server.middlewares.use('/licenses', licensesRoute)
       server.middlewares.use('/api', async (req, res) => {
         const chunks: Buffer[] = []
         for await (const c of req) chunks.push(c as Buffer)
