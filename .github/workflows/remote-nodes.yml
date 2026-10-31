@@ -53,22 +53,6 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/nasnet-community/remote-nodes
-  # Size limits in bytes, for each program on each architecture. Unpacked is
-  # the stripped Go binary, which is what a router unpacks into RAM; packed is
-  # the UPX --lzma file the image ships.
-  #
-  # Probed on arm64 with these flags: hub 14.0 MB unpacked, 3.6 MB packed;
-  # bridge 19.0 and 4.8. Measured when the limits were set: the hub, still a
-  # skeleton, 7.4 and 2.4 on amd64, 6.8 and 2.0 on arm64; the bridge with the
-  # Xray core linked 20.9 and 6.1 on amd64, 19.5 and 4.9 on arm64. amd64 comes
-  # out bigger (the bridge by 7.6% unpacked and 23% packed), so the hub's
-  # probe is scaled the same way. Each limit is the larger of the probe and
-  # what was measured, plus 10%, rounded up to the next half megabyte.
-  # They get tightened to the baseline plus 5% once the hub is feature complete.
-  HUB_MAX_UNPACKED: "17000000"
-  HUB_MAX_PACKED: "5000000"
-  BRIDGE_MAX_UNPACKED: "23500000"
-  BRIDGE_MAX_PACKED: "7000000"
 
 jobs:
   web:
@@ -215,12 +199,32 @@ jobs:
     runs-on: depot-ubuntu-24.04
     strategy:
       fail-fast: false
+      # Size limits in bytes for each program, set for each architecture since
+      # the amd64 programs come out bigger. Unpacked is the stripped Go binary,
+      # which is what a router unpacks into RAM; packed is the UPX --lzma file
+      # the image ships. Measured with the page embedded, Go 1.27.1 and the
+      # Dockerfile's flags, once the hub had its node operations:
+      #   hub     amd64 18.26 MB unpacked, 5.33 MB packed; arm64 16.97 and 4.39
+      #   bridge  amd64 20.93 and 6.05; arm64 19.46 and 4.91
+      # The same source and compiler give the same unpacked size, so that limit
+      # is the measure plus 5%. Packed sizes move with the UPX version, so that
+      # limit is the measure plus 10%. All are rounded up to 100 kB. A change
+      # that makes a program bigger raises its limit in the same commit and
+      # says why.
       matrix:
         include:
           - platform: linux/amd64
             arch: amd64
+            hub_unpacked: "19200000"
+            hub_packed: "5900000"
+            bridge_unpacked: "22000000"
+            bridge_packed: "6700000"
           - platform: linux/arm64
             arch: arm64
+            hub_unpacked: "17900000"
+            hub_packed: "4900000"
+            bridge_unpacked: "20500000"
+            bridge_packed: "5400000"
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -243,6 +247,10 @@ jobs:
       - name: Check the sizes
         env:
           PLATFORM: ${{ matrix.platform }}
+          HUB_MAX_UNPACKED: ${{ matrix.hub_unpacked }}
+          HUB_MAX_PACKED: ${{ matrix.hub_packed }}
+          BRIDGE_MAX_UNPACKED: ${{ matrix.bridge_unpacked }}
+          BRIDGE_MAX_PACKED: ${{ matrix.bridge_packed }}
         run: |
           set -euo pipefail
           dir=$(dirname "$(find out -name remote-nodes -type f | head -1)")
