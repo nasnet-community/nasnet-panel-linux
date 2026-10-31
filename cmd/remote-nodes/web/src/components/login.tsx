@@ -51,6 +51,17 @@ export function toLogin(f: LoginForm, hostKey: string): Login {
   return login
 }
 
+/**
+ * Empties the fields that hold a secret in a form, in the page itself. The element tree keeps the elements it
+ * rendered for a while after they are gone, and an element keeps what was typed into it, so a field that has
+ * done its work is emptied rather than left to be collected.
+ */
+export function clearSecrets(root: ParentNode | null) {
+  root?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[type="password"], textarea').forEach((el) => {
+    el.value = ''
+  })
+}
+
 /** A removal that signs in to the server and takes the agent off it. */
 export const removeWithLogin = (f: LoginForm, hostKey: string): RemoveRequest => ({ login: toLogin(f, hostKey) })
 

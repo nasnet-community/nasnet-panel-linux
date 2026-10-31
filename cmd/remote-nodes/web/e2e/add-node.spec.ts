@@ -247,8 +247,11 @@ test('the login is held only while its dialog is open and its install can still 
   const form = await fillAddNode(page, '192.0.2.41', secret)
   // typed, so the walk over the page's state does find it
   expect(await stateHolds(page, secret)).toBe(true)
+  const field = await form.locator('input[type="password"]').elementHandle()
   await form.getByRole('button', { name: 'Connect and install' }).click()
   await expect(dialog(page, 'Installing Node 3')).toBeVisible()
+  // the form's own field has nothing left in it, though the form is gone
+  expect(await field!.evaluate((el: HTMLInputElement) => el.value)).toBe('')
   // kept while it runs, since it may fail, and nowhere a page can keep a thing
   expect(await stateHolds(page, secret)).toBe(true)
   expect(await leaks(page, secret)).toEqual([])
