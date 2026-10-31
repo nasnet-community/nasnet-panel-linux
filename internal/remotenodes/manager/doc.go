@@ -14,11 +14,15 @@
 // builds the bridge's spec and runs the supervisor, tunnel.go says what each
 // node's tunnel is doing and live.go answers the API. subs.go changes what the
 // subscriptions ask of the nodes and backup.go exports the state and restores
-// it. Everything it depends on is a small interface defined in deps.go, so a
-// test stands in with a fake.
+// it. The operations on a node, which add it, change its settings, update it,
+// renew its certificate and take it out, are install.go, settings.go,
+// updates.go, certs.go and remove.go; the ones that take a while run as jobs,
+// over the Ops that ops.go describes. Everything it depends on is a small
+// interface defined in deps.go, so a test stands in with a fake.
 //
 // A node that Sync has been told of gets a loop of its own: connect, poll every
 // few seconds, give the connection up after three polls with no answer and
-// connect again. The loops, the router's entry gate and the bridge run
-// between Run and Close.
+// connect again. The loops, the router's entry gate, the bridge, the hourly
+// look at the release and the daily look at the certificates run between Run
+// and Close.
 package manager
