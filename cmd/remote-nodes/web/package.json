@@ -8,7 +8,8 @@
     "dev:mock": "MOCK=1 vite",
     "dev:mock:fresh": "MOCK=fresh vite",
     "build": "tsc -b && vite build",
-    "pack": "node scripts/pack.mjs",
+    "pack": "node scripts/pack.mjs && node scripts/notices.mjs",
+    "notices": "node scripts/notices.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "e2e": "playwright test"
