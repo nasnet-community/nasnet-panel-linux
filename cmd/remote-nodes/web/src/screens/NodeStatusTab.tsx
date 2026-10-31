@@ -8,7 +8,7 @@ import { useLang, type T } from '../i18n'
 import type { Format } from '../lib/format'
 import { api, type Entry, type Node } from '../lib/api'
 import { issues, unreachable } from '../lib/health'
-import { CERT_SOON_DAYS, eventLabel, renewLeadDays } from '../lib/node'
+import { CERT_SOON_DAYS, agentMemory, agentUptime, eventLabel, renewLeadDays, roundTrip, settingsState } from '../lib/node'
 import { entryChips } from './Entry'
 
 interface Chip {
@@ -105,6 +105,10 @@ export function NodeStatusTab({ node }: { node: Node }) {
   const mismatch = tunnel.reason === 'xray_mismatch'
   const tone = tunnel.state === 'up' ? undefined : tunnel.state === 'down' ? 'danger' : 'warn'
   const left = cert.validDays
+  const rtt = roundTrip(tunnel)
+  const agentUp = agent ? agentUptime(agent) : null
+  const memory = agent ? agentMemory(agent) : null
+  const settings = agent ? settingsState(agent) : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -137,10 +141,10 @@ export function NodeStatusTab({ node }: { node: Node }) {
             <span dir="ltr">{agent?.version || node.agentVersion || '–'}</span>
             {updates.agent && <Tag>{t('status.available', { version: updates.agentVersion })}</Tag>}
           </Item>
-          <Item label={t('status.runningFor')}>{agent ? fmt.duration(agent.uptimeSec) : '–'}</Item>
-          <Item label={t('status.memory')}>{agent ? fmt.bytes(agent.rssBytes) : '–'}</Item>
-          <Item label={t('status.settings')} tone={!agent || agent.settingsApplied ? undefined : 'warn'}>
-            {!agent ? '–' : agent.settingsApplied ? <Badge tone="online">{t('status.applied')}</Badge> : agent.lastPushError ? <span dir="auto">{agent.lastPushError}</span> : t('status.waitingToApply')}
+          <Item label={t('status.runningFor')}>{agentUp === null ? '–' : fmt.duration(agentUp)}</Item>
+          <Item label={t('status.memory')}>{memory === null ? '–' : fmt.bytes(memory)}</Item>
+          <Item label={t('status.settings')} tone={settings === 'failed' ? 'warn' : undefined}>
+            {settings === 'applied' ? <Badge tone="online">{t('status.applied')}</Badge> : settings === 'failed' ? <span dir="auto">{agent?.lastPushError}</span> : '–'}
           </Item>
         </Section>
 
@@ -175,7 +179,7 @@ export function NodeStatusTab({ node }: { node: Node }) {
           <Item label={t('status.connections')} tone={tone} hint={tunnelHint(node, t)}>
             {t('status.connUp', { up: tunnel.state === 'up' ? 1 : 0, total: 1 })}
           </Item>
-          <Item label={t('status.roundTrip')}>{tunnel.state === 'up' ? t('unit.ms', { n: tunnel.rttMs }) : '–'}</Item>
+          <Item label={t('status.roundTrip')}>{rtt === null ? '–' : t('unit.ms', { n: rtt })}</Item>
           <Item label={t('status.connNow')}>{fmt.num(tunnel.streams)}</Item>
           <Item label={t('status.download')}>{fmt.bytes(tunnel.bytesToSubs)}</Item>
           <Item label={t('status.upload')}>{fmt.bytes(tunnel.bytesFromSubs)}</Item>

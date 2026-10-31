@@ -19,6 +19,8 @@
 //   failNext       the next job of this kind ("update-xray", "renew-cert", ...) fails at its second step
 //   noSubscriptions true: every subscription is switched off on this node
 //   bridgeDown     the router's bridge is not running: the tunnel is off for that
+//   unmeasured     what the hub has no source for is 0 and false, as it sends it: the agent's own uptime and
+//                  memory, whether its settings are applied, and the tunnel's round trip
 //
 // Handshake targets: one containing "fail" answers with a refused TLS 1.3 handshake, "big" with a
 // handshake over the 8 KB the tunnel allows; anything else passes.
@@ -63,6 +65,7 @@ interface Extra {
   failNext?: string
   dialFailures?: number
   bridgeDown?: boolean
+  unmeasured?: boolean
 }
 
 const extras = new Map<number, Extra>()
@@ -101,6 +104,10 @@ function detail(n: MockNode): Node {
   }
   if (x.stopped || x.crash) v.tunnel = { ...v.tunnel, state: v.tunnel.state === 'up' ? 'down' : v.tunnel.state, since: null, rttMs: 0, streams: 0 }
   if (x.bridgeDown && v.tunnel.state === 'up') v.tunnel = { ...v.tunnel, state: 'off', since: null, rttMs: 0, streams: 0, reason: 'bridge_down' }
+  if (x.unmeasured) {
+    if (v.agent) Object.assign(v.agent, { uptimeSec: 0, rssBytes: 0, settingsApplied: false, lastPushError: '' })
+    v.tunnel = { ...v.tunnel, rttMs: 0 }
+  }
   // the sample node is sure of its handshake target, which it checked when it was added
   const check = x.check ?? (x.check = { ok: true, at: Date.now() - 2 * H })
   v.tunnel.dialFailures = x.dialFailures ?? (live && v.tunnel.state === 'up' ? 3 : 0)
@@ -305,6 +312,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     if (typeof body.dialFailures === 'number') x.dialFailures = body.dialFailures
     if (body.noSubscriptions === true) for (const sub of subs) sub.on.delete(n.id)
     if (typeof body.bridgeDown === 'boolean') x.bridgeDown = body.bridgeDown
+    if (typeof body.unmeasured === 'boolean') x.unmeasured = body.unmeasured
     send(200, { ok: true })
     return true
   }

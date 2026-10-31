@@ -8,6 +8,8 @@ import { stepLabel } from './jobs'
 import {
   CHART_WINDOW,
   REPO_URL,
+  agentMemory,
+  agentUptime,
   axisRate,
   cmpVersion,
   eventLabel,
@@ -16,6 +18,8 @@ import {
   openConnections,
   plot,
   renewLeadDays,
+  roundTrip,
+  settingsState,
   sourceUrl,
   validServerName,
   versionRelation,
@@ -279,5 +283,41 @@ describe('the link to the source', () => {
     for (const commit of ['', 'dev', 'unknown', 'a1b2c3']) {
       expect(sourceUrl(commit), commit).toBe(REPO_URL)
     }
+  })
+})
+
+describe('what the agent reports of itself', () => {
+  const agent = (o: Partial<NonNullable<Node['agent']>> = {}): NonNullable<Node['agent']> => ({
+    version: '1.3.0', xrayVersion: '26.10.21', uptimeSec: 3600, rssBytes: 22_300_000, reportedAt: '2026-10-30T12:00:00Z',
+    xray: { running: true, restarts: 0, uptimeSec: 600, lastExit: '', crashLoop: false }, settingsApplied: true, lastPushError: '', ...o,
+  })
+
+  it('is shown when the hub has it', () => {
+    expect(agentUptime(agent())).toBe(3600)
+    expect(agentMemory(agent())).toBe(22_300_000)
+    expect(settingsState(agent())).toBe('applied')
+    expect(settingsState(agent({ settingsApplied: false, lastPushError: 'xray -test failed: port in use' }))).toBe('failed')
+  })
+
+  // the hub has no source for these: it sends 0, 0 and false with no error, which are no news
+  it('is not known when the hub sends what it sends for a source it does not have', () => {
+    const unsaid = agent({ uptimeSec: 0, rssBytes: 0, settingsApplied: false, lastPushError: '' })
+    expect(agentUptime(unsaid)).toBeNull()
+    expect(agentMemory(unsaid)).toBeNull()
+    expect(settingsState(unsaid)).toBeNull()
+  })
+})
+
+describe('the round trip of the tunnel', () => {
+  const tunnel = (o: Partial<Node['tunnel']>): Node['tunnel'] => ({ state: 'up', since: null, rttMs: 23, streams: 0, carried: 0, bytesToSubs: 0, bytesFromSubs: 0, dialFailures: 0, reason: '', ...o })
+
+  it('is what the tunnel says while it is up', () => {
+    expect(roundTrip(tunnel({}))).toBe(23)
+  })
+
+  it('is nothing when the hub did not time one, which it sends as 0, or the tunnel is not up', () => {
+    expect(roundTrip(tunnel({ rttMs: 0 }))).toBeNull()
+    expect(roundTrip(tunnel({ state: 'down' }))).toBeNull()
+    expect(roundTrip(tunnel({ state: 'off', reason: 'entry_off' }))).toBeNull()
   })
 })
