@@ -160,23 +160,20 @@ func TestDialContextBindsOnlyAHeldAddress(t *testing.T) {
 		t.Errorf("the connection came from %s", got)
 	}
 	c.Close()
+}
 
-	// a datagram network gets a datagram address, which Dial insists on
-	u, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Skipf("no udp here: %v", err)
+// The dialer a role gives out is netbind's: bound, with a resolver that asks
+// from the same address, or plain.
+func TestDialerIsBoundOnlyWhenTheAddressIsHeld(t *testing.T) {
+	nobody := netip.MustParseAddr("192.0.2.1")
+	plain := Addr{IP: nobody}.Dialer()
+	if plain.LocalAddr != nil || plain.Resolver != nil {
+		t.Errorf("an unbound role's dialer = %+v", plain)
 	}
-	defer u.Close()
-	conn, err := lo.DialContext(ctx, "udp", u.LocalAddr().String())
-	if err != nil {
-		t.Fatalf("a udp dial bound to the loopback: %v", err)
-	}
-	if got := conn.LocalAddr().(*net.UDPAddr).IP.String(); got != "127.0.0.1" {
-		t.Errorf("the datagrams come from %s", got)
-	}
-	conn.Close()
-	if _, err := (Addr{IP: nobody, Local: true}).DialContext(ctx, "udp", u.LocalAddr().String()); err == nil {
-		t.Error("a udp dial from an address nobody holds worked")
+	bound := Addr{IP: nobody, Local: true}.Dialer()
+	local, ok := bound.LocalAddr.(*net.TCPAddr)
+	if !ok || !local.IP.Equal(net.ParseIP("192.0.2.1")) || bound.Resolver == nil {
+		t.Errorf("a bound role's dialer = %+v", bound)
 	}
 }
 

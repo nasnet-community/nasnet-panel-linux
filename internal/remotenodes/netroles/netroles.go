@@ -9,7 +9,8 @@
 //
 // An address that no interface here holds, as on a laptop or a lab machine,
 // can't be bound. For the hub's own sockets that means running unbound, with
-// one warning; the bridge is held to a stricter rule (see the manager).
+// one warning; the bridge is held to a stricter rule (see the manager). The
+// binding itself is netbind's.
 package netroles
 
 import (
@@ -19,6 +20,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netbind"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/routerfacts"
 )
 
@@ -41,32 +43,31 @@ type Addr struct {
 
 func (a Addr) String() string { return a.IP.String() }
 
-// DialContext dials from the address, or from wherever the system chooses
-// when it isn't held here. It has the shape of net.Dialer.DialContext, so it
-// can be a gRPC context dialer, an http.Transport's DialContext or a resolver's
-// Dial.
-func (a Addr) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	var d net.Dialer
-	if a.Local {
-		// the type of the local address has to be the network's
-		switch {
-		case strings.HasPrefix(network, "tcp"):
-			d.LocalAddr = &net.TCPAddr{IP: a.IP.AsSlice()}
-		case strings.HasPrefix(network, "udp"):
-			d.LocalAddr = &net.UDPAddr{IP: a.IP.AsSlice()}
-		}
+// Dialer is a dialer whose connections, and the name lookups it makes, leave
+// from the address, or from wherever the system chooses when no interface here
+// holds it. The binding is netbind's, which the code that talks to the nodes
+// uses too.
+func (a Addr) Dialer() *net.Dialer {
+	if !a.Local {
+		return netbind.Dialer(netip.Addr{})
 	}
-	return d.DialContext(ctx, network, address)
+	return netbind.Dialer(a.IP)
+}
+
+// DialContext dials over TCP from the address. It has the shape of
+// net.Dialer.DialContext, so it can be a gRPC context dialer or an
+// http.Transport's DialContext.
+func (a Addr) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return a.Dialer().DialContext(ctx, network, address)
 }
 
 // Resolver looks names up from the address, so the query leaves where the
 // traffic to the name's owner will. Unbound, it is the system's resolver.
 func (a Addr) Resolver() *net.Resolver {
-	if !a.Local {
-		return net.DefaultResolver
+	if r := a.Dialer().Resolver; r != nil {
+		return r
 	}
-	// PreferGo: the system's own resolver wouldn't ask the Dial below
-	return &net.Resolver{PreferGo: true, Dial: a.DialContext}
+	return net.DefaultResolver
 }
 
 // Set is the three roles' addresses.
