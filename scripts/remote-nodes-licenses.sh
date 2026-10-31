@@ -107,6 +107,9 @@ web-notices.txt
          The licence of every library built into the web page, with the
          version it was built with, and the notice of the Vazirmatn font
          the page embeds a subset of.
+
+The hub shows these files as one text at /licenses, under the address of its
+page. It reads them from LICENSES_DIR, which the image sets to /licenses.
 EOF
 
 echo "remote-nodes-licenses: $(wc -l <"$tmp/modules" | tr -d ' ') modules, $files licence files, $(wc -c <"$notices" | tr -d ' ') bytes in $notices"

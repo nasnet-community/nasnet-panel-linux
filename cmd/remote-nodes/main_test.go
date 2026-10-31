@@ -42,6 +42,7 @@ func TestSettingsFromTheEnvironment(t *testing.T) {
 		bridgeBin: "/remote-nodes-bridge", bridgeUID: 65534, bridgeGID: 65534, bridgeDNS: []string{"1.1.1.1", "8.8.8.8"},
 		factsPath: "/data/router/state",
 	}
+	want.licensesDir = "/licenses"
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("defaults = %+v, %v\nwant       %+v", got, err, want)
 	}
@@ -51,6 +52,7 @@ func TestSettingsFromTheEnvironment(t *testing.T) {
 		"ADDR_FOREIGN", "10.9.0.16", "ADDR_EXIT", "10.9.0.17", "ADDR_NODES", " 10.9.0.18 ",
 		"BRIDGE_BIN", " /opt/bridge ", "BRIDGE_UID", "1000", "BRIDGE_GID", "1001", "BRIDGE_DNS", " 9.9.9.9 , 149.112.112.112:53 ,",
 		"FACTS_PATH", "/run/router-state", "RELEASE_BASE_URL", "http://mirror.example:8000/rn/",
+		"LICENSES_DIR", " /usr/share/licenses/rn ",
 	))
 	want = settings{
 		listen: "127.0.0.1:9000", dataDir: "/var/lib/rn", basePath: "/api/plugin/view/remote-nodes",
@@ -62,6 +64,7 @@ func TestSettingsFromTheEnvironment(t *testing.T) {
 		bridgeBin: "/opt/bridge", bridgeUID: 1000, bridgeGID: 1001, bridgeDNS: []string{"9.9.9.9", "149.112.112.112:53"},
 		factsPath: "/run/router-state",
 	}
+	want.licensesDir = "/usr/share/licenses/rn"
 	want.release.Base = "http://mirror.example:8000/rn"
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("set = %+v, %v\nwant  %+v", got, err, want)
@@ -236,6 +239,41 @@ func TestServesAndStopsCleanly(t *testing.T) {
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("shutting down: %v", err)
+	}
+}
+
+// The licence files are read from where LICENSES_DIR says, by the hub as it
+// runs. The page's Notices link opens /licenses with no header, under the base
+// path or not, and a machine without the image's files gets a plain not found.
+func TestServesTheLicensesFromLicensesDir(t *testing.T) {
+	dir := t.TempDir()
+	for name, text := range map[string]string{"LICENSE": "AGPL text\n", "NOTICES": "Go and its modules\n", "web-notices.txt": "Preact and lucide-react\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := "/api/plugin/view/remote-nodes"
+	addr, _ := start(t, testSettings(t, t.TempDir(), base, "LICENSES_DIR", dir))
+	for _, p := range []string{"/licenses", base + "/licenses"} {
+		for _, ui := range []bool{false, true} {
+			code, body := fetch(t, "http://"+addr+p, ui)
+			text := string(body)
+			a, b, c := strings.Index(text, "AGPL text"), strings.Index(text, "Go and its modules"), strings.Index(text, "Preact and lucide-react")
+			if code != 200 || a < 0 || b < a || c < b {
+				t.Errorf("GET %s (page header %v) = %d, want the three files in order:\n%s", p, ui, code, body)
+			}
+		}
+	}
+
+	addr, _ = start(t, testSettings(t, t.TempDir(), "", "LICENSES_DIR", filepath.Join(dir, "gone")))
+	code, body := fetch(t, "http://"+addr+"/licenses", false)
+	var got struct{ Code string }
+	if err := json.Unmarshal(body, &got); err != nil || code != 404 || got.Code != "not_found" {
+		t.Errorf("GET /licenses with no such directory = %d %s", code, body)
+	}
+
+	if s, err := fromEnv(env("LICENSES_DIR", "   ")); err != nil || s.licensesDir != "/licenses" {
+		t.Errorf("a blank LICENSES_DIR = %q, %v, want the default", s.licensesDir, err)
 	}
 }
 

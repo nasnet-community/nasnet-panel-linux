@@ -72,6 +72,8 @@ type settings struct {
 	dataDir  string // DATA_DIR, default /data
 	basePath string // BASE_PATH: where the router's proxy mounts the plugin
 
+	licensesDir string // LICENSES_DIR, default /licenses: the files behind the page's Notices link
+
 	// The plugin's three source addresses, as the manifest gives them to the
 	// veth. They aren't checked against the interfaces here until run starts.
 	addrs netroles.Set // ADDR_FOREIGN, ADDR_EXIT, ADDR_NODES
@@ -128,6 +130,7 @@ func fromEnv(getenv func(string) string) (settings, error) {
 		return settings{}, err
 	}
 	s.factsPath = orDefault(getenv("FACTS_PATH"), routerfacts.Path(s.dataDir))
+	s.licensesDir = orDefault(getenv("LICENSES_DIR"), "/licenses")
 	if s.release, err = artifacts.SourceFromEnv(getenv); err != nil {
 		return settings{}, err
 	}
@@ -268,6 +271,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	handler := api.New(api.Config{
 		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
 		BasePath: s.basePath, Index: index, Log: log,
+		Licenses: os.DirFS(s.licensesDir),
 	})
 	ln, err := net.Listen("tcp", s.listen)
 	if err != nil {

@@ -88,13 +88,14 @@ LABEL org.opencontainers.image.title="remote-nodes" \
       org.opencontainers.image.version="${VERSION}"
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=binary /remote-nodes /remote-nodes-bridge /
+# the hub shows these at /licenses, from the directory LICENSES_DIR names
 COPY --from=binary /licenses /licenses
 # GOMAXPROCS and GOMEMLIMIT are the hub's only: it starts the bridge with an
 # environment of its own. Putting a binary on a node holds it in RAM two or
 # three times over, 40 to 60 MB at the peak, so the heap limit sits above that
 # and still stops the hub growing without end on a small router. Two threads
 # are plenty for a process that mostly waits.
-ENV LISTEN_ADDR=:8080 DATA_DIR=/data BASE_PATH= \
+ENV LISTEN_ADDR=:8080 DATA_DIR=/data BASE_PATH= LICENSES_DIR=/licenses \
     GOMAXPROCS=2 GOMEMLIMIT=96MiB SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 EXPOSE 8080
 # the port is whatever LISTEN_ADDR says
