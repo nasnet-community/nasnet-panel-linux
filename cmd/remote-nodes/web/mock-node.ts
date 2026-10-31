@@ -273,8 +273,13 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     if (opened === 'backup_bad_file') return fail(400, 'backup_bad_file', 'this is not a Remote Nodes backup'), true
     if (opened === 'backup_bad_passphrase') return fail(400, 'backup_bad_passphrase', 'the passphrase does not open this backup'), true
     if (nodes.length) return fail(409, 'bad_request', 'a backup can only be imported on an empty install, with no nodes'), true
-    // the nodes come back as they were, already trusting this router, so none needs a login
-    for (const b of opened.nodes) nodes.push(makeNode({ ...b, id: claimNodeId(b.id) }))
+    // the nodes come back as they were, already trusting this router, so none needs a login; an install
+    // that was running when the backup was made has no job any more, and comes back unfinished, as on the hub
+    const now = Date.now()
+    for (const b of opened.nodes) {
+      const failure = b.registered ? undefined : { error: "The install did not finish, and the job that ran it is gone, so the hub can't say why.", cleanup: '', at: now }
+      nodes.push(makeNode({ ...b, id: claimNodeId(b.id), failure }))
+    }
     send(200, { ok: true, nodes: opened.nodes.length })
     return true
   }

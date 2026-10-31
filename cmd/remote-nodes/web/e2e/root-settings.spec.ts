@@ -267,8 +267,10 @@ test.describe('importing a backup', () => {
     expect(await stateHolds(page, PASS)).toBe(false)
     await done.getByRole('button', { name: 'Show nodes' }).click()
     await expect(page).toHaveURL(/#\/$/)
-    for (const name of ['Node 1', 'Node 2', 'Node 3']) await expect(card(page, name)).toBeVisible()
-    await expect(page.getByText('3 of 3 nodes')).toBeVisible()
+    for (const name of ['Node 1', 'Node 2']) await expect(card(page, name)).toBeVisible()
+    // Node 3 was being installed when the backup was made: no job brings it back, so it is an unfinished install
+    await expect(page.getByRole('region', { name: "Installs that didn't finish" })).toContainText('Node 3')
+    await expect(page.getByText('2 of 3 nodes')).toBeVisible()
     // and they came back working, since they trust this router already
     await expect(card(page, 'Node 1')).toContainText('Working')
   })
