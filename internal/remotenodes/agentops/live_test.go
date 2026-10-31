@@ -112,7 +112,7 @@ func TestLiveLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	t.Logf("installed: %s, %s, agent %s, certificate until %s, foreign Xray %v", res.Arch, res.OS, res.AgentVersion, res.CertNotAfter.Format(time.DateOnly), res.ForeignXray)
+	t.Logf("installed: %s, %s, agent %s, certificate until %s, repaired %v", res.Arch, res.OS, res.AgentVersion, res.CertNotAfter.Format(time.DateOnly), res.Repaired)
 	node.Arch, node.AgentVersion = res.Arch, res.AgentVersion
 
 	c, err := env.Connect(ctx, node)

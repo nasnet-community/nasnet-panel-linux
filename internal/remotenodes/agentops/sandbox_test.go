@@ -76,6 +76,12 @@ unit() { echo "${1%.service}"; }
 down() { grep -v "$1" "$ROOT/listening" > "$ROOT/listening.tmp" 2>/dev/null; mv "$ROOT/listening.tmp" "$ROOT/listening"; }
 case "$1" in
  is-active) u=$(unit "$2"); if [ -e "$ROOT/active/$u" ]; then echo active; else echo inactive; exit 3; fi;;
+ cat)
+   u=$(unit "$2")
+   for d in etc/systemd/system run/systemd/system lib/systemd/system usr/lib/systemd/system; do
+     [ -e "$ROOT/$d/$u.service" ] && { cat "$ROOT/$d/$u.service"; exit 0; }
+   done
+   echo "No files found for $u.service." >&2; exit 1;;
  enable|daemon-reload) ;;
  restart|start)
    u=$(unit "$2")
