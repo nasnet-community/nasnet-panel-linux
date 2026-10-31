@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/backup"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
+
+// The API exports and imports backups through the manager.
+var _ api.BackupOps = (*Manager)(nil)
 
 // MaxBackupBytes is the largest backup file ImportBackup looks at. A real one
 // is a few KB, the state of three nodes and ten subscriptions.

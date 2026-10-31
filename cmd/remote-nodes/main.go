@@ -270,7 +270,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	}
 	handler := api.New(api.Config{
 		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
-		Subs:     mgr,
+		Subs: mgr, Backup: mgr,
 		BasePath: s.basePath, Index: index, Log: log,
 		Licenses: os.DirFS(s.licensesDir),
 	})

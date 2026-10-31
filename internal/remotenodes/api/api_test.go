@@ -464,8 +464,8 @@ func TestNoViewTypeHasASecretField(t *testing.T) {
 // or under the base path, for a hub that holds secrets of every kind.
 func TestNoSecretReachesABrowser(t *testing.T) {
 	for _, b := range []string{"", base} {
-		fake := &fakeSubs{}
-		r := newRigWith(t, b, withSubs(fake))
+		fake, bk := &fakeSubs{}, newFakeBackup()
+		r := newRigWith(t, b, withOps(withSubs(fake), withBackup(bk)))
 		r.populate()
 		held := r.st.Read()
 		if held.Nodes[0].RealityPrivateKey != privateKey || held.Nodes[0].SSHHostKey != hostKeyPin || held.Enablements[0].ClientUUID != uuidA ||
@@ -484,8 +484,11 @@ func TestNoSecretReachesABrowser(t *testing.T) {
 		_, _, bodies[b+"/api/nothing"] = r.call("GET", b+"/api/nothing", map[string]string{UIHeader: "1"})
 		_, _, bodies[b+"/api/config (no header)"] = r.call("GET", b+"/api/config", nil)
 		_, _, bodies[b+"/ (the page)"] = r.call("GET", b+"/", nil)
-		// the calls that change a subscription answer in the same way
+		// the calls that change a subscription, and the backup's, answer in the same way
 		for what, body := range subscriptionBodies(r, fake, b) {
+			bodies[what] = body
+		}
+		for what, body := range backupBodies(r, bk, b) {
 			bodies[what] = body
 		}
 
