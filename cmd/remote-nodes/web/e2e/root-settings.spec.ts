@@ -27,7 +27,7 @@ test.describe('the router\'s entry facts and routes', () => {
     await expect(row(entry, 'VPN')).toContainText('WireGuard · online')
     await expect(row(entry, 'Bridge')).toContainText('running')
     await expect(row(entry, 'RouterOS')).toContainText('7.24.5')
-    await expect(row(entry, 'RouterOS')).toContainText('Needs 7.11 or newer.')
+    await expect(row(entry, 'RouterOS')).toContainText('Needs 7.20 or newer.')
     await expect(row(entry, 'Checked')).toContainText('2 min ago')
 
     const routes = panel(page, 'Router routes')
@@ -89,7 +89,7 @@ test.describe('the router\'s entry facts and routes', () => {
         const r = row(panel(page, 'Entry'), 'RouterOS')
         await expect(r).toContainText('7.9')
         await expect(r.locator('dd')).toHaveClass(/text-bad-text/)
-        await expect(r).toContainText('Needs 7.11 or newer.')
+        await expect(r).toContainText('Needs 7.20 or newer.')
       },
     ],
     [

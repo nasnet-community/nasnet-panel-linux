@@ -49,7 +49,7 @@ const entry = (o: Partial<Entry> = {}): Entry => ({
   domestic: 'online',
   vpn: { state: 'online', kind: 'wireguard', label: 'WireGuard' },
   bridge: 'running',
-  routerOS: { version: '7.24.5', min: '7.11', ok: true },
+  routerOS: { version: '7.24.5', min: '7.20', ok: true },
   routes: [],
   checkedAt: ago(120),
   stale: false,

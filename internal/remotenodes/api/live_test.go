@@ -58,7 +58,7 @@ func ptr[T any](v T) *T { return &v }
 
 var wantLiveEntry = Entry{
 	On: true, Domestic: "online", VPN: VPN{State: "online", Kind: "wireguard", Label: "wg-vpn"}, Bridge: "running",
-	RouterOS: RouterOS{Version: "7.24.5", Min: "7.11", OK: true},
+	RouterOS: RouterOS{Version: "7.24.5", Min: "7.20", OK: true},
 	Routes: []Route{
 		{Address: "192.168.50.16", UsedFor: "downloads", Via: "foreign", Ready: true},
 		{Address: "192.168.50.17", UsedFor: "entry-exit", Via: "vpn", Ready: true},

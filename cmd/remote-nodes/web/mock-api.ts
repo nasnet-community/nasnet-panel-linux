@@ -420,7 +420,7 @@ function entryView(): Entry {
   const now = Date.now()
   const wireguard = { state: 'online' as const, kind: 'wireguard' as const, label: 'WireGuard' }
   const nothing = { state: 'missing' as const, kind: '' as const, label: '' }
-  const base = { routerOS: { version: '7.24.5', min: '7.11', ok: true }, checkedAt: iso(now - 2 * MIN), stale: false }
+  const base = { routerOS: { version: '7.24.5', min: '7.20', ok: true }, checkedAt: iso(now - 2 * MIN), stale: false }
   const routes = (ready: { downloads: boolean; vpn: boolean; nodes: boolean }): Entry['routes'] => [
     { address: '192.168.50.16', usedFor: 'downloads', via: 'foreign', ready: ready.downloads },
     { address: '192.168.50.17', usedFor: 'entry-exit', via: 'vpn', ready: ready.vpn },
@@ -434,7 +434,7 @@ function entryView(): Entry {
     case 'vpn-offline':
       return { ...base, on: false, domestic: 'online', vpn: { ...wireguard, state: 'offline' }, bridge: 'waiting', routes: routes({ downloads: true, vpn: false, nodes: true }) }
     case 'old-routeros':
-      return { ...base, routerOS: { version: '7.9', min: '7.11', ok: false }, on: false, domestic: 'online', vpn: wireguard, bridge: 'stopped', routes: routes({ downloads: true, vpn: true, nodes: true }) }
+      return { ...base, routerOS: { version: '7.9', min: '7.20', ok: false }, on: false, domestic: 'online', vpn: wireguard, bridge: 'stopped', routes: routes({ downloads: true, vpn: true, nodes: true }) }
     case 'stale':
       return { ...base, checkedAt: iso(now - 20 * MIN), stale: true, on: true, domestic: 'online', vpn: wireguard, bridge: 'running', routes: routes({ downloads: true, vpn: true, nodes: true }) }
     default:

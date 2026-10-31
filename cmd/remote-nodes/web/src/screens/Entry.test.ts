@@ -9,7 +9,7 @@ const entry = (o: Partial<Entry> = {}): Entry => ({
   domestic: 'online',
   vpn: { state: 'online', kind: 'wireguard', label: 'WireGuard' },
   bridge: 'running',
-  routerOS: { version: '7.24.5', min: '7.11', ok: true },
+  routerOS: { version: '7.24.5', min: '7.20', ok: true },
   routes: [],
   checkedAt: '2026-10-30T12:00:00Z',
   stale: false,
@@ -64,21 +64,21 @@ describe('what needs attention', () => {
 
   // a hub that has not heard from the router yet sends no version and ok: false
   it('says nothing of RouterOS before the router has reported its version', () => {
-    const unheard = entry({ on: false, routerOS: { version: '', min: '7.11', ok: false }, checkedAt: null, domestic: 'missing', vpn: { state: 'missing', kind: '', label: '' }, bridge: 'stopped' })
+    const unheard = entry({ on: false, routerOS: { version: '', min: '7.20', ok: false }, checkedAt: null, domestic: 'missing', vpn: { state: 'missing', kind: '', label: '' }, bridge: 'stopped' })
     expect(titles(unheard)).toEqual(['This router has no Domestic link', 'This router has no VPN'])
     expect(routerOSTooOld(unheard)).toBe(false)
-    expect(routerOSTooOld(entry({ routerOS: { version: '7.9', min: '7.11', ok: false } }))).toBe(true)
+    expect(routerOSTooOld(entry({ routerOS: { version: '7.9', min: '7.20', ok: false } }))).toBe(true)
     expect(routerOSTooOld(entry())).toBe(false)
   })
 
   it('is an item for a part that is down, and one for a RouterOS that is too old', () => {
     expect(titles(entry({ on: false, domestic: 'offline' }))).toEqual(['The Domestic link is offline'])
     expect(titles(entry({ on: false, vpn: { state: 'offline', kind: 'wireguard', label: '' } }))).toEqual(['The VPN is offline'])
-    const old = entryAttention(entry({ on: false, routerOS: { version: '7.9', min: '7.11', ok: false } }), t('en'))
+    const old = entryAttention(entry({ on: false, routerOS: { version: '7.9', min: '7.20', ok: false } }), t('en'))
     expect(old).toHaveLength(1)
     expect(old[0].title).toBe('RouterOS 7.9 is too old')
-    expect(old[0].detail).toContain('7.11')
+    expect(old[0].detail).toContain('7.20')
     // it comes first: the rest can't be fixed on a router that can't run the plugin
-    expect(titles(entry({ on: false, domestic: 'missing', routerOS: { version: '7.9', min: '7.11', ok: false } }))[0]).toBe('RouterOS 7.9 is too old')
+    expect(titles(entry({ on: false, domestic: 'missing', routerOS: { version: '7.9', min: '7.20', ok: false } }))[0]).toBe('RouterOS 7.9 is too old')
   })
 })

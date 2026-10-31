@@ -84,7 +84,7 @@ func TestTheEntryIsReadAtStartAndEveryThirtySeconds(t *testing.T) {
 		if !e.On || e.Domestic != "online" || e.VPN.State != "online" || e.VPN.Kind != "wireguard" || e.VPN.Label != "wg-vpn" {
 			t.Errorf("entry = %+v", e)
 		}
-		if e.RouterOS.Version != "7.24.5" || e.RouterOS.Min != "7.11" || !e.RouterOS.OK {
+		if e.RouterOS.Version != "7.24.5" || e.RouterOS.Min != "7.20" || !e.RouterOS.OK {
 			t.Errorf("RouterOS = %+v", e.RouterOS)
 		}
 		want := []struct{ addr, usedFor, via string }{
@@ -118,7 +118,7 @@ func TestAMissingReportMeansTheEntryIsOffAndNothingIsKnown(t *testing.T) {
 		if e.On || e.Domestic != "missing" || e.VPN.State != "missing" || e.VPN.Kind != "" || e.Bridge != "stopped" || e.CheckedAt != nil || e.Stale {
 			t.Fatalf("entry = %+v", e)
 		}
-		if e.RouterOS.Version != "" || e.RouterOS.Min != "7.11" || e.RouterOS.OK {
+		if e.RouterOS.Version != "" || e.RouterOS.Min != "7.20" || e.RouterOS.OK {
 			t.Errorf("RouterOS = %+v", e.RouterOS)
 		}
 		if len(e.Routes) != 3 || e.Routes[0].Ready || e.Routes[1].Ready || e.Routes[2].Ready {

@@ -68,18 +68,19 @@ func TestVersionsThatAreTheSame(t *testing.T) {
 
 func TestTheMinimumIsHeldTo(t *testing.T) {
 	for have, want := range map[string]bool{
-		"7.11":              true,
-		"7.11.0":            true,
-		"7.11.1":            true,
+		"7.20":              true,
+		"7.20.0":            true,
+		"7.20.1":            true,
 		"7.24.5":            true,
 		"7.24.5 (stable)":   true,
-		"7.12rc1":           true, // a candidate of the next release is past 7.11
-		"7.12beta3":         true,
+		"7.21rc1":           true, // a candidate of the next release is past 7.20
+		"7.21beta3":         true,
 		"8.0":               true,
-		"7.11rc1":           false, // a candidate of 7.11 is not 7.11
-		"7.11beta2":         false,
-		"7.10":              false,
-		"7.10.2":            false,
+		"7.20rc1":           false, // a candidate of 7.20 is not 7.20
+		"7.20beta2":         false,
+		"7.19":              false,
+		"7.19.2":            false,
+		"7.11":              false,
 		"7.9":               false,
 		"6.49.10":           false,
 		"6.49.10 (stable)":  false,
@@ -87,7 +88,7 @@ func TestTheMinimumIsHeldTo(t *testing.T) {
 		"banana":            false,
 		"7":                 false,
 		"7.x":               false,
-		"7.11 (stable) foo": false,
+		"7.20 (stable) foo": false,
 	} {
 		if got := AtLeast(have, MinRouterOS); got != want {
 			t.Errorf("AtLeast(%q, %q) = %v, want %v", have, MinRouterOS, got, want)
