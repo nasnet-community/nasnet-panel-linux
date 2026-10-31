@@ -29,9 +29,11 @@ type Store interface {
 	Writes() uint64
 }
 
-// Jobs is what the manager asks of the job engine: which job runs on a node,
-// so that a node being installed says how far it has got. *jobs.Engine is one.
+// Jobs is what the manager asks of the job engine: to run the node operations
+// that take a while, and which job runs on a node, so that a node being
+// installed says how far it has got. *jobs.Engine is one.
 type Jobs interface {
+	Start(spec jobs.Spec, fn func(ctx context.Context, r *jobs.Run) error) (jobs.Job, error)
 	Running(nodeID uint) (jobs.Job, bool)
 }
 

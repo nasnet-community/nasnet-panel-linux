@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
@@ -36,8 +37,18 @@ type Config struct {
 	Usage     Usage
 	Connector Connector
 
-	// Jobs, if nil, means no job ever runs, so no node is ever installing.
+	// Jobs, if nil, means no job ever runs: no node is ever installing, and
+	// the operations that are jobs (adding a node, updating one) say they
+	// can't be done.
 	Jobs Jobs
+	// NewOps makes what the node operations run on from the CA in use, and is
+	// called again when another CA takes its place, and not otherwise. Nil
+	// means there are no operations: each says so, and nothing else changes.
+	NewOps func(ca *pki.CA) Ops
+	// Downloads is where the latest release is looked up and where what a job
+	// downloaded is let go of. Nil means no node is offered an agent update,
+	// and nothing is let go of.
+	Downloads Downloads
 	// Bridge, if nil, means there is no bridge: the nodes and the router's
 	// entry gate are still watched, and every tunnel reads as down.
 	Bridge Bridge
@@ -120,6 +131,13 @@ type Manager struct {
 	// What a node's host name last resolved to.
 	resMu sync.Mutex
 	res   map[uint]*resolved
+
+	// The node operations: what they run on, made for the CA it was made
+	// for (by its text), and how many jobs hold downloads right now.
+	opsMu       sync.Mutex
+	ops         Ops
+	opsFor      string
+	downloading atomic.Int32
 }
 
 // New checks the config and makes a manager. It makes the CA if the state has
