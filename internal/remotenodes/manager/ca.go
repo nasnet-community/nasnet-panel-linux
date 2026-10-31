@@ -19,6 +19,11 @@ var clockFloor = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 // CA is the plugin's certificate authority, which signs every node's
 // certificate and the hub's own. It is nil while the CA can't be used; see
 // CAError. The returned value is shared and safe for concurrent use.
+//
+// It is the same value from one look to the next and another when the CA is
+// replaced, as a restored backup does. Whatever is made from it, such as the
+// hub's own certificate, is good for as long as CA returns what it was made
+// from, and has to be made again when it doesn't.
 func (m *Manager) CA() *pki.CA {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -98,6 +103,11 @@ func (m *Manager) setCA(ca *pki.CA, text string, err error, made bool) (replaced
 	m.mu.Lock()
 	replaced = ca != nil && m.ca != nil && text != m.caText
 	was := m.ca
+	if ca != nil && was != nil && !replaced {
+		// the same CA read again: keep the value callers hold, so that a new one
+		// means the CA changed
+		ca = was
+	}
 	m.ca, m.caErr = ca, err
 	if ca != nil {
 		m.caText = text
