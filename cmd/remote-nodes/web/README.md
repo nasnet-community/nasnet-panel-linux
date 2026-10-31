@@ -32,6 +32,24 @@ back and takes `{ fresh, nodes, maxNodes, entry, pace }` to set up other states 
 it). The calls that change subscriptions (add, rename, delete, the switch per node, the links) are in
 `mock-subscriptions.ts`. It is not part of the build.
 
+The mock follows the hub where the page can tell: an install is the hub's fifteen steps and a failed one leaves its node
+unfinished, a removal needs an SSH login or `force` whether or not the node can be reached, and a step goes by the key the
+hub sends beside its name (`STEPS` in `mock-api.ts` is a copy of `internal/remotenodes/manager/stepkeys.go`).
+
+## What the hub sends
+
+`src/lib/hub-fixtures.ts` holds what the hub answers to the page's GET calls, written as the page's own types. A Go test
+writes it from the hub's own test setup (`internal/remotenodes/api/fixtures_test.go`) and fails when the file is not what the
+hub sends now. After a change to the API on purpose, from the repository root:
+
+```
+go test ./internal/remotenodes/api -run TestThePagesFixtures -update-fixtures
+```
+
+`npm run typecheck` then says where the page's types no longer fit, and `src/lib/hub.test.ts` runs the page's own code over
+the same answers. Another Go test (`internal/remotenodes/manager/stepkeys_test.go`) fails for a job step key that has no row
+in `src/lib/jobs.ts` or no words in `src/i18n`.
+
 ## In the image
 
 `Dockerfile.remote-nodes`, at the repository root, builds the page here with `npm ci`, `npm run build`
