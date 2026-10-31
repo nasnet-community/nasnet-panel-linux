@@ -216,8 +216,13 @@ func (f *fakeOps) Uninstall(ctx context.Context, node model.Node, login agentops
 	f.note(fmt.Sprintf("Uninstall %d", node.ID))
 	f.mu.Lock()
 	f.uninstalls = append(f.uninstalls, opsInstall{node, login})
+	leak := f.leakLogin
 	f.mu.Unlock()
-	return f.steps(ctx, agentops.UninstallPlan(), progress)
+	var spilt []string
+	if leak {
+		spilt = []string{login.Password, login.PrivateKey, login.Passphrase}
+	}
+	return f.steps(ctx, agentops.UninstallPlan(), progress, spilt...)
 }
 
 func (f *fakeOps) Connect(ctx context.Context, node model.Node) (Client, error) {
