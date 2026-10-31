@@ -105,7 +105,7 @@ func TestTheConnectorOfARealManagerAnswersForTheCAItHolds(t *testing.T) {
 	mgr, err = manager.New(manager.Config{
 		Store: st, Usage: coll, Log: quietLog(),
 		Connector: connectorOf(func() (manager.Ops, error) { return mgr.Ops() }),
-		NewOps:    opsFor(netip.Addr{}, nil, quietLog()),
+		NewOps:    opsFor(netip.Addr{}, nil, quietLog(), st),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,4 +283,37 @@ func waitJob(t *testing.T, url, id string) map[string]any {
 	}
 	t.Fatalf("job %s never ended", id)
 	return nil
+}
+
+// An install asks the state whether the node a server's marker names is still
+// here and set up: only then is the server the same node under another address.
+func TestLiveNodeAnswersOnlyForASetUpNode(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ready, half model.Node
+	if err := st.Update(func(s *model.State) error {
+		var err error
+		if ready, err = s.AddNode(model.Node{Name: "ready", Host: "203.0.113.5", SSHPort: 22, SSHUser: "root", AgentPort: 9090, EntryPort: 443, State: model.NodeRegistered, CreatedAt: time.Now()}); err != nil {
+			return err
+		}
+		half, err = s.AddNode(model.Node{Name: "half", Host: "203.0.113.6", SSHPort: 22, SSHUser: "root", AgentPort: 9090, EntryPort: 443, State: model.NodeInstalling, CreatedAt: time.Now()})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	live := liveNode(st)
+	if name, ok := live(ready.ID); !ok || name != "ready" {
+		t.Errorf("a set-up node: %q %v", name, ok)
+	}
+	if _, ok := live(half.ID); ok {
+		t.Error("an install that never finished counts as a node")
+	}
+	if _, ok := live(99); ok {
+		t.Error("a node that isn't there counts")
+	}
+	if _, ok := liveNode(nil)(ready.ID); ok {
+		t.Error("no state still answered")
+	}
 }

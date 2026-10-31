@@ -441,6 +441,7 @@ func TestARefusedServerSaysWhyInACodeOfItsOwn(t *testing.T) {
 	}{
 		{fmt.Errorf("%w: This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray). Use a server without one.", agentops.ErrServerHasXray), api.CodeServerHasXray},
 		{fmt.Errorf("%w: This server already runs a nasnet-agent that Remote Nodes did not install.", agentops.ErrServerHasAgent), api.CodeServerHasAgent},
+		{fmt.Errorf("%w: This server is already the node \"Frankfurt\" here, under another address.", agentops.ErrServerIsNode), api.CodeServerIsNode},
 	} {
 		t.Run(c.code, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

@@ -221,9 +221,25 @@ func boundTo(a netroles.Addr) netip.Addr {
 // the downloads, which fetches them over the foreign link. The manager asks for
 // the operations again when another CA takes its place, since the Env keeps the
 // hub's certificate that it made from the one it was given.
-func opsFor(nodes netip.Addr, files agentops.Files, log *slog.Logger) func(*pki.CA) manager.Ops {
+func opsFor(nodes netip.Addr, files agentops.Files, log *slog.Logger, st *store.Store) func(*pki.CA) manager.Ops {
 	return func(ca *pki.CA) manager.Ops {
-		return manager.EnvOps(&agentops.Env{Local: nodes, CA: ca, Files: files, Log: log})
+		return manager.EnvOps(&agentops.Env{Local: nodes, CA: ca, Files: files, Log: log, LiveNode: liveNode(st)})
+	}
+}
+
+// liveNode answers from the state whether a set-up node has an id, so that an
+// install can tell a server that is already one of them under another address.
+func liveNode(st *store.Store) func(uint) (string, bool) {
+	return func(id uint) (string, bool) {
+		if st == nil {
+			return "", false
+		}
+		state := st.Read()
+		n := state.FindNode(id)
+		if n == nil || n.State != model.NodeRegistered {
+			return "", false
+		}
+		return n.Name, true
 	}
 }
 
@@ -293,7 +309,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	mgr, err = manager.New(manager.Config{
 		Store: st, Usage: coll, Jobs: engine, Bridge: sup, Facts: routerfacts.NewReader(s.factsPath),
 		Connector: connectorOf(func() (manager.Ops, error) { return mgr.Ops() }),
-		NewOps:    opsFor(boundTo(addrs.Nodes), downloads, log),
+		NewOps:    opsFor(boundTo(addrs.Nodes), downloads, log, st),
 		Downloads: downloads,
 		Resolver:  addrs.Nodes.Resolver(),
 		Addrs:     addrs, DNS: s.bridgeDNS,

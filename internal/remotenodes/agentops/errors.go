@@ -37,6 +37,7 @@ var (
 	// agent or an Xray that this plugin did not put there.
 	ErrServerHasAgent  = errors.New("agentops: the server already runs an agent this plugin did not install")
 	ErrServerHasXray   = errors.New("agentops: the server already runs an Xray this plugin did not install")
+	ErrServerIsNode    = errors.New("agentops: the server is already another node of this hub")
 	ErrUploadCorrupt   = errors.New("agentops: an upload arrived damaged")
 	ErrAgentNotStarted = errors.New("agentops: the agent did not start")
 

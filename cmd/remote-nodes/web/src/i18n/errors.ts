@@ -18,6 +18,7 @@ const WORDED = new Set([
   'host_key_changed',
   'server_has_xray',
   'server_has_agent',
+  'server_is_node',
   'busy',
   'backup_bad_passphrase',
   'backup_bad_file',

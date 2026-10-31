@@ -84,7 +84,7 @@ export function jobLine(t: T, fmt: Format, job: Job, now: number): string {
 const LINK_STEPS = ['check_server', 'check_agent', 'connect_agent']
 
 // What the server turned out to have, which the router could only find by reaching it.
-const REACHED = ['server_has_xray', 'server_has_agent']
+const REACHED = ['server_has_xray', 'server_has_agent', 'server_is_node']
 
 /** The job failed where the router talks to the node: it could not reach it, or the address isn't on the domestic list. */
 export const failedAtLink = (job: Job) =>

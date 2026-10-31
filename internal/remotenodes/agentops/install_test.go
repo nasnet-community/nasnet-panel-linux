@@ -525,6 +525,41 @@ func TestARepairStillStopsForSomeoneElseOnItsPorts(t *testing.T) {
 	}
 }
 
+// The same server under another address: the marker on it is this hub's, for
+// a node the hub still has. Installing again would be a repair of that node's
+// agent, and a failure would clean it away, so the install stops before it
+// changes anything. Once that node is gone, the same marker is a repair again.
+func TestAnInstallRefusesAServerThatIsAlreadyAnotherNodeHere(t *testing.T) {
+	r := newInstallRig(t)
+	if _, err := r.install(); err != nil { // node 3 is on this server
+		t.Fatal(err)
+	}
+	live := map[uint]string{3: "Frankfurt"}
+	r.env.LiveNode = func(id uint) (string, bool) { name, ok := live[id]; return name, ok }
+
+	r.node.ID, r.node.Name, r.node.Host = 7, "Frankfurt by name", "frankfurt.example"
+	before := r.sb.snapshot()
+	_, err := r.install()
+	if !errors.Is(err, ErrServerIsNode) || !strings.Contains(err.Error(), `"Frankfurt"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if d := diff(before, r.sb.snapshot()); len(d) != 0 {
+		t.Errorf("the server changed:\n%s", strings.Join(d, "\n"))
+	}
+
+	// the same node installing again is its own repair
+	r.node.ID = 3
+	if _, err := r.install(); err != nil {
+		t.Fatalf("node 3 again: %v", err)
+	}
+	// and once node 3 is forgotten, another may take the server over
+	delete(live, 3)
+	r.node.ID = 7
+	if res, err := r.install(); err != nil || !res.Repaired {
+		t.Fatalf("after node 3 is gone: res %+v, err %v", res, err)
+	}
+}
+
 // The Xray an install finds on a server isn't left to run beside the node's:
 // both want the same paths and the same service. The install stops before it
 // writes anything, and says what it found.
