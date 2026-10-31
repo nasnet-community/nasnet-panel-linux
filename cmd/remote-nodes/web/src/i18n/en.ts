@@ -600,6 +600,7 @@ export const en = {
   'job.gone': 'This install failed, and no node was kept.',
   'error.server_has_xray': 'This server already runs an Xray that Remote Nodes did not install. Use a server without one.',
   'error.server_has_agent': "This server already runs an agent that Remote Nodes did not install, such as a Linux panel's node. Use a server without one.",
+  'error.server_is_node': 'This server is already one of your nodes, under another address. Change that node instead of adding the server again.',
 } satisfies Record<string, Message>
 
 export type MsgKey = keyof typeof en

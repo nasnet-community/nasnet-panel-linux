@@ -239,6 +239,8 @@ func opFailure(err error) error {
 		return &api.Error{Code: api.CodeAgentTooOld, Msg: clipText(err.Error())}
 	case errors.Is(err, agentops.ErrServerHasXray):
 		return &api.Error{Code: api.CodeServerHasXray, Msg: clipText(err.Error())}
+	case errors.Is(err, agentops.ErrServerIsNode):
+		return &api.Error{Code: api.CodeServerIsNode, Msg: clipText(err.Error())}
 	case errors.Is(err, agentops.ErrServerHasAgent):
 		return &api.Error{Code: api.CodeServerHasAgent, Msg: clipText(err.Error())}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

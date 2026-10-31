@@ -53,7 +53,9 @@ type InstallResult struct {
 // which UndoInstall and Uninstall take away.
 //
 // The login, port, user and host key to hold the server to come from login and
-// node. A login is used for this call and not kept.
+// node. A login is used for this call and not kept. A server this hub's marker
+// shows is already another of its nodes (Env.LiveNode) is refused
+// (ErrServerIsNode): it is the same server under another address.
 func (e *Env) InstallAgent(ctx context.Context, node model.Node, login Login, progress Progress) (InstallResult, error) {
 	var res InstallResult
 	in := &install{e: e, node: node, login: login, st: newStepper(progress), res: &res}
@@ -183,6 +185,13 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 		return "", newErr(ErrServerHasAgent, nil, "This server already runs an agent that trusts another hub. A node belongs to one hub: use a server without one, or remove that agent first.")
 	case !mine && (in.state.present[agentBin] || in.state.present[agentUnitPath]):
 		return "", newErr(ErrServerHasAgent, nil, "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.")
+	}
+	// this hub's marker for another of its nodes: the same server under another
+	// address, which a failed install would clean away
+	if mine && in.state.marker != nil && in.state.marker.NodeID != in.node.ID && in.e.LiveNode != nil {
+		if name, ok := in.e.LiveNode(in.state.marker.NodeID); ok {
+			return "", newErr(ErrServerIsNode, nil, "This server is already the node %q here, under another address. Change that node instead of adding the server again.", name)
+		}
 	}
 	// only the marker vouches for an Xray: the CA file alone says nothing of it
 	if in.state.marker == nil || !mine {

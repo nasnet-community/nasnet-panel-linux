@@ -49,6 +49,11 @@ type Env struct {
 	// Xray that was sent, to run it, to answer on the entry port. Zero is each
 	// wait's own, 15 to 30 seconds.
 	Settle time.Duration
+	// LiveNode says whether this hub still keeps a set-up node with the given
+	// id, and its name. An install over this hub's own marker for another node
+	// is the same server under another address, and is refused rather than
+	// repaired. Nil keeps no nodes.
+	LiveNode func(id uint) (name string, ok bool)
 
 	// What a test puts in the place of the real thing. Nil is the real one.
 	connectSSH func(context.Context, installer.Target) (Shell, error)

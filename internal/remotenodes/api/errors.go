@@ -30,6 +30,7 @@ const (
 	CodeAgentTooOld         = "agent_too_old"
 	CodeHostKeyChanged      = "host_key_changed"
 	CodeServerHasXray       = "server_has_xray"  // an install found an Xray it did not put there
+	CodeServerIsNode        = "server_is_node"   // an install found the server is already another node here
 	CodeServerHasAgent      = "server_has_agent" // an install found another hub's agent, or one nobody vouches for
 	CodeBusy                = "busy"
 	CodeBackupBadPassphrase = "backup_bad_passphrase"
@@ -51,6 +52,7 @@ var statuses = map[string]int{
 	CodeAgentTooOld:         http.StatusConflict,
 	CodeHostKeyChanged:      http.StatusConflict,
 	CodeServerHasXray:       http.StatusConflict,
+	CodeServerIsNode:        http.StatusConflict,
 	CodeServerHasAgent:      http.StatusConflict,
 	CodeBusy:                http.StatusConflict,
 	CodeBackupBadPassphrase: http.StatusBadRequest,
