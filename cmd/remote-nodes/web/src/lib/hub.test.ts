@@ -121,7 +121,7 @@ describe('the jobs', () => {
   })
 
   it('end with a reason that is the hub\'s English, and name the step that failed', () => {
-    const failed = hub.jobs.find((j) => j.state === 'failed')!
+    const failed = hub.jobs.find((j) => j.state === 'failed' && j.kind === 'update-agent')!
     expect(failed.error).toBe('The connection broke.')
     expect(failed.steps.filter((s) => s.state === 'failed').map((s) => s.key)).toEqual(['upload_agent'])
     // the connection broke while sending, which is not where the router first reaches the node

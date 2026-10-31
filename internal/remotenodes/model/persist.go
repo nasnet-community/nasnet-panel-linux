@@ -28,7 +28,9 @@ func Encode(s State) ([]byte, error) {
 }
 
 // Decode reads what Encode wrote. ErrNewer means a newer release wrote it;
-// any other error means the contents can't be used as they are.
+// any other error means the contents can't be used as they are. An install
+// the file holds as running comes back as an unfinished one: whatever ran it
+// is gone.
 func Decode(b []byte) (State, error) {
 	// the version first: a newer file may differ in ways the full decode would trip on
 	var head struct {
@@ -50,5 +52,6 @@ func Decode(b []byte) (State, error) {
 	if err := s.Validate(); err != nil {
 		return State{}, err
 	}
+	s.settleInstalls()
 	return s, nil
 }

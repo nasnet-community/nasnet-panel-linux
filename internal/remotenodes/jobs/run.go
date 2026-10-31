@@ -18,6 +18,19 @@ type Run struct {
 // ID is the id of the job.
 func (r *Run) ID() string { return r.j.view.ID }
 
+// FailedStep is the name of the first step that has failed, "" while none
+// has.
+func (r *Run) FailedStep() string {
+	r.e.mu.Lock()
+	defer r.e.mu.Unlock()
+	for _, s := range r.j.view.Steps {
+		if s.State == StepFailed {
+			return s.Name
+		}
+	}
+	return ""
+}
+
 // Begin marks a step as running.
 func (r *Run) Begin(step string) {
 	r.change(step, func(s *Step) { s.State = StepRunning })

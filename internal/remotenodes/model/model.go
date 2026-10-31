@@ -27,6 +27,10 @@ const (
 	// router.
 	MaxNodes         = 3
 	MaxSubscriptions = 10
+	// MaxUnfinished is how many installs that stopped and couldn't be cleaned
+	// up are kept beside the nodes. They don't count as nodes, and a new install
+	// waits until one is cleaned up or forgotten.
+	MaxUnfinished = 3
 
 	// CertRenewBefore is how long before a node certificate runs out the hub
 	// renews it.
@@ -49,11 +53,33 @@ var (
 type NodeState string
 
 const (
-	// NodeInstalling is a node whose install has not finished. With no job
-	// running for it the install died, and only removal works.
+	// NodeInstalling is a node whose install has not finished. While its job
+	// runs it is a node like the others; once the install has stopped (Failure
+	// says why) it is an unfinished install, which only a cleanup or forgetting
+	// it takes out.
 	NodeInstalling NodeState = "installing"
 	NodeRegistered NodeState = "registered"
 )
+
+// InstallFailure is why an install stopped before it was done, kept on the
+// record it left so that the page can say so after the job is forgotten. The
+// texts are the job's, with no secret in them.
+type InstallFailure struct {
+	// Step is the step it stopped at, by its English name and its key; empty
+	// when that isn't known.
+	Step    string `json:"step,omitempty"`
+	StepKey string `json:"step_key,omitempty"`
+	Error   string `json:"error"`
+	// Cleanup is why taking it off the server failed too, empty when no
+	// cleanup ran.
+	Cleanup string    `json:"cleanup,omitempty"`
+	At      time.Time `json:"at,omitzero"`
+}
+
+// unknownFailure is what a record says of an install that stopped with no
+// job left to say why: one a restart cut short, or one from before installs
+// cleaned up after themselves.
+const unknownFailure = "The install did not finish, and the job that ran it is gone, so the hub can't say why."
 
 // Node is one Linux server running nasnet-agent.
 //
@@ -94,6 +120,43 @@ type Node struct {
 	// install makes it, and until then the node has no way into the bridge.
 	// Hub only.
 	BridgeUUID string `json:"bridge_uuid,omitempty"`
+
+	// Failure is set on an install that stopped and could not be cleaned up,
+	// which makes it an unfinished install and not a node. A value, so that
+	// a copy of the state shares nothing.
+	Failure InstallFailure `json:"install_failure,omitzero"`
+}
+
+// Unfinished says whether the record is an install that stopped before it
+// was done and was kept because something of it may still be on the server.
+// It is no node: it doesn't count towards MaxNodes, and nothing but a cleanup
+// or forgetting it is done with it.
+func (n Node) Unfinished() bool { return n.State == NodeInstalling && n.Failure.Error != "" }
+
+// NodeCount is how many nodes there are against MaxNodes: the set-up ones and
+// those whose install is running. Unfinished installs are left out.
+func (s State) NodeCount() int {
+	c := 0
+	for _, n := range s.Nodes {
+		if !n.Unfinished() {
+			c++
+		}
+	}
+	return c
+}
+
+// UnfinishedCount is how many unfinished installs there are.
+func (s State) UnfinishedCount() int { return len(s.Nodes) - s.NodeCount() }
+
+// settleInstalls makes every install that has no failure on record an
+// unfinished one. It is for a state read from a file: no job outlives the hub
+// that ran it, so an install the file holds as running stopped with that hub.
+func (s *State) settleInstalls() {
+	for i := range s.Nodes {
+		if n := &s.Nodes[i]; n.State == NodeInstalling && n.Failure.Error == "" {
+			n.Failure = InstallFailure{Error: unknownFailure}
+		}
+	}
 }
 
 // Subscription is a named entry with one link per node it is switched on for.
@@ -184,9 +247,9 @@ func (s *State) FindEnablement(subscriptionID, nodeID uint) *Enablement {
 }
 
 // AddNode gives n the next id and appends it, or fails with ErrNodeLimit
-// when the router already has MaxNodes.
+// when the router already has MaxNodes. Unfinished installs don't count.
 func (s *State) AddNode(n Node) (Node, error) {
-	if len(s.Nodes) >= MaxNodes {
+	if s.NodeCount() >= MaxNodes {
 		return Node{}, fmt.Errorf("%w: at most %d", ErrNodeLimit, MaxNodes)
 	}
 	n.ID = s.NextNodeID
@@ -259,7 +322,7 @@ func (s State) CheckEdit(before State) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	if len(s.Nodes) > MaxNodes && len(s.Nodes) > len(before.Nodes) {
+	if c := s.NodeCount(); c > MaxNodes && c > before.NodeCount() {
 		return fmt.Errorf("%w: at most %d", ErrNodeLimit, MaxNodes)
 	}
 	if len(s.Subscriptions) > MaxSubscriptions && len(s.Subscriptions) > len(before.Subscriptions) {

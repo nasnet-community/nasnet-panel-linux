@@ -126,18 +126,31 @@ export interface JobStep {
 
 export type JobKind = 'install' | 'update-agent' | 'update-xray' | 'renew-cert' | 'rotate-keys' | 'change-settings' | 'remove'
 
+/** What an install was asked for, but the login's secrets: enough to offer the same install again. */
+export interface InstallForm {
+  name: string
+  host: string
+  sshPort: number
+  sshUser: string
+  entryPort: number
+}
+
 export interface Job {
   id: string
   kind: JobKind
   state: JobState
   steps: JobStep[]
   error?: string
+  /** a failed job's error code, when it has one the page words ("server_has_xray") */
+  code?: string
   /** 0 or missing while the job has no node (yet) */
   nodeId?: number
   /** the install's node name, else "" */
   target?: string
   startedAt: string
   finishedAt?: string
+  /** an install job's form, for "Try again" */
+  install?: InstallForm
 }
 
 export interface LinkConn {
@@ -199,7 +212,7 @@ export interface Node {
   host: string
   sshPort: number
   sshUser: string
-  /** false: the install died before it was saved, so only removal works */
+  /** false: installing, or an install that didn't finish (see unfinished) */
   registered: boolean
   createdAt: string
   entryPort: number
@@ -227,6 +240,17 @@ export interface Node {
   events?: NodeEvent[]
   /** present while the install job runs: the running step by its key and its English name */
   installing?: { jobId: string; step: number; steps: number; key: string; label: string; percent: number | null }
+  /** present for an install that stopped and wasn't cleaned up: no node, only Clean up and Forget work */
+  unfinished?: Unfinished
+}
+
+/** Why an install stopped: the step by its key and English name, the error, and why the cleanup failed ("" when none ran). */
+export interface Unfinished {
+  stepKey: string
+  step: string
+  error: string
+  cleanup: string
+  at: string | null
 }
 
 export interface HandshakeCheck {

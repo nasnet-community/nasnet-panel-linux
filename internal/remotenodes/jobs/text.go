@@ -53,6 +53,15 @@ func newHider(secrets []string) *hider {
 	return &hider{words}
 }
 
+// Hide takes the secrets out of s the way a job's texts have them taken out,
+// for text that goes somewhere else, such as a record of how a job failed.
+func Hide(s string, secrets []string) string {
+	if h := newHider(secrets); h != nil {
+		return h.hide(s)
+	}
+	return s
+}
+
 func (h *hider) hide(s string) string {
 	for _, w := range h.words {
 		s = strings.ReplaceAll(s, w, hidden)

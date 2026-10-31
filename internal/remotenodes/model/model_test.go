@@ -336,3 +336,76 @@ func TestSecretsAreNeverInErrorMessages(t *testing.T) {
 		t.Fatalf("an over-long private key: %v", err)
 	}
 }
+
+// unfinished is an install that stopped and couldn't be cleaned up.
+func unfinished(name, host string) Node {
+	n := goodNode(name, host)
+	n.State = NodeInstalling
+	n.Failure = InstallFailure{Step: "Upload the agent", StepKey: "upload_agent", Error: "The connection broke.", Cleanup: "The server doesn't answer.", At: t0}
+	return n
+}
+
+// An unfinished install is kept beside the nodes and is none of them: the cap
+// counts the set-up nodes and the installs that are running, and not it.
+func TestUnfinishedInstallsDontCountTowardsTheNodeCap(t *testing.T) {
+	s := NewState()
+	if _, err := s.AddNode(unfinished("stopped", "203.0.113.50")); err != nil {
+		t.Fatal(err)
+	}
+	running := goodNode("running", "203.0.113.51")
+	running.State = NodeInstalling // its job is still going, so it is a node
+	if _, err := s.AddNode(running); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < MaxNodes; i++ {
+		if _, err := s.AddNode(goodNode(fmt.Sprintf("n%d", i), fmt.Sprintf("203.0.113.%d", i))); err != nil {
+			t.Fatalf("node %d with an unfinished install beside it: %v", i, err)
+		}
+	}
+	if s.NodeCount() != MaxNodes || s.UnfinishedCount() != 1 || len(s.Nodes) != MaxNodes+1 {
+		t.Fatalf("count %d, unfinished %d, records %d", s.NodeCount(), s.UnfinishedCount(), len(s.Nodes))
+	}
+	if _, err := s.AddNode(goodNode("one more", "203.0.113.9")); !errors.Is(err, ErrNodeLimit) {
+		t.Fatalf("past the cap: %v", err)
+	}
+	// and the store's check, which compares with the state before, counts the same way
+	before := s.Clone()
+	if err := s.RemoveNode(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckEdit(before); err != nil {
+		t.Fatalf("an unfinished install forgotten: %v", err)
+	}
+	grown := before.Clone()
+	grown.Nodes = append(grown.Nodes, unfinished("another", "203.0.113.52"))
+	grown.Nodes[len(grown.Nodes)-1].ID = grown.NextNodeID
+	grown.NextNodeID++
+	if err := grown.CheckEdit(before); err != nil {
+		t.Fatalf("a full router keeping one more unfinished install: %v", err)
+	}
+}
+
+// What a record of an unfinished install says has to be text the page can
+// show, and only an install has one.
+func TestAFailureIsAnInstallsAndSaysSomething(t *testing.T) {
+	s := NewState()
+	n, err := s.AddNode(unfinished("stopped", "203.0.113.50"))
+	if err != nil || !n.Unfinished() {
+		t.Fatalf("%+v, %v", n, err)
+	}
+	for _, c := range []struct {
+		name string
+		edit func(*Node)
+	}{
+		{"a set-up node with a failure", func(n *Node) { n.State = NodeRegistered }},
+		{"a failure that says nothing", func(n *Node) { n.Failure.Error = " " }},
+		{"a failure that isn't text", func(n *Node) { n.Failure.Cleanup = "\xff\xfe" }},
+		{"a failure as long as a book", func(n *Node) { n.Failure.Error = strings.Repeat("x", 2001) }},
+	} {
+		bad := n
+		c.edit(&bad)
+		if err := bad.Validate(); err == nil {
+			t.Errorf("%s passed", c.name)
+		}
+	}
+}

@@ -44,6 +44,7 @@ type fakeOps struct {
 	probes     []string
 	installs   []opsInstall
 	uninstalls []opsInstall
+	undos      []opsInstall
 	provisions []agentops.ProvisionInput
 	pushes     []opsPush
 	checks     []opsCheck
@@ -209,7 +210,27 @@ func (f *fakeOps) InstallAgent(ctx context.Context, node model.Node, login agent
 	if leak {
 		spilt = []string{login.Password, login.PrivateKey, login.Passphrase}
 	}
-	return res, f.steps(ctx, agentops.InstallPlan(), progress, spilt...)
+	// as the real one: the server is changed from "Prepare the server" on, and not before
+	reached := false
+	err := f.steps(ctx, agentops.InstallPlan(), func(s agentops.Step) {
+		reached = reached || s.Name == agentops.StepPrepareServer
+		progress(s)
+	}, spilt...)
+	res.Changed = res.Changed && reached
+	return res, err
+}
+
+func (f *fakeOps) UndoInstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
+	f.note(fmt.Sprintf("UndoInstall %d", node.ID))
+	f.mu.Lock()
+	f.undos = append(f.undos, opsInstall{node, login})
+	leak := f.leakLogin
+	f.mu.Unlock()
+	var spilt []string
+	if leak {
+		spilt = []string{login.Password, login.PrivateKey, login.Passphrase}
+	}
+	return f.steps(ctx, []string{agentops.StepCleanServer}, progress, spilt...)
 }
 
 func (f *fakeOps) Uninstall(ctx context.Context, node model.Node, login agentops.Login, progress agentops.Progress) error {
@@ -465,7 +486,7 @@ func newOpsRig(t *testing.T, mods ...func(*Config)) *opsRig {
 	t.Helper()
 	r := &opsRig{dl: newDownloads()}
 	setup := func(c *Config) {
-		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log, StepKey: guardKeys(t)})
+		r.jobs = jobs.New(jobs.Config{Now: c.Now, Log: c.Log, StepKey: guardKeys(t), ErrorCode: JobErrorCode})
 		c.Jobs = r.jobs
 		c.Downloads = r.dl
 		c.NewOps = func(ca *pki.CA) Ops {

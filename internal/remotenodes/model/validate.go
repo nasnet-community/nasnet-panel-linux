@@ -237,6 +237,34 @@ func (n Node) Validate() error {
 	if n.BridgeUUID != "" && !validUUID(n.BridgeUUID) {
 		return invalid("the bridge client id is not a lower-case UUID")
 	}
+	if n.Failure != (InstallFailure{}) {
+		if n.State != NodeInstalling {
+			return invalid("only an install that didn't finish has a failure on record")
+		}
+		if err := n.Failure.Validate(); err != nil {
+			return fmt.Errorf("install failure: %w", err)
+		}
+	}
+	return nil
+}
+
+// Validate keeps what a failure says to text the page can show: valid UTF-8,
+// and no longer than a job's own texts.
+func (f InstallFailure) Validate() error {
+	for _, t := range []struct {
+		what, val string
+		limit     int
+	}{{"the step", f.Step, 64}, {"the step key", f.StepKey, 64}, {"the error", f.Error, 2000}, {"the cleanup error", f.Cleanup, 2000}} {
+		if len(t.val) > t.limit {
+			return invalid("%s is longer than %d bytes", t.what, t.limit)
+		}
+		if !utf8.ValidString(t.val) {
+			return invalid("%s is not UTF-8", t.what)
+		}
+	}
+	if strings.TrimSpace(f.Error) == "" {
+		return invalid("a failure needs an error")
+	}
 	return nil
 }
 

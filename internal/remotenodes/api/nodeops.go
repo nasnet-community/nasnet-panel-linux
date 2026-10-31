@@ -22,7 +22,8 @@ type NodeOps interface {
 	// pinned for a node there.
 	Probe(ctx context.Context, req ProbeRequest) (ProbeResult, error)
 	// AddNode saves the node as one whose install has not finished and starts
-	// the job that finishes it.
+	// the job that finishes it. A job that fails cleans the server up and
+	// leaves no node, or, when it can't, an unfinished install.
 	AddNode(ctx context.Context, req InstallRequest) (jobID string, err error)
 	RenameNode(ctx context.Context, id uint, name string) error
 	// ChangeSettings starts the job that puts new settings on a node's entry.

@@ -133,6 +133,8 @@ export const fa: Record<MsgKey, Message> = {
   'step.restart_agent': 'راه‌اندازی دوبارهٔ ایجنت',
   'step.renew_cert': 'تمدید گواهی',
   'step.forget_node': 'فراموش کردن نود',
+  'step.clean_server': 'پاک‌سازی سرور',
+  'step.discard_node': 'کنار گذاشتن نود',
   'tray.title': 'کارها',
   'tray.recent': 'اخیر',
   'tray.recentJobs': 'کارهای اخیر',

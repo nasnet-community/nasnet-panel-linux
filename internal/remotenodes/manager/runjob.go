@@ -19,6 +19,8 @@ const (
 	StepSaveNode   = "Save the node"
 	StepRenewCert  = "Renew the certificate"
 	StepForgetNode = "Forget the node"
+	// the last step of an install that failed and left nothing to keep
+	StepDiscardNode = "Discard the node"
 )
 
 type jobFunc = func(ctx context.Context, r *jobs.Run) error

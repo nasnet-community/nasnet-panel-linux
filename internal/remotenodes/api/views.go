@@ -77,7 +77,7 @@ type Node struct {
 	Host              string      `json:"host"`
 	SSHPort           int         `json:"sshPort"`
 	SSHUser           string      `json:"sshUser"`
-	Registered        bool        `json:"registered"` // false: the install died before it was saved, and only removal works
+	Registered        bool        `json:"registered"` // false: installing, or an install that didn't finish
 	CreatedAt         time.Time   `json:"createdAt"`
 	EntryPort         int         `json:"entryPort"`
 	HandshakeTarget   string      `json:"handshakeTarget"` // host:port the REALITY handshake borrows
@@ -99,7 +99,25 @@ type Node struct {
 	// none says "events": [] and a list of nodes leaves the key out.
 	Events     *[]NodeEvent `json:"events,omitempty"`
 	Installing *Installing  `json:"installing,omitempty"` // present while the install job runs
+	// Unfinished is present for an install that stopped and was not cleaned
+	// up: it is no node, and only a cleanup or forgetting it works.
+	Unfinished *Unfinished `json:"unfinished,omitempty"`
 }
+
+// Unfinished is why an install stopped: the step, by the key the page words
+// it by and by its English name, the error, and why the cleanup after it
+// failed too ("" when none ran).
+type Unfinished struct {
+	StepKey string     `json:"stepKey"`
+	Step    string     `json:"step"`
+	Error   string     `json:"error"`
+	Cleanup string     `json:"cleanup"`
+	At      *time.Time `json:"at"`
+}
+
+// stoppedInstall is what a view says of an install that has no job and no
+// failure on record, which only a job that ended without saying why leaves.
+const stoppedInstall = "The install stopped before it finished, and the hub can't say why."
 
 type TunnelState struct {
 	State         string     `json:"state"` // up, down or off
@@ -205,7 +223,7 @@ func configView(cfg Config, st model.State) AppConfig {
 		Version:           cfg.Version,
 		Commit:            cfg.Commit,
 		MaxNodes:          model.MaxNodes,
-		NodeCount:         len(st.Nodes),
+		NodeCount:         st.NodeCount(), // an unfinished install is no node
 		MaxSubscriptions:  model.MaxSubscriptions,
 		SubscriptionCount: len(st.Subscriptions),
 		Entry:             Entry{Domestic: linkMissing, VPN: VPN{State: linkMissing}, Bridge: bridgeStopped, Routes: []Route{}},
@@ -270,6 +288,15 @@ func nodeView(n model.Node, enabled int, now time.Time, live Live) Node {
 		if l.Tunnel.State != "" {
 			v.Tunnel = l.Tunnel
 		}
+	}
+	switch {
+	case n.Unfinished():
+		f := n.Failure
+		v.Unfinished = &Unfinished{StepKey: f.StepKey, Step: f.Step, Error: f.Error, Cleanup: f.Cleanup, At: utc(f.At)}
+		v.Installing = nil
+	case n.State == model.NodeInstalling && v.Installing == nil && live != nil:
+		// installing with no job running: the job ended without settling it
+		v.Unfinished = &Unfinished{Error: stoppedInstall}
 	}
 	return v
 }

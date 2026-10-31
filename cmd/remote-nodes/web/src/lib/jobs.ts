@@ -27,6 +27,8 @@ const STEP_KEYS: Record<string, MsgKey> = {
   restart_agent: 'step.restart_agent',
   renew_cert: 'step.renew_cert',
   forget_node: 'step.forget_node',
+  clean_server: 'step.clean_server',
+  discard_node: 'step.discard_node',
 }
 
 /** The words for a step key, or undefined for one the page has none for. */

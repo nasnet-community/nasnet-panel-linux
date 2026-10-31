@@ -25,7 +25,9 @@ func anInstall(t testing.TB) (*Manager, Config, *logBuf) {
 	cfg, log := baseConfig(t)
 	n1 := addNode(t, cfg.Store, func(n *model.Node) { n.Name, n.Host = "تهران", "203.0.113.5" })
 	n2 := addNode(t, cfg.Store, func(n *model.Node) { n.Name, n.Host, n.EntryPort = "Frankfurt", "node2.example.com", 8443 })
-	addNode(t, cfg.Store, func(n *model.Node) { n.State = model.NodeInstalling })
+	addNode(t, cfg.Store, func(n *model.Node) {
+		n.State, n.Failure = model.NodeInstalling, model.InstallFailure{Step: "Upload the agent", StepKey: "upload_agent", Error: "The connection broke.", Cleanup: "The server doesn't answer."}
+	})
 	sara := addSubscription(t, cfg.Store, "Sara")
 	ali := addSubscription(t, cfg.Store, "علی")
 	enable(t, cfg.Store, sara.ID, n1.ID, true)
