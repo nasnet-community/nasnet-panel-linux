@@ -21,11 +21,10 @@ var _ api.Live = (*Manager)(nil)
 func (m *Manager) Xray() string { return pin.Version }
 
 // NodeLive is what the manager knows of a node: when it last answered, the
-// agent's last report, the node's tunnel, the numbers of its subscriptions and
-// the progress of its install if one is running. It never waits for the node.
-//
-// Updates stays all false: whether a newer agent or Xray exists is for the
-// code that checks the releases to say.
+// agent's last report, the node's tunnel, the numbers of its subscriptions,
+// whether an update is due and the progress of its install if one is running.
+// It never waits for the node, or for the release server: the updates are
+// worked out from what the last look at the release found.
 func (m *Manager) NodeLive(id uint) api.NodeLive {
 	var out api.NodeLive
 	m.mu.RLock()
@@ -40,6 +39,7 @@ func (m *Manager) NodeLive(id uint) api.NodeLive {
 	m.mu.RUnlock()
 	out.Usage = nodeUsage(m.cfg.Usage.Node(id))
 	out.Installing = m.installing(id)
+	out.Updates = m.updatesOf(id)
 	return out
 }
 

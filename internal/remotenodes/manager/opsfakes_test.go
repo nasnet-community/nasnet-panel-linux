@@ -428,6 +428,13 @@ func (d *fakeDownloads) lookupCount() int {
 	return len(d.lookups)
 }
 
+// asked is the architectures looked up so far, in order.
+func (d *fakeDownloads) asked() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return slices.Clone(d.lookups)
+}
+
 func (d *fakeDownloads) releases() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -460,6 +467,26 @@ func newOpsRig(t *testing.T, mods ...func(*Config)) *opsRig {
 	r.bridgeRig = newBridgeRig(t, append([]func(*Config){setup}, mods...)...)
 	r.ops = newFakeOps(r.net)
 	return r
+}
+
+// lazyLoops slows the manager's own loops to an hour, for a test that lets days
+// go by: it is the checks every hour and every day that such a test is about,
+// and the poll every five seconds would only make it take minutes of real time.
+func lazyLoops(c *Config) {
+	c.PollEvery, c.StateEvery, c.EntryEvery, c.BridgeEvery = time.Hour, time.Hour, time.Hour, time.Hour
+}
+
+// freshCert gives a node a certificate with most of its year left, so that the
+// daily check, which a manager with operations runs, leaves it alone. A node with
+// none on record reads as long expired, and is renewed.
+func freshCert(n *model.Node) {
+	n.CertNotBefore, n.CertNotAfter = epoch.AddDate(0, 0, -30), epoch.AddDate(1, 0, -30)
+}
+
+// addNode adds a node with a good certificate, and the changes the test wants.
+func (r *opsRig) addNode(mods ...func(*model.Node)) model.Node {
+	r.t.Helper()
+	return addNode(r.t, r.cfg.Store, append([]func(*model.Node){freshCert}, mods...)...)
 }
 
 // stop ends the jobs and then the manager, as the hub does.

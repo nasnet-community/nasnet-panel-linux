@@ -150,7 +150,9 @@ func TestNodeLiveAndTheSubscriptionsCarryWhatTheCollectorCounts(t *testing.T) {
 		if !u.Live || u.Online != 1 || u.Connections != 2 || u.TodayUp != 110 || u.TodayDown != 920 || u.MonthUp != 110 || u.UpdatedAt == nil || !u.UpdatedAt.Equal(epoch.Add(10*time.Second)) {
 			t.Errorf("usage = %+v", u)
 		}
-		if l.Updates != (api.Updates{}) || l.Installing != nil {
+		// nothing is due, and nobody has asked the release about the agent; the
+		// page is told which Xray is the pin, as it is for every node that is set up
+		if l.Updates != (api.Updates{XrayVersion: pin.Version}) || l.Installing != nil {
 			t.Errorf("node = %+v", l)
 		}
 

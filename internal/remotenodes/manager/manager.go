@@ -138,6 +138,11 @@ type Manager struct {
 	ops         Ops
 	opsFor      string
 	downloading atomic.Int32
+
+	// What the project's latest release was last found to carry, and the
+	// turn for an update, which one node takes at a time.
+	rel        releases
+	updateGate chan struct{}
 }
 
 // New checks the config and makes a manager. It makes the CA if the state has
@@ -184,6 +189,7 @@ func New(cfg Config) (*Manager, error) {
 	m := &Manager{
 		cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{},
 		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{},
+		rel: releases{byArch: map[string]*latest{}, gate: make(chan struct{}, 1)}, updateGate: make(chan struct{}, 1),
 	}
 	m.checkCA()
 	m.evalEntry(context.Background())
@@ -207,6 +213,8 @@ func (m *Manager) Run(ctx context.Context) {
 	m.spawn(m.watchState)
 	m.spawn(m.watchEntry)
 	m.spawn(m.watchBridge)
+	m.spawn(m.watchReleases)
+	m.spawn(m.watchCerts)
 	<-run.Done()
 	// nothing may start while the rest are waited for
 	m.runMu.Lock()
