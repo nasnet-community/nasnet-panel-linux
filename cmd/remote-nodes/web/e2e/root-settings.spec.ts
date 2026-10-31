@@ -124,11 +124,25 @@ test.describe('about', () => {
     const source = about.getByRole('link', { name: 'Source code' })
     await expect(source).toHaveAttribute('href', 'https://github.com/nasnet-community/nasnet-panel-linux/tree/a1b2c3d')
     const notices = about.getByRole('link', { name: 'Notices' })
-    await expect(notices).toHaveAttribute('href', 'https://github.com/nasnet-community/nasnet-panel-linux/blob/a1b2c3d/LICENSE')
+    // relative, so it follows the page's base path to the hub's own /licenses
+    await expect(notices).toHaveAttribute('href', 'licenses')
     for (const link of [source, notices]) {
       await expect(link).toHaveAttribute('target', '_blank')
       await expect(link).toHaveAttribute('rel', /noopener noreferrer/)
     }
+  })
+
+  test('opens the notices the hub serves, as text, in a tab of their own', async ({ page, context }) => {
+    await page.goto('/#/settings')
+    const [tab] = await Promise.all([context.waitForEvent('page'), panel(page, 'About').getByRole('link', { name: 'Notices' }).click()])
+    await expect(tab).toHaveURL(/\/licenses$/)
+    await expect(tab.locator('body')).toContainText('Sample licence text for LICENSE')
+    await expect(tab.locator('body')).toContainText('Sample licence text for web-notices.txt')
+    expect(await tab.evaluate(() => document.contentType)).toBe('text/plain')
+    // the page is still where it was
+    await expect(page).toHaveURL(/#\/settings$/)
+    await expect(panel(page, 'About')).toBeVisible()
+    await tab.close()
   })
 })
 

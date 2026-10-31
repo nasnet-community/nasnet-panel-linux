@@ -275,6 +275,20 @@ test.describe('the router\'s Settings tab in Persian', () => {
     await expect(row(about, 'مجوز')).toContainText('AGPL-3.0')
   })
 
+  test('opens the notices in a tab of their own: the hub serves the same text in any language', async ({ page, context }) => {
+    await page.goto('/#/settings')
+    const notices = panel(page, 'درباره').getByRole('link', { name: 'اطلاعیه‌های مجوز' })
+    await expect(notices).toHaveAttribute('href', 'licenses')
+    await expect(notices).toHaveAttribute('target', '_blank')
+    await expect(notices).toHaveAttribute('rel', /noopener noreferrer/)
+    const [tab] = await Promise.all([context.waitForEvent('page'), notices.click()])
+    await expect(tab).toHaveURL(/\/licenses$/)
+    await expect(tab.locator('body')).toContainText('Sample licence text for NOTICES')
+    expect(await tab.evaluate(() => document.contentType)).toBe('text/plain')
+    await expect(page).toHaveURL(/#\/settings$/)
+    await tab.close()
+  })
+
   test('exports and imports a backup, with its warnings and errors in Persian', async ({ page, request }) => {
     await page.goto('/#/settings')
     const backup = panel(page, 'پشتیبان')
