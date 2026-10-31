@@ -42,11 +42,12 @@ func TestAnInstallRunsExactlyTheseCommands(t *testing.T) {
 		{false, `command -v gzip`},
 		{false, `command -v sha256sum`},
 		{false, `. '/etc/os-release' 2>/dev/null && echo "$PRETTY_NAME"`},
-		{false, `for f in '/usr/local/bin/nasnet-agent' '/etc/systemd/system/nasnet-agent.service' '/usr/local/bin/xray' '/etc/systemd/system/xray.service' '/usr/local/etc/xray/config.json'; do if [ -e "$f" ]; then echo "$f"; fi; done`},
+		// as root, like everything about what the server has: a folder closed to the login hides nothing
+		{true, `for f in '/usr/local/bin/nasnet-agent' '/etc/systemd/system/nasnet-agent.service' '/usr/local/bin/xray' '/etc/systemd/system/xray.service' '/usr/local/etc/xray/config.json'; do if [ -e "$f" ]; then echo "$f"; fi; done`},
 		{true, `cat '/etc/nasnet-agent/ca.crt' 2>/dev/null || true`},
 		{true, `cat '/var/lib/nasnet-agent/remote-nodes.json' 2>/dev/null || true`},
 		// no marker of this plugin's, so whether the server runs an Xray of its own
-		{false, `systemctl cat xray.service >/dev/null 2>&1 && echo unit; cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true`},
+		{true, `systemctl cat xray.service >/dev/null 2>&1 && echo unit; cat /proc/[0-9]*/comm 2>/dev/null | grep -qx xray && echo process; true`},
 		{true, `ss -ltnp 2>/dev/null`},
 		{false, `command -v ufw`},
 		{false, `cat '/proc/sys/net/ipv4/tcp_retries2' 2>/dev/null || true`}, // what the kernel setting is now, for removal to give back

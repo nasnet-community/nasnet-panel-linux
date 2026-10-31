@@ -727,3 +727,141 @@ func TestTheTakeoverStepIsInThePlanOnlyWhenAskedFor(t *testing.T) {
 		t.Errorf("InstallPlan changed: %q", InstallPlan())
 	}
 }
+
+// A login that isn't root, on a server set up by the official Xray script: its
+// config folder is 750 root:xray, so the login can't open it, and /proc may be
+// mounted so that it sees only its own processes. Whatever of the server's own
+// Xray is read, and whatever of it is taken, goes through sudo.
+func (r *installRig) asASudoUserWhoSeesLittle() {
+	r.t.Helper()
+	r.shell.root, r.shell.password = false, "s3cret-sudo"
+	r.sb.env["FAKE_UID"], r.sb.env["FAKE_SUDO_PW"] = "1000", "s3cret-sudo"
+	r.login = Login{Password: "s3cret-sudo"}
+	r.shell.rootOnly = []string{"/usr/local/etc/xray", "/proc/[0-9]*"}
+}
+
+// the official script's layout: its drop-in, and the config in a folder only root can open
+func officialXray(version string) theirXray {
+	return theirXray{version: version, unit: "etc", dropIns: []string{"10-donot_touch_single_conf.conf"}, files: []string{"config.json"}, runs: true}
+}
+
+func TestWhatAServersOwnXrayIsIsReadAsRootNotAsTheLogin(t *testing.T) {
+	t.Run("a refusal sees the process and says so", func(t *testing.T) {
+		// only a process, which the login can't see: nothing else says there is an Xray
+		r := newInstallRig(t)
+		r.asASudoUserWhoSeesLittle()
+		theirXray{runs: true}.put(r.sb)
+		before := r.sb.snapshot()
+		res, err := r.install()
+		var he *ServerHasXrayError
+		if !errors.As(err, &he) || !he.Process || he.Binary || he.Unit {
+			t.Fatalf("err = %v (%+v)", err, he)
+		}
+		if res.Changed {
+			t.Errorf("result %+v", res)
+		}
+		if d := diff(before, r.sb.snapshot()); len(d) != 0 {
+			t.Errorf("the server changed:\n%s", strings.Join(d, "\n"))
+		}
+	})
+
+	t.Run("a refusal reads the build of a binary the login can't open", func(t *testing.T) {
+		// a binary only root can run, as on a server that closes its programs: the version and checksum are read as root
+		r := newInstallRig(t)
+		r.asASudoUserWhoSeesLittle()
+		r.shell.rootOnly = append(r.shell.rootOnly, "/usr/local/bin/xray")
+		r.env.pinnedBuild = func(string) (string, string) { return pin.Version, pinnedSHA() }
+		theirXray{version: pin.Version, unit: "etc"}.put(r.sb)
+		_, err := r.install()
+		var he *ServerHasXrayError
+		if !errors.As(err, &he) || he.Version != pin.Version || !he.SameBuild || !he.Binary {
+			t.Fatalf("err = %v (%+v)", err, he)
+		}
+	})
+
+	t.Run("a takeover lists what it removes, and removes it", func(t *testing.T) {
+		r := newInstallRig(t)
+		r.asASudoUserWhoSeesLittle()
+		r.asksToTakeOver(pinnedSHA())
+		x := officialXray("26.9.1")
+		x.files = []string{"config.json", "inbounds.json"}
+		x.put(r.sb)
+		if _, err := r.install(); err != nil {
+			t.Fatal(err)
+		}
+		// the two files in the closed folder were seen, which only root could, and are gone
+		if d := r.lastStep(StepTakeOverXray).Detail; !strings.Contains(d, "1 drop-in, 2 config files") {
+			t.Errorf("the takeover step says %q", d)
+		}
+		if entries, _ := os.ReadDir(r.sb.path("/usr/local/etc/xray")); len(entries) != 0 {
+			t.Errorf("their config is still there: %v", entries)
+		}
+		if r.sb.exists("/etc/systemd/system/xray.service.d") || r.sb.exists("/proc/812") || r.sb.exists("/active/xray") {
+			t.Error("something of theirs is left")
+		}
+		// nothing was asked of a place the login can't see by the login: every such command went through sudo
+		for _, c := range r.sb.commands() {
+			if !c.Root && strings.Contains(c.Cmd, "/.closed") {
+				t.Errorf("the login ran %q against what only root sees", c.Cmd)
+			}
+		}
+	})
+
+	// a config that was there before is not the install's, whether or not the login could see it
+	t.Run("a config the login can't see is a config that was there", func(t *testing.T) {
+		r := newInstallRig(t)
+		r.asASudoUserWhoSeesLittle()
+		r.sb.put("/usr/local/etc/xray/config.json", `{"theirs":true}`, 0o640)
+		if _, err := r.install(); err != nil {
+			t.Fatal(err)
+		}
+		if mk := r.marker(); mk.XrayConfig {
+			t.Errorf("the marker claims a config that was theirs: %+v", mk)
+		}
+	})
+}
+
+// Removing a node whose Xray was taken over, and cleaning up after an install
+// that failed once it had, reach the folders only root can open.
+func TestTakingAnXrayOffAFolderOnlyRootCanOpen(t *testing.T) {
+	for _, how := range []string{"removing the node", "cleaning up after a failed install"} {
+		t.Run(how, func(t *testing.T) {
+			r := newInstallRig(t)
+			r.asASudoUserWhoSeesLittle()
+			r.asksToTakeOver(pinnedSHA())
+			officialXray("26.9.1").put(r.sb)
+			if how == "cleaning up after a failed install" {
+				r.verifyErr = errors.New("the agent doesn't answer")
+			}
+			res, err := r.install()
+			if how == "removing the node" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.sb.afterProvisioning() // the config the hub pushed, in the closed folder
+				must(t, r.uninstall())
+			} else {
+				if err == nil || !res.TookOver {
+					t.Fatalf("res %+v, err %v", res, err)
+				}
+				must(t, r.env.UndoInstall(t.Context(), r.node, r.login, r.progress))
+			}
+			for _, p := range []string{"/usr/local/etc/xray", "/usr/local/bin/xray", "/etc/systemd/system/xray.service", "/etc/systemd/system/xray.service.d", "/var/lib/nasnet-agent", "/etc/nasnet-agent"} {
+				if r.sb.exists(p) {
+					t.Errorf("%s is still there", p)
+				}
+			}
+			// what the takeover leaves alone is left
+			if !r.sb.exists("/usr/local/share/xray/geoip.dat") || !r.sb.exists("/var/log/xray/access.log") {
+				t.Error("assets or logs were taken")
+			}
+		})
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
