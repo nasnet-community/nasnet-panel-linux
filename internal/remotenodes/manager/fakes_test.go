@@ -36,6 +36,8 @@ type fakeAgent struct {
 	pid, started int64
 	uptime       int64
 	listErr      error // the next ListUsers fails with it, once
+	buffered     []*agent.TrafficRecord
+	online       map[string]map[string]int64 // email -> client address -> when, as the agent lists who is connected
 
 	calls []string
 	polls int
@@ -121,7 +123,7 @@ func (c *fakeConn) GetStatsBundle(ctx context.Context, online bool) (*agent.Stat
 	var b *agent.StatsBundle
 	err := c.do("GetStatsBundle", func(a *fakeAgent) error {
 		a.polls++
-		b = &agent.StatsBundle{}
+		b = &agent.StatsBundle{Buffered: &agent.BufferedTrafficStats{Records: a.buffered}, OnlineIPs: a.online}
 		if !a.nostats {
 			b.Status = &pb.NodeStatus{
 				XrayRunning: a.running, XrayVersion: a.xrayLine, XrayPid: a.pid, UptimeSeconds: a.uptime, LastRestartTime: a.started,
