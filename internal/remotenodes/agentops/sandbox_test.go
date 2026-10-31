@@ -120,7 +120,7 @@ func newSandbox(t *testing.T) *sandbox {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	sb := &sandbox{t: t, root: root, bin: filepath.Join(root, "fakebin"), env: map[string]string{"FAKE_UID": "0", "FAKE_SUDO_PW": "sudopw"}}
-	for _, d := range []string{"fakebin", "etc/systemd/system", "usr/local/bin", "var/lib", "var/log", "run/systemd/system", "proc/net", "active"} {
+	for _, d := range []string{"fakebin", "etc/systemd/system", "etc/sysctl.d", "usr/local/bin", "var/lib", "var/log", "run/systemd/system", "proc/net", "proc/sys/net/ipv4", "active"} {
 		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -137,6 +137,8 @@ func newSandbox(t *testing.T) *sandbox {
 		}
 	}
 	sb.put("/etc/os-release", "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n", 0o644)
+	// the kernel's own default, as a server that nobody has tuned has it
+	sb.put("/proc/sys/net/ipv4/tcp_retries2", "15\n", 0o644)
 	var pairs []string
 	for _, p := range systemPrefixes {
 		pairs = append(pairs, p, root+p)
@@ -368,8 +370,9 @@ func (f *fakeShell) do(ctx context.Context, rooted bool, cmd string, stdin io.Re
 
 // snapshot is every file and folder under the places an install writes to,
 // with the mode and a hash of the contents of each file, so that a test can
-// tell whether the server is as it was. What the stand-in tools keep for
-// themselves (their logs, which services run) sits outside these folders.
+// tell whether the server is as it was. The kernel's settings (/proc) are
+// among them. What the stand-in tools keep for themselves (their logs, which
+// services run) sits outside these folders.
 func (sb *sandbox) snapshot() map[string]string {
 	out := map[string]string{}
 	filepath.Walk(sb.root, func(p string, fi os.FileInfo, err error) error {
@@ -379,7 +382,7 @@ func (sb *sandbox) snapshot() map[string]string {
 		rel, _ := filepath.Rel(sb.root, p)
 		rel = "/" + filepath.ToSlash(rel)
 		keep := false
-		for _, pre := range []string{"/etc", "/usr", "/var", "/run"} {
+		for _, pre := range []string{"/etc", "/usr", "/var", "/run", "/proc"} {
 			keep = keep || rel == pre || strings.HasPrefix(rel, pre+"/")
 		}
 		switch {

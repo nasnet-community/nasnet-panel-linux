@@ -87,6 +87,9 @@ type install struct {
 	ufwOpen  []int // the ports to open in ufw
 	mk       marker
 	nodeUUID string
+
+	retries2   string // net.ipv4.tcp_retries2 as the server has it, "" if it can't be read
+	kernelNote string // why the kernel setting was not made, which is no failure, for the step to show
 }
 
 func (in *install) run(ctx context.Context) error {
@@ -188,6 +191,9 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 	if err := in.planFirewall(ctx); err != nil {
 		return "", err
 	}
+	// what the kernel setting is now, for removal to give back
+	out, _ = s.run(ctx, "", cmdReadRetries2)
+	in.retries2 = retries2Value(out)
 	in.plan()
 
 	detail := arch
@@ -270,6 +276,11 @@ func (in *install) plan() {
 		old = *in.state.marker
 	}
 	absent := func(path string) bool { return !in.state.present[path] }
+	// a repair keeps what the first install saw: the setting it reads now is the install's own
+	retries2Was := old.TCPRetries2Was
+	if retries2Was == "" {
+		retries2Was = in.retries2
+	}
 	in.mk = marker{
 		Version:     markerVersion,
 		NodeID:      in.node.ID,
@@ -282,6 +293,8 @@ func (in *install) plan() {
 		XrayUnit:    old.XrayUnit || absent(xrayUnitPath),
 		XrayConfig:  old.XrayConfig || absent(xrayConfPath),
 		Firewall:    union(old.Firewall, in.ufwOpen),
+
+		TCPRetries2Was: retries2Was,
 	}
 	if !old.InstalledAt.IsZero() {
 		in.mk.InstalledAt = old.InstalledAt
@@ -317,10 +330,16 @@ func (in *install) certificate(ctx context.Context) error {
 // taken away, then the directories, the config and the certificates. Each
 // file comes from stdin into a file of its own that only root can read, and
 // moves into place once whole. The key of the node's certificate goes to the
-// node here and is dropped.
+// node here and is dropped. The kernel setting for the tunnel comes last, and
+// if the server won't take it the step still ends well, with the reason as its
+// detail.
 func (in *install) prepare(ctx context.Context) error {
 	done := in.st.begin(StepPrepareServer)
-	return done("", in.writeAll(ctx))
+	err := in.writeAll(ctx)
+	if err != nil {
+		return done("", err)
+	}
+	return done(in.kernelNote, nil)
 }
 
 func (in *install) writeAll(ctx context.Context) error {
@@ -358,7 +377,48 @@ func (in *install) writeAll(ctx context.Context) error {
 	}
 	clear(in.cert.KeyPEM) // it lives on the node now, and nowhere else
 	in.cert.KeyPEM = nil
+	return in.tuneKernel(ctx)
+}
+
+// tuneKernel makes the server give up a connection whose other end has gone
+// quiet after about a minute and not fifteen. The tunnel's connection from the
+// router is such a one when the router's address changes: the hub restarts
+// Xray when it learns of that, and this is what bounds the time when it
+// doesn't. The setting is made live and kept in a file that systemd reads at
+// boot; removal puts it back.
+//
+// It helps and the node doesn't need it, so a server that won't take it (a
+// container whose kernel settings are read-only) is no failed install: the
+// reason goes to the step's detail and what was not made is left out. Only a
+// job that is cancelled stops here.
+func (in *install) tuneKernel(ctx context.Context) error {
+	if in.retries2 == "" {
+		in.kernelNote = "This server has no net.ipv4.tcp_retries2 setting that can be read, so it was left alone."
+		return nil
+	}
+	err := in.keepRetries2(ctx)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	in.e.log().Warn("setting tcp_retries2 on the node failed; the install goes on", "node", in.node.ID, "error", err)
+	in.kernelNote = sentence(err.Error()) + " The node works, and takes longer to drop a tunnel connection that has gone away."
 	return nil
+}
+
+// keepRetries2 makes the value live first: a server that refuses it has
+// nothing worth keeping across a reboot.
+func (in *install) keepRetries2(ctx context.Context) error {
+	s := in.s
+	if _, err := s.root(ctx, "Couldn't set net.ipv4.tcp_retries2", cmdSetRetries2, nil); err != nil {
+		return err
+	}
+	if _, err := s.root(ctx, "Couldn't make "+sysctlDir, cmdMkSysctlDir, nil); err != nil {
+		return err
+	}
+	return s.write(ctx, sysctlPath, "0644", []byte(sysctlText))
 }
 
 func (in *install) writeMarker(ctx context.Context) error {
