@@ -42,6 +42,7 @@ const (
 	NodeAgent_MoveListenPort_FullMethodName              = "/nodeagent.NodeAgent/MoveListenPort"
 	NodeAgent_SwitchConnectMode_FullMethodName           = "/nodeagent.NodeAgent/SwitchConnectMode"
 	NodeAgent_UpdateXrayBinary_FullMethodName            = "/nodeagent.NodeAgent/UpdateXrayBinary"
+	NodeAgent_PushXrayBinary_FullMethodName              = "/nodeagent.NodeAgent/PushXrayBinary"
 	NodeAgent_Uninstall_FullMethodName                   = "/nodeagent.NodeAgent/Uninstall"
 	NodeAgent_Wipe_FullMethodName                        = "/nodeagent.NodeAgent/Wipe"
 	NodeAgent_Nuke_FullMethodName                        = "/nodeagent.NodeAgent/Nuke"
@@ -136,6 +137,12 @@ type NodeAgentClient interface {
 	SwitchConnectMode(ctx context.Context, in *SwitchConnectModeRequest, opts ...grpc.CallOption) (*CommandResponse, error)
 	// UpdateXrayBinary downloads and installs a specific xray-core version
 	UpdateXrayBinary(ctx context.Context, in *UpdateXrayRequest, opts ...grpc.CallOption) (*CommandResponse, error)
+	// PushXrayBinary installs an xray-core build the hub sends over the call:
+	// the header first, then the data in chunks. It is a method of its own so an
+	// agent that predates it answers UNIMPLEMENTED rather than ignoring fields
+	// it doesn't know and downloading from GitHub. A build that is already
+	// installed (same hash, same version) is answered OK and nothing restarts.
+	PushXrayBinary(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[XrayBinaryChunk, CommandResponse], error)
 	// Uninstall removes the agent and xray from the system (Destructive)
 	Uninstall(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CommandResponse, error)
 	// Wipe removes our footprint from the node and (optionally when mode=NUKE)
@@ -483,6 +490,19 @@ func (c *nodeAgentClient) UpdateXrayBinary(ctx context.Context, in *UpdateXrayRe
 	return out, nil
 }
 
+func (c *nodeAgentClient) PushXrayBinary(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[XrayBinaryChunk, CommandResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[2], NodeAgent_PushXrayBinary_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[XrayBinaryChunk, CommandResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NodeAgent_PushXrayBinaryClient = grpc.ClientStreamingClient[XrayBinaryChunk, CommandResponse]
+
 func (c *nodeAgentClient) Uninstall(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*CommandResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CommandResponse)
@@ -505,7 +525,7 @@ func (c *nodeAgentClient) Wipe(ctx context.Context, in *NukeRequest, opts ...grp
 
 func (c *nodeAgentClient) Nuke(ctx context.Context, in *NukeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NukeProgress], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[2], NodeAgent_Nuke_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[3], NodeAgent_Nuke_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -564,7 +584,7 @@ func (c *nodeAgentClient) RestartSSH(ctx context.Context, in *Empty, opts ...grp
 
 func (c *nodeAgentClient) OpenTerminal(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TerminalInput, TerminalOutput], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[3], NodeAgent_OpenTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &NodeAgent_ServiceDesc.Streams[4], NodeAgent_OpenTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -911,6 +931,12 @@ type NodeAgentServer interface {
 	SwitchConnectMode(context.Context, *SwitchConnectModeRequest) (*CommandResponse, error)
 	// UpdateXrayBinary downloads and installs a specific xray-core version
 	UpdateXrayBinary(context.Context, *UpdateXrayRequest) (*CommandResponse, error)
+	// PushXrayBinary installs an xray-core build the hub sends over the call:
+	// the header first, then the data in chunks. It is a method of its own so an
+	// agent that predates it answers UNIMPLEMENTED rather than ignoring fields
+	// it doesn't know and downloading from GitHub. A build that is already
+	// installed (same hash, same version) is answered OK and nothing restarts.
+	PushXrayBinary(grpc.ClientStreamingServer[XrayBinaryChunk, CommandResponse]) error
 	// Uninstall removes the agent and xray from the system (Destructive)
 	Uninstall(context.Context, *Empty) (*CommandResponse, error)
 	// Wipe removes our footprint from the node and (optionally when mode=NUKE)
@@ -1084,6 +1110,9 @@ func (UnimplementedNodeAgentServer) SwitchConnectMode(context.Context, *SwitchCo
 }
 func (UnimplementedNodeAgentServer) UpdateXrayBinary(context.Context, *UpdateXrayRequest) (*CommandResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateXrayBinary not implemented")
+}
+func (UnimplementedNodeAgentServer) PushXrayBinary(grpc.ClientStreamingServer[XrayBinaryChunk, CommandResponse]) error {
+	return status.Error(codes.Unimplemented, "method PushXrayBinary not implemented")
 }
 func (UnimplementedNodeAgentServer) Uninstall(context.Context, *Empty) (*CommandResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Uninstall not implemented")
@@ -1609,6 +1638,13 @@ func _NodeAgent_UpdateXrayBinary_Handler(srv interface{}, ctx context.Context, d
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _NodeAgent_PushXrayBinary_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(NodeAgentServer).PushXrayBinary(&grpc.GenericServerStream[XrayBinaryChunk, CommandResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NodeAgent_PushXrayBinaryServer = grpc.ClientStreamingServer[XrayBinaryChunk, CommandResponse]
 
 func _NodeAgent_Uninstall_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(Empty)
@@ -2478,6 +2514,11 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Heartbeat",
 			Handler:       _NodeAgent_Heartbeat_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "PushXrayBinary",
+			Handler:       _NodeAgent_PushXrayBinary_Handler,
 			ClientStreams: true,
 		},
 		{

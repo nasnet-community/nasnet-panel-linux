@@ -12,7 +12,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent"
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 var _ agent.NodeClient = (*Client)(nil)
@@ -453,6 +455,12 @@ func (c *Client) UpdateXrayBinary(ctx context.Context, version string, restartAf
 		return errFromResp("update xray binary", resp)
 	}
 	return nil
+}
+
+// PushXrayBinary is refused: the built-in node runs the xray build the panel
+// keeps for it.
+func (c *Client) PushXrayBinary(context.Context, string, string, io.Reader, bool, bool) error {
+	return status.Error(codes.Unimplemented, "the built-in node takes its xray from the panel")
 }
 
 // ===== Outbound Testing =====

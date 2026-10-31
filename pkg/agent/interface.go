@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"io"
 	"time"
 
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
@@ -75,6 +76,10 @@ type NodeClient interface {
 
 	// Xray version management
 	UpdateXrayBinary(ctx context.Context, version string, restartAfter bool, downloadURL, downloadToken, checksum string) error
+	// PushXrayBinary sends a build to the agent. sum is the SHA256 of the
+	// unpacked binary; r is the binary, or one gzip stream of it when gzipped.
+	// An agent that predates the call answers UNIMPLEMENTED (IsUnimplemented).
+	PushXrayBinary(ctx context.Context, version, sum string, r io.Reader, restartAfter, gzipped bool) error
 
 	// Outbound testing
 	TestOutbound(ctx context.Context, spec *OutboundTestSpec) (*OutboundTestResult, error)

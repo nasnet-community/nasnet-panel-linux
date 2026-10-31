@@ -7403,6 +7403,158 @@ func (x *RealityDestProbeResponse) GetWarnings() []string {
 	return nil
 }
 
+// One message of PushXrayBinary: the header, then the data. The agent takes
+// at most 64 MiB once unpacked.
+type XrayBinaryChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*XrayBinaryChunk_Header
+	//	*XrayBinaryChunk_Data
+	Payload       isXrayBinaryChunk_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *XrayBinaryChunk) Reset() {
+	*x = XrayBinaryChunk{}
+	mi := &file_node_agent_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *XrayBinaryChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*XrayBinaryChunk) ProtoMessage() {}
+
+func (x *XrayBinaryChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use XrayBinaryChunk.ProtoReflect.Descriptor instead.
+func (*XrayBinaryChunk) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *XrayBinaryChunk) GetPayload() isXrayBinaryChunk_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *XrayBinaryChunk) GetHeader() *XrayBinaryHeader {
+	if x != nil {
+		if x, ok := x.Payload.(*XrayBinaryChunk_Header); ok {
+			return x.Header
+		}
+	}
+	return nil
+}
+
+func (x *XrayBinaryChunk) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*XrayBinaryChunk_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isXrayBinaryChunk_Payload interface {
+	isXrayBinaryChunk_Payload()
+}
+
+type XrayBinaryChunk_Header struct {
+	Header *XrayBinaryHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"` // first message only
+}
+
+type XrayBinaryChunk_Data struct {
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"` // every later message, at most 1 MiB
+}
+
+func (*XrayBinaryChunk_Header) isXrayBinaryChunk_Payload() {}
+
+func (*XrayBinaryChunk_Data) isXrayBinaryChunk_Payload() {}
+
+type XrayBinaryHeader struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                                // e.g. "26.10.21" (no v prefix)
+	Sha256        string                 `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`                                  // hex SHA256 of the unpacked binary (required)
+	RestartAfter  bool                   `protobuf:"varint,3,opt,name=restart_after,json=restartAfter,proto3" json:"restart_after,omitempty"` // start xray afterwards even if it was stopped
+	Gzip          bool                   `protobuf:"varint,4,opt,name=gzip,proto3" json:"gzip,omitempty"`                                     // the data chunks together are one gzip stream
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *XrayBinaryHeader) Reset() {
+	*x = XrayBinaryHeader{}
+	mi := &file_node_agent_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *XrayBinaryHeader) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*XrayBinaryHeader) ProtoMessage() {}
+
+func (x *XrayBinaryHeader) ProtoReflect() protoreflect.Message {
+	mi := &file_node_agent_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use XrayBinaryHeader.ProtoReflect.Descriptor instead.
+func (*XrayBinaryHeader) Descriptor() ([]byte, []int) {
+	return file_node_agent_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *XrayBinaryHeader) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *XrayBinaryHeader) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *XrayBinaryHeader) GetRestartAfter() bool {
+	if x != nil {
+		return x.RestartAfter
+	}
+	return false
+}
+
+func (x *XrayBinaryHeader) GetGzip() bool {
+	if x != nil {
+		return x.Gzip
+	}
+	return false
+}
+
 var File_node_agent_proto protoreflect.FileDescriptor
 
 const file_node_agent_proto_rawDesc = "" +
@@ -8074,7 +8226,16 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x04dest\x18\x02 \x01(\tR\x04dest\x12\x18\n" +
 	"\asummary\x18\x03 \x01(\tR\asummary\x123\n" +
 	"\x06checks\x18\x04 \x03(\v2\x1b.nodeagent.RealityDestCheckR\x06checks\x12\x1a\n" +
-	"\bwarnings\x18\x05 \x03(\tR\bwarnings*D\n" +
+	"\bwarnings\x18\x05 \x03(\tR\bwarnings\"i\n" +
+	"\x0fXrayBinaryChunk\x125\n" +
+	"\x06header\x18\x01 \x01(\v2\x1b.nodeagent.XrayBinaryHeaderH\x00R\x06header\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\apayload\"}\n" +
+	"\x10XrayBinaryHeader\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12#\n" +
+	"\rrestart_after\x18\x03 \x01(\bR\frestartAfter\x12\x12\n" +
+	"\x04gzip\x18\x04 \x01(\bR\x04gzip*D\n" +
 	"\aLogType\x12\x10\n" +
 	"\fLOG_TYPE_ALL\x10\x00\x12\x13\n" +
 	"\x0fLOG_TYPE_ACCESS\x10\x01\x12\x12\n" +
@@ -8086,7 +8247,7 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x17HEALTH_STATUS_UNHEALTHY\x10\x03*2\n" +
 	"\bNukeMode\x12\x12\n" +
 	"\x0eNUKE_MODE_WIPE\x10\x00\x12\x12\n" +
-	"\x0eNUKE_MODE_NUKE\x10\x012\xfe!\n" +
+	"\x0eNUKE_MODE_NUKE\x10\x012\xca\"\n" +
 	"\tNodeAgent\x124\n" +
 	"\tGetStatus\x12\x10.nodeagent.Empty\x1a\x15.nodeagent.NodeStatus\x129\n" +
 	"\tStartXray\x12\x10.nodeagent.Empty\x1a\x1a.nodeagent.CommandResponse\x12>\n" +
@@ -8115,7 +8276,8 @@ const file_node_agent_proto_rawDesc = "" +
 	"\x0fGetSelfChecksum\x12\x10.nodeagent.Empty\x1a\x1b.nodeagent.ChecksumResponse\x12N\n" +
 	"\x0eMoveListenPort\x12 .nodeagent.MoveListenPortRequest\x1a\x1a.nodeagent.CommandResponse\x12T\n" +
 	"\x11SwitchConnectMode\x12#.nodeagent.SwitchConnectModeRequest\x1a\x1a.nodeagent.CommandResponse\x12L\n" +
-	"\x10UpdateXrayBinary\x12\x1c.nodeagent.UpdateXrayRequest\x1a\x1a.nodeagent.CommandResponse\x129\n" +
+	"\x10UpdateXrayBinary\x12\x1c.nodeagent.UpdateXrayRequest\x1a\x1a.nodeagent.CommandResponse\x12J\n" +
+	"\x0ePushXrayBinary\x12\x1a.nodeagent.XrayBinaryChunk\x1a\x1a.nodeagent.CommandResponse(\x01\x129\n" +
 	"\tUninstall\x12\x10.nodeagent.Empty\x1a\x1a.nodeagent.CommandResponse\x125\n" +
 	"\x04Wipe\x12\x16.nodeagent.NukeRequest\x1a\x15.nodeagent.NukeReport\x129\n" +
 	"\x04Nuke\x12\x16.nodeagent.NukeRequest\x1a\x17.nodeagent.NukeProgress0\x01\x126\n" +
@@ -8167,7 +8329,7 @@ func file_node_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 116)
+var file_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 118)
 var file_node_agent_proto_goTypes = []any{
 	(LogType)(0),                           // 0: nodeagent.LogType
 	(HealthStatus)(0),                      // 1: nodeagent.HealthStatus
@@ -8269,26 +8431,28 @@ var file_node_agent_proto_goTypes = []any{
 	(*RealityDestProbeRequest)(nil),        // 97: nodeagent.RealityDestProbeRequest
 	(*RealityDestCheck)(nil),               // 98: nodeagent.RealityDestCheck
 	(*RealityDestProbeResponse)(nil),       // 99: nodeagent.RealityDestProbeResponse
-	nil,                                    // 100: nodeagent.XrayStats.UserUplinkEntry
-	nil,                                    // 101: nodeagent.XrayStats.UserDownlinkEntry
-	nil,                                    // 102: nodeagent.XrayStats.InboundUplinkEntry
-	nil,                                    // 103: nodeagent.XrayStats.InboundDownlinkEntry
-	nil,                                    // 104: nodeagent.XrayStats.OutboundUplinkEntry
-	nil,                                    // 105: nodeagent.XrayStats.OutboundDownlinkEntry
-	nil,                                    // 106: nodeagent.HealthResponse.ComponentsEntry
-	nil,                                    // 107: nodeagent.OnlineIPsResponse.IpsEntry
-	nil,                                    // 108: nodeagent.AllOnlineIPsResponse.UsersEntry
-	nil,                                    // 109: nodeagent.OnlineIPMap.IpsEntry
-	nil,                                    // 110: nodeagent.TrafficRecord.UserUplinkEntry
-	nil,                                    // 111: nodeagent.TrafficRecord.UserDownlinkEntry
-	nil,                                    // 112: nodeagent.TrafficRecord.OutboundUplinkEntry
-	nil,                                    // 113: nodeagent.TrafficRecord.OutboundDownlinkEntry
-	nil,                                    // 114: nodeagent.TrafficRecord.InboundUplinkEntry
-	nil,                                    // 115: nodeagent.TrafficRecord.InboundDownlinkEntry
-	nil,                                    // 116: nodeagent.AccessLogHourlySummary.DomainsEntry
-	nil,                                    // 117: nodeagent.AccessLogHourlySummary.SourceIpsEntry
-	nil,                                    // 118: nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
-	nil,                                    // 119: nodeagent.PoolSourceRequest.HeadersEntry
+	(*XrayBinaryChunk)(nil),                // 100: nodeagent.XrayBinaryChunk
+	(*XrayBinaryHeader)(nil),               // 101: nodeagent.XrayBinaryHeader
+	nil,                                    // 102: nodeagent.XrayStats.UserUplinkEntry
+	nil,                                    // 103: nodeagent.XrayStats.UserDownlinkEntry
+	nil,                                    // 104: nodeagent.XrayStats.InboundUplinkEntry
+	nil,                                    // 105: nodeagent.XrayStats.InboundDownlinkEntry
+	nil,                                    // 106: nodeagent.XrayStats.OutboundUplinkEntry
+	nil,                                    // 107: nodeagent.XrayStats.OutboundDownlinkEntry
+	nil,                                    // 108: nodeagent.HealthResponse.ComponentsEntry
+	nil,                                    // 109: nodeagent.OnlineIPsResponse.IpsEntry
+	nil,                                    // 110: nodeagent.AllOnlineIPsResponse.UsersEntry
+	nil,                                    // 111: nodeagent.OnlineIPMap.IpsEntry
+	nil,                                    // 112: nodeagent.TrafficRecord.UserUplinkEntry
+	nil,                                    // 113: nodeagent.TrafficRecord.UserDownlinkEntry
+	nil,                                    // 114: nodeagent.TrafficRecord.OutboundUplinkEntry
+	nil,                                    // 115: nodeagent.TrafficRecord.OutboundDownlinkEntry
+	nil,                                    // 116: nodeagent.TrafficRecord.InboundUplinkEntry
+	nil,                                    // 117: nodeagent.TrafficRecord.InboundDownlinkEntry
+	nil,                                    // 118: nodeagent.AccessLogHourlySummary.DomainsEntry
+	nil,                                    // 119: nodeagent.AccessLogHourlySummary.SourceIpsEntry
+	nil,                                    // 120: nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
+	nil,                                    // 121: nodeagent.PoolSourceRequest.HeadersEntry
 }
 var file_node_agent_proto_depIdxs = []int32{
 	5,   // 0: nodeagent.TerminalInput.resize:type_name -> nodeagent.TerminalResize
@@ -8302,27 +8466,27 @@ var file_node_agent_proto_depIdxs = []int32{
 	27,  // 8: nodeagent.StartInstallRequest.proxy:type_name -> nodeagent.ProxyConfig
 	33,  // 9: nodeagent.InstallProgressResponse.steps:type_name -> nodeagent.InstallStep
 	38,  // 10: nodeagent.UserList.users:type_name -> nodeagent.UserInfo
-	100, // 11: nodeagent.XrayStats.user_uplink:type_name -> nodeagent.XrayStats.UserUplinkEntry
-	101, // 12: nodeagent.XrayStats.user_downlink:type_name -> nodeagent.XrayStats.UserDownlinkEntry
-	102, // 13: nodeagent.XrayStats.inbound_uplink:type_name -> nodeagent.XrayStats.InboundUplinkEntry
-	103, // 14: nodeagent.XrayStats.inbound_downlink:type_name -> nodeagent.XrayStats.InboundDownlinkEntry
-	104, // 15: nodeagent.XrayStats.outbound_uplink:type_name -> nodeagent.XrayStats.OutboundUplinkEntry
-	105, // 16: nodeagent.XrayStats.outbound_downlink:type_name -> nodeagent.XrayStats.OutboundDownlinkEntry
+	102, // 11: nodeagent.XrayStats.user_uplink:type_name -> nodeagent.XrayStats.UserUplinkEntry
+	103, // 12: nodeagent.XrayStats.user_downlink:type_name -> nodeagent.XrayStats.UserDownlinkEntry
+	104, // 13: nodeagent.XrayStats.inbound_uplink:type_name -> nodeagent.XrayStats.InboundUplinkEntry
+	105, // 14: nodeagent.XrayStats.inbound_downlink:type_name -> nodeagent.XrayStats.InboundDownlinkEntry
+	106, // 15: nodeagent.XrayStats.outbound_uplink:type_name -> nodeagent.XrayStats.OutboundUplinkEntry
+	107, // 16: nodeagent.XrayStats.outbound_downlink:type_name -> nodeagent.XrayStats.OutboundDownlinkEntry
 	0,   // 17: nodeagent.LogRequest.log_type:type_name -> nodeagent.LogType
 	0,   // 18: nodeagent.LogEntry.log_type:type_name -> nodeagent.LogType
 	1,   // 19: nodeagent.HealthResponse.status:type_name -> nodeagent.HealthStatus
-	106, // 20: nodeagent.HealthResponse.components:type_name -> nodeagent.HealthResponse.ComponentsEntry
+	108, // 20: nodeagent.HealthResponse.components:type_name -> nodeagent.HealthResponse.ComponentsEntry
 	1,   // 21: nodeagent.ComponentHealth.status:type_name -> nodeagent.HealthStatus
 	11,  // 22: nodeagent.HeartbeatPong.status:type_name -> nodeagent.NodeStatus
-	107, // 23: nodeagent.OnlineIPsResponse.ips:type_name -> nodeagent.OnlineIPsResponse.IpsEntry
-	108, // 24: nodeagent.AllOnlineIPsResponse.users:type_name -> nodeagent.AllOnlineIPsResponse.UsersEntry
-	109, // 25: nodeagent.OnlineIPMap.ips:type_name -> nodeagent.OnlineIPMap.IpsEntry
-	110, // 26: nodeagent.TrafficRecord.user_uplink:type_name -> nodeagent.TrafficRecord.UserUplinkEntry
-	111, // 27: nodeagent.TrafficRecord.user_downlink:type_name -> nodeagent.TrafficRecord.UserDownlinkEntry
-	112, // 28: nodeagent.TrafficRecord.outbound_uplink:type_name -> nodeagent.TrafficRecord.OutboundUplinkEntry
-	113, // 29: nodeagent.TrafficRecord.outbound_downlink:type_name -> nodeagent.TrafficRecord.OutboundDownlinkEntry
-	114, // 30: nodeagent.TrafficRecord.inbound_uplink:type_name -> nodeagent.TrafficRecord.InboundUplinkEntry
-	115, // 31: nodeagent.TrafficRecord.inbound_downlink:type_name -> nodeagent.TrafficRecord.InboundDownlinkEntry
+	109, // 23: nodeagent.OnlineIPsResponse.ips:type_name -> nodeagent.OnlineIPsResponse.IpsEntry
+	110, // 24: nodeagent.AllOnlineIPsResponse.users:type_name -> nodeagent.AllOnlineIPsResponse.UsersEntry
+	111, // 25: nodeagent.OnlineIPMap.ips:type_name -> nodeagent.OnlineIPMap.IpsEntry
+	112, // 26: nodeagent.TrafficRecord.user_uplink:type_name -> nodeagent.TrafficRecord.UserUplinkEntry
+	113, // 27: nodeagent.TrafficRecord.user_downlink:type_name -> nodeagent.TrafficRecord.UserDownlinkEntry
+	114, // 28: nodeagent.TrafficRecord.outbound_uplink:type_name -> nodeagent.TrafficRecord.OutboundUplinkEntry
+	115, // 29: nodeagent.TrafficRecord.outbound_downlink:type_name -> nodeagent.TrafficRecord.OutboundDownlinkEntry
+	116, // 30: nodeagent.TrafficRecord.inbound_uplink:type_name -> nodeagent.TrafficRecord.InboundUplinkEntry
+	117, // 31: nodeagent.TrafficRecord.inbound_downlink:type_name -> nodeagent.TrafficRecord.InboundDownlinkEntry
 	64,  // 32: nodeagent.TrafficRecord.core_usage:type_name -> nodeagent.CoreUsageRecord
 	63,  // 33: nodeagent.BufferedTrafficStats.records:type_name -> nodeagent.TrafficRecord
 	39,  // 34: nodeagent.StatsBundle.system:type_name -> nodeagent.SystemStats
@@ -8331,142 +8495,145 @@ var file_node_agent_proto_depIdxs = []int32{
 	61,  // 37: nodeagent.StatsBundle.online_ips:type_name -> nodeagent.AllOnlineIPsResponse
 	69,  // 38: nodeagent.VLESSKeysResponse.keys:type_name -> nodeagent.VLESSKeyPair
 	72,  // 39: nodeagent.AccessLogResponse.entries:type_name -> nodeagent.AccessLogEntry
-	116, // 40: nodeagent.AccessLogHourlySummary.domains:type_name -> nodeagent.AccessLogHourlySummary.DomainsEntry
-	117, // 41: nodeagent.AccessLogHourlySummary.source_ips:type_name -> nodeagent.AccessLogHourlySummary.SourceIpsEntry
-	118, // 42: nodeagent.AccessLogHourlySummary.rejected_domains:type_name -> nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
+	118, // 40: nodeagent.AccessLogHourlySummary.domains:type_name -> nodeagent.AccessLogHourlySummary.DomainsEntry
+	119, // 41: nodeagent.AccessLogHourlySummary.source_ips:type_name -> nodeagent.AccessLogHourlySummary.SourceIpsEntry
+	120, // 42: nodeagent.AccessLogHourlySummary.rejected_domains:type_name -> nodeagent.AccessLogHourlySummary.RejectedDomainsEntry
 	75,  // 43: nodeagent.BufferedAccessLogSummary.entries:type_name -> nodeagent.AccessLogHourlySummary
 	2,   // 44: nodeagent.NukeRequest.mode:type_name -> nodeagent.NukeMode
 	90,  // 45: nodeagent.NukeReport.phases:type_name -> nodeagent.NukePhaseResult
 	3,   // 46: nodeagent.NukeReport.result:type_name -> nodeagent.NukeReport.Result
 	90,  // 47: nodeagent.NukeProgress.phase:type_name -> nodeagent.NukePhaseResult
 	91,  // 48: nodeagent.NukeProgress.done:type_name -> nodeagent.NukeReport
-	119, // 49: nodeagent.PoolSourceRequest.headers:type_name -> nodeagent.PoolSourceRequest.HeadersEntry
+	121, // 49: nodeagent.PoolSourceRequest.headers:type_name -> nodeagent.PoolSourceRequest.HeadersEntry
 	98,  // 50: nodeagent.RealityDestProbeResponse.checks:type_name -> nodeagent.RealityDestCheck
-	46,  // 51: nodeagent.HealthResponse.ComponentsEntry.value:type_name -> nodeagent.ComponentHealth
-	62,  // 52: nodeagent.AllOnlineIPsResponse.UsersEntry.value:type_name -> nodeagent.OnlineIPMap
-	7,   // 53: nodeagent.NodeAgent.GetStatus:input_type -> nodeagent.Empty
-	7,   // 54: nodeagent.NodeAgent.StartXray:input_type -> nodeagent.Empty
-	12,  // 55: nodeagent.NodeAgent.StopXray:input_type -> nodeagent.StopRequest
-	13,  // 56: nodeagent.NodeAgent.RestartXray:input_type -> nodeagent.RestartRequest
-	14,  // 57: nodeagent.NodeAgent.PushConfig:input_type -> nodeagent.ConfigPayload
-	16,  // 58: nodeagent.NodeAgent.UpdateXrayAPIConfig:input_type -> nodeagent.XrayAPIConfigPayload
-	7,   // 59: nodeagent.NodeAgent.GetCurrentConfig:input_type -> nodeagent.Empty
-	14,  // 60: nodeagent.NodeAgent.ValidateConfig:input_type -> nodeagent.ConfigPayload
-	35,  // 61: nodeagent.NodeAgent.AddUser:input_type -> nodeagent.UserPayload
-	35,  // 62: nodeagent.NodeAgent.RemoveUser:input_type -> nodeagent.UserPayload
-	36,  // 63: nodeagent.NodeAgent.ListUsers:input_type -> nodeagent.InboundSelector
-	7,   // 64: nodeagent.NodeAgent.GetSystemStats:input_type -> nodeagent.Empty
-	7,   // 65: nodeagent.NodeAgent.GetHostInfo:input_type -> nodeagent.Empty
-	40,  // 66: nodeagent.NodeAgent.GetXrayStats:input_type -> nodeagent.StatsRequest
-	43,  // 67: nodeagent.NodeAgent.StreamLogs:input_type -> nodeagent.LogRequest
-	7,   // 68: nodeagent.NodeAgent.HealthCheck:input_type -> nodeagent.Empty
-	7,   // 69: nodeagent.NodeAgent.GetVersion:input_type -> nodeagent.Empty
-	48,  // 70: nodeagent.NodeAgent.Heartbeat:input_type -> nodeagent.HeartbeatPing
-	52,  // 71: nodeagent.NodeAgent.SelfUpdate:input_type -> nodeagent.UpdateRequest
-	7,   // 72: nodeagent.NodeAgent.GetSelfChecksum:input_type -> nodeagent.Empty
-	50,  // 73: nodeagent.NodeAgent.MoveListenPort:input_type -> nodeagent.MoveListenPortRequest
-	51,  // 74: nodeagent.NodeAgent.SwitchConnectMode:input_type -> nodeagent.SwitchConnectModeRequest
-	56,  // 75: nodeagent.NodeAgent.UpdateXrayBinary:input_type -> nodeagent.UpdateXrayRequest
-	7,   // 76: nodeagent.NodeAgent.Uninstall:input_type -> nodeagent.Empty
-	89,  // 77: nodeagent.NodeAgent.Wipe:input_type -> nodeagent.NukeRequest
-	89,  // 78: nodeagent.NodeAgent.Nuke:input_type -> nodeagent.NukeRequest
-	7,   // 79: nodeagent.NodeAgent.GetSSHStatus:input_type -> nodeagent.Empty
-	10,  // 80: nodeagent.NodeAgent.UpdateSSHConfig:input_type -> nodeagent.SSHConfigPayload
-	7,   // 81: nodeagent.NodeAgent.ClearSSHLogs:input_type -> nodeagent.Empty
-	7,   // 82: nodeagent.NodeAgent.RestartSSH:input_type -> nodeagent.Empty
-	4,   // 83: nodeagent.NodeAgent.OpenTerminal:input_type -> nodeagent.TerminalInput
-	53,  // 84: nodeagent.NodeAgent.UpdateCertDenylist:input_type -> nodeagent.CertDenylist
-	15,  // 85: nodeagent.NodeAgent.WriteFile:input_type -> nodeagent.FilePayload
-	57,  // 86: nodeagent.NodeAgent.TestOutbound:input_type -> nodeagent.OutboundTestRequest
-	93,  // 87: nodeagent.NodeAgent.FetchPoolSource:input_type -> nodeagent.PoolSourceRequest
-	95,  // 88: nodeagent.NodeAgent.TestPoolCandidate:input_type -> nodeagent.PoolCandidateRequest
-	97,  // 89: nodeagent.NodeAgent.ProbeRealityDest:input_type -> nodeagent.RealityDestProbeRequest
-	59,  // 90: nodeagent.NodeAgent.GetUserOnlineIPs:input_type -> nodeagent.UserEmailRequest
-	7,   // 91: nodeagent.NodeAgent.GetAllUsersOnlineIPs:input_type -> nodeagent.Empty
-	7,   // 92: nodeagent.NodeAgent.GenerateVLESSKeys:input_type -> nodeagent.Empty
-	71,  // 93: nodeagent.NodeAgent.SetupBandwidth:input_type -> nodeagent.BandwidthRequest
-	7,   // 94: nodeagent.NodeAgent.TeardownBandwidth:input_type -> nodeagent.Empty
-	7,   // 95: nodeagent.NodeAgent.GetBufferedTraffic:input_type -> nodeagent.Empty
-	67,  // 96: nodeagent.NodeAgent.GetStatsBundle:input_type -> nodeagent.StatsBundleRequest
-	66,  // 97: nodeagent.NodeAgent.AckBufferedTraffic:input_type -> nodeagent.AckTrafficRequest
-	73,  // 98: nodeagent.NodeAgent.GetAccessLogs:input_type -> nodeagent.AccessLogRequest
-	7,   // 99: nodeagent.NodeAgent.GetBufferedAccessLogSummary:input_type -> nodeagent.Empty
-	77,  // 100: nodeagent.NodeAgent.AckBufferedAccessLogSummary:input_type -> nodeagent.AckAccessLogSummaryRequest
-	78,  // 101: nodeagent.NodeAgent.GetStarlinkStatus:input_type -> nodeagent.StarlinkRequest
-	78,  // 102: nodeagent.NodeAgent.GetStarlinkObstructionMap:input_type -> nodeagent.StarlinkRequest
-	81,  // 103: nodeagent.NodeAgent.StarlinkHandle:input_type -> nodeagent.StarlinkHandleRequest
-	83,  // 104: nodeagent.NodeAgent.InstallCertificate:input_type -> nodeagent.InstallCertificateRequest
-	85,  // 105: nodeagent.NodeAgent.InspectCertFile:input_type -> nodeagent.InspectCertFileRequest
-	87,  // 106: nodeagent.NodeAgent.ExecuteCommand:input_type -> nodeagent.ExecuteCommandRequest
-	18,  // 107: nodeagent.NodeAgent.ApplyCoreState:input_type -> nodeagent.CoreStatePayload
-	21,  // 108: nodeagent.NodeAgent.GetCoreStatus:input_type -> nodeagent.CoreStatusRequest
-	23,  // 109: nodeagent.NodeAgent.ProbeDependencies:input_type -> nodeagent.ProbeDependenciesRequest
-	30,  // 110: nodeagent.NodeAgent.StartDependencyInstall:input_type -> nodeagent.StartInstallRequest
-	32,  // 111: nodeagent.NodeAgent.GetInstallProgress:input_type -> nodeagent.InstallProgressRequest
-	11,  // 112: nodeagent.NodeAgent.GetStatus:output_type -> nodeagent.NodeStatus
-	8,   // 113: nodeagent.NodeAgent.StartXray:output_type -> nodeagent.CommandResponse
-	8,   // 114: nodeagent.NodeAgent.StopXray:output_type -> nodeagent.CommandResponse
-	8,   // 115: nodeagent.NodeAgent.RestartXray:output_type -> nodeagent.CommandResponse
-	8,   // 116: nodeagent.NodeAgent.PushConfig:output_type -> nodeagent.CommandResponse
-	8,   // 117: nodeagent.NodeAgent.UpdateXrayAPIConfig:output_type -> nodeagent.CommandResponse
-	14,  // 118: nodeagent.NodeAgent.GetCurrentConfig:output_type -> nodeagent.ConfigPayload
-	17,  // 119: nodeagent.NodeAgent.ValidateConfig:output_type -> nodeagent.ValidationResult
-	8,   // 120: nodeagent.NodeAgent.AddUser:output_type -> nodeagent.CommandResponse
-	8,   // 121: nodeagent.NodeAgent.RemoveUser:output_type -> nodeagent.CommandResponse
-	37,  // 122: nodeagent.NodeAgent.ListUsers:output_type -> nodeagent.UserList
-	39,  // 123: nodeagent.NodeAgent.GetSystemStats:output_type -> nodeagent.SystemStats
-	41,  // 124: nodeagent.NodeAgent.GetHostInfo:output_type -> nodeagent.HostInfo
-	42,  // 125: nodeagent.NodeAgent.GetXrayStats:output_type -> nodeagent.XrayStats
-	44,  // 126: nodeagent.NodeAgent.StreamLogs:output_type -> nodeagent.LogEntry
-	45,  // 127: nodeagent.NodeAgent.HealthCheck:output_type -> nodeagent.HealthResponse
-	47,  // 128: nodeagent.NodeAgent.GetVersion:output_type -> nodeagent.VersionInfo
-	49,  // 129: nodeagent.NodeAgent.Heartbeat:output_type -> nodeagent.HeartbeatPong
-	54,  // 130: nodeagent.NodeAgent.SelfUpdate:output_type -> nodeagent.UpdateResponse
-	55,  // 131: nodeagent.NodeAgent.GetSelfChecksum:output_type -> nodeagent.ChecksumResponse
-	8,   // 132: nodeagent.NodeAgent.MoveListenPort:output_type -> nodeagent.CommandResponse
-	8,   // 133: nodeagent.NodeAgent.SwitchConnectMode:output_type -> nodeagent.CommandResponse
-	8,   // 134: nodeagent.NodeAgent.UpdateXrayBinary:output_type -> nodeagent.CommandResponse
-	8,   // 135: nodeagent.NodeAgent.Uninstall:output_type -> nodeagent.CommandResponse
-	91,  // 136: nodeagent.NodeAgent.Wipe:output_type -> nodeagent.NukeReport
-	92,  // 137: nodeagent.NodeAgent.Nuke:output_type -> nodeagent.NukeProgress
-	9,   // 138: nodeagent.NodeAgent.GetSSHStatus:output_type -> nodeagent.SSHStatus
-	8,   // 139: nodeagent.NodeAgent.UpdateSSHConfig:output_type -> nodeagent.CommandResponse
-	8,   // 140: nodeagent.NodeAgent.ClearSSHLogs:output_type -> nodeagent.CommandResponse
-	8,   // 141: nodeagent.NodeAgent.RestartSSH:output_type -> nodeagent.CommandResponse
-	6,   // 142: nodeagent.NodeAgent.OpenTerminal:output_type -> nodeagent.TerminalOutput
-	8,   // 143: nodeagent.NodeAgent.UpdateCertDenylist:output_type -> nodeagent.CommandResponse
-	8,   // 144: nodeagent.NodeAgent.WriteFile:output_type -> nodeagent.CommandResponse
-	58,  // 145: nodeagent.NodeAgent.TestOutbound:output_type -> nodeagent.OutboundTestResponse
-	94,  // 146: nodeagent.NodeAgent.FetchPoolSource:output_type -> nodeagent.PoolSourceResponse
-	96,  // 147: nodeagent.NodeAgent.TestPoolCandidate:output_type -> nodeagent.PoolCandidateResponse
-	99,  // 148: nodeagent.NodeAgent.ProbeRealityDest:output_type -> nodeagent.RealityDestProbeResponse
-	60,  // 149: nodeagent.NodeAgent.GetUserOnlineIPs:output_type -> nodeagent.OnlineIPsResponse
-	61,  // 150: nodeagent.NodeAgent.GetAllUsersOnlineIPs:output_type -> nodeagent.AllOnlineIPsResponse
-	70,  // 151: nodeagent.NodeAgent.GenerateVLESSKeys:output_type -> nodeagent.VLESSKeysResponse
-	8,   // 152: nodeagent.NodeAgent.SetupBandwidth:output_type -> nodeagent.CommandResponse
-	8,   // 153: nodeagent.NodeAgent.TeardownBandwidth:output_type -> nodeagent.CommandResponse
-	65,  // 154: nodeagent.NodeAgent.GetBufferedTraffic:output_type -> nodeagent.BufferedTrafficStats
-	68,  // 155: nodeagent.NodeAgent.GetStatsBundle:output_type -> nodeagent.StatsBundle
-	8,   // 156: nodeagent.NodeAgent.AckBufferedTraffic:output_type -> nodeagent.CommandResponse
-	74,  // 157: nodeagent.NodeAgent.GetAccessLogs:output_type -> nodeagent.AccessLogResponse
-	76,  // 158: nodeagent.NodeAgent.GetBufferedAccessLogSummary:output_type -> nodeagent.BufferedAccessLogSummary
-	8,   // 159: nodeagent.NodeAgent.AckBufferedAccessLogSummary:output_type -> nodeagent.CommandResponse
-	79,  // 160: nodeagent.NodeAgent.GetStarlinkStatus:output_type -> nodeagent.StarlinkStatusResponse
-	80,  // 161: nodeagent.NodeAgent.GetStarlinkObstructionMap:output_type -> nodeagent.StarlinkObstructionMapResponse
-	82,  // 162: nodeagent.NodeAgent.StarlinkHandle:output_type -> nodeagent.StarlinkHandleResponse
-	84,  // 163: nodeagent.NodeAgent.InstallCertificate:output_type -> nodeagent.InstallCertificateResponse
-	86,  // 164: nodeagent.NodeAgent.InspectCertFile:output_type -> nodeagent.InspectCertFileResponse
-	88,  // 165: nodeagent.NodeAgent.ExecuteCommand:output_type -> nodeagent.ExecuteCommandResponse
-	8,   // 166: nodeagent.NodeAgent.ApplyCoreState:output_type -> nodeagent.CommandResponse
-	22,  // 167: nodeagent.NodeAgent.GetCoreStatus:output_type -> nodeagent.CoreStatusResponse
-	26,  // 168: nodeagent.NodeAgent.ProbeDependencies:output_type -> nodeagent.ProbeDependenciesResponse
-	31,  // 169: nodeagent.NodeAgent.StartDependencyInstall:output_type -> nodeagent.StartInstallResponse
-	34,  // 170: nodeagent.NodeAgent.GetInstallProgress:output_type -> nodeagent.InstallProgressResponse
-	112, // [112:171] is the sub-list for method output_type
-	53,  // [53:112] is the sub-list for method input_type
-	53,  // [53:53] is the sub-list for extension type_name
-	53,  // [53:53] is the sub-list for extension extendee
-	0,   // [0:53] is the sub-list for field type_name
+	101, // 51: nodeagent.XrayBinaryChunk.header:type_name -> nodeagent.XrayBinaryHeader
+	46,  // 52: nodeagent.HealthResponse.ComponentsEntry.value:type_name -> nodeagent.ComponentHealth
+	62,  // 53: nodeagent.AllOnlineIPsResponse.UsersEntry.value:type_name -> nodeagent.OnlineIPMap
+	7,   // 54: nodeagent.NodeAgent.GetStatus:input_type -> nodeagent.Empty
+	7,   // 55: nodeagent.NodeAgent.StartXray:input_type -> nodeagent.Empty
+	12,  // 56: nodeagent.NodeAgent.StopXray:input_type -> nodeagent.StopRequest
+	13,  // 57: nodeagent.NodeAgent.RestartXray:input_type -> nodeagent.RestartRequest
+	14,  // 58: nodeagent.NodeAgent.PushConfig:input_type -> nodeagent.ConfigPayload
+	16,  // 59: nodeagent.NodeAgent.UpdateXrayAPIConfig:input_type -> nodeagent.XrayAPIConfigPayload
+	7,   // 60: nodeagent.NodeAgent.GetCurrentConfig:input_type -> nodeagent.Empty
+	14,  // 61: nodeagent.NodeAgent.ValidateConfig:input_type -> nodeagent.ConfigPayload
+	35,  // 62: nodeagent.NodeAgent.AddUser:input_type -> nodeagent.UserPayload
+	35,  // 63: nodeagent.NodeAgent.RemoveUser:input_type -> nodeagent.UserPayload
+	36,  // 64: nodeagent.NodeAgent.ListUsers:input_type -> nodeagent.InboundSelector
+	7,   // 65: nodeagent.NodeAgent.GetSystemStats:input_type -> nodeagent.Empty
+	7,   // 66: nodeagent.NodeAgent.GetHostInfo:input_type -> nodeagent.Empty
+	40,  // 67: nodeagent.NodeAgent.GetXrayStats:input_type -> nodeagent.StatsRequest
+	43,  // 68: nodeagent.NodeAgent.StreamLogs:input_type -> nodeagent.LogRequest
+	7,   // 69: nodeagent.NodeAgent.HealthCheck:input_type -> nodeagent.Empty
+	7,   // 70: nodeagent.NodeAgent.GetVersion:input_type -> nodeagent.Empty
+	48,  // 71: nodeagent.NodeAgent.Heartbeat:input_type -> nodeagent.HeartbeatPing
+	52,  // 72: nodeagent.NodeAgent.SelfUpdate:input_type -> nodeagent.UpdateRequest
+	7,   // 73: nodeagent.NodeAgent.GetSelfChecksum:input_type -> nodeagent.Empty
+	50,  // 74: nodeagent.NodeAgent.MoveListenPort:input_type -> nodeagent.MoveListenPortRequest
+	51,  // 75: nodeagent.NodeAgent.SwitchConnectMode:input_type -> nodeagent.SwitchConnectModeRequest
+	56,  // 76: nodeagent.NodeAgent.UpdateXrayBinary:input_type -> nodeagent.UpdateXrayRequest
+	100, // 77: nodeagent.NodeAgent.PushXrayBinary:input_type -> nodeagent.XrayBinaryChunk
+	7,   // 78: nodeagent.NodeAgent.Uninstall:input_type -> nodeagent.Empty
+	89,  // 79: nodeagent.NodeAgent.Wipe:input_type -> nodeagent.NukeRequest
+	89,  // 80: nodeagent.NodeAgent.Nuke:input_type -> nodeagent.NukeRequest
+	7,   // 81: nodeagent.NodeAgent.GetSSHStatus:input_type -> nodeagent.Empty
+	10,  // 82: nodeagent.NodeAgent.UpdateSSHConfig:input_type -> nodeagent.SSHConfigPayload
+	7,   // 83: nodeagent.NodeAgent.ClearSSHLogs:input_type -> nodeagent.Empty
+	7,   // 84: nodeagent.NodeAgent.RestartSSH:input_type -> nodeagent.Empty
+	4,   // 85: nodeagent.NodeAgent.OpenTerminal:input_type -> nodeagent.TerminalInput
+	53,  // 86: nodeagent.NodeAgent.UpdateCertDenylist:input_type -> nodeagent.CertDenylist
+	15,  // 87: nodeagent.NodeAgent.WriteFile:input_type -> nodeagent.FilePayload
+	57,  // 88: nodeagent.NodeAgent.TestOutbound:input_type -> nodeagent.OutboundTestRequest
+	93,  // 89: nodeagent.NodeAgent.FetchPoolSource:input_type -> nodeagent.PoolSourceRequest
+	95,  // 90: nodeagent.NodeAgent.TestPoolCandidate:input_type -> nodeagent.PoolCandidateRequest
+	97,  // 91: nodeagent.NodeAgent.ProbeRealityDest:input_type -> nodeagent.RealityDestProbeRequest
+	59,  // 92: nodeagent.NodeAgent.GetUserOnlineIPs:input_type -> nodeagent.UserEmailRequest
+	7,   // 93: nodeagent.NodeAgent.GetAllUsersOnlineIPs:input_type -> nodeagent.Empty
+	7,   // 94: nodeagent.NodeAgent.GenerateVLESSKeys:input_type -> nodeagent.Empty
+	71,  // 95: nodeagent.NodeAgent.SetupBandwidth:input_type -> nodeagent.BandwidthRequest
+	7,   // 96: nodeagent.NodeAgent.TeardownBandwidth:input_type -> nodeagent.Empty
+	7,   // 97: nodeagent.NodeAgent.GetBufferedTraffic:input_type -> nodeagent.Empty
+	67,  // 98: nodeagent.NodeAgent.GetStatsBundle:input_type -> nodeagent.StatsBundleRequest
+	66,  // 99: nodeagent.NodeAgent.AckBufferedTraffic:input_type -> nodeagent.AckTrafficRequest
+	73,  // 100: nodeagent.NodeAgent.GetAccessLogs:input_type -> nodeagent.AccessLogRequest
+	7,   // 101: nodeagent.NodeAgent.GetBufferedAccessLogSummary:input_type -> nodeagent.Empty
+	77,  // 102: nodeagent.NodeAgent.AckBufferedAccessLogSummary:input_type -> nodeagent.AckAccessLogSummaryRequest
+	78,  // 103: nodeagent.NodeAgent.GetStarlinkStatus:input_type -> nodeagent.StarlinkRequest
+	78,  // 104: nodeagent.NodeAgent.GetStarlinkObstructionMap:input_type -> nodeagent.StarlinkRequest
+	81,  // 105: nodeagent.NodeAgent.StarlinkHandle:input_type -> nodeagent.StarlinkHandleRequest
+	83,  // 106: nodeagent.NodeAgent.InstallCertificate:input_type -> nodeagent.InstallCertificateRequest
+	85,  // 107: nodeagent.NodeAgent.InspectCertFile:input_type -> nodeagent.InspectCertFileRequest
+	87,  // 108: nodeagent.NodeAgent.ExecuteCommand:input_type -> nodeagent.ExecuteCommandRequest
+	18,  // 109: nodeagent.NodeAgent.ApplyCoreState:input_type -> nodeagent.CoreStatePayload
+	21,  // 110: nodeagent.NodeAgent.GetCoreStatus:input_type -> nodeagent.CoreStatusRequest
+	23,  // 111: nodeagent.NodeAgent.ProbeDependencies:input_type -> nodeagent.ProbeDependenciesRequest
+	30,  // 112: nodeagent.NodeAgent.StartDependencyInstall:input_type -> nodeagent.StartInstallRequest
+	32,  // 113: nodeagent.NodeAgent.GetInstallProgress:input_type -> nodeagent.InstallProgressRequest
+	11,  // 114: nodeagent.NodeAgent.GetStatus:output_type -> nodeagent.NodeStatus
+	8,   // 115: nodeagent.NodeAgent.StartXray:output_type -> nodeagent.CommandResponse
+	8,   // 116: nodeagent.NodeAgent.StopXray:output_type -> nodeagent.CommandResponse
+	8,   // 117: nodeagent.NodeAgent.RestartXray:output_type -> nodeagent.CommandResponse
+	8,   // 118: nodeagent.NodeAgent.PushConfig:output_type -> nodeagent.CommandResponse
+	8,   // 119: nodeagent.NodeAgent.UpdateXrayAPIConfig:output_type -> nodeagent.CommandResponse
+	14,  // 120: nodeagent.NodeAgent.GetCurrentConfig:output_type -> nodeagent.ConfigPayload
+	17,  // 121: nodeagent.NodeAgent.ValidateConfig:output_type -> nodeagent.ValidationResult
+	8,   // 122: nodeagent.NodeAgent.AddUser:output_type -> nodeagent.CommandResponse
+	8,   // 123: nodeagent.NodeAgent.RemoveUser:output_type -> nodeagent.CommandResponse
+	37,  // 124: nodeagent.NodeAgent.ListUsers:output_type -> nodeagent.UserList
+	39,  // 125: nodeagent.NodeAgent.GetSystemStats:output_type -> nodeagent.SystemStats
+	41,  // 126: nodeagent.NodeAgent.GetHostInfo:output_type -> nodeagent.HostInfo
+	42,  // 127: nodeagent.NodeAgent.GetXrayStats:output_type -> nodeagent.XrayStats
+	44,  // 128: nodeagent.NodeAgent.StreamLogs:output_type -> nodeagent.LogEntry
+	45,  // 129: nodeagent.NodeAgent.HealthCheck:output_type -> nodeagent.HealthResponse
+	47,  // 130: nodeagent.NodeAgent.GetVersion:output_type -> nodeagent.VersionInfo
+	49,  // 131: nodeagent.NodeAgent.Heartbeat:output_type -> nodeagent.HeartbeatPong
+	54,  // 132: nodeagent.NodeAgent.SelfUpdate:output_type -> nodeagent.UpdateResponse
+	55,  // 133: nodeagent.NodeAgent.GetSelfChecksum:output_type -> nodeagent.ChecksumResponse
+	8,   // 134: nodeagent.NodeAgent.MoveListenPort:output_type -> nodeagent.CommandResponse
+	8,   // 135: nodeagent.NodeAgent.SwitchConnectMode:output_type -> nodeagent.CommandResponse
+	8,   // 136: nodeagent.NodeAgent.UpdateXrayBinary:output_type -> nodeagent.CommandResponse
+	8,   // 137: nodeagent.NodeAgent.PushXrayBinary:output_type -> nodeagent.CommandResponse
+	8,   // 138: nodeagent.NodeAgent.Uninstall:output_type -> nodeagent.CommandResponse
+	91,  // 139: nodeagent.NodeAgent.Wipe:output_type -> nodeagent.NukeReport
+	92,  // 140: nodeagent.NodeAgent.Nuke:output_type -> nodeagent.NukeProgress
+	9,   // 141: nodeagent.NodeAgent.GetSSHStatus:output_type -> nodeagent.SSHStatus
+	8,   // 142: nodeagent.NodeAgent.UpdateSSHConfig:output_type -> nodeagent.CommandResponse
+	8,   // 143: nodeagent.NodeAgent.ClearSSHLogs:output_type -> nodeagent.CommandResponse
+	8,   // 144: nodeagent.NodeAgent.RestartSSH:output_type -> nodeagent.CommandResponse
+	6,   // 145: nodeagent.NodeAgent.OpenTerminal:output_type -> nodeagent.TerminalOutput
+	8,   // 146: nodeagent.NodeAgent.UpdateCertDenylist:output_type -> nodeagent.CommandResponse
+	8,   // 147: nodeagent.NodeAgent.WriteFile:output_type -> nodeagent.CommandResponse
+	58,  // 148: nodeagent.NodeAgent.TestOutbound:output_type -> nodeagent.OutboundTestResponse
+	94,  // 149: nodeagent.NodeAgent.FetchPoolSource:output_type -> nodeagent.PoolSourceResponse
+	96,  // 150: nodeagent.NodeAgent.TestPoolCandidate:output_type -> nodeagent.PoolCandidateResponse
+	99,  // 151: nodeagent.NodeAgent.ProbeRealityDest:output_type -> nodeagent.RealityDestProbeResponse
+	60,  // 152: nodeagent.NodeAgent.GetUserOnlineIPs:output_type -> nodeagent.OnlineIPsResponse
+	61,  // 153: nodeagent.NodeAgent.GetAllUsersOnlineIPs:output_type -> nodeagent.AllOnlineIPsResponse
+	70,  // 154: nodeagent.NodeAgent.GenerateVLESSKeys:output_type -> nodeagent.VLESSKeysResponse
+	8,   // 155: nodeagent.NodeAgent.SetupBandwidth:output_type -> nodeagent.CommandResponse
+	8,   // 156: nodeagent.NodeAgent.TeardownBandwidth:output_type -> nodeagent.CommandResponse
+	65,  // 157: nodeagent.NodeAgent.GetBufferedTraffic:output_type -> nodeagent.BufferedTrafficStats
+	68,  // 158: nodeagent.NodeAgent.GetStatsBundle:output_type -> nodeagent.StatsBundle
+	8,   // 159: nodeagent.NodeAgent.AckBufferedTraffic:output_type -> nodeagent.CommandResponse
+	74,  // 160: nodeagent.NodeAgent.GetAccessLogs:output_type -> nodeagent.AccessLogResponse
+	76,  // 161: nodeagent.NodeAgent.GetBufferedAccessLogSummary:output_type -> nodeagent.BufferedAccessLogSummary
+	8,   // 162: nodeagent.NodeAgent.AckBufferedAccessLogSummary:output_type -> nodeagent.CommandResponse
+	79,  // 163: nodeagent.NodeAgent.GetStarlinkStatus:output_type -> nodeagent.StarlinkStatusResponse
+	80,  // 164: nodeagent.NodeAgent.GetStarlinkObstructionMap:output_type -> nodeagent.StarlinkObstructionMapResponse
+	82,  // 165: nodeagent.NodeAgent.StarlinkHandle:output_type -> nodeagent.StarlinkHandleResponse
+	84,  // 166: nodeagent.NodeAgent.InstallCertificate:output_type -> nodeagent.InstallCertificateResponse
+	86,  // 167: nodeagent.NodeAgent.InspectCertFile:output_type -> nodeagent.InspectCertFileResponse
+	88,  // 168: nodeagent.NodeAgent.ExecuteCommand:output_type -> nodeagent.ExecuteCommandResponse
+	8,   // 169: nodeagent.NodeAgent.ApplyCoreState:output_type -> nodeagent.CommandResponse
+	22,  // 170: nodeagent.NodeAgent.GetCoreStatus:output_type -> nodeagent.CoreStatusResponse
+	26,  // 171: nodeagent.NodeAgent.ProbeDependencies:output_type -> nodeagent.ProbeDependenciesResponse
+	31,  // 172: nodeagent.NodeAgent.StartDependencyInstall:output_type -> nodeagent.StartInstallResponse
+	34,  // 173: nodeagent.NodeAgent.GetInstallProgress:output_type -> nodeagent.InstallProgressResponse
+	114, // [114:174] is the sub-list for method output_type
+	54,  // [54:114] is the sub-list for method input_type
+	54,  // [54:54] is the sub-list for extension type_name
+	54,  // [54:54] is the sub-list for extension extendee
+	0,   // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_node_agent_proto_init() }
@@ -8493,13 +8660,17 @@ func file_node_agent_proto_init() {
 		(*NukeProgress_Phase)(nil),
 		(*NukeProgress_Done)(nil),
 	}
+	file_node_agent_proto_msgTypes[96].OneofWrappers = []any{
+		(*XrayBinaryChunk_Header)(nil),
+		(*XrayBinaryChunk_Data)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_agent_proto_rawDesc), len(file_node_agent_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   116,
+			NumMessages:   118,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
