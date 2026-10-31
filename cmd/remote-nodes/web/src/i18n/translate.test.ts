@@ -84,6 +84,24 @@ describe('dictionaries', () => {
       }
     }
   })
+
+  it('set a path in a Persian sentence off as a left-to-right run, or its slashes land in the wrong places', () => {
+    // a path that opens a run of right-to-left text comes out as "usr/local/bin/xray/" unless it is isolated
+    const paths = /(?<![\w.:/])\/[a-z][\w.-]*(?:\/[\w.-]+)+/g
+    let seen = 0
+    for (const key of keys) {
+      for (const s of text(fa[key])) {
+        for (const m of s.matchAll(paths)) {
+          seen++
+          const at = m.index ?? 0
+          expect(s[at - 1], `${key}: ${m[0]}`).toBe('⁦')
+          expect(s[at + m[0].length], `${key}: ${m[0]}`).toBe('⁩')
+        }
+      }
+    }
+    // the check is looking at something
+    expect(seen).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe('the language people see', () => {
