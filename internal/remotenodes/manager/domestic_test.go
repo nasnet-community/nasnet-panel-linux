@@ -3,6 +3,7 @@
 package manager
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"net/netip"
@@ -501,6 +502,41 @@ func TestOnlyRegisteredNodesAreMarkedAndOnlyForChangesBeforeThem(t *testing.T) {
 		}
 		if got := strings.Count(r.log.String(), "restarted a node's Xray"); got != 1 {
 			t.Errorf("%d restarts in the log, want 1:\n%s", got, r.log)
+		}
+	})
+}
+
+// A config push, a switch and a reconcile each hold the node's turn at its
+// clients, and a restart that landed in the middle of one would undo it. So the
+// restart waits for its turn, and the node is marked all the while.
+func TestTheRestartWaitsForWhatHoldsTheNodesTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		facts := newFacts(ok(withAddr(epoch, addrA)))
+		r := newRig(t, withFacts(facts))
+		n := addNode(t, r.cfg.Store)
+		ag := r.net.agent(n.ID)
+		r.start()
+		defer r.stop()
+		r.advance(time.Minute)
+
+		unlock, err := r.m.lockNodes(context.Background(), n.ID)
+		must(t, err)
+		facts.set(ok(withAddr(epoch, addrB)))
+		r.advance(3 * time.Minute)
+		if all, _ := restarted(ag); all != 0 {
+			t.Fatalf("Xray was restarted %d times while something else held the node's turn", all)
+		}
+		if p, _ := r.m.peek(n.ID); !p.resetDue {
+			t.Error("the mark is gone before the restart was made")
+		}
+
+		unlock()
+		r.advance(30 * time.Second)
+		if all, _ := restarted(ag); all != 1 {
+			t.Errorf("%d restarts once the turn was free, want 1", all)
+		}
+		if p, _ := r.m.peek(n.ID); p.resetDue {
+			t.Error("the mark stays after the restart")
 		}
 	})
 }

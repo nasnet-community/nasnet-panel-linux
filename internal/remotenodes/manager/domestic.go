@@ -97,25 +97,35 @@ func (m *Manager) resetDue(l *nodeLive) int {
 	return 0
 }
 
-// resetXray restarts a node's Xray for the change numbered seq and says
-// whether it did. It is inside expectRestarts, so the restart is the hub's own
-// doing and no crash loop. The caller puts the node's clients right afterwards:
-// the restarted Xray has none of those added to it while it ran.
+// resetXray restarts a node's Xray for the changes of the router's address it
+// has not answered for yet, and says whether it did. It holds the node's turn
+// at its clients, like a config push,
+// a switch and a reconcile do, so that it never lands in the middle of one: a
+// push restarts Xray itself, and a switch that loses its client to the restart
+// reports a failure. It is inside expectRestarts, so the restart is the hub's
+// own doing and no crash loop. The caller puts the node's clients right
+// afterwards: the restarted Xray has none of those added to it while it ran.
 //
 // A failure is logged and the mark stays, but the loop doesn't try again until
 // it has a new connection or the address changes again: a restart that can't be
 // done (the config on the node is bad) would otherwise be tried at every poll,
 // and each try that did get as far as stopping Xray costs the clients a gap.
-func (m *Manager) resetXray(ctx context.Context, l *nodeLive, c Client, seq int) bool {
+func (m *Manager) resetXray(ctx context.Context, l *nodeLive, c Client) bool {
+	unlock, err := m.lockNodes(ctx, l.id)
+	if err != nil {
+		return false // the loop is stopping
+	}
+	// read under the turn: the restart answers for every change up to now, and the event says which
 	m.mu.RLock()
-	from, to := l.reset.from, l.reset.to
+	seq, from, to := l.reset.seq, l.reset.from, l.reset.to
 	m.mu.RUnlock()
 
 	done := m.expectRestarts(l.id)
 	rctx, cancel := context.WithTimeout(ctx, restartTimeout)
-	err := c.RestartXray(rctx, true)
+	err = c.RestartXray(rctx, true)
 	cancel()
 	done()
+	unlock()
 	if ctx.Err() != nil {
 		return false
 	}

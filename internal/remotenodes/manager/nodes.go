@@ -329,7 +329,7 @@ func (m *Manager) serve(ctx context.Context, l *nodeLive, c Client, backoff *tim
 			*backoff = connectMin
 			if seq := m.resetDue(l); seq > tried {
 				tried = seq
-				restarted = m.resetXray(ctx, l, c, seq) || restarted
+				restarted = m.resetXray(ctx, l, c) || restarted
 			}
 			pending = pending || restarted
 			now := m.now()
