@@ -282,3 +282,75 @@ func (m *Manager) DeleteSubscription(ctx context.Context, id uint) error {
 	m.log.Info("subscription removed", "subscription", id, "name", name)
 	return nil
 }
+
+// SetEnabled switches a subscription on or off at one node. Off keeps the
+// client id in the state, so switching on again gives the same link back. The
+// choice is saved first and a node that can't be reached takes it when it is
+// back.
+//
+// Asking for what is so already does no harm: no event is made, but the node
+// is told again, which puts right a node that never got the last change.
+func (m *Manager) SetEnabled(ctx context.Context, subID, nodeID uint, enabled bool) (api.Subscription, error) {
+	st := m.cfg.Store.Read()
+	if st.FindSubscription(subID) == nil {
+		return api.Subscription{}, notFound("subscription", subID)
+	}
+	if _, err := m.subscribable(st, nodeID); err != nil {
+		return api.Subscription{}, err
+	}
+	unlock, err := m.lockNodes(ctx, nodeID)
+	if err != nil {
+		return api.Subscription{}, err
+	}
+	defer unlock()
+
+	var (
+		name    string
+		client  subscriptions.Client
+		known   bool // the state has a client id for the pair
+		changed bool
+	)
+	err = m.cfg.Store.Update(func(s *model.State) error {
+		sub := s.FindSubscription(subID)
+		if sub == nil {
+			return notFound("subscription", subID)
+		}
+		if n := s.FindNode(nodeID); n == nil || n.State != model.NodeRegistered {
+			return notFound("node", nodeID)
+		}
+		name = sub.Name
+		e := s.FindEnablement(subID, nodeID)
+		switch {
+		case e == nil && !enabled:
+			return nil // never on here, so nothing to switch off
+		case e == nil:
+			cid, err := newClientID()
+			if err != nil {
+				return err
+			}
+			s.Enablements = append(s.Enablements, model.Enablement{SubscriptionID: subID, NodeID: nodeID, ClientUUID: cid, Enabled: true})
+			e, changed = &s.Enablements[len(s.Enablements)-1], true
+		case e.Enabled != enabled:
+			e.Enabled, changed = enabled, true
+		}
+		client, known = clientOf(subID, e.ClientUUID), true
+		return nil
+	})
+	if err != nil {
+		return api.Subscription{}, err
+	}
+	if known && enabled {
+		m.applyTo(ctx, nodeID, "on", func(ctx context.Context, a Client) error { return subscriptions.Enable(ctx, a, client) })
+	} else if known {
+		m.applyTo(ctx, nodeID, "off", func(ctx context.Context, a Client) error { return subscriptions.Disable(ctx, a, client.Email) })
+	}
+	if changed {
+		kind := EventSubscriptionOff
+		if enabled {
+			kind = EventSubscriptionOn
+		}
+		m.Event(nodeID, kind, name)
+		m.log.Info("subscription switched", "subscription", subID, "node", nodeID, "on", enabled)
+	}
+	return m.subscriptionView(subID)
+}
