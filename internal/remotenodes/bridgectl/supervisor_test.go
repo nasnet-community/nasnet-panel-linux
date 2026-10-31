@@ -254,6 +254,40 @@ func TestBackoffState(t *testing.T) {
 	}
 }
 
+// A child that has died is in backoff, and Status says when the next is due from
+// the first moment it says backoff at all. The message "the bridge ended" is
+// written between the two steps of going into backoff, so a reader that looks
+// then sees what a reader at any other moment could.
+func TestBackoffComesWithItsRetryTime(t *testing.T) {
+	var (
+		s   *Supervisor
+		mu  sync.Mutex
+		bad []string
+	)
+	s = supervise(t, "crash", func(c *Config) {
+		c.Backoff = Backoff{Min: time.Hour, Max: time.Hour, Healthy: time.Hour}
+		c.Logf = func(format string, args ...any) {
+			t.Logf(format, args...)
+			if strings.HasPrefix(format, "the bridge ended") {
+				if st := s.Status(); st.State == StateBackoff && st.RetryAt.IsZero() {
+					mu.Lock()
+					bad = append(bad, fmt.Sprintf("%+v", st))
+					mu.Unlock()
+				}
+			}
+		}
+	})
+	if err := s.Start(specFor(t, "n1")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 10*time.Second, "the child to die", func() bool { return s.Status().State == StateBackoff })
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bad) > 0 {
+		t.Errorf("backoff with no retry time: %v", bad)
+	}
+}
+
 func TestStopKillsAChildThatWontGo(t *testing.T) {
 	s := supervise(t, "stubborn", func(c *Config) { c.StopGrace = 500 * time.Millisecond })
 	if err := s.Start(specFor(t, "n1")); err != nil {
