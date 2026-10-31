@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/netip"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,6 +42,12 @@ type Size struct {
 type Facts struct {
 	Domestic bool // a Domestic link is up
 	VPN      bool // a VPN is up
+
+	// DomesticAddr is the router's own IPv4 address on the Domestic link. It is
+	// the zero Addr when the router gave none, which is what it does while the
+	// link is down, and also when it gave something that isn't an address.
+	// Nothing tells those apart, and neither is a change of address.
+	DomesticAddr netip.Addr
 
 	VPNKind  string // wireguard, l2tp, openvpn or other; "" when the router named none
 	VPNLabel string // the VPN's interface name
@@ -108,6 +115,11 @@ func (f *Facts) line(s string) {
 		ok = flag(&f.Domestic, val)
 	case "vpn":
 		ok = flag(&f.VPN, val)
+	case "domestic_addr":
+		// unlike the keys around it, a bad value doesn't keep an earlier
+		// line's: the router said something about its address, and it
+		// wasn't one, so the address is not known
+		ok = address(&f.DomesticAddr, val)
 	case "route_foreign":
 		ok = flag(&f.RouteForeign, val)
 	case "route_vpn":
@@ -143,6 +155,24 @@ func flag(dst *bool, v string) bool {
 	default:
 		return false
 	}
+	return true
+}
+
+// address takes the IPv4 address of one of the router's own links, in dotted
+// decimal and nothing else: no mask, no zone, no leading zeros, no IPv6. Nor
+// is one that no link holds an address: 0.0.0.0, loopback, link-local,
+// multicast or the broadcast. An empty value is the script saying it has none,
+// which is a good line. Whatever fails leaves the address unknown.
+func address(dst *netip.Addr, v string) bool {
+	*dst = netip.Addr{}
+	if v == "" {
+		return true
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil || !a.Is4() || !a.IsGlobalUnicast() {
+		return false
+	}
+	*dst = a
 	return true
 }
 

@@ -5,6 +5,7 @@ package routerfacts
 import (
 	"errors"
 	"io"
+	"net/netip"
 	"reflect"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ func goodReport() string {
 	return strings.Join([]string{
 		"# written by the router script",
 		"domestic=1",
+		"domestic_addr=192.168.1.20",
 		"vpn=1",
 		"vpn_kind=wireguard",
 		"vpn_label=wg-vpn",
@@ -47,7 +49,7 @@ func mustParse(t *testing.T, s string) Facts {
 func TestAWholeReport(t *testing.T) {
 	got := mustParse(t, goodReport())
 	want := Facts{
-		Domestic: true, VPN: true, VPNKind: "wireguard", VPNLabel: "wg-vpn",
+		Domestic: true, DomesticAddr: netip.MustParseAddr("192.168.1.20"), VPN: true, VPNKind: "wireguard", VPNLabel: "wg-vpn",
 		RouteForeign: true, RouteVPN: true, RouteDomestic: true,
 		ROS:     "7.24.5",
 		FreeMem: Size{412000000, true}, FreeDisk: Size{9000000, true},
@@ -201,5 +203,92 @@ func TestAReaderThatFailsFailsTheParse(t *testing.T) {
 	}
 	if !reflect.DeepEqual(f, Facts{}) {
 		t.Fatalf("a failed read left facts behind: %+v", f)
+	}
+}
+
+func TestTheDomesticAddressIsAnIPv4AddressOrNothing(t *testing.T) {
+	for _, ok := range []string{
+		"192.168.1.20", "10.0.0.2", "100.64.12.7", "203.0.113.9", "8.8.8.8", "172.16.0.1",
+		"192.168.1.255", // a directed broadcast is nothing a script would send, and no worse than any other
+	} {
+		for _, in := range []string{"domestic_addr=" + ok + "\n", "  domestic_addr =  " + ok + "  \r\n", "\xef\xbb\xbfdomestic_addr=" + ok} {
+			f := mustParse(t, in)
+			if f.DomesticAddr != netip.MustParseAddr(ok) || f.BadLines != 0 {
+				t.Errorf("%q: addr %v, %d bad lines", in, f.DomesticAddr, f.BadLines)
+			}
+		}
+	}
+
+	// the router says it has none, or its script predates the key: nothing, and nothing wrong
+	for name, in := range map[string]string{
+		"empty":                "domestic_addr=\n",
+		"blank":                "domestic_addr=   \n",
+		"no value at all":      "domestic=1\nvpn=1\n",
+		"an empty report":      "",
+		"next to a link down":  "domestic=0\ndomestic_addr=\n",
+		"an unknown key by it": "domestic_addr6=2001:db8::1\ndomestic_address=192.168.1.20\nDomestic_Addr=192.168.1.20\n",
+	} {
+		if f := mustParse(t, in); f.DomesticAddr.IsValid() || f.BadLines != 0 {
+			t.Errorf("%s: addr %v, %d bad lines", name, f.DomesticAddr, f.BadLines)
+		}
+	}
+
+	// anything else is not an address, which counts as not knowing it
+	for _, bad := range []string{
+		"192.168.1.20/24", "192.168.1.20/32", "192.168.1", "192.168.1.256", "192.168.1.20.5", "192.168.1.", "192.168..1",
+		"192.168.001.020", "01.2.3.4", "0x7f.0.0.1", "+1.2.3.4", "-1.2.3.4", " 1 .2.3.4", "1.2.3.4 5", "192.168.1.20,192.168.1.21",
+		"192.168.1.20%eth0", "192.168.1.20:8080", "[192.168.1.20]",
+		"fe80::1", "2001:db8::1", "::ffff:192.168.1.20", "::1", "::",
+		"0.0.0.0", "127.0.0.1", "169.254.7.7", "224.0.0.1", "239.255.255.250", "255.255.255.255",
+		"none", "unknown", "yes", "1", "0", "true", "192.168.1.20 # up", "\u0661\u0669\u0662.168.1.20",
+	} {
+		f := mustParse(t, "domestic=1\ndomestic_addr="+bad+"\nvpn=1\n")
+		if f.DomesticAddr.IsValid() || f.BadLines != 1 {
+			t.Errorf("%q: addr %v, %d bad lines, want none known and one bad line", bad, f.DomesticAddr, f.BadLines)
+		}
+		if !f.Domestic || !f.VPN {
+			t.Errorf("%q: the lines around it were lost: %+v", bad, f)
+		}
+	}
+}
+
+// A second line for the address replaces the first, and a bad one leaves it
+// unknown instead of keeping the first's. The other keys keep an earlier line
+// through a bad one; for this one a stale address is worse than none, since an
+// address that seems to have changed back is what the hub restarts a node for.
+func TestAnAddressLineThatFailsLeavesTheAddressUnknown(t *testing.T) {
+	for name, c := range map[string]struct {
+		in   string
+		want string // "" is unknown
+		bad  int
+	}{
+		"the last good one wins":    {"domestic_addr=10.0.0.1\ndomestic_addr=10.0.0.2\n", "10.0.0.2", 0},
+		"a bad one after a good":    {"domestic_addr=10.0.0.1\ndomestic_addr=oops\n", "", 1},
+		"an empty one after":        {"domestic_addr=10.0.0.1\ndomestic_addr=\n", "", 0},
+		"a good one after a bad":    {"domestic_addr=oops\ndomestic_addr=10.0.0.2\n", "10.0.0.2", 1},
+		"a good one after an empty": {"domestic_addr=\ndomestic_addr=10.0.0.2\n", "10.0.0.2", 0},
+	} {
+		f := mustParse(t, c.in)
+		got := ""
+		if f.DomesticAddr.IsValid() {
+			got = f.DomesticAddr.String()
+		}
+		if got != c.want || f.BadLines != c.bad {
+			t.Errorf("%s: addr %q with %d bad lines, want %q and %d", name, got, f.BadLines, c.want, c.bad)
+		}
+	}
+}
+
+// The address is a fact of its own: it doesn't turn the entry on or off, and
+// a report without one is as good as before.
+func TestTheAddressDoesNotChangeWhatTheEntrySays(t *testing.T) {
+	with := mustParse(t, goodReport())
+	without := mustParse(t, strings.Replace(goodReport(), "domestic_addr=192.168.1.20\n", "", 1))
+	if with.DomesticAddr.IsValid() == without.DomesticAddr.IsValid() {
+		t.Fatal("the two reports should differ in the address")
+	}
+	a, b := with.Entry(now, MinRouterOS), without.Entry(now, MinRouterOS)
+	if !reflect.DeepEqual(a, b) || !a.On {
+		t.Errorf("entry with the address %+v, without %+v", a, b)
 	}
 }
