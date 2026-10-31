@@ -118,10 +118,13 @@ type serverState struct {
 }
 
 // readState reads what an operation has to know before it acts: which of the
-// paths it cares about exist, the CA the agent trusts, and the marker.
+// paths it cares about exist, the CA the agent trusts, and the marker. All of
+// it as root: a folder only root can open (the official Xray script leaves its
+// config folder 750 root:xray) shows a login that isn't root none of what is in
+// it, and a path taken for free is a path that gets written over.
 func (s *session) readState(ctx context.Context) (serverState, error) {
 	var st serverState
-	out, err := s.run(ctx, "Couldn't look at the server", cmdPresent(presentPaths))
+	out, err := s.root(ctx, "Couldn't look at the server", cmdPresent(presentPaths), nil)
 	if err != nil {
 		return st, err
 	}

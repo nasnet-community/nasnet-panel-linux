@@ -33,9 +33,12 @@ type foreignXray struct {
 // lookForXray looks for an Xray the server runs of its own: the binary at the
 // standard path, a unit named xray.service, a process named xray. It gives nil
 // for a server with none. For one with a binary it reads the version and the
-// checksum, which say whether it is the pinned build. It changes nothing.
+// checksum, which say whether it is the pinned build. It changes nothing, and it
+// reads as root, as everything about a server's own Xray does: its folders may be
+// closed to a login that isn't root, and /proc may be mounted so that a login
+// sees only its own processes.
 func (in *install) lookForXray(ctx context.Context) (*foreignXray, error) {
-	out, err := in.s.run(ctx, "Couldn't look for Xray on the server", cmdXraySigns)
+	out, err := in.s.root(ctx, "Couldn't look for Xray on the server", cmdXraySigns, nil)
 	if err != nil {
 		return nil, err
 	}

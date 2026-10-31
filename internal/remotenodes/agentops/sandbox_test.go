@@ -333,6 +333,12 @@ type fakeShell struct {
 	password string // the login's, for sudo
 	nopasswd bool
 
+	// rootOnly are the places a login that isn't root can't see into, such as a
+	// folder that is 750 root:xray, or the processes of others where /proc is
+	// mounted hidepid: a command run through Run finds nothing there, one run
+	// through Root finds all of it. They are patterns, as a command names them.
+	rootOnly []string
+
 	mu     sync.Mutex
 	failOn func(cmd string) error // a failure to give before a command runs
 	closed bool
@@ -347,8 +353,20 @@ func (f *fakeShell) Close() error {
 	return nil
 }
 
+// closedTo is cmd as a login that isn't root meets it: every place that only
+// root can see is somewhere that isn't there.
+func (f *fakeShell) closedTo(cmd string) string {
+	if f.root {
+		return cmd
+	}
+	for _, p := range f.rootOnly {
+		cmd = strings.ReplaceAll(cmd, p, "/.closed"+p)
+	}
+	return cmd
+}
+
 func (f *fakeShell) Run(ctx context.Context, cmd string, stdin io.Reader) (string, error) {
-	return f.do(ctx, false, cmd, stdin, nil)
+	return f.do(ctx, false, f.closedTo(cmd), stdin, nil)
 }
 
 func (f *fakeShell) Root(ctx context.Context, cmd string, stdin io.Reader) (string, error) {
