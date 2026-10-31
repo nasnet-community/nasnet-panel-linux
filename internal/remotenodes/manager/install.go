@@ -61,7 +61,7 @@ func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, 
 	if err != nil {
 		return "", err
 	}
-	bridgeID, err := newUUID()
+	bridgeID, err := newClientID() // the bridge is a client of the entry like any other
 	if err != nil {
 		return "", err
 	}

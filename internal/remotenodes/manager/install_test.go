@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,9 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/nodecfg"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/xray/pin"
 )
+
+// uuidRe is the form of an id a link and the state both use.
+var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 const (
 	sshPassword   = "MARKER-hunter2"

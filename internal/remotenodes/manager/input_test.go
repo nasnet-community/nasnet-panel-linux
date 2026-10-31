@@ -4,7 +4,6 @@ package manager
 
 import (
 	"errors"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -122,24 +121,6 @@ func TestAServerNameIsAHostNameNotAnAddress(t *testing.T) {
 	for _, in := range []string{"", "203.0.113.9", "2001:db8::1", "a b.example", "x_y.example"} {
 		if got, err := cleanSNI(in); !isInvalid(err) {
 			t.Errorf("cleanSNI(%q) = %q, %v, want an invalid value", in, got, err)
-		}
-	}
-}
-
-var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-
-func TestAnIdIsARandomLowerCaseUUID(t *testing.T) {
-	seen := map[string]bool{}
-	for range 50 {
-		id, err := newUUID()
-		if err != nil || !uuidRe.MatchString(id) || seen[id] {
-			t.Fatalf("newUUID = %q, %v (seen before: %v)", id, err, seen[id])
-		}
-		seen[id] = true
-		// the state takes it as it is
-		s := model.NewState()
-		if _, err := s.AddNode(model.Node{Name: "n", Host: "203.0.113.1", SSHPort: 22, AgentPort: 9090, EntryPort: 443, State: model.NodeInstalling, CreatedAt: epoch, BridgeUUID: id}); err != nil {
-			t.Fatalf("the model refuses %q: %v", id, err)
 		}
 	}
 }
