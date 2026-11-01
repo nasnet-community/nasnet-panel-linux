@@ -104,16 +104,22 @@ func (l Login) LogValue() slog.Value { return slog.StringValue(l.String()) }
 // may be taken over: stopped, its config, service and drop-ins removed with no
 // copy kept, and its binary replaced unless it is the build this plugin pins.
 // Without it such a server is refused (server_has_xray), as before.
+//
+// HandshakeTarget is the Reality target the node is to use, host or host:port
+// (443 when the port is left out). It is checked from the node during the
+// install, which fails at that step if the node can't use it (see
+// reality_target_failed). Left out, the node chooses one itself.
 type InstallRequest struct {
 	Login
-	Name         string `json:"name"`
-	Host         string `json:"host"`
-	EntryPort    int    `json:"entryPort,omitempty"`
-	TakeOverXray bool   `json:"takeOverXray,omitempty"`
+	Name            string `json:"name"`
+	Host            string `json:"host"`
+	EntryPort       int    `json:"entryPort,omitempty"`
+	TakeOverXray    bool   `json:"takeOverXray,omitempty"`
+	HandshakeTarget string `json:"handshakeTarget,omitempty"`
 }
 
 func (r InstallRequest) String() string {
-	return fmt.Sprintf("install %q at %s, entry port %d, take over Xray %t, with an %v", r.Name, r.Host, r.EntryPort, r.TakeOverXray, r.Login)
+	return fmt.Sprintf("install %q at %s, entry port %d, take over Xray %t, Reality target %q, with an %v", r.Name, r.Host, r.EntryPort, r.TakeOverXray, r.HandshakeTarget, r.Login)
 }
 
 func (r InstallRequest) GoString() string { return r.String() }

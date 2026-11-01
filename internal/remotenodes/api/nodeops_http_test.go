@@ -352,6 +352,43 @@ func TestAnInstallRequestMayAskToTakeOverTheServersXray(t *testing.T) {
 	}
 }
 
+// The Reality target a new node is to use travels in the request as it was
+// written, for the manager to read, and is none when it is left out. What is
+// logged of a request says it.
+func TestAnInstallRequestMayNameTheRealityTarget(t *testing.T) {
+	const rest = `"sshPort":22,"sshUser":"root","password":"p","hostKey":"SHA256:x","name":"n","host":"h"`
+	for _, c := range []struct {
+		name   string
+		body   string
+		code   int
+		target string
+	}{
+		{"given", `{` + rest + `,"handshakeTarget":"www.example.com:443"}`, 202, "www.example.com:443"},
+		{"as typed", `{` + rest + `,"handshakeTarget":" WWW.example.com "}`, 202, " WWW.example.com "},
+		{"empty", `{` + rest + `,"handshakeTarget":""}`, 202, ""},
+		{"not said", `{` + rest + `}`, 202, ""},
+		{"not a string", `{` + rest + `,"handshakeTarget":443}`, 400, ""},
+		{"a list", `{` + rest + `,"handshakeTarget":["www.example.com"]}`, 400, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r, ops := opsRig(t, "")
+			if code, _, body := r.page("POST", "/api/nodes", c.body); code != c.code {
+				t.Fatalf("%d %s, want %d", code, body, c.code)
+			}
+			if got := ops.install.HandshakeTarget; got != c.target {
+				t.Errorf("target = %q, want %q", got, c.target)
+			}
+			if c.code != 202 && len(ops.called()) != 0 {
+				t.Errorf("a refused request reached the manager: %v", ops.called())
+			}
+		})
+	}
+	req := InstallRequest{Login: aLogin(), Name: "n", Host: "h", HandshakeTarget: "www.example.com:443"}
+	if s := fmt.Sprint(req); !strings.Contains(s, `Reality target "www.example.com:443"`) || strings.Contains(s, secretPassword) {
+		t.Errorf("a request prints as %q", s)
+	}
+}
+
 func TestEveryNodeCallIsForThePageOnly(t *testing.T) {
 	for _, b := range []string{"", base} {
 		r, ops := opsRig(t, b)
@@ -544,6 +581,7 @@ func TestTheManagersFailuresAreAnsweredWithTheContractsCodes(t *testing.T) {
 		{"a port in use", &Error{CodePortInUse, "Port 443 is in use."}, 409, "port_in_use", false},
 		{"a login the server refused", &Error{CodeLoginRefused, "The login was refused."}, 409, "login_refused", false},
 		{"a login that can't act as root", &Error{CodeNeedsRoot, "No sudo."}, 409, "needs_root", false},
+		{"a Reality target the node can't use", &Error{CodeRealityTargetFailed, "The site a.example:443 doesn't work as a Reality target."}, 409, "reality_target_failed", false},
 		{"a refusal of the hub's own", &Error{CodeInternal, "The hub can't use its CA."}, 500, "internal", false},
 		{"something nobody foresaw", errors.New("open /data/state.json: permission denied"), 500, "internal", false},
 	} {

@@ -143,6 +143,24 @@ func cleanTarget(s string) (string, error) {
 	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }
 
+// cleanInstallTarget reads the Reality target a new node is asked to use: empty
+// when none is asked for, else host:port as cleanTarget gives it. An address is
+// refused, since the name in the hello is the target's host and an install has
+// no other to give (a node's settings do).
+func cleanInstallTarget(s string) (string, error) {
+	if strings.TrimSpace(s) == "" {
+		return "", nil
+	}
+	target, err := cleanTarget(s)
+	if err != nil {
+		return "", err
+	}
+	if _, err := netip.ParseAddr(hostOf(target)); err == nil {
+		return "", invalidf("the Reality target has to be a host name, not an address")
+	}
+	return target, nil
+}
+
 // hostOf is the host of a host:port.
 func hostOf(target string) string {
 	h, _, err := net.SplitHostPort(target)

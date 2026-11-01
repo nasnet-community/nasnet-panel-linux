@@ -257,7 +257,7 @@ func TestTheCodesOfAFixableFailureHaveWordsOnThePage(t *testing.T) {
 	codes, english, persian := read("i18n/errors.ts"), read("i18n/en.ts"), read("i18n/fa.ts")
 	for _, code := range []string{
 		api.CodeServerHasXray, api.CodeServerHasAgent, api.CodeServerIsNode, api.CodeXrayNotStopped, api.CodePortInUse,
-		api.CodeLoginRefused, api.CodeNeedsRoot, api.CodeHostKeyChanged,
+		api.CodeLoginRefused, api.CodeNeedsRoot, api.CodeHostKeyChanged, api.CodeRealityTargetFailed,
 	} {
 		if !strings.Contains(codes, "'"+code+"',") {
 			t.Errorf("%s is not among the codes the page words (i18n/errors.ts)", code)
@@ -290,5 +290,24 @@ func TestThePagesErrorInfoHasEveryFieldTheHubSends(t *testing.T) {
 	}
 	if got := len(regexp.MustCompile(`(?m)^\s+\w+\?: `).FindAll(block[1], -1)); got != typ.NumField() {
 		t.Errorf("the page's ErrorInfo has %d fields, the hub's has %d", got, typ.NumField())
+	}
+}
+
+// The page's types for what it sends and gets back for an install carry the Reality
+// target under the name the hub uses: in the request, and in the form a job carries
+// for another try.
+func TestThePagesInstallTypesCarryTheRealityTarget(t *testing.T) {
+	b, err := os.ReadFile("../../../cmd/remote-nodes/web/src/lib/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"InstallRequest", "InstallForm"} {
+		block := regexp.MustCompile(`(?s)export interface ` + name + `[^{]*\{(.*?)\n\}`).FindSubmatch(b)
+		if block == nil {
+			t.Fatalf("api.ts has no %s interface", name)
+		}
+		if !regexp.MustCompile(`(?m)^\s+handshakeTarget\?: string`).Match(block[1]) {
+			t.Errorf("the page's %s has no optional handshakeTarget", name)
+		}
 	}
 }

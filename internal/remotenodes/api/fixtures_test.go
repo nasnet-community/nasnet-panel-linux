@@ -31,6 +31,7 @@ func testStepKey(name string) string {
 		"Check the server": "check_server", "Download the agent": "download_agent", "Upload the agent": "upload_agent",
 		"Start the agent": "start_agent", "Save the node": "save_node", "Forget the node": "forget_node",
 		"Clean up the server": "clean_server", "Discard the node": "discard_node",
+		"Choose a Reality target": "choose_target",
 	}[name]
 }
 
@@ -129,6 +130,22 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 			info: jobs.ErrorInfo{Found: []string{"binary", "unit"}, XrayVersion: "26.9.1"},
 		}
 	})
+	// an install whose Reality target the node couldn't use: cleaned up, the target and the node's reason as facts,
+	// and the form for another try with the target that was asked for
+	const noTLS13 = "The site www.example.com:443 doesn't work as a Reality target from this server: it doesn't use TLS 1.3."
+	targetFailed := r.finished(jobs.Spec{
+		Kind: jobs.KindInstall, NodeID: 5, Target: "fourth", Steps: []string{"Check the server", "Choose a Reality target", "Clean up the server", "Discard the node"},
+		Install: &jobs.InstallForm{Name: "fourth", Host: "203.0.113.5", SSHPort: 22, SSHUser: "root", EntryPort: 443, HandshakeTarget: "www.example.com:443"},
+	}, func(run *jobs.Run) error {
+		run.Set("Check the server", jobs.StepOK, "arm64 · Debian GNU/Linux 12 (bookworm)")
+		run.Fail("Choose a Reality target", errors.New(noTLS13))
+		run.Set("Clean up the server", jobs.StepOK, "")
+		run.Set("Discard the node", jobs.StepOK, "")
+		return &withFacts{
+			err:  &Error{CodeRealityTargetFailed, noTLS13 + " The server was cleaned up and nothing was kept."},
+			info: jobs.ErrorInfo{Target: "www.example.com:443", Reason: "It doesn't use TLS 1.3."},
+		}
+	})
 	install, run, end := r.begin(jobs.Spec{Kind: jobs.KindInstall, NodeID: 2, Target: "second", Steps: []string{"Check the server", "Download the agent", "Upload the agent", "Start the agent", "Save the node"}})
 	defer end(nil)
 	run.Set("Check the server", jobs.StepOK, "arm64 · Debian GNU/Linux 12 (bookworm)")
@@ -193,7 +210,7 @@ import type { AppConfig, Job, Node, NodeSubscription, Subscription, Traffic } fr
 		}
 		text := pretty.String()
 		// job ids are random: each has a name of its own in the file
-		for id, name := range map[string]string{gone.ID: "job-remove", failed.ID: "job-update", install.ID: "job-install", refused.ID: "job-refused"} {
+		for id, name := range map[string]string{gone.ID: "job-remove", failed.ID: "job-update", install.ID: "job-install", refused.ID: "job-refused", targetFailed.ID: "job-target"} {
 			text = strings.ReplaceAll(text, id, name)
 		}
 		fmt.Fprintf(&out, "\nexport const %s: %s = %s\n", f.name, f.typ, text)

@@ -131,6 +131,8 @@ func TestAFailedJobCarriesTheFactsOfItsError(t *testing.T) {
 		"their xray":   {ErrorInfo{Found: []string{"binary", "unit"}, XrayVersion: "26.9.1", SameBuild: true}, `"errorInfo":{"found":["binary","unit"],"xrayVersion":"26.9.1","sameBuild":true}`},
 		"a node":       {ErrorInfo{NodeID: 3, NodeName: "Frankfurt"}, `"errorInfo":{"nodeId":3,"nodeName":"Frankfurt"}`},
 		"a took over":  {ErrorInfo{TookOver: true}, `"errorInfo":{"tookOver":true}`},
+		"a target":     {ErrorInfo{Target: "www.example.com:443", Reason: "It doesn't use TLS 1.3."}, `"errorInfo":{"target":"www.example.com:443","reason":"It doesn't use TLS 1.3."}`},
+		"no target":    {ErrorInfo{Tried: 8}, `"errorInfo":{"tried":8}`},
 		"not the same": {ErrorInfo{Found: []string{"process"}, XrayVersion: "26.9.1"}, `"errorInfo":{"found":["process"],"xrayVersion":"26.9.1"}`},
 	} {
 		j := g.run(t, Spec{Kind: KindInstall}, func(context.Context, *Run) error { return factErr{info: c.info} })
@@ -167,7 +169,10 @@ func mustJSON(t *testing.T, v any) string {
 func TestTheFactsOfAnErrorAreHiddenCutAndCopied(t *testing.T) {
 	g := newRig(t, func(c *Config) {
 		c.ErrorInfo = func(err error) *ErrorInfo {
-			return &ErrorInfo{Process: "tool-hunter2-run", NodeName: strings.Repeat("n", 200), PinnedKey: strings.Repeat("k", 300), Found: []string{"binary", "unit", "process", "a", "b", "c", "d", "e", "f", "g"}}
+			return &ErrorInfo{
+				Process: "tool-hunter2-run", NodeName: strings.Repeat("n", 200), PinnedKey: strings.Repeat("k", 300), Found: []string{"binary", "unit", "process", "a", "b", "c", "d", "e", "f", "g"},
+				Target: "hunter2.example.com:443", Reason: strings.Repeat("r", 400),
+			}
 		}
 	})
 	started, _, end := g.begin(t, Spec{Kind: KindInstall, NodeID: 1, Secrets: []string{"hunter2"}})
@@ -181,6 +186,13 @@ func TestTheFactsOfAnErrorAreHiddenCutAndCopied(t *testing.T) {
 	}
 	if n := len([]rune(j.ErrorInfo.PinnedKey)); n != maxFact || !strings.HasSuffix(j.ErrorInfo.PinnedKey, "…") {
 		t.Errorf("a key of %d characters", n)
+	}
+	// a target is a name like the rest, and a reason is a sentence: longer, and cut all the same
+	if strings.Contains(j.ErrorInfo.Target, "hunter2") {
+		t.Errorf("a secret is in the target: %q", j.ErrorInfo.Target)
+	}
+	if n := len([]rune(j.ErrorInfo.Reason)); n != maxReason || !strings.HasSuffix(j.ErrorInfo.Reason, "…") {
+		t.Errorf("a reason of %d characters", n)
 	}
 	if len(j.ErrorInfo.Found) != 8 {
 		t.Errorf("found %v", j.ErrorInfo.Found)

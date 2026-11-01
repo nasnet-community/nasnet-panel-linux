@@ -68,6 +68,16 @@ func (e *NoTargetError) Error() string {
 }
 func (e *NoTargetError) Is(target error) bool { return target == ErrNoTarget }
 
+// Failed says what the node found, for a page that words it: the one target
+// that was asked for and why the node can't use it, or with several results (the
+// node chose among sites) no single target and how many were tried.
+func (e *NoTargetError) Failed() (target, reason string, tried int) {
+	if len(e.Results) == 1 {
+		return e.Results[0].Target, e.Results[0].Check.Error, 0
+	}
+	return "", "", len(e.Results)
+}
+
 func lowerFirst(s string) string {
 	if s != "" && s[0] >= 'A' && s[0] <= 'Z' {
 		return string(s[0]+'a'-'A') + s[1:]

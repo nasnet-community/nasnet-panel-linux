@@ -252,6 +252,8 @@ func opFailure(err error) error {
 		return &api.Error{Code: api.CodeLoginRefused, Msg: clipText(err.Error())}
 	case errors.Is(err, agentops.ErrNeedsRoot):
 		return &api.Error{Code: api.CodeNeedsRoot, Msg: clipText(err.Error())}
+	case errors.Is(err, agentops.ErrNoTarget):
+		return &api.Error{Code: api.CodeRealityTargetFailed, Msg: clipText(err.Error())}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err // the request's own context ended, which the API leaves unanswered
 	case errors.Is(err, nodecfg.ErrInvalid):
@@ -275,8 +277,9 @@ func JobErrorCode(err error) string {
 // JobErrorInfo is the facts of a job's error that the page needs beyond its
 // code, which the job engine is given as Config.ErrorInfo: the port that is held
 // and by whom, the two host keys, what was found of a server's own Xray, the
-// node that is on the server already, and whether the install had taken over
-// the server's Xray when it failed. They come from the typed errors and from
+// node that is on the server already, the Reality target a node could not use
+// and why, and whether the install had taken over the server's Xray when it
+// failed. They come from the typed errors and from
 // what the install did, never from the error's words. It is nil for an error
 // that has none.
 func JobErrorInfo(err error) *jobs.ErrorInfo {
@@ -296,6 +299,10 @@ func JobErrorInfo(err error) *jobs.ErrorInfo {
 	var sn *agentops.ServerIsNodeError
 	if errors.As(err, &sn) {
 		info.NodeID, info.NodeName = sn.NodeID, sn.Name
+	}
+	var nt *agentops.NoTargetError
+	if errors.As(err, &nt) {
+		info.Target, info.Reason, info.Tried = nt.Failed()
 	}
 	var fi *failedInstall
 	if errors.As(err, &fi) {
