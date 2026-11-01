@@ -12,6 +12,8 @@ import {
   withHostKey,
   withLogin,
   withTakeOver,
+  withTarget,
+  withoutTarget,
 } from './fixes'
 import * as hub from './hub-fixtures'
 
@@ -59,6 +61,25 @@ describe('what to do about a failed install', () => {
     expect(fixFor(failed('server_is_node', { nodeId: 3, nodeName: 'Frankfurt' }))).toEqual({ kind: 'server', why: 'node', nodeId: 3, nodeName: 'Frankfurt' })
   })
 
+  it('is another Reality target, or the node choosing, for a target the node could not use', () => {
+    const why = "It doesn't use TLS 1.3."
+    expect(fixFor(failed('reality_target_failed', { target: 'www.example.com:443', reason: why }))).toEqual({ kind: 'target', target: 'www.example.com:443', reason: why, tried: 0 })
+    // the node chose among its sites and none worked: no one target to name, and how many were tried
+    expect(fixFor(failed('reality_target_failed', { tried: 8 }))).toEqual({ kind: 'target', target: '', reason: '', tried: 8 })
+    // from a hub that sends no facts it is still that fix
+    expect(fixFor(failed('reality_target_failed'))).toEqual({ kind: 'target', target: '', reason: '', tried: 0 })
+    // it happens after the agent and Xray were on the server, so a cleanup that failed too is waited for first
+    expect(fixFor(failed('reality_target_failed', { target: 'a.example:443' }, [step('clean_server', 'failed')]))).toBeNull()
+    expect(fixFor(failed('reality_target_failed', { target: 'a.example:443' }, [step('clean_server', 'ok'), step('discard_node', 'ok')]))).not.toBeNull()
+  })
+
+  it('reads the hub\'s own failed target from its fixtures', () => {
+    const job = hub.jobs.find((j) => j.code === 'reality_target_failed')!
+    expect(fixFor(job)).toEqual({ kind: 'target', target: 'www.example.com:443', reason: "It doesn't use TLS 1.3.", tried: 0 })
+    // and the form it carries has the target that was asked for
+    expect(job.install?.handshakeTarget).toBe('www.example.com:443')
+  })
+
   it('is plain "again" for any other failure, and for a code whose facts the hub did not send', () => {
     expect(fixFor(failed(undefined))).toEqual({ kind: 'again' })
     expect(fixFor(failed('node_unreachable'))).toEqual({ kind: 'again' })
@@ -89,7 +110,7 @@ describe('what to do about a failed install', () => {
   it('calls a server that is refused for what it is "refused", and no other failure', () => {
     expect([...REFUSALS].sort()).toEqual(['server_has_agent', 'server_has_xray', 'server_is_node'])
     for (const code of REFUSALS) expect(isRefusal(failed(code)), code).toBe(true)
-    for (const code of ['xray_not_stopped', 'port_in_use', 'login_refused', 'host_key_changed', 'node_unreachable', undefined]) expect(isRefusal(failed(code)), String(code)).toBe(false)
+    for (const code of ['xray_not_stopped', 'port_in_use', 'login_refused', 'host_key_changed', 'node_unreachable', 'reality_target_failed', undefined]) expect(isRefusal(failed(code)), String(code)).toBe(false)
     expect(isRefusal({ ...failed('server_has_xray'), state: 'running' })).toBe(false)
     expect(isRefusal({ ...failed('server_has_xray'), kind: 'update-xray' })).toBe(false)
   })
@@ -105,6 +126,8 @@ describe('sending an install again', () => {
       withEntryPort(SENT, 8443),
       withLogin(SENT, { sshPort: 22, sshUser: 'root', password: 'new', hostKey: '' }),
       withHostKey(SENT, 'SHA256:new'),
+      withTarget(SENT, 'www.debian.org:443'),
+      withoutTarget(SENT),
     ]) {
       expect(next).not.toBe(SENT)
     }
@@ -121,6 +144,26 @@ describe('sending an install again', () => {
     // the same install with a port, a login or a key changed is the same install, agreement and all
     expect(withEntryPort(SENT, 8443)).toEqual({ ...SENT, entryPort: 8443 })
     expect(withHostKey(SENT, 'SHA256:new')).toEqual({ ...SENT, hostKey: 'SHA256:new' })
+  })
+
+  it('sets the Reality target, or takes it away so the node chooses, and changes nothing else', () => {
+    expect(withTarget(SENT, 'www.debian.org:8443')).toEqual({ ...SENT, handshakeTarget: 'www.debian.org:8443' })
+    const asked = { ...SENT, handshakeTarget: 'www.fail.example:443' }
+    // another target replaces the one that failed; the login, the key and the takeover agreement go as they were
+    expect(withTarget(asked, 'www.debian.org:443')).toEqual({ ...asked, handshakeTarget: 'www.debian.org:443' })
+    expect(withoutTarget(asked)).toEqual(SENT)
+    expect('handshakeTarget' in withoutTarget(asked)).toBe(false)
+    expect(asked.handshakeTarget).toBe('www.fail.example:443')
+    // none to take away is none
+    expect('handshakeTarget' in withoutTarget(SENT)).toBe(false)
+  })
+
+  it('keeps the Reality target, which is no secret, in another try and in another server', () => {
+    const asked = { ...SENT, handshakeTarget: 'www.debian.org:443' }
+    expect(forAnotherTry(asked).handshakeTarget).toBe('www.debian.org:443')
+    expect(withHost(asked, 'other.example').handshakeTarget).toBe('www.debian.org:443')
+    expect(withEntryPort(asked, 8443).handshakeTarget).toBe('www.debian.org:443')
+    expect(withLogin(asked, { sshPort: 22, sshUser: 'root', password: 'new', hostKey: '' }).handshakeTarget).toBe('www.debian.org:443')
   })
 
   it('gives another server no key until its own is read', () => {
@@ -172,6 +215,7 @@ describe('the login stays out of every place a page can keep a thing', () => {
     r = withEntryPort(r, 8443)
     r = withLogin(r, { sshPort: 22, sshUser: 'root', privateKey: 'KEY', hostKey: '' })
     r = withHostKey(forAnotherTry(r), 'SHA256:x')
+    r = withoutTarget(withTarget(r, 'www.debian.org:443'))
     expect(r.privateKey).toBe('KEY')
     expect(fixFor(failed('login_refused'))).toEqual({ kind: 'login', why: 'refused' })
     expect(otherPort(443, 22)).toBe(8443)

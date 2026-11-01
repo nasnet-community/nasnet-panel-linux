@@ -128,6 +128,10 @@ function specificReason(t: T, code: string | undefined, info: ErrorInfo | undefi
     return t(info.role === 'agent' ? 'fix.port.agent' : 'fix.port.entry', { port: String(info.port), process: info.process || t('fix.port.another') })
   }
   if (code === 'server_is_node' && info?.nodeName) return t('fix.server.node', { name: info.nodeName })
+  if (code === 'reality_target_failed') {
+    if (info?.target) return t('fix.target.failed', { target: info.target })
+    if (info?.tried) return t('fix.target.none', { n: info.tried })
+  }
   return ''
 }
 
@@ -148,7 +152,8 @@ export function failureText(t: T, job: Job): FailureText {
     return { reason: covered ? '' : cause, detail: '', stepText: true }
   }
   const specific = specificReason(t, job.code, job.errorInfo)
-  if (specific) return { reason: specific, detail: '', stepText: false }
+  // the node's own words for why it can't use the target are English or technical, and say what the sentence doesn't
+  if (specific) return { reason: specific, detail: job.code === 'reality_target_failed' ? (job.errorInfo?.reason ?? '') : '', stepText: false }
   const own = !!job.errorInfo && OWN_WORDS.includes(job.code ?? '')
   const adds = normalize(cause) !== normalize(translate('en', `error.${job.code}` as MsgKey))
   return { reason: generic, detail: adds && !own ? cause : '', stepText: false }

@@ -22,6 +22,7 @@ import { MAX_NAME_LENGTH, api, type InstallForm, type InstallRequest, type Job, 
 import { fixFor, forAnotherTry, withHostKey } from '../lib/fixes'
 import { badPort, installOutcome, realNodes } from '../lib/install'
 import { jobHeader, jobLine } from '../lib/jobs'
+import { normalizeTarget } from '../lib/node'
 import { FixPanel } from './FixPanel'
 
 type Stage = 'form' | 'hostkey' | 'installing'
@@ -38,6 +39,9 @@ interface Props {
   onInstalled: () => void
   onOpenNode: (id: number) => void
 }
+
+/** What the Reality target field shows as its example. */
+const EXAMPLE_TARGET = 'www.example.com:443'
 
 /** The username is not a secret, so the next add starts from it. */
 let lastUser = 'root'
@@ -83,8 +87,8 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   const suggested = suggestName(nodes ?? [], t)
   const [form, setForm] = useState(() =>
     initial
-      ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443) }
-      : { host: '', name: '', entryPort: '443' },
+      ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443), target: initial.handshakeTarget ?? '' }
+      : { host: '', name: '', entryPort: '443', target: '' },
   )
   const [login, setLogin] = useState<LoginForm>(() => (initial ? emptyLogin(initial.sshPort || 22, initial.sshUser || lastUser) : emptyLogin(22, lastUser)))
   const [stage, setStage] = useState<Stage>('form')
@@ -97,6 +101,9 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   // the name the install goes with, fixed at submit: the suggestion moves on once the node is in the list
   const [named, setNamed] = useState('')
   const job = jobs.get(jobId)
+  // the Reality target as the hub takes it (host:port): empty when none is typed, or when what is typed isn't a site
+  const target = normalizeTarget(form.target)
+  const targetInvalid = !!form.target.trim() && !target
 
   // The install as it was sent, login and all, so that a fix can send it again with one change. It is kept
   // here, in memory, for as long as this dialog is open and its install can still fail: it is let go of when
@@ -116,7 +123,7 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
     if (job && job.state !== 'running' && (job.state === 'ok' || !fixFor(job))) held.current = null
   }, [job?.state, job?.code])
 
-  const set = (k: 'host' | 'name' | 'entryPort') => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const set = (k: 'host' | 'name' | 'entryPort' | 'target') => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   /** Sends the install, from the form or from a fix, and follows it in this dialog. */
   const begin = async (req: InstallRequest, from: 'form' | 'fix') => {
@@ -155,6 +162,8 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
     const problem =
       loginError(login) ?? (!form.host.trim() ? 'add.errHost' : badPort(Number(form.entryPort), ssh) ? 'add.errEntryPort' : null)
     if (problem) return setError(t(problem))
+    // typed as the settings dialog takes one; the field is in Advanced, which may be closed, so the problem is said below the form, as the entry port's is
+    if (targetInvalid) return setError(t('hs.invalid', { example: EXAMPLE_TARGET }))
     lastUser = login.sshUser.trim()
     setBusy(true)
     setError(null)
@@ -166,6 +175,7 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       setKey(probe)
       setAckChanged(false)
       const req: InstallRequest = { ...toLogin(login, probe.fingerprint), host: form.host.trim(), name: chosen, entryPort: Number(form.entryPort) }
+      if (target) req.handshakeTarget = target
       // a first key is pinned as it is, like ssh does; only a changed one stops to ask
       if (!keyNeedsTrust(probe)) {
         setBusy(false)
@@ -219,7 +229,9 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   }
 
   // what the panel is told of it: where it was sent and how it signs in, and none of the secrets
-  const sent = held.current ? { sshPort: held.current.sshPort, sshUser: held.current.sshUser, hostKey: held.current.hostKey } : null
+  const sent = held.current
+    ? { sshPort: held.current.sshPort, sshUser: held.current.sshUser, hostKey: held.current.hostKey, target: held.current.handshakeTarget ?? '' }
+    : null
   const finished = job && job.state !== 'running'
   const failed = finished && job.state === 'failed'
   const fix = failed ? fixFor(job) : null
@@ -336,6 +348,21 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
             <div className="flex flex-col gap-4">
               <Field label={t('add.entryPort')} hint={t('add.entryPortHint')}>
                 {(p) => <Input {...p} dir="ltr" className="font-mono" inputMode="numeric" value={form.entryPort} onChange={set('entryPort')} />}
+              </Field>
+              <Field label={t('add.target')} hint={t('add.targetHint')}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    aria-invalid={targetInvalid || undefined}
+                    dir="ltr"
+                    className="font-mono"
+                    value={form.target}
+                    onChange={set('target')}
+                    placeholder={EXAMPLE_TARGET}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                  />
+                )}
               </Field>
             </div>
           </Disclosure>

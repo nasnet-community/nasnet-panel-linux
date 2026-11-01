@@ -21,6 +21,11 @@
 //   address contains "fail"    -> fails at "Check the agent" (dial timeout), then cleans the server up
 //   address contains "unreach" -> the same, and the job has the code node_unreachable, which the page words
 //   address contains "late"    -> fails at "Choose a Reality target", then cleans the server up
+//   address contains "notarget"-> the node chose among its sites and none worked: fails at "Choose a Reality target"
+//                                 with the code reality_target_failed (and the number tried), then cleans the server up
+//   handshakeTarget containing "fail" or "big" (a refused TLS 1.3 handshake, or one over 8 KB) -> fails at
+//                                 "Choose a Reality target" with the code reality_target_failed, the target and the
+//                                 node's reason, then cleans the server up; any other target is used as it is
 //   address contains "hasxray" -> refused at "Check the server": it runs an Xray of its own (server_has_xray),
 //                                 version 26.9.1 and not the pinned build ("hasxraysame": the pinned build);
 //                                 with takeOverXray in the request the install takes it over and goes on
@@ -665,10 +670,40 @@ const TOOK_OVER = "The server's own Xray was stopped and removed, as you asked, 
 const xrayHere = (version: string, same: boolean) =>
   `This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray, an xray.service unit). It is Xray ${version}, ${same ? 'the same build as' : 'not the same build as'} this plugin's. Use a server without one, or take it over.`
 const AGENT_HERE = "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one."
+/** How many sites the node looks at when it chooses a Reality target itself (agentops.DefaultTargets). */
+const SITES_TRIED = 8
 const STILL_RUNNING = 'An Xray is still running on this server after its service was stopped, for example in a container. Stop it there, or use another server. Its service was started again.'
 
 /** Hosts whose takeover has found an Xray still running once: the next try finds none, as if the person had stopped it. */
 const stoppedElsewhere = new Set<string>()
+
+/** The node's reason for refusing a target, in the hub's words, and '' for one it can use (the same triggers as mock-node's check). */
+const whyNot = (target: string) =>
+  target.includes('fail')
+    ? "It doesn't use TLS 1.3."
+    : target.includes('big')
+      ? 'Its side of the handshake is 9632 bytes, and Xray reads at most 8 KB of it. A site with a smaller certificate would do.'
+      : ''
+
+/**
+ * The Reality target a new node is asked to use, read as the hub reads one: host or host:port, 443 when the port is
+ * left out, the host in lower case; '' for none. A string is an error, in the hub's words.
+ */
+export function cleanTarget(raw: unknown): { target: string } | { error: string } {
+  if (raw === undefined || raw === null) return { target: '' }
+  if (typeof raw !== 'string') return { error: 'handshakeTarget must be a string' }
+  const s = raw.trim()
+  if (!s) return { target: '' }
+  if (/:\/\/|[/\s]/.test(s)) return { error: 'The Reality target must look like www.example.com:443.' }
+  const m = /^\[?([^\]]+?)\]?(?::(\d+))?$/.exec(s)
+  const host = m?.[1].toLowerCase() ?? ''
+  if (!host || !/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(host)) return { error: 'The Reality target must look like www.example.com:443.' }
+  const port = m?.[2] === undefined ? 443 : Number(m[2])
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { error: 'The Reality target has no valid port.' }
+  // an address can't be the name in the hello, and an install has no other name to give
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':')) return { error: 'The Reality target has to be a host name, not an address.' }
+  return { target: `${host}:${port}` }
+}
 
 /** Why an install is stopped at one of its first steps, and what the hub says of it. */
 interface Refusal {
@@ -683,7 +718,7 @@ interface Refusal {
 // saved at the start, as installing, and the job has its id from then on; it is set up at the last step. An install
 // that fails takes off the server what it put there and forgets the node; one that fails before it changed anything
 // only forgets it. When the cleanup fails too, the record is kept as an unfinished install.
-function install(b: Record<string, any>) {
+function install(b: Record<string, any>, asked = '') {
   const host = String(b.host).trim()
   const name = String(b.name || host)
   const has = (word: string) => host.includes(word)
@@ -698,12 +733,24 @@ function install(b: Record<string, any>) {
     registered: false,
     createdAt: Date.now(),
     entryPort: Number(b.entryPort) || 443,
+    // the node chooses when none is asked for
+    ...(asked ? { handshakeTarget: asked } : {}),
     agentVersion: '',
     xrayVersion: '',
   })
   nodes.push(n)
   installing.add(host)
   const late = has('late')
+  // the node's own check of a target it was asked to use, which fails the install at its step; when it chose among
+  // its sites itself and none worked there is no one target to name
+  const why = asked ? whyNot(asked) : ''
+  const refused: { target: string; reason: string } | null = why ? { target: asked, reason: why } : null
+  const noneWork = !asked && has('notarget')
+  const targetFailure = refused
+    ? `The site ${refused.target} doesn't work as a Reality target from this server: ${refused.reason.charAt(0).toLowerCase()}${refused.reason.slice(1)}`
+    : noneWork
+      ? `None of the ${SITES_TRIED} sites tried works as a Reality target from this server.`
+      : false
 
   // what the server is, which the install finds out at its first step
   const xrayThere = has('hasxray')
@@ -763,8 +810,8 @@ function install(b: Record<string, any>) {
         if (!worked) n.failure = { step: STEPS[stepOf(failed)], error: cause, cleanup: `Can't reach SSH on ${host} port 22 (dial tcp ${host}:22: i/o timeout). Check the address and the port, and that the server's firewall lets the router in.`, at: Date.now() }
         return `${cause} ${worked ? CLEANED : KEPT}${took ? ' ' + TOOK_OVER : ''}`
       },
-      code: has('unreach') ? 'node_unreachable' : undefined,
-      info: took ? { tookOver: true } : undefined,
+      code: targetFailure ? 'reality_target_failed' : has('unreach') ? 'node_unreachable' : undefined,
+      info: targetFailure || took ? { ...(refused ? refused : noneWork ? { tried: SITES_TRIED } : {}), ...(took ? { tookOver: true } : {}) } : undefined,
     }
   }
   const takeoverStep: Step[] = takeOver
@@ -812,7 +859,7 @@ function install(b: Record<string, any>) {
         ? { ...STEPS.uploadXray, detail: 'Not needed', ms: 100 }
         : { ...STEPS.uploadXray, detail: '13.6 MB sent', ms: 1200, progress: { total: '13.6', unit: 'MB' } },
       { ...STEPS.checkXray, detail: `Xray ${XRAY}`, ms: 200 },
-      { ...STEPS.chooseTarget, detail: n.handshakeTarget, ms: 300, fail: late && `${n.handshakeTarget} didn't answer from this node` },
+      { ...STEPS.chooseTarget, detail: n.handshakeTarget, ms: 300, fail: targetFailure || (late && `${n.handshakeTarget} didn't answer from this node`) },
       { ...STEPS.createKeys, ms: 200 },
       { ...STEPS.applyConfig, ms: 300 },
       {
@@ -828,7 +875,7 @@ function install(b: Record<string, any>) {
       nodeId: n.id,
       target: name,
       noStream: has('poll'),
-      install: { name, host, sshPort: n.sshPort, sshUser: n.sshUser, entryPort: n.entryPort },
+      install: { name, host, sshPort: n.sshPort, sshUser: n.sshUser, entryPort: n.entryPort, ...(asked ? { handshakeTarget: asked } : {}) },
       recover,
       end: () => {
         installing.delete(host)
@@ -952,8 +999,11 @@ export function mockApi(): Plugin {
           if (!String(body.hostKey ?? '').startsWith('SHA256:')) return fail(400, 'bad_request', "confirm the node's host key first")
           const port = body.entryPort === undefined ? 443 : Number(body.entryPort)
           if (!Number.isInteger(port) || port < 1 || port > 65535 || port === Number(body.sshPort)) return fail(400, 'bad_request', 'the entry port must be 1 to 65535 and differ from the SSH port')
+          // a Reality target is read before anything starts, as the hub reads one
+          const asked = cleanTarget(body.handshakeTarget)
+          if ('error' in asked) return fail(400, 'bad_request', asked.error)
           await sleep(300)
-          return send(202, { jobId: install(body) })
+          return send(202, { jobId: install(body, asked.target) })
         }
 
         const m = path.match(/^nodes\/(\d+)(?:\/(.*))?$/)

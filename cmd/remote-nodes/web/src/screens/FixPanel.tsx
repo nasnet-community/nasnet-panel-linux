@@ -5,8 +5,9 @@ import { Button, ErrorBox, Field, Input, Notice, Textarea, cx } from '../compone
 import { useConfig } from '../hooks/useConfig'
 import { useLang } from '../i18n'
 import type { ErrorInfo, InstallRequest, Job, Login } from '../lib/api'
-import { fixFor, otherPort, withEntryPort, withHost, withHostKey, withLogin, withTakeOver, type Fix } from '../lib/fixes'
+import { fixFor, otherPort, withEntryPort, withHost, withHostKey, withLogin, withTakeOver, withTarget, withoutTarget, type Fix } from '../lib/fixes'
 import { badPort } from '../lib/install'
+import { normalizeTarget } from '../lib/node'
 
 // What a person can do about an install that failed, in the dialog that shows the failure. Each fix is a
 // short explanation and what it needs (a port, a host, a login, a tick), and Continue sends the install again
@@ -21,6 +22,8 @@ export interface Sent {
   sshPort: number
   sshUser: string
   hostKey: string
+  /** the Reality target that was asked for, host:port; '' when the node was to choose */
+  target: string
 }
 
 export interface FixProps {
@@ -79,6 +82,8 @@ function Body({ fix, sent, busy = false, onFix, onOpenNode }: FixProps & { fix: 
       return go ? <EntryPort fix={fix} sent={sent!} busy={busy} onGo={(port) => go((r) => withEntryPort(r, port))} /> : null
     case 'login':
       return go ? <LoginAgain sent={sent!} busy={busy} onGo={(login) => go((r) => withLogin(r, login))} /> : null
+    case 'target':
+      return go ? <AnotherTarget fix={fix} sent={sent!} busy={busy} onGo={(change) => go(change)} /> : null
     case 'hostkey':
       return <HostKey fix={fix} busy={busy} onGo={go ? () => go((r) => withHostKey(r, fix.shown)) : undefined} />
     case 'server':
@@ -155,6 +160,71 @@ function AnotherServer({ busy, onGo }: { busy: boolean; onGo: (host: string) => 
         </Button>
       </div>
     </form>
+  )
+}
+
+/**
+ * Another Reality target, typed as the settings dialog takes one, or none: the node chooses. The second is
+ * offered only when a target was asked for, since otherwise the node chose already.
+ */
+function AnotherTarget({
+  fix,
+  sent,
+  busy,
+  onGo,
+}: {
+  fix: Extract<Fix, { kind: 'target' }>
+  sent: Sent
+  busy: boolean
+  onGo: (change: (r: InstallRequest) => InstallRequest) => void
+}) {
+  const { t } = useLang()
+  const [input, setInput] = useState('')
+  const wanted = normalizeTarget(input)
+  const invalid = !!input.trim() && !wanted
+  // the one that failed just now would fail again
+  const same = !!wanted && wanted === fix.target
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (wanted && !same) onGo((r) => withTarget(r, wanted))
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-2" autoComplete="off">
+        <h3 className="text-[13px] font-semibold">{t('fix.target.other')}</h3>
+        <Field
+          label={t('add.target')}
+          error={invalid ? t('hs.invalid', { example: 'www.example.com:443' }) : same ? t('fix.target.same') : null}
+          hint={t('fix.target.hint', { tls: 'TLS 1.3' })}
+        >
+          {(p) => (
+            <div className="flex gap-2">
+              <Input
+                {...p}
+                dir="ltr"
+                className="font-mono"
+                value={input}
+                onChange={(e) => setInput(e.currentTarget.value)}
+                placeholder="www.example.com:443"
+                spellCheck={false}
+                autoCapitalize="off"
+              />
+              <Button type="submit" busy={busy} disabled={!wanted || same}>
+                {t('fix.continue')}
+              </Button>
+            </div>
+          )}
+        </Field>
+      </form>
+      {sent.target && (
+        <div className="flex flex-col items-start gap-2 border-t border-border pt-3">
+          <p className="text-[13px] text-muted">{t('fix.target.choose.text')}</p>
+          <Button busy={busy} onClick={() => onGo(withoutTarget)}>
+            {t('fix.target.choose')}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 
