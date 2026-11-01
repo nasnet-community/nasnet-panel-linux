@@ -222,7 +222,7 @@ func (n Node) Validate() error {
 	}
 	if n.RealityTarget != "" {
 		if err := validTarget(n.RealityTarget); err != nil {
-			return fmt.Errorf("handshake target: %w", err)
+			return fmt.Errorf("Reality target: %w", err)
 		}
 	}
 	if n.RealitySNI != "" {

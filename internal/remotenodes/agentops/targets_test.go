@@ -190,7 +190,7 @@ func TestProbeTargetsWithNoneWorkingHasNoBest(t *testing.T) {
 		t.Errorf("%v", e)
 	}
 	one := &NoTargetError{Results: choice.Results[:1]}
-	if !strings.Contains(one.Error(), "a.example:443") || !strings.Contains(one.Error(), "doesn't work as a handshake target") {
+	if !strings.Contains(one.Error(), "a.example:443") || !strings.Contains(one.Error(), "doesn't work as a Reality target") {
 		t.Errorf("%v", one)
 	}
 }
@@ -244,7 +244,7 @@ func TestTheDefaultTargetsAreWellFormedAndFewEnough(t *testing.T) {
 		// the pairs that can't make a good one, or the sort of site that draws attention to the node
 		for _, bad := range []string{"microsoft", "apple", "icloud", ".ir", ".ru", ".cn"} {
 			if strings.Contains(host, bad) {
-				t.Errorf("%s is no handshake target to default to", host)
+				t.Errorf("%s is no Reality target to default to", host)
 			}
 		}
 	}

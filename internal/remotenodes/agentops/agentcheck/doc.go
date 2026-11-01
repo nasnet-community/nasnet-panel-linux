@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package agentcheck runs the real agent, in this process, against the hub's
-// operations: Connect, the Xray and config pushes, the handshake target
+// operations: Connect, the Xray and config pushes, the Reality target
 // checks, the certificate renewal. It holds only tests.
 //
 // It lives apart from agentops so that the agent's heavy imports (Xray,

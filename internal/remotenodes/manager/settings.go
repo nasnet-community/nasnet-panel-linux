@@ -67,7 +67,7 @@ type settingsChange struct {
 	entryPort int
 	target    string
 	sni       string
-	// targetMoved is whether the handshake target is another site than it
+	// targetMoved is whether the Reality target is another site than it
 	// was, which is when the node is asked whether it can use it.
 	targetMoved bool
 }
@@ -107,7 +107,7 @@ func planSettings(n model.Node, req api.SettingsRequest) (settingsChange, error)
 	case req.SNI != nil, ch.targetMoved && !custom:
 		ch.sni = hostOf(ch.target)
 		if _, err := netip.ParseAddr(ch.sni); err == nil {
-			return settingsChange{}, invalidf("the handshake target is an address, so the server name has to be given as well")
+			return settingsChange{}, invalidf("the Reality target is an address, so the server name has to be given as well")
 		}
 	}
 	// the same checks the state would make, before the node is touched
@@ -307,7 +307,7 @@ func without(s string, secrets ...string) string {
 	return s
 }
 
-// CheckHandshake has a node try a handshake target and says what it found:
+// CheckHandshake has a node try a Reality target and says what it found:
 // that it answered with TLS 1.3 and an X25519 key exchange, how large its side
 // of the handshake was, and how long it took. Only the node can say, since a
 // site may answer from one server and not from another.

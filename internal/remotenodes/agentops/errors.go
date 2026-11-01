@@ -55,7 +55,7 @@ var (
 	ErrAgentRefused    = errors.New("agentops: the agent refused the update")
 
 	// What the node says about Xray.
-	ErrNoTarget       = errors.New("agentops: no handshake target works from the node")
+	ErrNoTarget       = errors.New("agentops: no Reality target works from the node")
 	ErrConfigRejected = errors.New("agentops: the node refused the Xray config")
 	ErrXrayNotRunning = errors.New("agentops: Xray is not running on the node")
 )

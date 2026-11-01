@@ -350,7 +350,7 @@ func TestATargetTheNodeCantUseStopsTheChangeBeforeAnythingIsPushed(t *testing.T)
 		id, err := s.m.ChangeSettings(context.Background(), s.node.ID, api.SettingsRequest{HandshakeTarget: ptrTo("www.cloudflare.com")})
 		must(t, err)
 		j := s.failed(id)
-		const sentence = "The site www.cloudflare.com:443 doesn't work as a handshake target from this server: it doesn't use TLS 1.3."
+		const sentence = "The site www.cloudflare.com:443 doesn't work as a Reality target from this server: it doesn't use TLS 1.3."
 		if j.Error != sentence || stepStates(j)[agentops.StepChooseTarget] != jobs.StepFailed || stepStates(j)[agentops.StepApplyConfig] != jobs.StepPending {
 			t.Errorf("job = %q %v", j.Error, j.Steps)
 		}

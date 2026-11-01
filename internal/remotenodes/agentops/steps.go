@@ -45,7 +45,7 @@ const (
 	StepDownloadXray  = "Download Xray"
 	StepUploadXray    = "Upload Xray"
 	StepCheckXray     = "Check Xray"
-	StepChooseTarget  = "Choose a handshake target"
+	StepChooseTarget  = "Choose a Reality target"
 	StepCreateKeys    = "Create the keys"
 	StepApplyConfig   = "Apply the configuration"
 	// UndoInstall's one step, after an install that failed.

@@ -16,7 +16,7 @@ import (
 	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
 )
 
-// A handshake target is a site the node borrows the start of every TLS
+// A Reality target is a site the node borrows the start of every TLS
 // handshake from, as Xray's REALITY does. It has to be reachable from the node
 // itself, answer with TLS 1.3 and an X25519 key exchange, and keep its handshake
 // small: REALITY reads at most 8 KB of it. Only the node can say, so the
@@ -62,9 +62,9 @@ type NoTargetError struct{ Results []TargetResult }
 
 func (e *NoTargetError) Error() string {
 	if len(e.Results) == 1 {
-		return sentence(fmt.Sprintf("The site %s doesn't work as a handshake target from this server: %s", e.Results[0].Target, lowerFirst(e.Results[0].Check.Error)))
+		return sentence(fmt.Sprintf("The site %s doesn't work as a Reality target from this server: %s", e.Results[0].Target, lowerFirst(e.Results[0].Check.Error)))
 	}
-	return fmt.Sprintf("None of the %d sites tried works as a handshake target from this server.", len(e.Results))
+	return fmt.Sprintf("None of the %d sites tried works as a Reality target from this server.", len(e.Results))
 }
 func (e *NoTargetError) Is(target error) bool { return target == ErrNoTarget }
 
@@ -157,7 +157,7 @@ func probeFailure(err error, c *agent.Client) error {
 	case ctxDone(err):
 		return err
 	case agent.IsUnimplemented(err):
-		return newErr(ErrAgentOutdated, err, "This node's agent is too old to check handshake targets. Update the agent first.")
+		return newErr(ErrAgentOutdated, err, "This node's agent is too old to check Reality targets. Update the agent first.")
 	}
 	return &opError{msg: sentence("The node couldn't check the target: " + statusMessage(err)), cause: err}
 }

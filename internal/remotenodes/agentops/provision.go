@@ -20,7 +20,7 @@ type ProvisionInput struct {
 	// doesn't say.
 	Node model.Node
 
-	// Target is a handshake target to use as it is: host or host:port. It is
+	// Target is a Reality target to use as it is: host or host:port. It is
 	// checked, and the node isn't set up if it doesn't work. Empty means one is
 	// chosen from Targets.
 	Target string
@@ -58,7 +58,7 @@ type ProvisionResult struct {
 }
 
 // Provision makes a node with an agent into an entry, over the agent's link:
-// the pinned Xray is put on it, a handshake target is chosen or checked from
+// the pinned Xray is put on it, a Reality target is chosen or checked from
 // the node itself, the keys are made, and the config is pushed, with Xray
 // running and the entry answering. It is the second half of adding a node,
 // after InstallAgent, and the steps run in the order of ProvisionPlan.
