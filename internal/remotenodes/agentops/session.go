@@ -8,9 +8,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"io"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nasnet-community/mtproto-remote-plugin/installer"
@@ -22,28 +25,121 @@ import (
 // runs commands: every one under a time limit, its failure said in a
 // sentence, and no login in it.
 type session struct {
-	sh      Shell
 	secrets []string
+	// reopen signs in again, to the same server with the same login and pinned
+	// key. Nil for a session that has no way to.
+	reopen func(context.Context) (Shell, error)
+
+	mu sync.Mutex
+	sh Shell
 }
+
+// keepAliveEvery is how often keepAlive speaks to the server. It is a
+// variable so that a test can make it short.
+var keepAliveEvery = 15 * time.Second
 
 func (e *Env) openSession(ctx context.Context, node model.Node, login Login) (*session, error) {
 	sh, err := e.openShell(ctx, node, login)
 	if err != nil {
 		return nil, err
 	}
-	return &session{sh: sh, secrets: login.secrets()}, nil
+	return &session{
+		sh: sh, secrets: login.secrets(),
+		reopen: func(ctx context.Context) (Shell, error) { return e.openShell(ctx, node, login) },
+	}, nil
 }
 
-func (s *session) close() { s.sh.Close() }
+// shell is the connection now in use, which is not always the one the session
+// opened with: a dropped one is made again.
+func (s *session) shell() Shell {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sh
+}
+
+func (s *session) close() { s.shell().Close() }
+
+// connectionGone says whether a command failed because the connection to the
+// server is gone, not because the command did. Everything a command that ran
+// reports is an installer.CommandError, so any other failure to run it, such as
+// a session that can't be opened on a connection something has cut, means it
+// never started and is safe to run again.
+func connectionGone(err error) bool {
+	var ce *installer.CommandError
+	switch {
+	case err == nil || errors.As(err, &ce):
+		return false
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return false
+	case errors.Is(err, io.EOF), errors.Is(err, net.ErrClosed), errors.Is(err, syscall.EPIPE), errors.Is(err, syscall.ECONNRESET):
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unexpected packet in response to channel open") || strings.Contains(msg, "ssh: disconnect") ||
+		strings.Contains(msg, "use of closed network connection") || strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset by peer")
+}
+
+// reconnect replaces a connection that is gone with a new one, unless
+// something has done that already. gone is the connection that failed.
+func (s *session) reconnect(ctx context.Context, gone Shell) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sh != gone {
+		return nil
+	}
+	if s.reopen == nil {
+		return errors.New("agentops: the connection to the server is gone")
+	}
+	sh, err := s.reopen(ctx)
+	if err != nil {
+		return err
+	}
+	gone.Close()
+	s.sh = sh
+	return nil
+}
+
+// keepAlive speaks to the server every keepAliveEvery until stop is called, so
+// that a long wait with nothing to say to it (the agent's download, over a slow
+// link) doesn't let a router, a firewall or the server itself forget the
+// connection. A connection found dead is made again here, not by the next real
+// command.
+func (s *session) keepAlive(ctx context.Context) (stop func()) {
+	kctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(keepAliveEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-kctx.Done():
+				return
+			case <-t.C:
+			}
+			sh := s.shell()
+			cctx, release := context.WithTimeout(kctx, sshTimeout)
+			_, err := sh.Run(cctx, "true", nil)
+			release()
+			if kctx.Err() == nil && connectionGone(err) {
+				s.reconnect(kctx, sh)
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
 
 // run executes cmd as the login user.
 func (s *session) run(ctx context.Context, what, cmd string) (string, error) {
-	return s.exec(ctx, cmdTimeout, what, func(ctx context.Context) (string, error) { return s.sh.Run(ctx, cmd, nil) })
+	return s.exec(ctx, cmdTimeout, what, func(ctx context.Context) (string, error) { return s.shell().Run(ctx, cmd, nil) })
 }
 
 // root executes cmd as root, with stdin when there is some.
 func (s *session) root(ctx context.Context, what, cmd string, stdin io.Reader) (string, error) {
-	return s.exec(ctx, cmdTimeout, what, func(ctx context.Context) (string, error) { return s.sh.Root(ctx, cmd, stdin) })
+	return s.exec(ctx, cmdTimeout, what, func(ctx context.Context) (string, error) { return s.shell().Root(ctx, cmd, stdin) })
 }
 
 // has says whether a command that only asks a question answered yes.
@@ -55,7 +151,14 @@ func (s *session) has(ctx context.Context, cmd string) bool {
 func (s *session) exec(ctx context.Context, limit time.Duration, what string, call func(context.Context) (string, error)) (string, error) {
 	cctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
+	used := s.shell()
 	out, err := call(cctx)
+	if err != nil && ctx.Err() == nil && connectionGone(err) {
+		// the command never started: sign in again and run it once more
+		if rerr := s.reconnect(ctx, used); rerr == nil {
+			out, err = call(cctx)
+		}
+	}
 	if err == nil {
 		return out, nil
 	}

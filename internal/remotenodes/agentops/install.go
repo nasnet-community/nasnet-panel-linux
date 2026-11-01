@@ -166,7 +166,7 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 		return "", err
 	}
 	s := in.s
-	if !s.sh.IsRoot() && !s.has(ctx, cmdSudo) {
+	if !s.shell().IsRoot() && !s.has(ctx, cmdSudo) {
 		return "", newErr(ErrNeedsRoot, nil, "This login isn't root, and the server has no sudo. Sign in as root, or as a user that can use sudo.")
 	}
 
@@ -376,7 +376,11 @@ func (in *install) plan() {
 // a network that fails costs nothing.
 func (in *install) download(ctx context.Context) error {
 	done := in.st.begin(StepDownloadAgent)
+	// the server is sitting idle over the download, which can take minutes on a
+	// slow link: keep the connection alive, or make it again if it drops
+	stop := in.s.keepAlive(ctx)
 	ag, err := in.e.Files.Agent(ctx, in.res.Arch)
+	stop()
 	if err != nil {
 		return done("", plainErr(err))
 	}
@@ -510,7 +514,7 @@ func (in *install) upload(ctx context.Context) error {
 func (in *install) send(ctx context.Context, m *meter) error {
 	s := in.s
 	if _, err := s.exec(ctx, uploadTimeout, "Couldn't upload the agent", func(c context.Context) (string, error) {
-		return s.sh.Root(c, cmdUpload, m.reader(bytes.NewReader(in.ag.Gz)))
+		return s.shell().Root(c, cmdUpload, m.reader(bytes.NewReader(in.ag.Gz)))
 	}); err != nil {
 		return err
 	}

@@ -61,6 +61,7 @@ type fakeFiles struct {
 	xrayErr  error
 	asked    []string
 	built    map[string]any // a build is made once, so asking again gives the same bytes
+	delay    time.Duration  // how long the agent takes to arrive, as over a slow link
 }
 
 func newFakeFiles(t *testing.T) *fakeFiles { return &fakeFiles{t: t, version: "v1.3.0"} }
@@ -68,8 +69,15 @@ func newFakeFiles(t *testing.T) *fakeFiles { return &fakeFiles{t: t, version: "v
 func (f *fakeFiles) Agent(ctx context.Context, arch string) (*artifacts.Agent, error) {
 	f.mu.Lock()
 	f.asked = append(f.asked, "agent "+arch)
-	err, built := f.agentErr, f.built["agent "+arch]
+	err, built, delay := f.agentErr, f.built["agent "+arch], f.delay
 	f.mu.Unlock()
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +151,8 @@ type installRig struct {
 	targets   []installer.Target
 	verifyErr error
 	verified  []*artifacts.Agent
-	shows     string // the host key the server shows
+	onStep    func(Step) // called as each step reports, before the rig notes it
+	shows     string     // the host key the server shows
 	connectFn func(ctx context.Context, t installer.Target) (Shell, error)
 }
 
@@ -188,6 +197,9 @@ func newInstallRig(t *testing.T) *installRig {
 }
 
 func (r *installRig) progress(s Step) {
+	if r.onStep != nil {
+		r.onStep(s)
+	}
 	r.mu.Lock()
 	r.steps = append(r.steps, s)
 	r.mu.Unlock()
