@@ -115,6 +115,9 @@ type InstallForm struct {
 	SSHPort   int    `json:"sshPort"`
 	SSHUser   string `json:"sshUser"`
 	EntryPort int    `json:"entryPort"`
+	// HandshakeTarget is the Reality target the person asked for, host:port,
+	// and is left out when the node was to choose one.
+	HandshakeTarget string `json:"handshakeTarget,omitempty"`
 }
 
 // ErrorInfo is what a failed job's error says, in a form the page can use
@@ -141,6 +144,12 @@ type ErrorInfo struct {
 	// server_is_node: the node that is on this server already.
 	NodeID   uint   `json:"nodeId,omitempty"`
 	NodeName string `json:"nodeName,omitempty"`
+	// reality_target_failed: the Reality target the node could not use (host:port)
+	// and why, in the node's own words. The target is left out when the node chose
+	// among several sites and none worked, and Tried says how many.
+	Target string `json:"target,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Tried  int    `json:"tried,omitempty"`
 	// TookOver: the install had taken over the server's own Xray when it failed.
 	// That Xray was stopped and removed as asked, and nothing puts it back.
 	TookOver bool `json:"tookOver,omitempty"`
@@ -538,6 +547,10 @@ func (e *Engine) infoOf(err error) (info *ErrorInfo) {
 // maxFact is the longest a name or a fingerprint in an ErrorInfo may be.
 const maxFact = 128
 
+// maxReason is the longest sentence an ErrorInfo may carry: a node's reason for
+// refusing a Reality target.
+const maxReason = 300
+
 // cleanInfo is info as a job may show it: a copy of its own, with the secrets
 // taken out of the text in it and each text cut, and nil when it says nothing.
 // The caller holds the engine's lock.
@@ -549,6 +562,7 @@ func (j *job) cleanInfo(info *ErrorInfo) *ErrorInfo {
 	c.Process, c.NodeName = j.text(c.Process, maxFact), j.text(c.NodeName, maxName)
 	c.Role, c.XrayVersion = j.text(c.Role, maxName), j.text(c.XrayVersion, maxName)
 	c.PinnedKey, c.ShownKey = j.text(c.PinnedKey, maxFact), j.text(c.ShownKey, maxFact)
+	c.Target, c.Reason = j.text(c.Target, maxFact), j.text(c.Reason, maxReason)
 	c.Found = nil
 	for _, f := range info.Found {
 		if f = j.text(f, maxName); f != "" && len(c.Found) < 8 {

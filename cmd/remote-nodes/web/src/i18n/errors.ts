@@ -23,6 +23,7 @@ const WORDED = new Set([
   'port_in_use',
   'login_refused',
   'needs_root',
+  'reality_target_failed',
   'busy',
   'backup_bad_passphrase',
   'backup_bad_file',

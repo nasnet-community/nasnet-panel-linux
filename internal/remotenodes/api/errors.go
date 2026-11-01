@@ -29,13 +29,14 @@ const (
 	CodeVersionMismatch     = "version_mismatch"
 	CodeAgentTooOld         = "agent_too_old"
 	CodeHostKeyChanged      = "host_key_changed"
-	CodeServerHasXray       = "server_has_xray"  // an install found an Xray it did not put there
-	CodeServerIsNode        = "server_is_node"   // an install found the server is already another node here
-	CodeServerHasAgent      = "server_has_agent" // an install found another hub's agent, or one nobody vouches for
-	CodeXrayNotStopped      = "xray_not_stopped" // a takeover stopped the server's Xray service, and an Xray runs still
-	CodePortInUse           = "port_in_use"      // a port the node needs is held by something else on the server
-	CodeLoginRefused        = "login_refused"    // the server did not accept the SSH login
-	CodeNeedsRoot           = "needs_root"       // the login can't act as root: no sudo, or sudo refused the password
+	CodeServerHasXray       = "server_has_xray"       // an install found an Xray it did not put there
+	CodeServerIsNode        = "server_is_node"        // an install found the server is already another node here
+	CodeServerHasAgent      = "server_has_agent"      // an install found another hub's agent, or one nobody vouches for
+	CodeXrayNotStopped      = "xray_not_stopped"      // a takeover stopped the server's Xray service, and an Xray runs still
+	CodePortInUse           = "port_in_use"           // a port the node needs is held by something else on the server
+	CodeLoginRefused        = "login_refused"         // the server did not accept the SSH login
+	CodeNeedsRoot           = "needs_root"            // the login can't act as root: no sudo, or sudo refused the password
+	CodeRealityTargetFailed = "reality_target_failed" // the node can't use the Reality target it was given, or none of its candidates works
 	CodeBusy                = "busy"
 	CodeBackupBadPassphrase = "backup_bad_passphrase"
 	CodeBackupBadFile       = "backup_bad_file"
@@ -62,6 +63,7 @@ var statuses = map[string]int{
 	CodePortInUse:           http.StatusConflict,
 	CodeLoginRefused:        http.StatusConflict,
 	CodeNeedsRoot:           http.StatusConflict,
+	CodeRealityTargetFailed: http.StatusConflict,
 	CodeBusy:                http.StatusConflict,
 	CodeBackupBadPassphrase: http.StatusBadRequest,
 	CodeBackupBadFile:       http.StatusBadRequest,

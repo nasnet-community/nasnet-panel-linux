@@ -109,6 +109,11 @@ export interface InstallRequest extends Login {
    * and drop-ins removed with no copy kept, its binary replaced unless it is the pinned build. Left out is no.
    */
   takeOverXray?: boolean
+  /**
+   * The Reality target the node is to use, host:port. The node checks it during the install, which fails at that
+   * step if the node can't use it (reality_target_failed). Left out, the node chooses one.
+   */
+  handshakeTarget?: string
 }
 
 export interface RemoveRequest {
@@ -138,6 +143,8 @@ export interface InstallForm {
   sshPort: number
   sshUser: string
   entryPort: number
+  /** the Reality target that was asked for, host:port; missing when the node was to choose */
+  handshakeTarget?: string
 }
 
 /**
@@ -159,6 +166,11 @@ export interface ErrorInfo {
   /** server_is_node: the node that is on the server already */
   nodeId?: number
   nodeName?: string
+  /** reality_target_failed: the Reality target the node couldn't use, host:port, and why in the node's own words */
+  target?: string
+  reason?: string
+  /** reality_target_failed with no one target: how many sites the node tried, and none worked */
+  tried?: number
   /** the install took over the server's own Xray before it failed: that Xray is gone and nothing puts it back */
   tookOver?: boolean
 }
@@ -246,7 +258,7 @@ export interface Node {
   registered: boolean
   createdAt: string
   entryPort: number
-  /** host:port the REALITY handshake borrows */
+  /** host:port of the Reality target */
   handshakeTarget: string
   /** how the hub's last look at the target went. Not in the contract yet: the Settings tab shows the badge only when it is here. */
   handshakeCheck?: { ok: boolean; checkedAt: string }

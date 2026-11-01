@@ -797,6 +797,53 @@ export const jobs: Job[] = [
     "startedAt": "2026-10-30T12:00:00Z"
   },
   {
+    "id": "job-target",
+    "kind": "install",
+    "state": "failed",
+    "steps": [
+      {
+        "key": "check_server",
+        "name": "Check the server",
+        "state": "ok",
+        "detail": "arm64 · Debian GNU/Linux 12 (bookworm)"
+      },
+      {
+        "key": "choose_target",
+        "name": "Choose a Reality target",
+        "state": "failed",
+        "detail": "The site www.example.com:443 doesn't work as a Reality target from this server: it doesn't use TLS 1.3."
+      },
+      {
+        "key": "clean_server",
+        "name": "Clean up the server",
+        "state": "ok"
+      },
+      {
+        "key": "discard_node",
+        "name": "Discard the node",
+        "state": "ok"
+      }
+    ],
+    "error": "The site www.example.com:443 doesn't work as a Reality target from this server: it doesn't use TLS 1.3. The server was cleaned up and nothing was kept.",
+    "code": "reality_target_failed",
+    "errorInfo": {
+      "target": "www.example.com:443",
+      "reason": "It doesn't use TLS 1.3."
+    },
+    "nodeId": 5,
+    "target": "fourth",
+    "startedAt": "2026-10-30T12:00:00Z",
+    "finishedAt": "2026-10-30T12:00:00Z",
+    "install": {
+      "name": "fourth",
+      "host": "203.0.113.5",
+      "sshPort": 22,
+      "sshUser": "root",
+      "entryPort": 443,
+      "handshakeTarget": "www.example.com:443"
+    }
+  },
+  {
     "id": "job-refused",
     "kind": "install",
     "state": "failed",

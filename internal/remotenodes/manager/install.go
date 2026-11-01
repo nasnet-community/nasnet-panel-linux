@@ -46,6 +46,11 @@ var errRemovedMidInstall = errors.New("the node was removed while it was being i
 // install again, but for the one thing that is asked again each time: that the
 // server's own Xray may be taken over (req.TakeOverXray) is not in the form it
 // carries.
+//
+// A Reality target that is asked for (req.HandshakeTarget) is read the way the
+// settings call reads one, before anything is saved, and the install uses it as
+// it is: the node checks it at "Choose a Reality target" and the install fails
+// there if the node can't use it. Left out, the node chooses one.
 func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, error) {
 	name, err := model.CleanName(req.Name)
 	if err != nil {
@@ -56,6 +61,10 @@ func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, 
 		return "", err
 	}
 	lg, err := cleanLogin(req.Login)
+	if err != nil {
+		return "", err
+	}
+	target, err := cleanInstallTarget(req.HandshakeTarget)
 	if err != nil {
 		return "", err
 	}
@@ -105,10 +114,13 @@ func (m *Manager) AddNode(ctx context.Context, req api.InstallRequest) (string, 
 	spec := jobs.Spec{
 		Kind: jobs.KindInstall, NodeID: node.ID, Target: node.Name, Steps: installSteps(opts),
 		Secrets: lg.secrets(keys.PrivateKey),
-		Install: &jobs.InstallForm{Name: node.Name, Host: node.Host, SSHPort: node.SSHPort, SSHUser: node.SSHUser, EntryPort: node.EntryPort},
+		Install: &jobs.InstallForm{
+			Name: node.Name, Host: node.Host, SSHPort: node.SSHPort, SSHUser: node.SSHUser, EntryPort: node.EntryPort,
+			HandshakeTarget: target,
+		},
 	}
 	id, err := m.startJob(spec, m.usesDownloads(func(ctx context.Context, r *jobs.Run) error {
-		return m.runInstall(ctx, r, ops, node, lg, keys, opts)
+		return m.runInstall(ctx, r, ops, node, lg, keys, opts, target)
 	}))
 	if err != nil {
 		// no job will ever finish this one, so it isn't left for a person to find
@@ -147,7 +159,7 @@ func (m *Manager) checkNew(s model.State, name, host string) error {
 // set up. One that fails is cleaned up after (afterFailure), so the job ends
 // with no node or with an unfinished install, never with a node that only
 // looks like one.
-func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, lg login, keys agentops.RealityKeys, opts agentops.InstallOptions) (err error) {
+func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, lg login, keys agentops.RealityKeys, opts agentops.InstallOptions, target string) (err error) {
 	settled := false
 	defer func() {
 		// a panic ends the job, and the record mustn't go on looking like a running install
@@ -155,7 +167,7 @@ func (m *Manager) runInstall(ctx context.Context, r *jobs.Run, ops Ops, node mod
 			m.keepUnfinished(node.ID, model.InstallFailure{Error: "The install stopped on an internal error.", At: m.now().UTC().Truncate(time.Second)})
 		}
 	}()
-	did, err := m.install(ctx, r, ops, node, lg.creds, keys, opts)
+	did, err := m.install(ctx, r, ops, node, lg.creds, keys, opts, target)
 	if err != nil {
 		err = m.afterFailure(ctx, r, ops, node, lg.creds, did, err, lg.secrets(keys.PrivateKey))
 	}
@@ -172,8 +184,10 @@ type installed struct {
 	tookOver bool
 }
 
-// install is runInstall's work, and says how far it got on the server.
-func (m *Manager) install(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, keys agentops.RealityKeys, opts agentops.InstallOptions) (did installed, err error) {
+// install is runInstall's work, and says how far it got on the server. A
+// target that is given is the node's Reality target as it is, or the install
+// fails where the node checks it; empty, the node chooses.
+func (m *Manager) install(ctx context.Context, r *jobs.Run, ops Ops, node model.Node, creds agentops.Login, keys agentops.RealityKeys, opts agentops.InstallOptions, target string) (did installed, err error) {
 	progress := progressTo(r)
 	res, err := ops.InstallAgent(ctx, node, creds, opts, progress)
 	did = installed{changed: res.Changed, tookOver: res.TookOver}
@@ -194,7 +208,7 @@ func (m *Manager) install(ctx context.Context, r *jobs.Run, ops Ops, node model.
 
 	st := m.cfg.Store.Read()
 	prov, err := ops.Provision(ctx, c, agentops.ProvisionInput{
-		Node: node, Keys: keys, Clients: clientsOf(st, node.ID), Bridge: bridgeOf(node), XrayKept: res.XrayKept,
+		Node: node, Target: target, Keys: keys, Clients: clientsOf(st, node.ID), Bridge: bridgeOf(node), XrayKept: res.XrayKept,
 	}, progress)
 	if err != nil {
 		return did, err
