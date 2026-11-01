@@ -21,7 +21,7 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/agent/config"
 )
 
-// A handshake target of the test's own: a TLS server on a loopback port, so the
+// A Reality target of the test's own: a TLS server on a loopback port, so the
 // agent's own check, which dials the target from the node, has something to
 // shake hands with.
 

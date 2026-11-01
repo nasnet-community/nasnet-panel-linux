@@ -119,15 +119,15 @@ func (l login) secrets(more ...string) []string {
 	return out
 }
 
-// cleanTarget reads a handshake target, host or host:port with 443 for the
+// cleanTarget reads a Reality target, host or host:port with 443 for the
 // port, and gives it as host:port with the host in its canonical form.
 func cleanTarget(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "", invalidf("the handshake target is required")
+		return "", invalidf("the Reality target is required")
 	}
 	if strings.Contains(s, "://") || strings.ContainsAny(s, "/ \t") {
-		return "", invalidf("the handshake target must look like www.example.com:443")
+		return "", invalidf("the Reality target must look like www.example.com:443")
 	}
 	host, portText, err := net.SplitHostPort(s)
 	if err != nil {
@@ -138,7 +138,7 @@ func cleanTarget(s string) (string, error) {
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {
-		return "", invalidf("the handshake target has no valid port")
+		return "", invalidf("the Reality target has no valid port")
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }

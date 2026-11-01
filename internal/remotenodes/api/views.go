@@ -82,7 +82,7 @@ type Node struct {
 	EntryPort         int         `json:"entryPort"`
 	HandshakeTarget   string      `json:"handshakeTarget"` // host:port the REALITY handshake borrows
 	SNI               string      `json:"sni"`
-	SNICustom         bool        `json:"sniCustom"` // false: the same as the handshake target's host
+	SNICustom         bool        `json:"sniCustom"` // false: the same as the Reality target's host
 	PublicKey         string      `json:"publicKey"`
 	ShortID           string      `json:"shortId"`
 	Arch              string      `json:"arch"`

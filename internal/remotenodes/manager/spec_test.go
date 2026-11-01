@@ -109,7 +109,7 @@ func TestWhatKeepsANodeOutOfTheSpec(t *testing.T) {
 	}
 }
 
-// With no SNI of its own a node is dialled under the handshake target's name.
+// With no SNI of its own a node is dialled under the Reality target's name.
 func TestTheServerNameFallsBackToTheTargetsHost(t *testing.T) {
 	n := readyNode(1)
 	n.RealitySNI, n.RealityTarget = "", "cover.example.org:8443"

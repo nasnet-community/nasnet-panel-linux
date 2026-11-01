@@ -28,7 +28,7 @@ type NodeOps interface {
 	RenameNode(ctx context.Context, id uint, name string) error
 	// ChangeSettings starts the job that puts new settings on a node's entry.
 	ChangeSettings(ctx context.Context, id uint, req SettingsRequest) (jobID string, err error)
-	// CheckHandshake has the node try a handshake target.
+	// CheckHandshake has the node try a Reality target.
 	CheckHandshake(ctx context.Context, id uint, target string) (HandshakeCheck, error)
 	// CheckUpdates looks up the latest release again, so that the node's
 	// updates are as fresh as the release server's answer.
@@ -139,14 +139,14 @@ func (r RemoveRequest) GoString() string { return r.String() }
 func (r RemoveRequest) LogValue() slog.Value { return slog.StringValue(r.String()) }
 
 // SettingsRequest is what to change of a node's entry. A field that is left
-// out stays as it is; an empty SNI means the handshake target's host.
+// out stays as it is; an empty SNI means the Reality target's host.
 type SettingsRequest struct {
 	EntryPort       *int    `json:"entryPort,omitempty"`
 	HandshakeTarget *string `json:"handshakeTarget,omitempty"`
 	SNI             *string `json:"sni,omitempty"`
 }
 
-// HandshakeCheck is what a node found out about a handshake target.
+// HandshakeCheck is what a node found out about a Reality target.
 type HandshakeCheck struct {
 	OK             bool   `json:"ok"`
 	TLS13          bool   `json:"tls13"`

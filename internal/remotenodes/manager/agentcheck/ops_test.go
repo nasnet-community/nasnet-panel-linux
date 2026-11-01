@@ -103,7 +103,7 @@ func closedPort(t *testing.T) int {
 }
 
 // tlsTarget serves cfg on a loopback port and gives localhost:port as the
-// handshake target it is, so that the hello carries a name.
+// Reality target it is, so that the hello carries a name.
 func tlsTarget(t *testing.T, cfg *tls.Config) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -155,7 +155,7 @@ func oldTarget(t *testing.T) string {
 }
 
 // sshStandIn is the operations of the hub with the two that go over SSH
-// replaced, and the choice of handshake targets pointed at sites this machine
+// replaced, and the choice of Reality targets pointed at sites this machine
 // can reach. Everything else is agentops's, against the real agent.
 type sshStandIn struct {
 	manager.Ops
@@ -514,7 +514,7 @@ func TestAnInstallWhoseTargetsDoNotWorkStopsThereAndTheNodeCanBeForgotten(t *tes
 	})
 	must(t, err)
 	j := w.failed(id)
-	if !strings.HasPrefix(j.Error, "None of the 2 sites tried works as a handshake target from this server") {
+	if !strings.HasPrefix(j.Error, "None of the 2 sites tried works as a Reality target from this server") {
 		t.Errorf("job error %q", j.Error)
 	}
 	states := map[string]jobs.StepState{}
@@ -591,7 +591,7 @@ func TestChangingSettingsAndKeysThroughTheRealAgent(t *testing.T) {
 	id, err = w.mgr.ChangeSettings(ctx, n.ID, api.SettingsRequest{HandshakeTarget: &old})
 	must(t, err)
 	j := w.failed(id)
-	if !strings.Contains(j.Error, "doesn't work as a handshake target") || w.onTheNode() != before || w.node().RealityTarget != other {
+	if !strings.Contains(j.Error, "doesn't work as a Reality target") || w.onTheNode() != before || w.node().RealityTarget != other {
 		t.Errorf("job error %q, config changed %v, target %q", j.Error, w.onTheNode() != before, w.node().RealityTarget)
 	}
 

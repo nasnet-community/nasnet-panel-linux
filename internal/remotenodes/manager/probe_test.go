@@ -109,7 +109,7 @@ func TestAServerThatNeverAnswersIsANodeThatCantBeReached(t *testing.T) {
 		t.Errorf("a server that never answers: %v", err)
 	}
 
-	// and the same for the check of a handshake target, which goes over the agent's link
+	// and the same for the check of a Reality target, which goes over the agent's link
 	if opFailure(&agentops.UnreachableError{What: "agent", Host: "203.0.113.5", Port: 9090, Err: timeout}).(*api.Error).Code != api.CodeNodeUnreachable {
 		t.Error("an agent that never answers is not a node that can't be reached")
 	}

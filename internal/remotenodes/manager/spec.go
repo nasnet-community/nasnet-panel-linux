@@ -26,7 +26,7 @@ import (
 //   - the install has finished: it is registered (not still installing)
 //   - the install made the bridge's client id, which is how the bridge logs in
 //   - the REALITY values of the portal are there: the public key, the short
-//     id, and a server name (the SNI, else the handshake target's host)
+//     id, and a server name (the SNI, else the Reality target's host)
 //   - its Xray is known and is the pin: the bridge and the portal have to run
 //     one build, and a node that hasn't said what it runs is not trusted to
 //     run the right one (the skew guard)
@@ -221,7 +221,7 @@ func portalOf(n model.Node, in specInput) (bridgespec.Node, gap) {
 }
 
 // serverName is the name the bridge presents to the portal: the SNI, or, when
-// the node has none of its own, the host of the handshake target.
+// the node has none of its own, the host of the Reality target.
 func serverName(n model.Node) string {
 	if n.RealitySNI != "" {
 		return n.RealitySNI
