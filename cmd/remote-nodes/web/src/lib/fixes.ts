@@ -26,6 +26,8 @@ export type Fix =
   | { kind: 'hostkey'; pinned: string; shown: string }
   /** the server has an agent, or is a node already: use another */
   | { kind: 'server'; why: 'agent' | 'node'; nodeId: number; nodeName: string }
+  /** the node can't use the Reality target: give another, or let the node choose (`target` is '' when the node chose and none worked) */
+  | { kind: 'target'; target: string; reason: string; tried: number }
   /** nothing in particular: try again, or change the details */
   | { kind: 'again' }
 
@@ -54,6 +56,8 @@ export function fixFor(job: Job): Fix | null {
       return { kind: 'server', why: 'agent', nodeId: 0, nodeName: '' }
     case 'server_is_node':
       return { kind: 'server', why: 'node', nodeId: info.nodeId ?? 0, nodeName: info.nodeName ?? '' }
+    case 'reality_target_failed':
+      return { kind: 'target', target: info.target ?? '', reason: info.reason ?? '', tried: info.tried ?? 0 }
   }
   return { kind: 'again' }
 }
@@ -65,7 +69,7 @@ export const withTakeOver = (r: InstallRequest): InstallRequest => ({ ...r, take
 
 /**
  * The same install for another try: the agreement to take over the server's Xray is asked again each
- * time, so it isn't carried.
+ * time, so it isn't carried. The Reality target is no secret, and stays.
  */
 export function forAnotherTry(r: InstallRequest): InstallRequest {
   const { takeOverXray: _, ...rest } = r
@@ -89,6 +93,15 @@ export function withLogin(r: InstallRequest, login: Login): InstallRequest {
   if (login.privateKey !== undefined) next.privateKey = login.privateKey
   if (login.passphrase !== undefined) next.passphrase = login.passphrase
   return next
+}
+
+/** The same install with this Reality target, host:port; the node checks it again. */
+export const withTarget = (r: InstallRequest, handshakeTarget: string): InstallRequest => ({ ...r, handshakeTarget })
+
+/** The same install with no Reality target of its own: the node chooses one. */
+export function withoutTarget(r: InstallRequest): InstallRequest {
+  const { handshakeTarget: _, ...rest } = r
+  return rest
 }
 
 /** The same install, holding the server to the key it shows now. */

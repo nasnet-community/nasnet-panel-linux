@@ -100,6 +100,32 @@ describe('what a failed install says is wrong, once', () => {
     expect(failureText(fa.t, { ...plain, error: JOB_LOST }).reason).toBe(fa.t('job.lost'))
   })
 
+  it('names the Reality target the node could not use, and gives the node\'s own reason beside it', () => {
+    const why = "It doesn't use TLS 1.3."
+    const cause = `The site www.example.com:443 doesn't work as a Reality target from this server: it doesn't use TLS 1.3.`
+    const job = refused('reality_target_failed', cause, { errorInfo: { target: 'www.example.com:443', reason: why } })
+    const text = failureText(en.t, job)
+    expect(text).toEqual({ reason: "The Reality target www.example.com:443 doesn't work from this server.", detail: why, stepText: false })
+    // the page's sentence is in the page's language, the node's reason is its own English
+    const persian = failureText(fa.t, job)
+    expect(persian.reason).toBe(fa.t('fix.target.failed', { target: 'www.example.com:443' }))
+    expect(persian.reason).not.toBe(text.reason)
+    expect(persian.detail).toBe(why)
+    // the node chose among its sites and none worked: how many, and no reason to add
+    const none = refused('reality_target_failed', 'None of the 8 sites tried works as a Reality target from this server.', { errorInfo: { tried: 8 } })
+    expect(failureText(en.t, none)).toEqual({ reason: 'None of the 8 sites the node tried works as a Reality target from this server.', detail: '', stepText: false })
+    // from a hub that sends no facts: the page's sentence for the code, and the hub's own beside it
+    const bare = refused('reality_target_failed', cause)
+    expect(failureText(en.t, bare)).toEqual({ reason: en.t('error.reality_target_failed'), detail: cause, stepText: false })
+    // and it is no refusal of the server: the title is the failure's
+    expect(jobHeader(en.t, en.fmt, job, 'Frankfurt', 0).title).toBe('Installation failed · Frankfurt')
+  })
+
+  it('says it from the hub\'s own failed target', () => {
+    const job = hub.jobs.find((j) => j.code === 'reality_target_failed')!
+    expect(failureText(en.t, job)).toEqual({ reason: "The Reality target www.example.com:443 doesn't work from this server.", detail: "It doesn't use TLS 1.3.", stepText: false })
+  })
+
   it('says it from the hub\'s own refused install', () => {
     const job = hub.jobs.find((j) => j.code === 'server_has_xray')!
     expect(failureText(en.t, job).reason).toBe('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')

@@ -187,6 +187,8 @@ export const en = {
   'add.advanced': 'Advanced',
   'add.entryPort': 'Entry port',
   'add.entryPortHint': 'The port subscriptions connect to. It must be free on the node.',
+  'add.target': 'Reality target',
+  'add.targetHint': 'Optional. Left empty, the node picks one that works.',
   'add.keyNote': "The server's SSH key is saved on first connect. You're warned if it ever changes.",
   'add.submit': 'Connect and install',
   'add.back': 'Back',
@@ -643,6 +645,16 @@ export const en = {
   'fix.hostkey.go': 'Trust the new key and continue',
   'fix.server.node': 'This server is already the node {name} here, under another address. Change that node instead of adding the server again.',
   'fix.openNode': 'Open that node',
+  'fix.target.failed': "The Reality target {target} doesn't work from this server.",
+  'fix.target.none': {
+    one: "The {n} site the node tried doesn't work as a Reality target from this server.",
+    other: "None of the {n} sites the node tried works as a Reality target from this server.",
+  },
+  'fix.target.other': 'Use another Reality target',
+  'fix.target.hint': 'An HTTPS site that supports {tls}. The node checks it again.',
+  'fix.target.same': 'That is the one that failed.',
+  'fix.target.choose': 'Let the node choose one',
+  'fix.target.choose.text': 'Or leave it to the node: it tries a few well-known sites and uses the best one.',
   'add.changeDetails': 'Change details',
 } satisfies Record<string, Message>
 
