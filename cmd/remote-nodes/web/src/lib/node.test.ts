@@ -158,7 +158,7 @@ describe('plot', () => {
 })
 
 describe('what can be typed in', () => {
-  it('makes a handshake target of a site: host:port, lower case, no scheme or path', () => {
+  it('makes a Reality target of a site: host:port, lower case, no scheme or path', () => {
     expect(normalizeTarget('www.example.com')).toBe('www.example.com:443')
     expect(normalizeTarget('WWW.Example.com:8443')).toBe('www.example.com:8443')
     expect(normalizeTarget('  example.org:443  ')).toBe('example.org:443')

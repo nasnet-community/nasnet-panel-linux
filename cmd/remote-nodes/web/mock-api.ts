@@ -20,7 +20,7 @@
 //   address contains "changed" -> the host key differs from last time
 //   address contains "fail"    -> fails at "Check the agent" (dial timeout), then cleans the server up
 //   address contains "unreach" -> the same, and the job has the code node_unreachable, which the page words
-//   address contains "late"    -> fails at "Choose a handshake target", then cleans the server up
+//   address contains "late"    -> fails at "Choose a Reality target", then cleans the server up
 //   address contains "hasxray" -> refused at "Check the server": it runs an Xray of its own (server_has_xray),
 //                                 version 26.9.1 and not the pinned build ("hasxraysame": the pinned build);
 //                                 with takeOverXray in the request the install takes it over and goes on
@@ -141,7 +141,7 @@ export const STEPS = {
   downloadXray: { key: 'download_xray', name: 'Download Xray' },
   uploadXray: { key: 'upload_xray', name: 'Upload Xray' },
   checkXray: { key: 'check_xray', name: 'Check Xray' },
-  chooseTarget: { key: 'choose_target', name: 'Choose a handshake target' },
+  chooseTarget: { key: 'choose_target', name: 'Choose a Reality target' },
   createKeys: { key: 'create_keys', name: 'Create the keys' },
   applyConfig: { key: 'apply_config', name: 'Apply the configuration' },
   saveNode: { key: 'save_node', name: 'Save the node' },

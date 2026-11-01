@@ -71,7 +71,7 @@ test('the controls of the node page are big enough to tap', async ({ page, reque
   expect(lands).toContain('Update to 26.10.21')
 
   await page.getByRole('tab', { name: 'Settings' }).click()
-  for (const name of ['Change port…', 'Change handshake target…', 'Rotate keys…', 'Renew now']) expect(await height(page, name)).toBeGreaterThanOrEqual(44)
+  for (const name of ['Change port…', 'Change Reality target…', 'Rotate keys…', 'Renew now']) expect(await height(page, name)).toBeGreaterThanOrEqual(44)
   for (const name of ['Copy public key', 'Copy short ID']) {
     const copy = (await page.getByRole('button', { name }).boundingBox())!
     expect(copy.height).toBeGreaterThanOrEqual(44)
@@ -79,7 +79,7 @@ test('the controls of the node page are big enough to tap', async ({ page, reque
   }
   expect(await height(page, /^Advanced/)).toBeGreaterThanOrEqual(44)
   await page.getByRole('button', { name: /^Advanced/ }).click()
-  expect((await page.getByLabel('Same as the handshake target').locator('xpath=..').boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  expect((await page.getByLabel('Same as the Reality target').locator('xpath=..').boundingBox())!.height).toBeGreaterThanOrEqual(44)
   expect(await height(page, 'Server name', 'textbox')).toBeGreaterThanOrEqual(44)
 })
 
@@ -121,13 +121,13 @@ test('opens the menu inside the screen, with items you can reach', async ({ page
 
 test('puts the dialogs of the node page at the bottom as sheets, with their buttons easy to hit', async ({ page }) => {
   await openNode(page, 1, 'settings')
-  await page.getByRole('button', { name: 'Change handshake target…' }).click()
-  const d = dialog(page, 'Change the handshake target')
+  await page.getByRole('button', { name: 'Change Reality target…' }).click()
+  const d = dialog(page, 'Change the Reality target')
   const sheet = (await d.boundingBox())!
   const view = page.viewportSize()!
   expect(sheet.width).toBeGreaterThanOrEqual(view.width - 2)
   expect(sheet.y + sheet.height).toBeGreaterThanOrEqual(view.height - 2)
-  for (const c of [d.getByRole('textbox', { name: 'Handshake target', exact: true }), d.getByRole('button', { name: 'Check', exact: true }), d.getByRole('button', { name: 'Cancel' }), d.getByRole('button', { name: 'Save and apply' }), d.getByRole('button', { name: 'Close', exact: true })]) {
+  for (const c of [d.getByRole('textbox', { name: 'Reality target', exact: true }), d.getByRole('button', { name: 'Check', exact: true }), d.getByRole('button', { name: 'Cancel' }), d.getByRole('button', { name: 'Save and apply' }), d.getByRole('button', { name: 'Close', exact: true })]) {
     expect((await c.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   }
   expect(await overflow(page)).toBeLessThanOrEqual(0)

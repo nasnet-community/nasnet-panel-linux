@@ -251,7 +251,7 @@ export interface Node {
   /** how the hub's last look at the target went. Not in the contract yet: the Settings tab shows the badge only when it is here. */
   handshakeCheck?: { ok: boolean; checkedAt: string }
   sni: string
-  /** false: the same as the handshake target's host */
+  /** false: the same as the Reality target's host */
   sniCustom: boolean
   publicKey: string
   shortId: string
