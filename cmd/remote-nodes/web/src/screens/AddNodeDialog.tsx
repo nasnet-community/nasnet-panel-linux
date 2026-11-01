@@ -83,8 +83,8 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
   const suggested = suggestName(nodes ?? [], t)
   const [form, setForm] = useState(() =>
     initial
-      ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443), takeOver: false }
-      : { host: '', name: '', entryPort: '443', takeOver: false },
+      ? { host: initial.host, name: initial.name, entryPort: String(initial.entryPort || 443) }
+      : { host: '', name: '', entryPort: '443' },
   )
   const [login, setLogin] = useState<LoginForm>(() => (initial ? emptyLogin(initial.sshPort || 22, initial.sshUser || lastUser) : emptyLogin(22, lastUser)))
   const [stage, setStage] = useState<Stage>('form')
@@ -166,7 +166,6 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
       setKey(probe)
       setAckChanged(false)
       const req: InstallRequest = { ...toLogin(login, probe.fingerprint), host: form.host.trim(), name: chosen, entryPort: Number(form.entryPort) }
-      if (form.takeOver) req.takeOverXray = true
       // a first key is pinned as it is, like ssh does; only a changed one stops to ask
       if (!keyNeedsTrust(probe)) {
         setBusy(false)
@@ -338,18 +337,6 @@ function AddNode({ nodes, initial, onClose, onStarted, onInstalled, onOpenNode }
               <Field label={t('add.entryPort')} hint={t('add.entryPortHint')}>
                 {(p) => <Input {...p} dir="ltr" className="font-mono" inputMode="numeric" value={form.entryPort} onChange={set('entryPort')} />}
               </Field>
-              <label className="flex items-start gap-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 shrink-0"
-                  checked={form.takeOver}
-                  onChange={(e) => setForm((f) => ({ ...f, takeOver: e.currentTarget.checked }))}
-                />
-                <span className="flex flex-col gap-0.5">
-                  <span className="font-medium">{t('add.takeOver')}</span>
-                  <span className="text-muted">{t('add.takeOverWarn')}</span>
-                </span>
-              </label>
             </div>
           </Disclosure>
           {error && (

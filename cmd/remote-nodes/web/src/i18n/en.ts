@@ -643,9 +643,6 @@ export const en = {
   'fix.hostkey.go': 'Trust the new key and continue',
   'fix.server.node': 'This server is already the node {name} here, under another address. Change that node instead of adding the server again.',
   'fix.openNode': 'Open that node',
-  'add.takeOver': 'Take over the Xray that runs on this server',
-  'add.takeOverWarn':
-    "Only if you want that. It stops that Xray, removes its config and its service, keeps no backup, and replaces its binary unless it is the same build as this plugin's.",
   'add.changeDetails': 'Change details',
 } satisfies Record<string, Message>
 
