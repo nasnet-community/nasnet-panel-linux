@@ -292,8 +292,9 @@ test('the form has no take-over option, not even under Advanced, and never asks 
   await openAddNode(page)
   const form = await fillAddNode(page, 'hasxray.example.com')
   await form.getByRole('button', { name: 'Advanced' }).click()
-  // what Advanced holds: the entry port, and nothing about taking over a server's Xray
+  // what Advanced holds: the entry port and the Reality target, and nothing about taking over a server's Xray
   await expect(form.getByLabel('Entry port')).toBeVisible()
+  await expect(form.getByLabel('Reality target')).toBeVisible()
   await expect(form.getByRole('checkbox')).toHaveCount(0)
   await expect(form.getByText(/take over|taking over/i)).toHaveCount(0)
   // so the request leaves the question out, and the server is refused
@@ -312,4 +313,127 @@ test('the form has no take-over option, not even under Advanced, and never asks 
   await again.getByRole('button', { name: 'Advanced' }).click()
   await expect(again.getByRole('checkbox')).toHaveCount(0)
   await expect(again.getByText(/take over|taking over/i)).toHaveCount(0)
+})
+
+test.describe('the Reality target', () => {
+  const post = (page: import('@playwright/test').Page) => page.waitForRequest((r) => r.url().endsWith('/api/nodes') && r.method() === 'POST')
+
+  test('is optional, under Advanced, and left out of the request when it is empty', async ({ page }) => {
+    await openAddNode(page)
+    const form = await fillAddNode(page, '192.0.2.41')
+    // closed with Advanced
+    await expect(form.getByLabel('Reality target')).toHaveCount(0)
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    const field = form.getByLabel('Reality target')
+    await expect(field).toHaveValue('')
+    await expect(field).toHaveAttribute('placeholder', 'www.example.com:443')
+    await expect(form).toContainText('Optional. Left empty, the node picks one that works.')
+    const sent = post(page)
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    const body = (await sent).postDataJSON()
+    expect(body).toMatchObject({ host: '192.0.2.41', entryPort: 443 })
+    expect('handshakeTarget' in body).toBe(false)
+    // a blank one is none
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  })
+
+  test('is sent as the hub takes one, and the node that is added has it', async ({ page }) => {
+    await openAddNode(page)
+    const form = await fillAddNode(page, '192.0.2.41')
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    // typed as the settings dialog takes it: a scheme and a path go, the host is lower case, the port is 443 when left out
+    await form.getByLabel('Reality target').fill(' https://WWW.Debian.org/index.html ')
+    const sent = post(page)
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    expect((await sent).postDataJSON().handshakeTarget).toBe('www.debian.org:443')
+    // the step that checks it names it, and the finished install says it
+    const job = dialog(page, /Installing Node 3|Node added/)
+    await expect(job).toBeVisible()
+    const done = dialog(page, 'Node added')
+    await expect(done).toBeVisible({ timeout: 25000 })
+    await expect(done).toContainText('www.debian.org:443')
+    await expect(done).not.toContainText('www.example.com:443')
+    // the node's Settings tab shows it
+    await done.getByRole('button', { name: 'Open node' }).click()
+    await page.getByRole('tab', { name: 'Settings' }).click()
+    await expect(page.getByRole('heading', { name: 'Reality target' })).toBeVisible()
+    await expect(page.locator('b').filter({ hasText: /^www\.debian\.org:443$/ })).toBeVisible()
+  })
+
+  test('keeps the port that is typed', async ({ page }) => {
+    await openAddNode(page)
+    const form = await fillAddNode(page, '192.0.2.41')
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    await form.getByLabel('Reality target').fill('www.debian.org:8443')
+    const sent = post(page)
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    expect((await sent).postDataJSON().handshakeTarget).toBe('www.debian.org:8443')
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  })
+
+  test('that is not a site stops the install and says so below the form, with Advanced open or closed', async ({ page }) => {
+    await openAddNode(page)
+    const form = await fillAddNode(page, '192.0.2.41')
+    let posted = false
+    page.on('request', (r) => r.url().endsWith('/api/nodes') && r.method() === 'POST' && (posted = true))
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    const field = form.getByLabel('Reality target')
+    await field.fill('not a site')
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    await expect(form.getByRole('alert')).toHaveText('Give a site as host:port, such as www.example.com:443.')
+    await expect(field).toHaveAttribute('aria-invalid', 'true')
+    // an address is no site either: the name in the hello has to be a host name
+    await field.fill('203.0.113.5:443')
+    await expect(field).toHaveAttribute('aria-invalid', 'true')
+    // with Advanced closed the field is out of sight, so the words come below the form all the same
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    await expect(form.getByRole('alert')).toHaveText('Give a site as host:port, such as www.example.com:443.')
+    expect(posted).toBe(false)
+    // and what was typed is still there when it is opened again
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    await expect(form.getByLabel('Reality target')).toHaveValue('203.0.113.5:443')
+    // a good one clears it
+    await form.getByLabel('Reality target').fill('www.debian.org')
+    await expect(form.getByLabel('Reality target')).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('is refused by the hub before anything starts when it still gets past the field', async ({ page }) => {
+    // a request made by hand, as a page of another build might make it
+    const send = (handshakeTarget: unknown) =>
+      page.request.post('/api/nodes', {
+        headers: { 'X-RemoteNodes-UI': '1' },
+        data: { host: '192.0.2.50', name: 'By hand', sshPort: 22, sshUser: 'root', password: 'x', hostKey: 'SHA256:abc', handshakeTarget },
+      })
+    for (const [bad, says] of [
+      ['https://www.example.com/x', 'The Reality target must look like www.example.com:443.'],
+      ['www.example.com:70000', 'The Reality target has no valid port.'],
+      ['203.0.113.5:443', 'The Reality target has to be a host name, not an address.'],
+    ] as const) {
+      const res = await send(bad)
+      expect(res.status(), bad).toBe(400)
+      expect((await res.json()).error, bad).toBe(says)
+    }
+    // no node was made of any of them
+    const nodes = await page.request.get('/api/nodes', { headers: { 'X-RemoteNodes-UI': '1' } })
+    expect((await nodes.json()).some((n: { host: string }) => n.host === '192.0.2.50')).toBe(false)
+  })
+
+  test('is filled in again by Try again, with the rest of the form', async ({ page }) => {
+    await openAddNode(page)
+    const form = await fillAddNode(page, 'fail.example.com')
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    await form.getByLabel('Reality target').fill('www.debian.org:8443')
+    await form.getByRole('button', { name: 'Connect and install' }).click()
+    const failed = dialog(page, 'Installation failed')
+    await expect(failed).toBeVisible({ timeout: 25000 })
+    await failed.getByRole('button', { name: 'Close', exact: true }).first().click()
+    // the tray, where no login is held, offers the same install again
+    await page.getByRole('button', { name: 'Recent jobs' }).click()
+    await page.getByRole('region', { name: 'Jobs' }).getByRole('button', { name: 'Try again' }).first().click()
+    const again = dialog(page, 'Add a node')
+    await expect(again.getByLabel('Server address')).toHaveValue('fail.example.com')
+    await again.getByRole('button', { name: 'Advanced' }).click()
+    await expect(again.getByLabel('Reality target')).toHaveValue('www.debian.org:8443')
+  })
 })
