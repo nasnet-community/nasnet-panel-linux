@@ -388,6 +388,183 @@ test.describe('a server that has an agent, or is a node already', () => {
   })
 })
 
+/** Opens Advanced and types a Reality target, for `send`. */
+const withTarget = (target: string) => async (form: ReturnType<typeof dialog>) => {
+  await form.getByRole('button', { name: 'Advanced' }).click()
+  await form.getByLabel('Reality target').fill(target)
+}
+
+test.describe('a Reality target the node can not use', () => {
+  test('fails the install where the node checks it, cleans up, and says which target and why', async ({ page }) => {
+    const secret = 'secret-for-the-target'
+    const first = await send(page, 'plain.example.com', secret, withTarget('www.fail.example.com'))
+    expect(first.handshakeTarget).toBe('www.fail.example.com:443')
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    // the page's sentence names the target, the node's own words say why, and the step that failed keeps quiet
+    await expect(d.getByText("The Reality target www.fail.example.com:443 doesn't work from this server.")).toHaveCount(1)
+    await expect(d.getByText("It doesn't use TLS 1.3.")).toHaveCount(1)
+    await expect(d.getByText('Choose a Reality target')).toBeVisible()
+    // it failed after the agent and Xray were on the server: they were taken off again, and nothing was kept
+    await expect(d.getByText('Clean up the server')).toBeVisible()
+    await expect(d.getByText('The server was cleaned up, and nothing was kept.')).toBeVisible()
+    await expect(page.getByText('2 of 3 nodes')).toBeVisible()
+    // the two fixes, in one panel
+    const fixes = d.getByRole('region', { name: 'What you can do' })
+    await expect(fixes.getByText('Use another Reality target')).toBeVisible()
+    await expect(fixes.getByLabel('Reality target')).toHaveValue('')
+    await expect(fixes.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled()
+    await expect(fixes.getByRole('button', { name: 'Let the node choose one' })).toBeVisible()
+    // the login is held for them, and in no storage
+    expect(await stateHolds(page, secret)).toBe(true)
+    expect(await leaks(page, secret)).toEqual([])
+  })
+
+  test('goes on with another target typed in the same dialog, with the login held and the key unchanged', async ({ page, request }) => {
+    const secret = 'secret-for-another-target'
+    const seen = probes(page)
+    const first = await send(page, 'plain.example.com', secret, withTarget('www.fail.example.com'))
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    const field = d.getByRole('region', { name: 'What you can do' }).getByLabel('Reality target')
+    // what is typed is read as the add form reads it
+    await field.fill('not a site')
+    await expect(d.getByText('Give a site as host:port, such as www.example.com:443.')).toBeVisible()
+    await expect(d.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled()
+    // the one that just failed would fail again
+    await field.fill('WWW.fail.example.com')
+    await expect(d.getByText('That is the one that failed.')).toBeVisible()
+    await expect(d.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled()
+    await field.fill('https://WWW.Debian.org/')
+    const sent = page.waitForRequest(isInstall)
+    await d.getByRole('button', { name: 'Continue', exact: true }).click()
+    const body = (await sent).postDataJSON()
+    // the same install, with the one change: the login as it was typed, the key that was agreed to, no takeover
+    expect(body).toMatchObject({ host: 'plain.example.com', name: 'Node 3', sshPort: 22, sshUser: 'root', password: secret, entryPort: 443, handshakeTarget: 'www.debian.org:443', hostKey: first.hostKey })
+    expect(body.takeOverXray).toBeUndefined()
+    // the same dialog follows the new job to the end
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+    const done = dialog(page, 'Node added')
+    await expect(done).toBeVisible({ timeout: 25000 })
+    await expect(done).toContainText('www.debian.org:443')
+    // no new key was read: it is the same server
+    expect(seen).toHaveLength(1)
+    expect(await stateHolds(page, secret)).toBe(false)
+    expect(await leaks(page, secret)).toEqual([])
+    // the hub never kept the login
+    for (const path of ['api/jobs', 'api/nodes']) expect(await (await request.get(path, { headers: PAGE })).text()).not.toContain(secret)
+    // the node has it
+    await done.getByRole('button', { name: 'Open node' }).click()
+    await page.getByRole('tab', { name: 'Settings' }).click()
+    await expect(page.locator('b').filter({ hasText: /^www\.debian\.org:443$/ })).toBeVisible()
+  })
+
+  test('goes on with none, which the node then chooses, and the request says none', async ({ page }) => {
+    await send(page, 'plain.example.com', 'a-password', withTarget('big.example.com:8443'))
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    // the node's own reason for this one
+    await expect(d.getByText("The Reality target big.example.com:8443 doesn't work from this server.")).toBeVisible()
+    await expect(d.getByText(/Its side of the handshake is 9632 bytes/)).toBeVisible()
+    const sent = page.waitForRequest(isInstall)
+    await d.getByRole('button', { name: 'Let the node choose one' }).click()
+    const body = (await sent).postDataJSON()
+    expect(body).toMatchObject({ host: 'plain.example.com', password: 'a-password' })
+    expect('handshakeTarget' in body).toBe(false)
+    const done = dialog(page, 'Node added')
+    await expect(done).toBeVisible({ timeout: 25000 })
+    // the mock's node chooses www.example.com
+    await expect(done).toContainText('www.example.com:443')
+  })
+
+  test('is only offered another one when the node chose among its sites and none worked', async ({ page }) => {
+    await send(page, 'notarget.example.com')
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    await expect(d.getByText('None of the 8 sites the node tried works as a Reality target from this server.')).toBeVisible()
+    const fixes = d.getByRole('region', { name: 'What you can do' })
+    await expect(fixes.getByText('Use another Reality target')).toBeVisible()
+    // the node chose already: choosing again would be the same
+    await expect(fixes.getByRole('button', { name: 'Let the node choose one' })).toHaveCount(0)
+    const sent = page.waitForRequest(isInstall)
+    await fixes.getByLabel('Reality target').fill('www.debian.org')
+    await fixes.getByRole('button', { name: 'Continue', exact: true }).click()
+    expect((await sent).postDataJSON()).toMatchObject({ handshakeTarget: 'www.debian.org:443' })
+    // the node then uses the one it was given
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  })
+
+  test('is kept for Try again from the tray, which holds no login', async ({ page }) => {
+    const secret = 'secret-for-the-tray'
+    await send(page, 'plain.example.com', secret, withTarget('www.fail.example.com'))
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    // the tray holds no login: it offers the form again, with the target in it
+    await closeButton(d).click()
+    expect(await stateHolds(page, secret)).toBe(false)
+    await page.getByRole('button', { name: 'Recent jobs' }).click()
+    await page.getByRole('region', { name: 'Jobs' }).getByRole('button', { name: 'Try again' }).first().click()
+    const form = dialog(page, 'Add a node')
+    await form.getByRole('button', { name: 'Advanced' }).click()
+    await expect(form.getByLabel('Reality target')).toHaveValue('www.fail.example.com:443')
+    await expect(form.locator('input[type="password"]')).toHaveValue('')
+    expect(await leaks(page, secret)).toEqual([])
+  })
+
+  test('goes along with the install when another server is picked', async ({ page }) => {
+    await send(page, 'hasxray.example.com', 'a-password', withTarget('www.debian.org'))
+    const d = dialog(page, FAILED)
+    await expect(d).toBeVisible({ timeout: 20000 })
+    await d.getByLabel('Server address').fill('192.0.2.60')
+    const sent = page.waitForRequest(isInstall)
+    await d.getByRole('button', { name: 'Continue', exact: true }).click()
+    expect((await sent).postDataJSON()).toMatchObject({ host: '192.0.2.60', handshakeTarget: 'www.debian.org:443' })
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+  })
+
+  test('is gone from the heap once the dialog closes, as the login is for any fix', async ({ page }) => {
+    const secret = 'heap-secret-target-0005'
+    await send(page, 'plain.example.com', secret, withTarget('www.fail.example.com'))
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    expect(await heapHolds(page, secret)).toBe(true)
+    await closeButton(d).click()
+    await expect(d).toBeHidden()
+    await expect.poll(() => heapHolds(page, secret), { timeout: 5000, intervals: [100, 250, 500] }).toBe(false)
+  })
+
+  test('is gone from the heap once the fix has worked', async ({ page }) => {
+    const secret = 'heap-secret-target-0006'
+    await send(page, 'plain.example.com', secret, withTarget('www.fail.example.com'))
+    const d = dialog(page, 'Installation failed')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    await d.getByRole('button', { name: 'Let the node choose one' }).click()
+    await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
+    await expect.poll(() => heapHolds(page, secret), { timeout: 5000, intervals: [100, 250, 500] }).toBe(false)
+  })
+
+  test('reads in Persian, with the target set left to right, and nothing overflows at phone width', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('remote-nodes.language', 'fa'))
+    await openAddNode(page, 'افزودن نود')
+    const form = await fillAddNode(page, 'plain.example.com')
+    await form.getByRole('button', { name: 'پیشرفته' }).click()
+    await form.getByLabel('مقصد ریلیتی').fill('www.fail.example.com')
+    await form.getByRole('button', { name: 'اتصال و نصب' }).click()
+    const d = dialog(page, 'نصب ناموفق بود')
+    await expect(d).toBeVisible({ timeout: 25000 })
+    await expect(d).toContainText('مقصد ریلیتی \u2066www.fail.example.com:443\u2069 از این سرور کار نمی‌کند.')
+    // the node's own reason stays in the hub's English, and reads left to right
+    await expect(d.getByText("It doesn't use TLS 1.3.")).toBeVisible()
+    await expect(d.getByText('انتخاب مقصد ریلیتی')).toBeVisible()
+    const fixes = d.getByRole('region', { name: 'کاری که می‌شود کرد' })
+    await expect(fixes.getByText('مقصد ریلیتی دیگری بگذارید')).toBeVisible()
+    await expect(fixes.getByRole('button', { name: 'بگذارید نود خودش انتخاب کند' })).toBeVisible()
+    expect(await overflow(page)).toBe(0)
+    await fixes.getByRole('button', { name: 'بگذارید نود خودش انتخاب کند' }).click()
+    await expect(dialog(page, 'نود اضافه شد')).toBeVisible({ timeout: 25000 })
+  })
+})
+
 test.describe('any other failure', () => {
   test('is tried again as it was, or changed, and keeps no more of the login than it needs', async ({ page }) => {
     const secret = 'secret-for-another-try'
