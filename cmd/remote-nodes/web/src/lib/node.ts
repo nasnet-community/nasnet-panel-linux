@@ -56,7 +56,7 @@ const HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])
 export const validServerName = (s: string) => s.length <= 253 && HOST.test(s.trim().toLowerCase())
 
 /**
- * A handshake target as typed, as the host:port the hub takes: a bare host gets :443, a scheme and a path
+ * A Reality target as typed, as the host:port the hub takes: a bare host gets :443, a scheme and a path
  * are dropped. Empty when it isn't a site.
  */
 export function normalizeTarget(input: string): string {

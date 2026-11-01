@@ -504,6 +504,6 @@ test.describe('tabs', () => {
     await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true')
     await page.reload()
     await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('heading', { name: 'Handshake target' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reality target' })).toBeVisible()
   })
 })

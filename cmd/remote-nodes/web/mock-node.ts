@@ -22,7 +22,7 @@
 //   unmeasured     what the hub has no source for is 0 and false, as it sends it: the agent's own uptime and
 //                  memory, whether its settings are applied, and the tunnel's round trip
 //
-// Handshake targets: one containing "fail" answers with a refused TLS 1.3 handshake, "big" with a
+// Reality targets: one containing "fail" answers with a refused TLS 1.3 handshake, "big" with a
 // handshake over the 8 KB the tunnel allows; anything else passes.
 //
 // Backups are a fake: the file is "RNBK1" and the nodes as base64 JSON with a hash of the
@@ -58,7 +58,7 @@ interface Extra {
   /** when its certificate was issued */
   certBase?: number
   keys?: { publicKey: string; shortId: string }
-  /** a server name of its own; empty or missing: the handshake target's */
+  /** a server name of its own; empty or missing: the Reality target's */
   sni?: string
   check?: { ok: boolean; at: number }
   hostKeyChanged?: boolean
@@ -108,7 +108,7 @@ function detail(n: MockNode): Node {
     if (v.agent) Object.assign(v.agent, { uptimeSec: 0, rssBytes: 0, settingsApplied: false, lastPushError: '' })
     v.tunnel = { ...v.tunnel, rttMs: 0 }
   }
-  // the sample node is sure of its handshake target, which it checked when it was added
+  // the sample node is sure of its Reality target, which it checked when it was added
   const check = x.check ?? (x.check = { ok: true, at: Date.now() - 2 * H })
   v.tunnel.dialFailures = x.dialFailures ?? (live && v.tunnel.state === 'up' ? 3 : 0)
   // nothing flows through a tunnel that is off

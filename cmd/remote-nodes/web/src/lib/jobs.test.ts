@@ -19,7 +19,7 @@ const HUB_STEPS: Record<string, string> = {
   download_xray: 'Download Xray',
   upload_xray: 'Upload Xray',
   check_xray: 'Check Xray',
-  choose_target: 'Choose a handshake target',
+  choose_target: 'Choose a Reality target',
   create_keys: 'Create the keys',
   apply_config: 'Apply the configuration',
   save_node: 'Save the node',

@@ -69,7 +69,7 @@ for (const theme of ['dark', 'light'] as const) {
 
     test(`the text of the Settings tab and the router's settings is readable`, async ({ page }) => {
       await openNode(page, 1, 'settings')
-      const target = panel(page, 'Handshake target')
+      const target = panel(page, 'Reality target')
       await readable(theme, {
         'a card title': panel(page, 'Connection').getByRole('heading'),
         'what a card is about': panel(page, 'Connection').getByText('How subscriptions reach this node.'),

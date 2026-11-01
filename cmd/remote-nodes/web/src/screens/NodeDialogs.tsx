@@ -98,7 +98,7 @@ export function RenewDialog({ node, start, onClose }: { node: Node; start: Start
 
 // --- changes that make every link new ------------------------------------------------
 
-/** What changing a port, a handshake target or a server name does to the links. */
+/** What changing a port, a Reality target or a server name does to the links. */
 function LinksNotice() {
   const { t } = useLang()
   return (
@@ -161,7 +161,7 @@ export function PortDialog({ node, start, onClose }: { node: Node; start: StartJ
   )
 }
 
-/** Change the handshake target in steps: type it, have the node check it, then apply it. */
+/** Change the Reality target in steps: type it, have the node check it, then apply it. */
 export function HandshakeDialog({ node, start, onClose }: { node: Node; start: StartJob; onClose: () => void }) {
   const { t, fmt } = useLang()
   const errorText = useErrorText()
@@ -251,7 +251,7 @@ export function HandshakeDialog({ node, start, onClose }: { node: Node; start: S
   )
 }
 
-/** Confirms a new server name (the empty one is the handshake target's own). */
+/** Confirms a new server name (the empty one is the Reality target's own). */
 export function ServerNameDialog({ node, sni, start, onClose }: { node: Node; sni: string; start: StartJob; onClose: () => void }) {
   const { t } = useLang()
   const confirmed = useConfirmed()

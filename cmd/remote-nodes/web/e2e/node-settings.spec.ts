@@ -16,12 +16,12 @@ test.describe('the Settings tab', () => {
     await expect(conn).toContainText('Port 443')
     await expect(conn.getByRole('button', { name: 'Change port…' })).toBeEnabled()
 
-    const target = panel(page, 'Handshake target')
+    const target = panel(page, 'Reality target')
     await expect(target).toContainText('The site this node uses for the TLS handshake.')
     await expect(target).toContainText('www.example.com:443')
     await expect(target.getByText('working', { exact: true })).toBeVisible()
     await expect(target).toContainText('checked 2 hours ago')
-    await expect(target.getByRole('button', { name: 'Change handshake target…' })).toBeEnabled()
+    await expect(target.getByRole('button', { name: 'Change Reality target…' })).toBeEnabled()
 
     const keys = panel(page, 'Keys')
     await expect(keys).toContainText('Every link for this node carries these.')
@@ -54,25 +54,25 @@ test.describe('the Settings tab', () => {
   test('is off, and says why, while the router can not reach the node', async ({ page }) => {
     await openNode(page, 2, 'settings')
     await expect(page.getByText('Settings can change again once the router can reach this node.')).toBeVisible()
-    for (const name of ['Change port…', 'Change handshake target…', 'Rotate keys…', 'Renew now']) {
+    for (const name of ['Change port…', 'Change Reality target…', 'Rotate keys…', 'Renew now']) {
       const b = page.getByRole('button', { name })
       await expect(b).toBeDisabled()
       await expect(b).toHaveAttribute('title', 'Needs the router to reach this node')
     }
     await page.getByRole('button', { name: /^Advanced/ }).click()
-    await expect(page.getByLabel('Same as the handshake target')).toBeDisabled()
+    await expect(page.getByLabel('Same as the Reality target')).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Save server name…' })).toBeDisabled()
     // what the node has is still shown
     await expect(panel(page, 'Keys').getByText(KEY, { exact: true })).toBeVisible()
   })
 })
 
-test.describe('changing the handshake target', () => {
+test.describe('changing the Reality target', () => {
   test('checks a site from the node, and applies it only after it has passed', async ({ page }) => {
     await openNode(page, 1, 'settings')
-    await page.getByRole('button', { name: 'Change handshake target…' }).click()
-    const d = dialog(page, 'Change the handshake target')
-    const field = d.getByRole('textbox', { name: 'Handshake target', exact: true })
+    await page.getByRole('button', { name: 'Change Reality target…' }).click()
+    const d = dialog(page, 'Change the Reality target')
+    const field = d.getByRole('textbox', { name: 'Reality target', exact: true })
     const apply = d.getByRole('button', { name: 'Save and apply' })
     await expect(field).toHaveValue('www.example.com:443')
     await expect(d).toContainText('An HTTPS site that supports TLS 1.3. The node checks it before anything changes.')
@@ -114,13 +114,13 @@ test.describe('changing the handshake target', () => {
     await apply.click()
     expect((await sent).postDataJSON()).toEqual({ handshakeTarget: 'www.cloudflare.com:443' })
     const job = dialog(page, /^(Applying settings|Settings applied)/)
-    await expect(job.getByText('Choose a handshake target')).toBeVisible()
+    await expect(job.getByText('Choose a Reality target')).toBeVisible()
     await expect(job.getByText('Apply the configuration')).toBeVisible()
     await expect(job.getByText('Save the node')).toBeVisible()
     await expect(dialog(page, /^Settings applied/)).toBeVisible({ timeout: 20000 })
     await expect(toast(page, 'Settings applied · Node 1')).toBeVisible()
     await finishJob(page, /^Settings applied/)
-    const card = panel(page, 'Handshake target')
+    const card = panel(page, 'Reality target')
     await expect(card).toContainText('www.cloudflare.com:443')
     await expect(card).toContainText('working')
     await expect(card).toContainText('checked just now')
@@ -128,9 +128,9 @@ test.describe('changing the handshake target', () => {
 
   test('says why a site fails, and will not apply it', async ({ page }) => {
     await openNode(page, 1, 'settings')
-    await page.getByRole('button', { name: 'Change handshake target…' }).click()
-    const d = dialog(page, 'Change the handshake target')
-    const field = d.getByRole('textbox', { name: 'Handshake target', exact: true })
+    await page.getByRole('button', { name: 'Change Reality target…' }).click()
+    const d = dialog(page, 'Change the Reality target')
+    const field = d.getByRole('textbox', { name: 'Reality target', exact: true })
     const apply = d.getByRole('button', { name: 'Save and apply' })
 
     await field.fill('fail.example.com')
@@ -151,9 +151,9 @@ test.describe('changing the handshake target', () => {
 
   test('says what is not a site before asking the node', async ({ page }) => {
     await openNode(page, 1, 'settings')
-    await page.getByRole('button', { name: 'Change handshake target…' }).click()
-    const d = dialog(page, 'Change the handshake target')
-    const field = d.getByRole('textbox', { name: 'Handshake target', exact: true })
+    await page.getByRole('button', { name: 'Change Reality target…' }).click()
+    const d = dialog(page, 'Change the Reality target')
+    const field = d.getByRole('textbox', { name: 'Reality target', exact: true })
     for (const bad of ['not a site', '1.2.3.4', 'example.com:0', 'example.com:99999']) {
       await field.fill(bad)
       await expect(d).toContainText('Give a site as host:port, such as www.example.com:443.')
@@ -166,9 +166,9 @@ test.describe('changing the handshake target', () => {
   test('keeps the old target when the node can not apply the new one', async ({ page, request }) => {
     await setNode(request, { id: 1, failNext: 'change-settings' })
     await openNode(page, 1, 'settings')
-    await page.getByRole('button', { name: 'Change handshake target…' }).click()
-    const d = dialog(page, 'Change the handshake target')
-    await d.getByRole('textbox', { name: 'Handshake target', exact: true }).fill('www.cloudflare.com')
+    await page.getByRole('button', { name: 'Change Reality target…' }).click()
+    const d = dialog(page, 'Change the Reality target')
+    await d.getByRole('textbox', { name: 'Reality target', exact: true }).fill('www.cloudflare.com')
     await d.getByRole('button', { name: 'Check', exact: true }).click()
     await d.getByRole('button', { name: 'Save and apply' }).click()
     const failed = dialog(page, /^Applying settings failed/)
@@ -176,7 +176,7 @@ test.describe('changing the handshake target', () => {
     await expect(failed).toContainText('xray -test failed on the node: port already in use')
     await expect(toast(page, 'Applying settings failed · Node 1')).toBeVisible()
     await failed.getByRole('button', { name: 'Done' }).click()
-    await expect(panel(page, 'Handshake target')).toContainText('www.example.com:443')
+    await expect(panel(page, 'Reality target')).toContainText('www.example.com:443')
   })
 })
 
@@ -272,10 +272,10 @@ test.describe('keys and the certificate', () => {
 })
 
 test.describe('the server name', () => {
-  test('is the handshake target\'s unless one is set, and setting one asks first', async ({ page }) => {
+  test('is the Reality target\'s unless one is set, and setting one asks first', async ({ page }) => {
     await openNode(page, 1, 'settings')
     await page.getByRole('button', { name: /^Advanced/ }).click()
-    const same = page.getByLabel('Same as the handshake target')
+    const same = page.getByLabel('Same as the Reality target')
     const name = page.getByRole('textbox', { name: 'Server name', exact: true })
     const save = page.getByRole('button', { name: 'Save server name…' })
     await expect(same).toBeChecked()
@@ -301,21 +301,21 @@ test.describe('the server name', () => {
     await finishJob(page, /^Settings applied/)
 
     // it is what the node has now, so the form starts from it
-    await expect(page.getByLabel('Same as the handshake target')).not.toBeChecked()
+    await expect(page.getByLabel('Same as the Reality target')).not.toBeChecked()
     await expect(page.getByRole('textbox', { name: 'Server name', exact: true })).toHaveValue('cdn.example.com')
     await expect(page.getByRole('button', { name: 'Save server name…' })).toBeDisabled()
 
     // and back to the target's own, which is an empty name to the hub
-    await page.getByLabel('Same as the handshake target').check()
+    await page.getByLabel('Same as the Reality target').check()
     await expect(page.getByRole('button', { name: 'Save server name…' })).toBeEnabled()
     await page.getByRole('button', { name: 'Save server name…' }).click()
     const again = confirmDialog(page, 'Change the server name on Node 1?')
-    await expect(again).toContainText("The server name becomes the handshake target's: www.example.com.")
+    await expect(again).toContainText("The server name becomes the Reality target's: www.example.com.")
     const sentAgain = settingsSent(page)
     await again.getByRole('button', { name: 'Change server name' }).click()
     expect((await sentAgain).postDataJSON()).toEqual({ sni: '' })
     await expect(dialog(page, /^Settings applied/)).toBeVisible({ timeout: 20000 })
     await finishJob(page, /^Settings applied/)
-    await expect(page.getByLabel('Same as the handshake target')).toBeChecked()
+    await expect(page.getByLabel('Same as the Reality target')).toBeChecked()
   })
 })

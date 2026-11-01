@@ -29,7 +29,7 @@ test('the steps that never started are one line, which opens and closes', async 
   await expect(d.getByText('Clean up the server')).toBeVisible()
   await line.click()
   await expect(line).toHaveAttribute('aria-expanded', 'true')
-  for (const name of ['Connect to the agent', 'Download Xray 26.10.21', 'Upload Xray 26.10.21', 'Check Xray 26.10.21', 'Choose a handshake target', 'Create the keys', 'Apply the configuration', 'Save the node']) {
+  for (const name of ['Connect to the agent', 'Download Xray 26.10.21', 'Upload Xray 26.10.21', 'Check Xray 26.10.21', 'Choose a Reality target', 'Create the keys', 'Apply the configuration', 'Save the node']) {
     await expect(d.getByText(name)).toHaveClass(/text-faint/)
   }
   await line.click()

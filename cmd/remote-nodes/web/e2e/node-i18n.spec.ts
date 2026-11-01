@@ -182,10 +182,10 @@ test.describe('the Status tab in Persian', () => {
 })
 
 test.describe('the Settings tab and its dialogs in Persian', () => {
-  test('shows the cards and checks a handshake target in Persian', async ({ page }) => {
+  test('shows the cards and checks a Reality target in Persian', async ({ page }) => {
     await openNode(page, 1, 'settings')
     await expect(panel(page, 'اتصال')).toContainText('پورت 443')
-    const target = panel(page, 'مقصد هندشیک')
+    const target = panel(page, 'مقصد ریلیتی')
     await expect(target).toContainText('www.example.com:443')
     await expect(target).toContainText('کار می‌کند')
     await expect(target).toContainText(/بررسی [۰-۹]+ ساعت پیش/)
@@ -196,11 +196,11 @@ test.describe('the Settings tab and its dialogs in Persian', () => {
     await expect(panel(page, 'گواهی')).toContainText(/معتبر تا [۰-۹]+ \S+ ۱۴۰[۶۷]/)
     await expect(panel(page, 'گواهی')).toContainText('خودکار ۳۰ روز پیش از پایان تمدید می‌شود')
 
-    await page.getByRole('button', { name: 'تغییر مقصد هندشیک…' }).click()
-    const d = dialog(page, 'تغییر مقصد هندشیک')
+    await page.getByRole('button', { name: 'تغییر مقصد ریلیتی…' }).click()
+    const d = dialog(page, 'تغییر مقصد ریلیتی')
     await expect(d).toContainText('یک سایت HTTPS که از TLS 1.3 پشتیبانی می‌کند. نود پیش از هر تغییر آن را بررسی می‌کند.')
     // what is typed is a site, which reads left to right
-    const field = d.getByRole('textbox', { name: 'مقصد هندشیک', exact: true })
+    const field = d.getByRole('textbox', { name: 'مقصد ریلیتی', exact: true })
     await expect(field).toHaveAttribute('dir', 'ltr')
     await field.fill('www.cloudflare.com')
     await d.getByRole('button', { name: 'بررسی', exact: true }).click()
@@ -212,7 +212,7 @@ test.describe('the Settings tab and its dialogs in Persian', () => {
     await expect(dialog(page, /^تنظیمات اعمال شد/)).toBeVisible({ timeout: 20000 })
     await expect(toast(page, 'تنظیمات اعمال شد · Node 1')).toBeVisible()
     await finishJob(page, /^تنظیمات اعمال شد/)
-    await expect(panel(page, 'مقصد هندشیک')).toContainText('www.cloudflare.com:443')
+    await expect(panel(page, 'مقصد ریلیتی')).toContainText('www.cloudflare.com:443')
   })
 
   test('says what is wrong with a port, and a failing site, in Persian', async ({ page }) => {
@@ -227,9 +227,9 @@ test.describe('the Settings tab and its dialogs in Persian', () => {
     await expect(d).toContainText('این همان پورتی است که اکنون استفاده می‌شود.')
     await d.getByRole('button', { name: 'لغو' }).click()
 
-    await page.getByRole('button', { name: 'تغییر مقصد هندشیک…' }).click()
-    const h = dialog(page, 'تغییر مقصد هندشیک')
-    await h.getByRole('textbox', { name: 'مقصد هندشیک', exact: true }).fill('fail.example.com')
+    await page.getByRole('button', { name: 'تغییر مقصد ریلیتی…' }).click()
+    const h = dialog(page, 'تغییر مقصد ریلیتی')
+    await h.getByRole('textbox', { name: 'مقصد ریلیتی', exact: true }).fill('fail.example.com')
     await h.getByRole('button', { name: 'بررسی', exact: true }).click()
     await expect(h.getByText('ناموفق', { exact: true })).toBeVisible()
     // the hub's reason comes as it is, in its own language, and reads on its own terms

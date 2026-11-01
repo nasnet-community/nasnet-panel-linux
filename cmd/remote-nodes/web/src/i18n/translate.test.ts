@@ -76,6 +76,25 @@ describe('dictionaries', () => {
     for (const key of same) expect(fa[key as MsgKey]).toBe(en[key as MsgKey])
   })
 
+  it('call the Reality target by that name, in both languages, and nowhere a handshake target', () => {
+    for (const key of keys) {
+      for (const s of text(en[key])) expect(s, key).not.toMatch(/handshake target/i)
+      for (const s of text(fa[key])) expect(s, key).not.toContain('مقصد هندشیک')
+    }
+    // the places a person reads it: the settings card, its button and dialog, and the job step
+    expect(en['set.target']).toBe('Reality target')
+    expect(en['set.target.change']).toBe('Change Reality target…')
+    expect(en['hs.title']).toBe('Change the Reality target')
+    expect(en['hs.label']).toBe('Reality target')
+    expect(en['step.choose_target']).toBe('Choose a Reality target')
+    expect(fa['set.target']).toBe('مقصد ریلیتی')
+    expect(fa['set.target.change']).toBe('تغییر مقصد ریلیتی…')
+    expect(fa['hs.title']).toBe('تغییر مقصد ریلیتی')
+    expect(fa['hs.label']).toBe('مقصد ریلیتی')
+    expect(fa['step.choose_target']).toBe('انتخاب مقصد ریلیتی')
+    expect(fa['sni.sameLabel']).toBe('همان مقصد ریلیتی')
+  })
+
   it('write Persian digits, never ASCII ones, apart from product names', () => {
     for (const key of keys) {
       for (const s of text(fa[key])) {

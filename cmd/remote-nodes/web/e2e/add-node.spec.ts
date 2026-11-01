@@ -13,7 +13,7 @@ const STEPS = [
   'Download Xray 26.10.21',
   'Upload Xray 26.10.21',
   'Check Xray 26.10.21',
-  'Choose a handshake target',
+  'Choose a Reality target',
   'Create the keys',
   'Apply the configuration',
   'Save the node',

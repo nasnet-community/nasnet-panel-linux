@@ -89,7 +89,7 @@ interface Props {
   onChangeTarget: () => void
   onRotate: () => void
   onRenew: () => void
-  /** a server name to confirm; empty is the handshake target's own */
+  /** a server name to confirm; empty is the Reality target's own */
   onChangeName: (sni: string) => void
 }
 
