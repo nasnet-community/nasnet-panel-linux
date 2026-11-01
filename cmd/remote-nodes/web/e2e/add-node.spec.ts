@@ -288,38 +288,28 @@ test('closing the dialog lets go of the login, whatever became of the install', 
   expect(await stateHolds(page, secret)).toBe(false)
 })
 
-test('the take-over option is under Advanced, says what it does, and is asked for only when ticked', async ({ page }) => {
+test('the form has no take-over option, not even under Advanced, and never asks to take an Xray over', async ({ page }) => {
   await openAddNode(page)
   const form = await fillAddNode(page, 'hasxray.example.com')
-  // hidden until Advanced is opened
-  await expect(form.getByLabel('Take over the Xray that runs on this server')).toHaveCount(0)
   await form.getByRole('button', { name: 'Advanced' }).click()
-  const box = form.getByLabel('Take over the Xray that runs on this server')
-  await expect(box).not.toBeChecked()
-  // the warning is next to it, plain
-  await expect(form).toContainText('It stops that Xray, removes its config and its service, keeps no backup, and replaces its binary unless it is the same build as this plugin\'s.')
-  // not ticked: the request leaves the question out, and the server is refused
+  // what Advanced holds: the entry port, and nothing about taking over a server's Xray
+  await expect(form.getByLabel('Entry port')).toBeVisible()
+  await expect(form.getByRole('checkbox')).toHaveCount(0)
+  await expect(form.getByText(/take over|taking over/i)).toHaveCount(0)
+  // so the request leaves the question out, and the server is refused
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/nodes') && r.method() === 'POST')
   await form.getByRole('button', { name: 'Connect and install' }).click()
   expect((await sent).postDataJSON().takeOverXray).toBeUndefined()
   const refused = dialog(page, "This server can't be used")
   await expect(refused).toBeVisible({ timeout: 20000 })
-  // Change details: the option is not carried, since it is asked again each time
+  // the refusal's own dialog is where taking it over is offered, with its warning
+  await expect(refused.getByRole('button', { name: 'Take over and continue' })).toBeVisible()
+  await expect(refused).toContainText('Taking it over stops that Xray')
+  // Change details: the form again, with no option in it
   await refused.getByRole('button', { name: 'Change details' }).click()
   const again = dialog(page, 'Add a node')
   await expect(again.getByLabel('Server address')).toHaveValue('hasxray.example.com')
-  await again.locator('input[type="password"]').fill('a-password')
   await again.getByRole('button', { name: 'Advanced' }).click()
-  const box2 = again.getByLabel('Take over the Xray that runs on this server')
-  await expect(box2).not.toBeChecked()
-  // ticked: it is asked for, and the install takes the Xray over and goes on
-  await box2.check()
-  const sent2 = page.waitForRequest((r) => r.url().endsWith('/api/nodes') && r.method() === 'POST')
-  await again.getByRole('button', { name: 'Connect and install' }).click()
-  expect((await sent2).postDataJSON().takeOverXray).toBe(true)
-  const job = dialog(page, /Installing|Node added/)
-  await expect(job).toBeVisible()
-  await expect(job.getByText("Take over the server's Xray")).toBeVisible()
-  await expect(dialog(page, 'Node added')).toBeVisible({ timeout: 25000 })
-  await expect(dialog(page, 'Node added')).toContainText('was stopped, and its service, 1 drop-in, 1 config file, its binary removed')
+  await expect(again.getByRole('checkbox')).toHaveCount(0)
+  await expect(again.getByText(/take over|taking over/i)).toHaveCount(0)
 })

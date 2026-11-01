@@ -95,6 +95,15 @@ describe('dictionaries', () => {
     expect(fa['sni.sameLabel']).toBe('همان مقصد ریلیتی')
   })
 
+  it('have no words left for a take-over option in the add form', () => {
+    for (const key of keys) expect(key, 'the option is only offered in the failed install\'s dialog').not.toMatch(/^add\.takeOver/)
+    // what the dialog's own take-over uses is still there
+    for (const key of ['fix.takeover.go', 'fix.takeover.warning'] as MsgKey[]) {
+      expect(en[key], key).toBeTruthy()
+      expect(fa[key], key).toBeTruthy()
+    }
+  })
+
   it('write Persian digits, never ASCII ones, apart from product names', () => {
     for (const key of keys) {
       for (const s of text(fa[key])) {
