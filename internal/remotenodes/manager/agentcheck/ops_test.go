@@ -240,7 +240,7 @@ func startOpsWorld(t *testing.T) *opsWorld {
 	}
 	coll, err := usage.Open(usage.Config{Logf: func(format string, args ...any) { fmt.Fprintf(w.log, "usage: "+format+"\n", args...) }})
 	must(t, err)
-	w.engine = jobs.New(jobs.Config{Log: logger})
+	w.engine = jobs.New(jobs.Config{Log: logger, ErrorCode: manager.JobErrorCode, ErrorInfo: manager.JobErrorInfo})
 	w.ssh = &sshStandIn{}
 
 	var mgr *manager.Manager
@@ -540,6 +540,67 @@ func TestAnInstallWhoseTargetsDoNotWorkStopsThereAndTheNodeCanBeForgotten(t *tes
 	if len(w.st.Read().Nodes) != 0 || len(w.ssh.uninstalls) != 0 {
 		t.Errorf("nodes %v, uninstalls %v", w.st.Read().Nodes, w.ssh.uninstalls)
 	}
+}
+
+// An install given a Reality target has the real agent check exactly that one,
+// and no other: one it can't use fails the install at the step that chooses, with
+// the code the page words and the target and the agent's reason as the job's
+// facts, and the node it leaves is one that never finished, which force forgets;
+// one it can use is the node's, though the sites it would have chosen from are
+// ones it would not have picked.
+func TestAnInstallGivenATargetHasTheRealAgentCheckThatOne(t *testing.T) {
+	login := api.Login{SSHPort: 22, SSHUser: "root", Password: "MARKER-hunter2", HostKey: "SHA256:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"}
+
+	t.Run("one the agent can't use", func(t *testing.T) {
+		w := startOpsWorld(t)
+		old := oldTarget(t)
+		// a site it could use is there to be chosen, and must not be
+		w.ssh.targets = []string{goodTarget(t)}
+		id, err := w.mgr.AddNode(context.Background(), api.InstallRequest{Login: login, Name: "Frankfurt", Host: "127.0.0.1", HandshakeTarget: old})
+		must(t, err)
+		j := w.failed(id)
+		if j.Code != api.CodeRealityTargetFailed {
+			t.Errorf("code %q, error %q", j.Code, j.Error)
+		}
+		if j.ErrorInfo == nil || j.ErrorInfo.Target != old || !strings.Contains(j.ErrorInfo.Reason, "TLS 1.3") || j.ErrorInfo.Tried != 0 {
+			t.Errorf("facts %+v", j.ErrorInfo)
+		}
+		if !strings.Contains(j.Error, "doesn't work as a Reality target from this server") || j.Install == nil || j.Install.HandshakeTarget != old {
+			t.Errorf("job error %q, form %+v", j.Error, j.Install)
+		}
+		states := map[string]jobs.StepState{}
+		for _, s := range j.Steps {
+			states[s.Name] = s.State
+		}
+		if states[agentops.StepChooseTarget] != jobs.StepFailed || states[agentops.StepCheckXray] != jobs.StepOK || states[agentops.StepCreateKeys] != jobs.StepPending {
+			t.Errorf("steps %+v", j.Steps)
+		}
+		if n := w.node(); n.RealityPrivateKey != "" || n.RealityTarget != "" {
+			t.Errorf("node = %+v", n)
+		}
+		if got := w.onTheNode(); got != "{}" {
+			t.Errorf("the agent was given a config: %.80s", got)
+		}
+		id, err = w.mgr.RemoveNode(context.Background(), 1, api.RemoveRequest{Force: true})
+		must(t, err)
+		w.ok(id)
+	})
+
+	t.Run("one it can", func(t *testing.T) {
+		w := startOpsWorld(t)
+		good := goodTarget(t)
+		// the choice would be none: only the target that was given works
+		w.ssh.targets = []string{oldTarget(t)}
+		id, err := w.mgr.AddNode(context.Background(), api.InstallRequest{Login: login, Name: "Frankfurt", Host: "127.0.0.1", HandshakeTarget: good})
+		must(t, err)
+		w.ok(id)
+		if n := w.node(); n.State != model.NodeRegistered || n.RealityTarget != good || n.RealitySNI != "localhost" {
+			t.Errorf("node = %+v", n)
+		}
+		if !strings.Contains(w.onTheNode(), good) {
+			t.Errorf("the config on the node: %.200s", w.onTheNode())
+		}
+	})
 }
 
 // The settings, the keys and the targets, against the agent that does them for
