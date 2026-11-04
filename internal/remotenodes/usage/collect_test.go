@@ -992,8 +992,12 @@ func TestForgettingANodeStopsTheTalkToItsAgent(t *testing.T) {
 	if got := r.c.Node(1); got != (NodeUsage{}) {
 		t.Fatalf("node reads %+v", got)
 	}
-	if len(names(t, r.dir)) != 0 {
-		t.Fatalf("the folder holds %v", names(t, r.dir))
+	// the node's days are gone; what its subscriptions moved is kept, for their limits
+	if got := r.c.SubscriptionLifetime(1); got != (Totals{Up: 1, Down: 1}) {
+		t.Fatalf("lifetime reads %+v", got)
+	}
+	if got := names(t, r.dir); !slices.Equal(got, []string{FileName}) {
+		t.Fatalf("the folder holds %v", got)
 	}
 }
 
