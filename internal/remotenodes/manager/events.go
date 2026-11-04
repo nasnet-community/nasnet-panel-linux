@@ -32,6 +32,11 @@ const (
 	EventSubscriptionExpired = "subscription_expired"
 	EventSubscriptionResumed = "subscription_resumed"
 
+	// EventConnectionsCut is a node's Xray restarted to end the connections a
+	// stopped subscription still had open (see limits.go). The detail is the
+	// subscriptions' names.
+	EventConnectionsCut = "connections_cut"
+
 	// EventXrayRestarted is the hub restarting a node's Xray because the
 	// router's address on the Domestic link changed. Its detail is "old to
 	// new", the two addresses.

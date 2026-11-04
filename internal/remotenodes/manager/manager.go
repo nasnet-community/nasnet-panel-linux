@@ -102,6 +102,13 @@ type Manager struct {
 	cfg Config
 	log *slog.Logger
 
+	// What the limits loop knows of stopped subscriptions' open connections:
+	// the bytes each was last seen at on a node, and when each node's Xray was
+	// last restarted to end them.
+	cutMu   sync.Mutex
+	cutSeen map[[2]uint]uint64
+	cutAt   map[uint]time.Time
+
 	// The lifecycle. Run sets run, Close and the end of Run set closed, and
 	// nothing starts once it is set.
 	runMu  sync.Mutex
@@ -205,6 +212,7 @@ func New(cfg Config) (*Manager, error) {
 		cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{},
 		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{},
 		rel: releases{byArch: map[string]*latest{}, gate: make(chan struct{}, 1)}, updateGate: make(chan struct{}, 1),
+		cutSeen: map[[2]uint]uint64{}, cutAt: map[uint]time.Time{},
 	}
 	m.checkCA()
 	m.evalEntry(context.Background())

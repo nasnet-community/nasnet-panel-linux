@@ -16,11 +16,34 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/usage"
 )
 
-// meter is the collector with what a subscription has moved set by the test.
+// meter is the collector with what a subscription has moved set by the test,
+// and, for the subscriptions the test names, what a node says of it.
 type meter struct {
 	Usage
 	mu    sync.Mutex
 	moved map[uint]usage.Totals
+	on    map[[2]uint]usage.SubUsage
+}
+
+func (u *meter) Subscription(sub, node uint) usage.SubUsage {
+	u.mu.Lock()
+	v, ok := u.on[[2]uint{sub, node}]
+	u.mu.Unlock()
+	if ok {
+		return v
+	}
+	return u.Usage.Subscription(sub, node)
+}
+
+// seenOn says what the node reports of the subscription: whether it is
+// connected, and the bytes of its last thirty days.
+func (u *meter) seenOn(sub, node uint, online bool, bytes uint64) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.on == nil {
+		u.on = map[[2]uint]usage.SubUsage{}
+	}
+	u.on[[2]uint{sub, node}] = usage.SubUsage{Live: true, Online: online, Connections: map[bool]int{true: 1}[online], MonthDown: bytes}
 }
 
 func (u *meter) SubscriptionLifetime(id uint) usage.Totals {
@@ -405,6 +428,127 @@ func TestABackupTakesWhatEachSubscriptionUsedWithIt(t *testing.T) {
 		mtB.set(near, 300, 160)
 		if v, _ := b.m.subscriptionView(near); v.TrafficUsed != 10 {
 			t.Errorf("10 bytes after the reset read as %d", v.TrafficUsed)
+		}
+	})
+}
+
+// a manager with operations, a node with real keys, two subscriptions on it, and a meter
+func cutRig(t *testing.T) (*setUp, *meter) {
+	t.Helper()
+	mt := &meter{moved: map[uint]usage.Totals{}}
+	s := &setUp{keys: realKeys(t)}
+	s.opsRig = newOpsRig(t, func(c *Config) {
+		s.disk = newScripted(c.Store)
+		c.Store = s.disk
+		mt.Usage = c.Usage
+		c.Usage = mt
+	})
+	s.node = addNode(t, s.cfg.Store, withKeys(s.keys))
+	ali, sara := addSubscription(t, s.cfg.Store, "ali"), addSubscription(t, s.cfg.Store, "sara")
+	enable(t, s.cfg.Store, ali.ID, s.node.ID, true)
+	enable(t, s.cfg.Store, sara.ID, s.node.ID, true)
+	return s, mt
+}
+
+func TestAStoppedSubscriptionsOpenConnectionsAreEndedByRestartingTheNodesXray(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, mt := cutRig(t)
+		s.start()
+		defer s.stop()
+		s.advance(2 * time.Second)
+		ctx := context.Background()
+		_, err := s.m.UpdateSubscription(ctx, 1, api.SubscriptionPatch{TrafficLimit: api.Opt[uint64]{Set: true, Value: 1000}})
+		must(t, err)
+		pushes := s.ops.called("PushConfig")
+		agent := s.net.agent(s.node.ID)
+		restarts := agent.count("RestartXray")
+
+		// ali goes over while a connection of his is open on the node
+		mt.set(1, 600, 600)
+		mt.seenOn(1, s.node.ID, true, 1200)
+		s.advance(15 * time.Second)
+		if s.stopped(1) != model.StopLimit {
+			t.Fatalf("stopped = %q", s.stopped(1))
+		}
+		if got := s.ops.called("PushConfig") - pushes; got != 1 {
+			t.Fatalf("%d pushes to end the open connection, want 1", got)
+		}
+		// the push alone may be applied without a restart: the restart is asked for
+		if got := agent.count("RestartXray validate=true") - restarts; got != 1 {
+			t.Fatalf("%d restarts to end the open connection, want 1", got)
+		}
+		// the config the restart runs has sara and not ali
+		s.ops.mu.Lock()
+		last := s.ops.pushes[len(s.ops.pushes)-1].in
+		s.ops.mu.Unlock()
+		if len(last.Clients) != 1 || last.Clients[0].Email != subEmail(2) {
+			t.Errorf("the pushed config has the clients %+v", last.Clients)
+		}
+		if got := kinds(s.m.NodeEvents(s.node.ID)); !slices.Contains(got, EventConnectionsCut) {
+			t.Errorf("events = %v", got)
+		}
+		if ev := s.m.NodeEvents(s.node.ID)[0]; ev.Kind != EventConnectionsCut || ev.Detail != "ali" {
+			t.Errorf("the newest event is %+v", ev)
+		}
+
+		// still connected: not again within a minute, and again after it
+		s.advance(40 * time.Second)
+		if got := s.ops.called("PushConfig") - pushes; got != 1 {
+			t.Fatalf("%d pushes within a minute, want 1", got)
+		}
+		s.advance(30 * time.Second)
+		if got := s.ops.called("PushConfig") - pushes; got != 2 {
+			t.Fatalf("%d pushes after a minute, want 2", got)
+		}
+		if got := agent.count("RestartXray") - restarts; got != 2 {
+			t.Fatalf("%d restarts after a minute, want 2", got)
+		}
+
+		// gone quiet: nothing more
+		mt.seenOn(1, s.node.ID, false, 1200)
+		s.advance(3 * time.Minute)
+		if got := s.ops.called("PushConfig") - pushes; got != 2 {
+			t.Fatalf("%d pushes once it was quiet, want 2", got)
+		}
+		// not connected as far as the node says, but its bytes still grow: that is a connection too
+		mt.seenOn(1, s.node.ID, false, 5000)
+		s.advance(15 * time.Second)
+		if got := s.ops.called("PushConfig") - pushes; got != 3 {
+			t.Fatalf("%d pushes after its bytes grew, want 3", got)
+		}
+
+		// a subscription that runs again is no reason for a restart, connected or not
+		_, err = s.m.ResetUsage(ctx, 1)
+		must(t, err)
+		mt.seenOn(1, s.node.ID, true, 9000)
+		before := s.ops.called("PushConfig")
+		s.advance(3 * time.Minute)
+		if got := s.ops.called("PushConfig") - before; got != 0 {
+			t.Errorf("%d pushes for a running subscription", got)
+		}
+	})
+}
+
+func TestAQuietStoppedSubscriptionRestartsNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, mt := cutRig(t)
+		s.start()
+		defer s.stop()
+		s.advance(2 * time.Second)
+		_, err := s.m.UpdateSubscription(context.Background(), 1, api.SubscriptionPatch{TrafficLimit: api.Opt[uint64]{Set: true, Value: 1000}})
+		must(t, err)
+		pushes, restarts := s.ops.called("PushConfig"), s.net.agent(s.node.ID).count("RestartXray")
+		mt.set(1, 600, 600)
+		mt.seenOn(1, s.node.ID, false, 1200)
+		s.advance(5 * time.Minute)
+		if s.stopped(1) != model.StopLimit {
+			t.Fatalf("stopped = %q", s.stopped(1))
+		}
+		if got := s.ops.called("PushConfig") - pushes; got != 0 {
+			t.Errorf("%d pushes for a stopped subscription with nothing open", got)
+		}
+		if got := s.net.agent(s.node.ID).count("RestartXray") - restarts; got != 0 {
+			t.Errorf("%d restarts for a stopped subscription with nothing open", got)
 		}
 	})
 }
