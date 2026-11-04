@@ -195,7 +195,7 @@ func (r *rig) populate() {
 		if _, err := s.AddNode(model.Node{Name: "second", Host: "node2.example.com", SSHPort: 2222, AgentPort: 9091, EntryPort: 8443, State: model.NodeInstalling, CreatedAt: now}); err != nil {
 			return err
 		}
-		a, err := s.AddSubscription(model.Subscription{Name: "علی", CreatedAt: now})
+		a, err := s.AddSubscription(model.Subscription{Name: "علی", CreatedAt: now, TrafficLimit: 50 << 30, ExpiresAt: now.AddDate(0, 0, 30)})
 		if err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func TestTheShapesAreTheContracts(t *testing.T) {
 		t.Fatalf("%d subscriptions", len(subs))
 	}
 	for _, s := range subs {
-		wantKeys(t, "subscription", s, "id name createdAt online lastSeenAt todayUp todayDown monthUp monthDown nodes")
+		wantKeys(t, "subscription", s, "id name createdAt trafficLimit trafficUsed expiresAt stopped online lastSeenAt todayUp todayDown monthUp monthDown nodes")
 		for _, n := range s["nodes"].([]any) {
 			wantKeys(t, "subscription.nodes[]", n.(map[string]any), "nodeId enabled online connections lastSeenAt todayUp todayDown monthUp monthDown")
 		}

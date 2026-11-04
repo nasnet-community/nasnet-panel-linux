@@ -24,6 +24,14 @@ const (
 	EventSubscriptionOff = "subscription_off"
 	EventKeysRotated     = "keys_rotated"
 
+	// EventSubscriptionLimit and EventSubscriptionExpired are a subscription's
+	// client taken off a node because its traffic limit was reached or its end
+	// date came; EventSubscriptionResumed is it put back (see limits.go). The
+	// detail is the subscription's name.
+	EventSubscriptionLimit   = "subscription_limit"
+	EventSubscriptionExpired = "subscription_expired"
+	EventSubscriptionResumed = "subscription_resumed"
+
 	// EventXrayRestarted is the hub restarting a node's Xray because the
 	// router's address on the Domestic link changed. Its detail is "old to
 	// new", the two addresses.

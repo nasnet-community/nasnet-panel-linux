@@ -164,6 +164,45 @@ type Subscription struct {
 	ID        uint      `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+
+	// TrafficLimit is how many bytes the subscription may move, both ways and
+	// on every node, since the count was last reset. Zero means no limit.
+	TrafficLimit uint64 `json:"traffic_limit,omitempty"`
+	// TrafficBase is what the subscription had moved in all when its count was
+	// last reset. What it has used is the total now minus this.
+	TrafficBase uint64 `json:"traffic_base,omitempty"`
+	// ExpiresAt is when the subscription stops working. Zero means never.
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+	// Stopped is why the hub took the subscription off the nodes: StopLimit or
+	// StopExpired. Empty means it is running. The switches on the nodes are
+	// left as they were, so lifting the reason puts the clients back.
+	Stopped string `json:"stopped,omitempty"`
+}
+
+// Why a subscription was stopped.
+const (
+	StopLimit   = "limit"
+	StopExpired = "expired"
+)
+
+// MaxTrafficLimit is the largest limit that can be set, 1 PiB. Far above what
+// a router can carry, and low enough that sums of it can't wrap.
+const MaxTrafficLimit = 1 << 50
+
+// Running is whether the subscription's clients belong on the nodes.
+func (s Subscription) Running() bool { return s.Stopped == "" }
+
+// StopReason says why a subscription that has used `used` bytes since its last
+// reset should not run at `now`, or "" if it should. The date wins when both
+// are true, since it can't be undone by a bigger limit.
+func (s Subscription) StopReason(used uint64, now time.Time) string {
+	switch {
+	case !s.ExpiresAt.IsZero() && !now.Before(s.ExpiresAt):
+		return StopExpired
+	case s.TrafficLimit > 0 && used >= s.TrafficLimit:
+		return StopLimit
+	}
+	return ""
 }
 
 // Enablement is a subscription's client on one node. Switching it off keeps

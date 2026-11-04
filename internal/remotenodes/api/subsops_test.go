@@ -58,18 +58,37 @@ func viewOf(id uint, name string, on bool) Subscription {
 	return Subscription{ID: id, Name: name, CreatedAt: now, Nodes: []SubscriptionNode{{NodeID: 1, Enabled: on}}}
 }
 
-func (f *fakeSubs) CreateSubscription(_ context.Context, name string, nodeIDs []uint) (Subscription, error) {
-	if err := f.note("create %q %v", name, nodeIDs); err != nil {
+func (f *fakeSubs) CreateSubscription(_ context.Context, name string, nodeIDs []uint, limits SubscriptionLimits) (Subscription, error) {
+	note := fmt.Sprintf("create %q %v", name, nodeIDs)
+	if limits != (SubscriptionLimits{}) {
+		note += fmt.Sprintf(" limit=%d expires=%v", limits.TrafficLimit, !limits.ExpiresAt.IsZero())
+	}
+	if err := f.note("%s", note); err != nil {
 		return Subscription{}, err
 	}
 	return viewOf(7, name, len(nodeIDs) > 0), nil
 }
 
-func (f *fakeSubs) RenameSubscription(_ context.Context, id uint, name string) (Subscription, error) {
-	if err := f.note("rename %d %q", id, name); err != nil {
+func (f *fakeSubs) UpdateSubscription(_ context.Context, id uint, patch SubscriptionPatch) (Subscription, error) {
+	name := ""
+	if patch.Name != nil {
+		name = *patch.Name
+	}
+	note := fmt.Sprintf("update %d name=%q limit=%v/%v/%d expires=%v/%v/%s", id, name, patch.TrafficLimit.Set, patch.TrafficLimit.Null, patch.TrafficLimit.Value, patch.ExpiresAt.Set, patch.ExpiresAt.Null, patch.ExpiresAt.Value.UTC().Format(time.RFC3339))
+	if patch.Name != nil && !patch.TrafficLimit.Set && !patch.ExpiresAt.Set {
+		note = fmt.Sprintf("rename %d %q", id, name)
+	}
+	if err := f.note("%s", note); err != nil {
 		return Subscription{}, err
 	}
 	return viewOf(id, name, true), nil
+}
+
+func (f *fakeSubs) ResetUsage(_ context.Context, id uint) (Subscription, error) {
+	if err := f.note("reset %d", id); err != nil {
+		return Subscription{}, err
+	}
+	return viewOf(id, "Sara", true), nil
 }
 
 func (f *fakeSubs) DeleteSubscription(_ context.Context, id uint) error {

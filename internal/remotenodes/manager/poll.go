@@ -267,8 +267,9 @@ func (m *Manager) reconcile(ctx context.Context, l *nodeLive, c Client, quiet bo
 	defer unlock()
 	st := m.cfg.Store.Read()
 	var want []subscriptions.Client
+	stopped := stoppedSet(st)
 	for _, e := range st.Enablements {
-		if e.NodeID == l.id && e.Enabled {
+		if e.NodeID == l.id && e.Enabled && !stopped[e.SubscriptionID] {
 			want = append(want, subscriptions.Client{Email: nodecfg.SubscriptionEmail(int(e.SubscriptionID)), UUID: e.ClientUUID})
 		}
 	}

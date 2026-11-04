@@ -54,6 +54,12 @@ func (m *Manager) SubscriptionTotal(subID uint) api.SubscriptionUsage {
 	return subUsage(m.cfg.Usage.SubscriptionTotal(subID))
 }
 
+// SubscriptionLifetime is every byte a subscription has moved, both ways.
+func (m *Manager) SubscriptionLifetime(subID uint) uint64 {
+	t := m.cfg.Usage.SubscriptionLifetime(subID)
+	return sat(t.Up, t.Down)
+}
+
 // Traffic is a node's chart: a sample for each step of the last fifteen
 // minutes that a poll fell in.
 func (m *Manager) Traffic(nodeID uint) api.Traffic {

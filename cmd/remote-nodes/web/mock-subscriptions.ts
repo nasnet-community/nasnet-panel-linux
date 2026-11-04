@@ -16,6 +16,9 @@ interface Sub {
   name: string
   /** the nodes it is switched on for */
   on: Set<number>
+  limit: number
+  used: number
+  endsAt: number | null
 }
 
 interface HostNode {
@@ -39,7 +42,7 @@ export interface SubscriptionCall<S extends Sub, N extends HostNode> {
   /** the longest a name may be, in characters */
   maxName: number
   /** a subscription with the next free id, not yet in the list */
-  make: (name: string, o: { createdAt: number; on: Set<number> }) => S
+  make: (name: string, o: { createdAt: number; on: Set<number>; limit?: number; used?: number; endsAt?: number | null }) => S
   view: (s: S) => Subscription
   nodeView: (n: N) => Node
 }
@@ -58,6 +61,34 @@ function linkId(s: Sub, nodeId: number, replace = false) {
 
 const vless = (n: Node, id: string, name: string) =>
   `vless://${id}@${n.host}:${n.entryPort}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${n.sni}&fp=chrome&pbk=${n.publicKey}&sid=${n.shortId}&type=tcp#${encodeURIComponent(name)}`
+
+const MAX_LIMIT = 2 ** 50
+
+/**
+ * The traffic limit and the end date in a body: left out is undefined, null is "none", else the value.
+ * A string says what is wrong. A date that is not in the future is refused, unless it is the one the subscription has.
+ */
+function readLimits(body: Record<string, any>, creating: boolean, s?: Sub): { limit?: number | null; endsAt?: number | null } | string {
+  const out: { limit?: number | null; endsAt?: number | null } = {}
+  if ('trafficLimit' in body) {
+    const v = body.trafficLimit
+    if (v === null) out.limit = null
+    else if (!Number.isInteger(v) || v <= 0 || v > MAX_LIMIT) return 'The traffic limit has to be more than zero. Leave it empty for no limit.'
+    else out.limit = v
+  }
+  if ('expiresAt' in body) {
+    const v = body.expiresAt
+    if (v === null) out.endsAt = null
+    else {
+      const at = typeof v === 'string' ? Date.parse(v) : NaN
+      if (Number.isNaN(at)) return 'The request body is not what this call takes.'
+      const same = !creating && s !== undefined && s.endsAt !== null && Math.floor(s.endsAt / 1000) === Math.floor(at / 1000)
+      if (at <= Date.now() && !same) return 'The expiry date has to be in the future.'
+      out.endsAt = at
+    }
+  }
+  return out
+}
 
 /** Answers the call and returns true when it is one of these, else returns false and touches nothing. */
 export function subscriptionRoutes<S extends Sub, N extends HostNode>(c: SubscriptionCall<S, N>): boolean {
@@ -83,22 +114,38 @@ export function subscriptionRoutes<S extends Sub, N extends HostNode>(c: Subscri
       if (!n || !n.registered) return refuse(404, 'not_found', `no such node: ${id}`)
       if (n.installJob) return refuse(409, 'busy', 'this node is still being installed')
     }
-    const created = c.make(name, { createdAt: Date.now(), on: new Set(want as number[]) })
+    const limits = readLimits(body, true)
+    if (typeof limits === 'string') return refuse(400, 'bad_request', limits)
+    const created = c.make(name, { createdAt: Date.now(), on: new Set(want as number[]), used: 0, limit: limits.limit ?? 0, endsAt: limits.endsAt ?? null })
     subs.push(created)
     return reply(201, c.view(created))
   }
 
-  const m = path.match(/^subscriptions\/(\d+)(?:\/nodes\/(\d+)(?:\/(link|replace-link))?)?$/)
+  const m = path.match(/^subscriptions\/(\d+)(?:\/nodes\/(\d+)(?:\/(link|replace-link))?|\/(reset-usage))?$/)
   if (!m) return false
   const s = subs.find((x) => x.id === Number(m[1]))
   const nodeId = m[2] === undefined ? undefined : Number(m[2])
   const action = m[3]
 
+  if (m[4] && method === 'POST') {
+    if (!s) return refuse(404, 'not_found', 'no such subscription')
+    s.used = 0
+    return reply(200, c.view(s))
+  }
+
   if (nodeId === undefined && method === 'PATCH') {
     if (!s) return refuse(404, 'not_found', 'no such subscription')
-    if (badName()) return true
-    if (taken(name, s)) return refuse(409, 'name_taken', `a subscription named ${name} already exists`)
-    s.name = name
+    const limits = readLimits(body, false, s)
+    if (typeof limits === 'string') return refuse(400, 'bad_request', limits)
+    const renamed = 'name' in body
+    if (!renamed && limits.limit === undefined && limits.endsAt === undefined) return refuse(400, 'bad_request', 'There is nothing to change.')
+    if (renamed) {
+      if (badName()) return true
+      if (taken(name, s)) return refuse(409, 'name_taken', `a subscription named ${name} already exists`)
+      s.name = name
+    }
+    if (limits.limit !== undefined) s.limit = limits.limit ?? 0
+    if (limits.endsAt !== undefined) s.endsAt = limits.endsAt
     return reply(200, c.view(s))
   }
 

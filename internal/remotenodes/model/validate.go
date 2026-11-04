@@ -278,6 +278,14 @@ func (s Subscription) Validate() error {
 	if s.CreatedAt.IsZero() {
 		return invalid("a subscription needs a creation time")
 	}
+	if s.TrafficLimit > MaxTrafficLimit {
+		return invalid("the traffic limit is too large")
+	}
+	switch s.Stopped {
+	case "", StopLimit, StopExpired:
+	default:
+		return invalid("a subscription is stopped for a reason this build doesn't know")
+	}
 	return nil
 }
 

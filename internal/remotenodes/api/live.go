@@ -27,6 +27,9 @@ type Live interface {
 	SubscriptionOn(subID, nodeID uint) SubscriptionUsage
 	// SubscriptionTotal is the same over every node.
 	SubscriptionTotal(subID uint) SubscriptionUsage
+	// SubscriptionLifetime is every byte the subscription has moved, both
+	// ways, on every node and since it was first counted.
+	SubscriptionLifetime(subID uint) uint64
 	// Traffic is the node's chart for the last few minutes. Never nil samples.
 	Traffic(nodeID uint) Traffic
 }
@@ -77,7 +80,8 @@ type NodeSubscription struct {
 	ID          uint       `json:"id"`
 	Name        string     `json:"name"`
 	Enabled     bool       `json:"enabled"`
-	Online      *bool      `json:"online"` // null: switched off here, or the node can't be reached
+	Stopped     string     `json:"stopped"` // "limit" or "expired" while the hub keeps it off the nodes
+	Online      *bool      `json:"online"`  // null: switched off here, or the node can't be reached
 	Connections *int       `json:"connections"`
 	LastSeenAt  *time.Time `json:"lastSeenAt"`
 	TodayUp     uint64     `json:"todayUp"`
