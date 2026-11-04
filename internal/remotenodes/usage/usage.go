@@ -94,6 +94,9 @@ type Collector struct {
 
 	mu    sync.RWMutex // the nodes map, and everything in the nodes
 	nodes map[uint]*node
+	// retired is what each subscription moved through nodes that were
+	// removed. It only grows, until the subscription is deleted.
+	retired map[uint]Totals
 
 	flushMu sync.Mutex // one flush at a time; guards enc
 	enc     []byte     // the history as the file holds it, as far as this collector knows
@@ -114,7 +117,7 @@ func Open(cfg Config) (*Collector, error) {
 	if cfg.MissedPolls <= 0 {
 		cfg.MissedPolls = DefaultMissedPolls
 	}
-	c := &Collector{cfg: cfg, nodes: map[uint]*node{}}
+	c := &Collector{cfg: cfg, nodes: map[uint]*node{}, retired: map[uint]Totals{}}
 	if cfg.Dir != "" {
 		if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
 			return nil, fmt.Errorf("usage: %w", err)
@@ -126,7 +129,7 @@ func Open(cfg Config) (*Collector, error) {
 	var err error
 	// what the file holds, before the old days are dropped: if there are any,
 	// the first flush is a change
-	if c.enc, err = encode(c.hists()); err != nil {
+	if c.enc, err = encodeDoc(c.hists(), c.retired); err != nil {
 		return nil, fmt.Errorf("usage: %w", err)
 	}
 	c.pruneLocked(c.now())
@@ -158,7 +161,7 @@ func (c *Collector) load() {
 		c.setAside(fmt.Errorf("can't be read: %w", err))
 		return
 	}
-	hists, err := decode(b)
+	hists, retired, err := decodeDoc(b)
 	switch {
 	case errors.Is(err, errNewer):
 		c.noWrite = true
@@ -169,6 +172,7 @@ func (c *Collector) load() {
 		for id, h := range hists {
 			c.nodes[id] = &node{hist: h, diskThrough: h.through}
 		}
+		c.retired = retired
 	}
 }
 
@@ -204,10 +208,17 @@ func (c *Collector) pruneLocked(now time.Time) {
 // Writes is how many times the file has been written since Open.
 func (c *Collector) Writes() uint64 { return c.writes.Load() }
 
-// Forget drops everything about a node that has been removed.
+// Forget drops everything about a node that has been removed, except what
+// the subscriptions moved through it: that stays in their lifetime totals, so
+// that removing a node doesn't give a traffic limit its bytes back.
 func (c *Collector) Forget(nodeID uint) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if n := c.nodes[nodeID]; n != nil {
+		for id, t := range n.hist.life {
+			c.retired[id] = c.retired[id].plus(t)
+		}
+	}
 	delete(c.nodes, nodeID)
 }
 
@@ -219,7 +230,9 @@ func (c *Collector) Forget(nodeID uint) {
 func (c *Collector) ForgetSubscription(subID uint) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	delete(c.retired, subID)
 	for _, n := range c.nodes {
+		delete(n.hist.life, subID)
 		delete(n.hist.subs, subID)
 		delete(n.online, subID)
 		delete(n.lastSeen, subID)
@@ -255,7 +268,7 @@ func (c *Collector) Flush(ctx context.Context) error {
 func (c *Collector) write() error {
 	c.mu.Lock()
 	c.pruneLocked(c.now())
-	enc, err := encode(c.hists())
+	enc, err := encodeDoc(c.hists(), c.retired)
 	marks := make(map[uint]int64, len(c.nodes))
 	for id, n := range c.nodes {
 		marks[id] = n.hist.through

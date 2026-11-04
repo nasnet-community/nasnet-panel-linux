@@ -90,13 +90,18 @@ type nodeHist struct {
 	subs   map[uint]map[day]Totals // and each one's
 	bridge Totals
 
+	// life is what each subscription has moved through this node since it was
+	// first counted. Unlike the days it is never pruned: a traffic limit is
+	// measured against it.
+	life map[uint]Totals
+
 	// through is the timestamp of the newest bucket counted above. Everything
 	// up to it is in these totals, and the agent may be told to drop it.
 	through int64
 }
 
 func newNodeHist() *nodeHist {
-	return &nodeHist{days: map[day]Totals{}, subs: map[uint]map[day]Totals{}}
+	return &nodeHist{days: map[day]Totals{}, subs: map[uint]map[day]Totals{}, life: map[uint]Totals{}}
 }
 
 // add counts a bucket under the day its timestamp falls in. That is the day
@@ -117,6 +122,10 @@ func (h *nodeHist) add(ts int64, b bucket) {
 			h.subs[id] = m
 		}
 		m[d] = m[d].plus(t)
+		if h.life == nil {
+			h.life = map[uint]Totals{}
+		}
+		h.life[id] = h.life[id].plus(t)
 	}
 	h.bridge = h.bridge.plus(b.bridge)
 }
@@ -142,7 +151,7 @@ func (h *nodeHist) prune(keepFrom day) {
 
 // empty is a node with nothing worth a place in the file.
 func (h *nodeHist) empty() bool {
-	return len(h.days) == 0 && len(h.subs) == 0 && h.bridge.isZero() && h.through == 0
+	return len(h.days) == 0 && len(h.subs) == 0 && len(h.life) == 0 && h.bridge.isZero() && h.through == 0
 }
 
 // span adds up a series over the days from through to, both included.

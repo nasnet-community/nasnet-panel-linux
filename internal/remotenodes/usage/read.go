@@ -145,6 +145,25 @@ func (c *Collector) SubscriptionTotal(subID uint) SubUsage {
 	return u
 }
 
+// SubscriptionLifetime is everything a subscription has moved, both ways, on
+// every node since it was first counted, nodes since removed included. The
+// bucket that is still growing is part of it, so a limit sees what has been
+// used and not only what has been written down. It only grows, until the
+// subscription is deleted, which makes it a count a limit can be measured
+// against.
+func (c *Collector) SubscriptionLifetime(subID uint) Totals {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	t := c.retired[subID]
+	for _, n := range c.nodes {
+		t = t.plus(n.hist.life[subID])
+		if n.partial != nil {
+			t = t.plus(n.partial.b.subs[subID])
+		}
+	}
+	return t
+}
+
 // Bridge is what the node's bridge client has carried since the node was
 // first counted, both ways: the subscriptions' traffic once more, seen from
 // the tunnel's side. It counts completed buckets, like the history.
