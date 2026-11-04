@@ -121,4 +121,13 @@ func TestUsedIsWhatIsLeftAfterTheLastReset(t *testing.T) {
 			t.Errorf("base %d, lifetime %d: used %d, want %d", c.base, c.lifetime, got, c.want)
 		}
 	}
+	// what a backup brought counts as used here, and a reset after it measures from the sum
+	for _, c := range []struct{ carried, base, lifetime, want uint64 }{
+		{600, 0, 0, 600}, {600, 0, 350, 950}, {600, 1050, 450, 0}, {600, 1050, 460, 10},
+		{^uint64(0), 0, 5, ^uint64(0)},
+	} {
+		if got := TrafficUsed(model.Subscription{TrafficBase: c.base, TrafficCarried: c.carried}, c.lifetime); got != c.want {
+			t.Errorf("carried %d, base %d, lifetime %d: used %d, want %d", c.carried, c.base, c.lifetime, got, c.want)
+		}
+	}
 }
