@@ -154,10 +154,10 @@ test('a name already used, and one that is missing, in Persian', async ({ page }
   await expect(d).toContainText('این نام قبلاً استفاده شده است.')
 })
 
-test('rename, delete and replace-link questions in Persian', async ({ page }) => {
+test('edit, delete and replace-link questions in Persian', async ({ page }) => {
   await openSubscriptions(page)
-  await pick(page, 'Sara', 'تغییر نام', 'اقدام‌ها برای')
-  const rename = dialog(page, 'تغییر نام Sara')
+  await pick(page, 'Sara', 'ویرایش', 'اقدام‌ها برای')
+  const rename = dialog(page, 'ویرایش Sara')
   expect(await direction(rename)).toBe('rtl')
   await rename.getByLabel('نام').fill('Sarah')
   await rename.getByRole('button', { name: 'ذخیره' }).click()

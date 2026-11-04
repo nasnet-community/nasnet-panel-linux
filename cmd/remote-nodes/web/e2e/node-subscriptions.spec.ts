@@ -129,10 +129,10 @@ test('adds a subscription from the node, which then shows in the list and the co
   await expect(dialog(page, 'Add a subscription')).toContainText('That name is already used.')
 })
 
-test('renames and deletes from the node, and the tiles follow', async ({ page }) => {
+test('edits and deletes from the node, and the tiles follow', async ({ page }) => {
   await openNodeSubscriptions(page, 1)
-  await pick(page, 'Reza', 'Rename')
-  await dialog(page, 'Rename Reza').getByLabel('Name').fill('Rezvan')
+  await pick(page, 'Reza', 'Edit')
+  await dialog(page, 'Edit Reza').getByLabel('Name').fill('Rezvan')
   await page.keyboard.press('Enter')
   await expect(toast(page, 'Renamed to Rezvan')).toBeVisible()
   await expect(row(page, 'Rezvan')).toContainText('4 connections')

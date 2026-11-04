@@ -284,10 +284,10 @@ test.describe('at the limit', () => {
   })
 })
 
-test('renames a subscription: the list and the link carry the new name', async ({ page }) => {
+test('edits the name of a subscription: the list and the link carry the new name', async ({ page }) => {
   await openSubscriptions(page)
-  await pick(page, 'Sara', 'Rename')
-  const d = dialog(page, 'Rename Sara')
+  await pick(page, 'Sara', 'Edit')
+  const d = dialog(page, 'Edit Sara')
   await expect(d.getByLabel('Name')).toHaveValue('Sara')
   await d.getByLabel('Name').fill('Sarah')
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/subscriptions/1'))
@@ -303,13 +303,13 @@ test('renames a subscription: the list and the link carry the new name', async (
   await expect(page.locator('[data-link]')).toHaveText(/^vless:\/\/3f0c9a52-7d1e-4b8a-9c44-0e5b2a1d6f73@.*#Sarah$/)
 })
 
-test('a rename keeps to the rules: a name is needed, one in use is refused, an unchanged one asks nothing, Enter saves', async ({ page }) => {
+test('a new name keeps to the rules: a name is needed, one in use is refused, an unchanged one asks nothing, Enter saves', async ({ page }) => {
   await openSubscriptions(page)
   let patches = 0
   page.on('request', (r) => r.method() === 'PATCH' && (patches += 1))
 
-  await pick(page, 'Sara', 'Rename')
-  const d = dialog(page, 'Rename Sara')
+  await pick(page, 'Sara', 'Edit')
+  const d = dialog(page, 'Edit Sara')
   await d.getByLabel('Name').fill('  ')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toContainText('Give the subscription a name.')
@@ -325,14 +325,14 @@ test('a rename keeps to the rules: a name is needed, one in use is refused, an u
   expect(patches).toBe(1)
 
   // a change of case alone is a rename, and Enter saves it
-  await pick(page, 'Sara', 'Rename')
-  await dialog(page, 'Rename Sara').getByLabel('Name').fill('SARA')
+  await pick(page, 'Sara', 'Edit')
+  await dialog(page, 'Edit Sara').getByLabel('Name').fill('SARA')
   await page.keyboard.press('Enter')
   await expect(toast(page, 'Renamed to SARA')).toBeVisible()
   expect(patches).toBe(2)
 })
 
-test('holds a name to 64 characters, in the add dialog and in a rename, and shows the hub\'s sentence for a longer one', async ({ page }) => {
+test('holds a name to 64 characters, in the add dialog and in an edit, and shows the hub\'s sentence for a longer one', async ({ page }) => {
   await openSubscriptions(page)
   // adding
   await page.getByRole('button', { name: 'Add subscription' }).first().click()
@@ -347,9 +347,9 @@ test('holds a name to 64 characters, in the add dialog and in a rename, and show
   await expect(add.getByRole('alert')).toContainText('The name can have at most 64 characters.')
   await add.getByRole('button', { name: 'Cancel' }).click()
 
-  // renaming
-  await pick(page, 'Sara', 'Rename')
-  const rename = dialog(page, 'Rename Sara')
+  // editing
+  await pick(page, 'Sara', 'Edit')
+  const rename = dialog(page, 'Edit Sara')
   await expect(rename.getByLabel('Name')).toHaveAttribute('maxlength', '64')
   await liftLimit(rename.getByLabel('Name'))
   await rename.getByLabel('Name').fill('y'.repeat(65))

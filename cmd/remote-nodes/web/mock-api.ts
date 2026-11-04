@@ -455,6 +455,9 @@ function nodeSubView(s: MockSub, n: MockNode): NodeSubscription {
     name: s.name,
     enabled,
     stopped: stoppedOf(s),
+    trafficLimit: s.limit,
+    trafficUsed: s.used,
+    expiresAt: s.endsAt === null ? null : iso(s.endsAt),
     online: enabled && known ? online : null,
     connections: enabled && known ? (online ? s.conns : 0) : null,
     lastSeenAt: s.lastSeen ? iso(s.lastSeen) : null,
@@ -483,7 +486,7 @@ function subView(s: MockSub): Subscription {
     todayDown: t.down,
     monthUp: m.up,
     monthDown: m.down,
-    nodes: registered.map((n) => ({ ...nodeSubView(s, n), nodeId: n.id })).map(({ id: _id, name: _name, ...rest }) => rest),
+    nodes: registered.map((n) => ({ ...nodeSubView(s, n), nodeId: n.id })).map(({ id: _id, name: _name, stopped: _s, trafficLimit: _l, trafficUsed: _u, expiresAt: _e, ...rest }) => rest),
   }
 }
 

@@ -14,7 +14,6 @@ import {
   Download as LDownload,
   Ellipsis as LEllipsis,
   ExternalLink as LExternalLink,
-  Gauge as LGauge,
   History as LHistory,
   Info as LInfo,
   KeyRound as LKeyRound,
@@ -50,7 +49,6 @@ export const Copy = panel(LCopy)
 export const Download = panel(LDownload)
 export const Ellipsis = panel(LEllipsis)
 export const ExternalLink = panel(LExternalLink)
-export const Gauge = panel(LGauge)
 export const History = panel(LHistory)
 export const Info = panel(LInfo)
 export const KeyRound = panel(LKeyRound)

@@ -349,6 +349,10 @@ export interface NodeSubscription {
   enabled: boolean
   /** set while the hub keeps the subscription off the nodes */
   stopped: StoppedBy | ''
+  /** the subscription's own limit and end date, and what it has used on every node, as on the root list */
+  trafficLimit: number
+  trafficUsed: number
+  expiresAt: string | null
   online: boolean | null
   connections: number | null
   lastSeenAt: string | null

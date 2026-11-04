@@ -77,15 +77,20 @@ type TrafficSample struct {
 // NodeSubscription is one row of a node's list: a subscription, and how it is
 // doing on that node. Every subscription has a row, switched on or not.
 type NodeSubscription struct {
-	ID          uint       `json:"id"`
-	Name        string     `json:"name"`
-	Enabled     bool       `json:"enabled"`
-	Stopped     string     `json:"stopped"` // "limit" or "expired" while the hub keeps it off the nodes
-	Online      *bool      `json:"online"`  // null: switched off here, or the node can't be reached
-	Connections *int       `json:"connections"`
-	LastSeenAt  *time.Time `json:"lastSeenAt"`
-	TodayUp     uint64     `json:"todayUp"`
-	TodayDown   uint64     `json:"todayDown"`
-	MonthUp     uint64     `json:"monthUp"`
-	MonthDown   uint64     `json:"monthDown"`
+	ID      uint   `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	Stopped string `json:"stopped"` // "limit" or "expired" while the hub keeps it off the nodes
+	// The subscription's own limit, what it has used of it on every node, and
+	// its end date, as on the root list: a node's list edits them too.
+	TrafficLimit uint64     `json:"trafficLimit"`
+	TrafficUsed  uint64     `json:"trafficUsed"`
+	ExpiresAt    *time.Time `json:"expiresAt"`
+	Online       *bool      `json:"online"` // null: switched off here, or the node can't be reached
+	Connections  *int       `json:"connections"`
+	LastSeenAt   *time.Time `json:"lastSeenAt"`
+	TodayUp      uint64     `json:"todayUp"`
+	TodayDown    uint64     `json:"todayDown"`
+	MonthUp      uint64     `json:"monthUp"`
+	MonthDown    uint64     `json:"monthDown"`
 }

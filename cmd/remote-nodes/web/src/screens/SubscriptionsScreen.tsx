@@ -19,10 +19,13 @@ import {
 import { shareTarget, useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
+  EditButton,
   EmptyState,
+  ExpiryCell,
+  LimitCell,
   Name,
   NodeHead,
-  QuotaCell,
+  QuotaSummary,
   RowMenu,
   ShareButton,
   StatusBadge,
@@ -86,10 +89,9 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
     const target = shareTarget(s, nodes ?? [])
     const actions: RowActions = {
       share: () => dialogs.share(target),
-      rename: () => dialogs.rename(s),
-      remove: () => dialogs.remove(s),
-      quota: () => dialogs.quota(s),
+      edit: () => dialogs.edit(s),
       reset: () => dialogs.reset(s),
+      remove: () => dialogs.remove(s),
     }
     return {
       s,
@@ -170,7 +172,10 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                       {t('subs.col.traffic')}
                     </th>
                     <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.quota')}
+                      {t('subs.col.limit')}
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
+                      {t('subs.col.expires')}
                     </th>
                     <th scope="col" className="px-3 py-2.5" />
                   </tr>
@@ -199,11 +204,15 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                         <div className="text-xs text-faint">{traffic.month}</div>
                       </td>
                       <td className="px-3 py-3">
-                        <QuotaCell s={s} />
+                        <LimitCell s={s} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <ExpiryCell s={s} />
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1">
                           {shareable && <ShareButton onClick={actions.share} />}
+                          <EditButton name={s.name} onClick={actions.edit} />
                           <RowMenu name={s.name} shareOff={shareable ? null : t('subs.menu.shareOff')} actions={actions} />
                         </div>
                       </td>
@@ -240,11 +249,11 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                     ))}
                   </ul>
                 )}
-                {/* a card has no column to keep tidy, so it says nothing when there is nothing set */}
-                {(s.trafficLimit > 0 || s.expiresAt !== null) && <QuotaCell s={s} className="rounded-md border border-border px-3 py-2" />}
+                <QuotaSummary s={s} />
                 <div className="flex items-end gap-2">
                   <div className="tabular min-w-0 flex-1 text-xs text-muted">{traffic.line}</div>
                   {shareable && <ShareButton className="-my-1" onClick={actions.share} />}
+                  <EditButton name={s.name} className="-my-1" onClick={actions.edit} />
                 </div>
               </li>
             ))}
