@@ -21,9 +21,16 @@ import (
 // upAfter, so a handshake that is refused a moment later doesn't flicker as
 // "up", and must have delivered something within staleAfter. The portal sends
 // a keepalive every ten seconds or so, so a quiet tunnel still passes.
+//
+// A connection silent for deadAfter is closed. The core waits on a connection
+// until it fails, and one that died without a reset (the machine slept, a NAT
+// forgot it) never fails, so without this the tunnel stays down until a
+// restart. Closing it makes the core dial the portal again. It is well past
+// staleAfter, so a stall that clears in time still comes back on its own.
 const (
 	upAfter    = 3 * time.Second
 	staleAfter = 40 * time.Second
+	deadAfter  = 90 * time.Second
 )
 
 // tracker tells what the Xray core keeps to itself: whether each tunnel is
@@ -80,18 +87,29 @@ func (t *tracker) refresh() {
 }
 
 func (tn *tunnel) refresh(now time.Time) {
+	var dead []*linkConn
 	tn.mu.Lock()
-	defer tn.mu.Unlock()
 	up := false
 	for l := range tn.links {
 		heard := l.lastRead.Load()
-		if heard != 0 && now.Sub(l.opened) >= upAfter && now.Sub(time.Unix(0, heard)) <= staleAfter {
+		last := l.opened
+		if heard != 0 {
+			last = time.Unix(0, heard)
+		}
+		switch {
+		case now.Sub(last) > deadAfter:
+			dead = append(dead, l)
+		case heard != 0 && now.Sub(l.opened) >= upAfter && now.Sub(last) <= staleAfter:
 			up = true
-			break
 		}
 	}
 	if up != tn.up {
 		tn.up, tn.since = up, now
+	}
+	tn.mu.Unlock()
+	// outside the lock: Close takes it to drop the link
+	for _, l := range dead {
+		l.Close()
 	}
 }
 
