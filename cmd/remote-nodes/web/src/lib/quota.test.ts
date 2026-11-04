@@ -6,7 +6,9 @@ import { makeFormat } from './format'
 import {
   MAX_LIMIT_GB,
   endOfDay,
+  expiryParts,
   expiryText,
+  extendDay,
   limitText,
   localDay,
   nodeSubscriptionStatus,
@@ -164,11 +166,51 @@ describe('a stopped subscription', () => {
 
   it('shows on a node\'s list as well', () => {
     const row = (o: Partial<NodeSubscription>): NodeSubscription => ({
-      id: 1, name: 'Sara', enabled: true, stopped: '', online: false, connections: 0, lastSeenAt: null, todayUp: 0, todayDown: 0, monthUp: 0, monthDown: 0, ...o,
+      id: 1, name: 'Sara', enabled: true, stopped: '', trafficLimit: 0, trafficUsed: 0, expiresAt: null, online: false, connections: 0, lastSeenAt: null, todayUp: 0, todayDown: 0, monthUp: 0, monthDown: 0, ...o,
     })
     expect(nodeSubscriptionStatus(row({ stopped: 'limit' }), en.t, en.fmt, NOW).key).toBe('limit')
     expect(nodeSubscriptionStatus(row({ stopped: 'expired' }), en.t, en.fmt, NOW).label).toBe('Expired')
     // switched off there is still just off
     expect(nodeSubscriptionStatus(row({ stopped: 'limit', enabled: false }), en.t, en.fmt, NOW).key).toBe('off')
+  })
+})
+
+describe('the end date presets', () => {
+  const at = (iso: string) => new Date(iso).getTime()
+
+  it('count from today when there is no date, or it has passed', () => {
+    expect(extendDay('', { days: 30 }, at('2026-10-03T12:00:00'))).toBe('2026-11-02')
+    expect(extendDay('2026-09-01', { days: 30 }, at('2026-10-03T12:00:00'))).toBe('2026-11-02')
+    expect(extendDay('not a day', { days: 90 }, at('2026-10-03T12:00:00'))).toBe('2027-01-01')
+  })
+
+  it('count on from a date that has not passed, so a second click adds again', () => {
+    const now = at('2026-10-03T12:00:00')
+    const once = extendDay('', { days: 30 }, now)
+    expect(extendDay(once, { days: 30 }, now)).toBe('2026-12-02')
+    // today has not ended yet, so it counts as a date that has not passed
+    expect(extendDay('2026-10-03', { days: 1 }, now)).toBe('2026-10-04')
+  })
+
+  it('add a year as the same day a year on, and the 28th for a 29th of February', () => {
+    expect(extendDay('', { years: 1 }, at('2026-10-03T12:00:00'))).toBe('2027-10-03')
+    expect(extendDay('2028-02-29', { years: 1 }, at('2028-01-01T12:00:00'))).toBe('2029-02-28')
+  })
+})
+
+describe('the Expires cell', () => {
+  const iso = (days: number) => new Date(NOW + days * DAYMS).toISOString()
+
+  it('is calm far off, warm in the last week, and red once past', () => {
+    expect(expiryParts(en.t, en.fmt, iso(41), NOW)).toMatchObject({ tone: 'muted', when: 'in 41 days' })
+    expect(expiryParts(en.t, en.fmt, iso(3), NOW)).toMatchObject({ tone: 'warn', when: 'in 3 days' })
+    const past = expiryParts(en.t, en.fmt, iso(-2), NOW)
+    expect(past.tone).toBe('bad')
+    expect(past.when).toBe('ended 2 days ago')
+    expect(past.date).toBe(en.fmt.date(iso(-2)))
+  })
+
+  it('reads in Persian', () => {
+    expect(plain(expiryParts(fa.t, fa.fmt, iso(-2), NOW).when)).toContain('پایان یافته')
   })
 })

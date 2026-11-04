@@ -1,8 +1,9 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { RotateCcw } from '../components/icons'
 import { Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
 import { ApiError, MAX_NAME_LENGTH, subscriptions, type Subscription, type SubscriptionPatch } from '../lib/api'
-import { defaultNodeIds, limitText, localDay, readQuota, today, type NodeInfo } from '../lib/subscriptions'
+import { defaultNodeIds, extendDay, limitText, localDay, readQuota, today, type Editable, type NodeInfo } from '../lib/subscriptions'
 import { ShareDialog, type ShareTarget } from './ShareDialog'
 
 /** A subscription as the dialogs see it. */
@@ -11,7 +12,7 @@ export interface Named {
   name: string
 }
 
-type Modal = { kind: 'add' } | { kind: 'share'; target: ShareTarget } | { kind: 'rename' | 'delete'; sub: Named } | { kind: 'quota' | 'reset'; sub: Subscription }
+type Modal = { kind: 'add' } | { kind: 'share'; target: ShareTarget } | { kind: 'delete' | 'reset'; sub: Named } | { kind: 'edit'; sub: Editable }
 
 /** The share dialog's target for a subscription the API returned: the nodes it is on. */
 export function shareTarget(s: Subscription, nodes: NodeInfo[]): ShareTarget {
@@ -100,7 +101,7 @@ function QuotaFields({
 }) {
   const { t } = useLang()
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,4fr)_minmax(0,6fr)]">
       <Field label={t('subs.quota.traffic')} hint={t('subs.quota.trafficHint')} error={trafficError}>
         {(p) => (
           <div className="flex items-center gap-2">
@@ -118,12 +119,32 @@ function QuotaFields({
           </div>
         )}
       </Field>
-      <Field label={t('subs.quota.date')} hint={t('subs.quota.dateHint')} error={dateError}>
-        {(p) => <Input {...p} type="date" dir="ltr" min={today()} value={form.day} onChange={(e) => onChange({ ...form, day: e.target.value })} />}
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <Field label={t('subs.quota.date')} hint={t('subs.quota.dateHint')} error={dateError}>
+          {(p) => <Input {...p} type="date" dir="ltr" min={today()} value={form.day} onChange={(e) => onChange({ ...form, day: e.target.value })} />}
+        </Field>
+        {/* the usual terms, a click each: from the date set, or from today once it has passed */}
+        <div role="group" aria-label={t('subs.quota.presets')} className="flex flex-wrap gap-1.5">
+          {([{ days: 30 }, { days: 90 }, { years: 1 }] as const).map((by) => (
+            <button key={'days' in by ? by.days : 'y'} type="button" className={CHIP} onClick={() => onChange({ ...form, day: extendDay(form.day, by) })}>
+              {'days' in by ? t('subs.quota.plusDays', { n: by.days }) : t('subs.quota.plusYears', { n: by.years })}
+            </button>
+          ))}
+          {form.day !== '' && (
+            <button type="button" className={CHIP} onClick={() => onChange({ ...form, day: '' })}>
+              {t('subs.quota.noEnd')}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
+
+const CHIP = cx(
+  'inline-flex min-h-11 items-center rounded-full border border-border px-3 text-xs font-medium text-muted transition sm:min-h-7 sm:px-2.5',
+  'hover:bg-track hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+)
 
 // Mounted only while open, so each time starts from empty fields.
 function AddSubscription({
@@ -234,23 +255,41 @@ function AddSubscription({
   )
 }
 
-function Rename({ sub, onClose, onRenamed }: { sub: Named; onClose: () => void; onRenamed: () => void }) {
-  const { t } = useLang()
+/**
+ * Edit: the name, the traffic limit and the end date in one go. Only what changed is sent, so an
+ * unchanged form asks the hub nothing, and a subscription whose date has passed can be renamed
+ * without that date being refused. A stopped one says why, and what starts it again.
+ */
+function EditSubscription({ sub, onClose, onSaved, onReset }: { sub: Editable; onClose: () => void; onSaved: () => void; onReset: () => void }) {
+  const { t, fmt } = useLang()
   const toast = useToast()
+  const initialDay = sub.expiresAt ? localDay(sub.expiresAt) : ''
   const [name, setName] = useState(sub.name)
+  const [form, setForm] = useState<QuotaForm>({ gb: limitText(sub.trafficLimit), day: initialDay })
+  const [bad, setBad] = useState<{ traffic: boolean; date: boolean }>({ traffic: false, date: false })
   const [busy, setBusy] = useState(false)
   const errors = useSaveErrors()
 
   const submit = async () => {
     errors.clear()
+    setBad({ traffic: false, date: false })
     const trimmed = name.trim()
     if (!trimmed) return errors.setNameError(t('subs.add.errName'))
-    if (trimmed === sub.name) return onClose()
+    // a date that is already past is let be when it is not the one being changed
+    const dateChanged = form.day !== initialDay
+    const read = readQuota(form.gb, dateChanged ? form.day : '')
+    if (read.badLimit || read.badDate) return setBad({ traffic: read.badLimit, date: read.badDate })
+    const patch: SubscriptionPatch = {}
+    if (trimmed !== sub.name) patch.name = trimmed
+    if (read.limit !== (sub.trafficLimit > 0 ? sub.trafficLimit : null)) patch.trafficLimit = read.limit
+    if (dateChanged) patch.expiresAt = form.day === '' ? null : read.expiresAt
+    if (!Object.keys(patch).length) return onClose()
     setBusy(true)
     try {
-      const renamed = await subscriptions.rename(sub.id, trimmed)
-      toast(t('subs.toast.renamed', { name: renamed.name }))
-      onRenamed()
+      const saved = await subscriptions.update(sub.id, patch)
+      const renamedOnly = Object.keys(patch).length === 1 && patch.name !== undefined
+      toast(renamedOnly ? t('subs.toast.renamed', { name: saved.name }) : t('subs.toast.saved', { name: saved.name }))
+      onSaved()
     } catch (e) {
       errors.set(e)
       setBusy(false)
@@ -260,96 +299,45 @@ function Rename({ sub, onClose, onRenamed }: { sub: Named; onClose: () => void; 
   return (
     <Dialog
       onClose={onClose}
-      title={t('subs.rename.title', { name: sub.name })}
+      title={t('subs.edit.title', { name: sub.name })}
       footer={
         <>
           <Button onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" type="submit" form="rename-subscription" busy={busy}>
-            {t('subs.rename.save')}
+          <Button variant="primary" type="submit" form="edit-subscription" busy={busy}>
+            {t('subs.edit.save')}
           </Button>
         </>
       }
     >
-      <NameForm id="rename-subscription" value={name} onChange={setName} error={errors.nameError} onSubmit={submit}>
-        {errors.error && <ErrorBox>{errors.error}</ErrorBox>}
-      </NameForm>
-    </Dialog>
-  )
-}
-
-function Quota({ sub, onClose, onSaved }: { sub: Subscription; onClose: () => void; onSaved: () => void }) {
-  const { t, fmt } = useLang()
-  const toast = useToast()
-  const errorText = useErrorText()
-  const initialDay = sub.expiresAt ? localDay(sub.expiresAt) : ''
-  const [form, setForm] = useState<QuotaForm>({ gb: limitText(sub.trafficLimit), day: initialDay })
-  const [bad, setBad] = useState<{ traffic: boolean; date: boolean }>({ traffic: false, date: false })
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const submit = async () => {
-    setError(null)
-    // a date that is already past is let be when it is not the one being changed
-    const dateChanged = form.day !== initialDay
-    const read = readQuota(form.gb, dateChanged ? form.day : '')
-    if (read.badLimit || read.badDate) return setBad({ traffic: read.badLimit, date: read.badDate })
-    setBad({ traffic: false, date: false })
-    const patch: SubscriptionPatch = {}
-    if (read.limit !== (sub.trafficLimit > 0 ? sub.trafficLimit : null)) patch.trafficLimit = read.limit
-    if (dateChanged) patch.expiresAt = form.day === '' ? null : readQuota('', form.day).expiresAt
-    if (patch.trafficLimit === undefined && patch.expiresAt === undefined) return onClose()
-    setBusy(true)
-    try {
-      const saved = await subscriptions.update(sub.id, patch)
-      toast(t('subs.toast.quota', { name: saved.name }))
-      onSaved()
-    } catch (e) {
-      setError(errorText(e))
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog
-      onClose={onClose}
-      title={t('subs.quota.title', { name: sub.name })}
-      description={t('subs.quota.desc')}
-      footer={
-        <>
-          <Button onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" type="submit" form="subscription-quota" busy={busy}>
-            {t('subs.quota.save')}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id="subscription-quota"
-        className="grid gap-3"
-        autoComplete="off"
-        noValidate
-        onSubmit={(e: FormEvent) => {
-          e.preventDefault()
-          void submit()
-        }}
-      >
+      {sub.stopped === 'limit' && <Notice tone="warn" className="mb-3">{t('subs.edit.stoppedLimit', { name: sub.name })}</Notice>}
+      {sub.stopped === 'expired' && sub.expiresAt && (
+        <Notice tone="warn" className="mb-3">
+          {t('subs.edit.stoppedExpired', { name: sub.name, date: fmt.date(sub.expiresAt) })}
+        </Notice>
+      )}
+      <NameForm id="edit-subscription" value={name} onChange={setName} error={errors.nameError} onSubmit={submit}>
         <QuotaFields
           form={form}
           onChange={setForm}
           trafficError={bad.traffic ? t('subs.quota.errTraffic') : null}
           dateError={bad.date ? t('subs.quota.errDate') : null}
         />
-        <p className="tabular text-[13px] text-muted">{t('subs.quota.usedNow', { used: fmt.bytes(sub.trafficUsed) })}</p>
-        {error && <ErrorBox>{error}</ErrorBox>}
-      </form>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+          <span className="tabular text-[13px] text-muted">{t('subs.edit.used', { used: fmt.bytes(sub.trafficUsed) })}</span>
+          <Button size="sm" variant="ghost" onClick={onReset}>
+            <RotateCcw className="h-4 w-4" /> {t('subs.edit.reset')}
+          </Button>
+        </div>
+        {errors.error && <ErrorBox>{errors.error}</ErrorBox>}
+      </NameForm>
     </Dialog>
   )
 }
 
 /**
- * The dialogs of the subscription screens, and how to open each: add, share, rename, delete, limits, reset.
+ * The dialogs of the subscription screens, and how to open each: add, share, edit, reset usage, delete.
  * `nodes` are the choices when adding and the names a created subscription's share dialog
- * shows; `onChanged` runs after anything was added, renamed or deleted, to reload the list.
+ * shows; `onChanged` runs after anything was added, edited, reset or deleted, to reload the list.
  */
 export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes: NodeInfo[] | null; count: number; max: number; onChanged: () => void }) {
   const { t } = useLang()
@@ -374,14 +362,16 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
         />
       )}
       {modal.kind === 'share' && <ShareDialog target={modal.target} onClose={close} />}
-      {modal.kind === 'quota' && (
-        <Quota
+      {modal.kind === 'edit' && (
+        <EditSubscription
           sub={modal.sub}
           onClose={close}
           onSaved={() => {
             onChanged()
             close()
           }}
+          // the confirm takes the dialog's place, and the list shows the new count after it
+          onReset={() => setModal({ kind: 'reset', sub: modal.sub })}
         />
       )}
       {modal.kind === 'reset' && (
@@ -401,16 +391,6 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
         >
           <p>{t('subs.reset.text')}</p>
         </Confirm>
-      )}
-      {modal.kind === 'rename' && (
-        <Rename
-          sub={modal.sub}
-          onClose={close}
-          onRenamed={() => {
-            onChanged()
-            close()
-          }}
-        />
       )}
       {modal.kind === 'delete' && (
         <Confirm
@@ -439,9 +419,8 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
     dialogs,
     add: () => setModal({ kind: 'add' }),
     share: (target: ShareTarget) => setModal({ kind: 'share', target }),
-    rename: (sub: Named) => setModal({ kind: 'rename', sub }),
+    edit: (sub: Editable) => setModal({ kind: 'edit', sub }),
+    reset: (sub: Named) => setModal({ kind: 'reset', sub }),
     remove: (sub: Named) => setModal({ kind: 'delete', sub }),
-    quota: (sub: Subscription) => setModal({ kind: 'quota', sub }),
-    reset: (sub: Subscription) => setModal({ kind: 'reset', sub }),
   }
 }

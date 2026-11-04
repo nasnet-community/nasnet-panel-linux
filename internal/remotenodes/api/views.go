@@ -311,6 +311,15 @@ func nodeView(n model.Node, enabled int, now time.Time, live Live) Node {
 	return v
 }
 
+// expiry is a subscription's end date for a view: null when it has none.
+func expiry(sub model.Subscription) *time.Time {
+	if sub.ExpiresAt.IsZero() {
+		return nil
+	}
+	at := sub.ExpiresAt.UTC()
+	return &at
+}
+
 // TrafficUsed is what a subscription has moved since its count was last reset,
 // given everything it has moved in all.
 func TrafficUsed(sub model.Subscription, lifetime uint64) uint64 {
@@ -344,10 +353,7 @@ func subscriptionView(st model.State, sub model.Subscription, live Live) Subscri
 		ID: sub.ID, Name: sub.Name, CreatedAt: sub.CreatedAt.UTC(), Nodes: []SubscriptionNode{},
 		TrafficLimit: sub.TrafficLimit, Stopped: sub.Stopped,
 	}
-	if !sub.ExpiresAt.IsZero() {
-		at := sub.ExpiresAt.UTC()
-		v.ExpiresAt = &at
-	}
+	v.ExpiresAt = expiry(sub)
 	// Where it is switched on, a node that answers says whether it is
 	// connected; one that doesn't leaves it unknown.
 	connected, unknown := false, false
@@ -390,8 +396,9 @@ func nodeSubscriptionViews(st model.State, nodeID uint, live Live) []NodeSubscri
 	out := make([]NodeSubscription, 0, len(st.Subscriptions))
 	for _, sub := range st.Subscriptions {
 		e := st.FindEnablement(sub.ID, nodeID)
-		row := NodeSubscription{ID: sub.ID, Name: sub.Name, Enabled: e != nil && e.Enabled, Stopped: sub.Stopped}
+		row := NodeSubscription{ID: sub.ID, Name: sub.Name, Enabled: e != nil && e.Enabled, Stopped: sub.Stopped, TrafficLimit: sub.TrafficLimit, ExpiresAt: expiry(sub)}
 		if live != nil {
+			row.TrafficUsed = TrafficUsed(sub, live.SubscriptionLifetime(sub.ID))
 			u := live.SubscriptionOn(sub.ID, nodeID)
 			row.LastSeenAt = u.LastSeenAt
 			row.TodayUp, row.TodayDown, row.MonthUp, row.MonthDown = u.TodayUp, u.TodayDown, u.MonthUp, u.MonthDown

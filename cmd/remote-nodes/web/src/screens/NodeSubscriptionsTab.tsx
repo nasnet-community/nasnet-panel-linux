@@ -10,8 +10,12 @@ import { nodeInfos, nodeSubscriptionStatus, sortByName, switchedText, trafficTex
 import { useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
+  EditButton,
   EmptyState,
+  ExpiryCell,
+  LimitCell,
   Name,
+  QuotaSummary,
   RowMenu,
   ShareButton,
   StatusBadge,
@@ -71,7 +75,8 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
   const view = rows.map((s) => {
     const actions: RowActions = {
       share: () => dialogs.share({ id: s.id, name: s.name, nodes: [{ id: node.id, name: node.name, unreachable: down }] }),
-      rename: () => dialogs.rename(s),
+      edit: () => dialogs.edit(s),
+      reset: () => dialogs.reset(s),
       remove: () => dialogs.remove(s),
     }
     return {
@@ -158,6 +163,12 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
                     <th scope="col" className="px-3 py-2.5 text-start font-medium">
                       {t('subs.col.traffic')}
                     </th>
+                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
+                      {t('subs.col.limit')}
+                    </th>
+                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
+                      {t('subs.col.expires')}
+                    </th>
                     <th scope="col" className="px-3 py-2.5" />
                   </tr>
                 </thead>
@@ -183,8 +194,15 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
                         <div className="text-xs text-faint">{traffic.month}</div>
                       </td>
                       <td className="px-3 py-3">
+                        <LimitCell s={s} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <ExpiryCell s={s} />
+                      </td>
+                      <td className="px-3 py-3">
                         <div className="flex justify-end gap-1">
                           {s.enabled && <ShareButton onClick={actions.share} />}
+                          <EditButton name={s.name} onClick={actions.edit} />
                           <RowMenu name={s.name} shareOff={shareOff} actions={actions} />
                         </div>
                       </td>
@@ -210,9 +228,11 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
                   </div>
                 </div>
                 <div className="text-xs text-faint">{status.sub}</div>
+                <QuotaSummary s={s} />
                 <div className="flex items-end gap-2">
                   <div className="tabular min-w-0 flex-1 text-xs text-muted">{traffic.line}</div>
                   {s.enabled && <ShareButton className="-my-1" onClick={actions.share} />}
+                  <EditButton name={s.name} className="-my-1" onClick={actions.edit} />
                 </div>
               </li>
             ))}

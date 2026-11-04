@@ -17,8 +17,8 @@ const pastEdge = (page: Page) =>
   })
 
 const WORDS = {
-  en: { add: 'Add subscription', addTitle: 'Add a subscription', share: 'Share', node: 'Node', replace: 'Replace this link…', actions: 'Actions for Sara', rename: 'Rename', delete: 'Delete subscription' },
-  fa: { add: 'افزودن اشتراک', addTitle: 'افزودن اشتراک', share: 'اشتراک‌گذاری', node: 'نود', replace: 'جایگزینی این لینک…', actions: 'اقدام‌ها برای Sara', rename: 'تغییر نام', delete: 'حذف اشتراک' },
+  en: { add: 'Add subscription', addTitle: 'Add a subscription', share: 'Share', node: 'Node', replace: 'Replace this link…', actions: 'Actions for Sara', edit: 'Edit', delete: 'Delete subscription' },
+  fa: { add: 'افزودن اشتراک', addTitle: 'افزودن اشتراک', share: 'اشتراک‌گذاری', node: 'نود', replace: 'جایگزینی این لینک…', actions: 'اقدام‌ها برای Sara', edit: 'ویرایش', delete: 'حذف اشتراک' },
 }
 
 for (const lang of ['en', 'fa'] as const) {
@@ -46,10 +46,10 @@ for (const lang of ['en', 'fa'] as const) {
       await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
 
-      // the menu, and the rename dialog it opens
+      // the menu, and the edit dialog it opens
       await page.getByRole('button', { name: w.actions, exact: true }).click()
       expect(await overflow(page)).toBeLessThanOrEqual(0)
-      await page.getByRole('menuitem', { name: w.rename }).click()
+      await page.getByRole('menuitem', { name: w.edit }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
       expect(await overflow(page)).toBeLessThanOrEqual(0)
       await page.keyboard.press('Escape')
@@ -63,6 +63,7 @@ test('the controls are big enough to tap', async ({ page }) => {
     ['a switch', flipper(page, 'Sara', 'Node 1')],
     ['the unreachable one', flipper(page, 'Sara', 'Node 2')],
     ['Share', row(page, 'Sara').getByRole('button', { name: 'Share', exact: true })],
+    ['Edit', row(page, 'Sara').getByRole('button', { name: 'Edit Sara', exact: true })],
     ['the menu', page.getByRole('button', { name: 'Actions for Sara' })],
     ['Add subscription', page.getByRole('button', { name: 'Add subscription' })],
   ]

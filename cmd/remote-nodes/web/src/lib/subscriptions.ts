@@ -189,6 +189,30 @@ export const usedPercent = (used: number, limit: number): number => (limit > 0 ?
 /** The colour of a limit's bar: calm, then a warning at 80%, then red at the limit. */
 export const quotaTone = (pct: number): 'ok' | 'warn' | 'bad' => (pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : 'ok')
 
+/** What the edit dialog needs of a subscription, from either list. */
+export type Editable = Pick<Subscription, 'id' | 'name' | 'trafficLimit' | 'trafficUsed' | 'expiresAt' | 'stopped'>
+
+/**
+ * A day some days or years after another, as a date field holds it. It counts on from the day given
+ * when that day has not passed, so a second "+30 days" adds another 30; from today when it has, or
+ * when there is none, so an expired subscription is renewed from now and not from its old date.
+ */
+export function extendDay(day: string, by: { days?: number; years?: number }, now = Date.now()): string {
+  const end = endOfDay(day)
+  const base = end !== null && Date.parse(end) > now ? new Date(end) : new Date(now)
+  const d = new Date(base.getFullYear() + (by.years ?? 0), base.getMonth(), base.getDate() + (by.days ?? 0))
+  // the 29th of February a year on is the 1st of March; the 28th reads as "a year" better
+  if (by.years && d.getDate() !== base.getDate()) d.setDate(0)
+  return dayOf(d)
+}
+
+/** An end date as a table cell shows it: the day, and how far off it is, coloured as it nears. */
+export function expiryParts(t: T, fmt: Format, iso: string, now = Date.now()): { date: string; when: string; tone: 'muted' | 'warn' | 'bad' } {
+  const left = Date.parse(iso) - now
+  if (left <= 0) return { date: fmt.date(iso), when: t('subs.quota.ended', { when: fmt.relative(iso, now) }), tone: 'bad' }
+  return { date: fmt.date(iso), when: fmt.relative(iso, now), tone: left <= 7 * DAY ? 'warn' : 'muted' }
+}
+
 /** "Expires 5 Dec 2026 · in 12 days", or "Expired 5 Dec 2026"; empty with no end date. */
 export function expiryText(t: T, fmt: Format, iso: string | null, now = Date.now()): string {
   if (!iso) return ''

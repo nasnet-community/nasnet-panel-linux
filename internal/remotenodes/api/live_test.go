@@ -332,7 +332,7 @@ func TestTheNewShapesAreTheContracts(t *testing.T) {
 
 	rows := decode[[]map[string]any](t, r.get("/api/nodes/1/subscriptions"))
 	for _, row := range rows {
-		wantKeys(t, "a node's subscription", row, "id name enabled stopped online connections lastSeenAt todayUp todayDown monthUp monthDown")
+		wantKeys(t, "a node's subscription", row, "id name enabled stopped trafficLimit trafficUsed expiresAt online connections lastSeenAt todayUp todayDown monthUp monthDown")
 	}
 
 	one := decode[map[string]any](t, r.get("/api/nodes/1"))

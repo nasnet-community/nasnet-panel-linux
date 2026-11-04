@@ -97,6 +97,18 @@ func TestTheSubscriptionViewCarriesItsLimitsAndWhatItUsed(t *testing.T) {
 	if stopped.TrafficLimit != 0 || stopped.Stopped != "expired" || stopped.ExpiresAt == nil {
 		t.Errorf("the stopped one = %+v", stopped)
 	}
+
+	// a node's own list carries the same, so it can show and edit them too
+	rows := decode[[]NodeSubscription](t, r.get("/api/nodes/1/subscriptions"))
+	if len(rows) != 2 {
+		t.Fatalf("%d rows on the node", len(rows))
+	}
+	if a := rows[0]; a.TrafficLimit != 50<<30 || a.TrafficUsed != 7<<30 || a.ExpiresAt == nil || !a.ExpiresAt.Equal(*running.ExpiresAt) {
+		t.Errorf("the node's row of the running one = %+v", a)
+	}
+	if b := rows[1]; b.Stopped != "expired" || b.ExpiresAt == nil || b.TrafficLimit != 0 {
+		t.Errorf("the node's row of the stopped one = %+v", b)
+	}
 }
 
 func TestUsedIsWhatIsLeftAfterTheLastReset(t *testing.T) {
