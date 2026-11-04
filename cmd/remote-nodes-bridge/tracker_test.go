@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -364,5 +365,63 @@ func TestSystemDialerWraps(t *testing.T) {
 	l.Close()
 	if _, err := dialer.Dial(context.Background(), xnet.ParseAddress("127.0.0.1"), dest, nil); err == nil {
 		t.Fatal("dialed a closed port")
+	}
+}
+
+// A connection that has gone silent for good is closed, so the core notices
+// and dials the portal again; one that is only stale is left to come back.
+func TestADeadConnectionIsClosedSoTheCoreDialsAgain(t *testing.T) {
+	clk := newClock()
+	s := testSpec()
+	tr := newTracker(s, clk.Now)
+	src, dest := portalOf(s, 0)
+
+	client, server := tcpPair(t)
+	link := tr.wrap(context.Background(), src, dest, client).(*linkConn)
+	server.Write([]byte("x"))
+	if _, err := link.Read(make([]byte, 8)); err != nil {
+		t.Fatal(err)
+	}
+	// a second one that never hears a thing
+	quiet, _ := tcpPair(t)
+	mute := tr.wrap(context.Background(), src, dest, quiet).(*linkConn)
+
+	clk.Advance(upAfter)
+	if up, _ := tunnelState(t, tr, 0); !up {
+		t.Fatal("not up after the portal spoke")
+	}
+
+	// stale but not dead: down, and still open
+	clk.Advance(staleAfter + time.Second)
+	if up, _ := tunnelState(t, tr, 0); up {
+		t.Fatal("up while stale")
+	}
+	if _, err := server.Write([]byte("y")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := link.Read(make([]byte, 8)); err != nil {
+		t.Fatalf("a stale connection was closed: %v", err)
+	}
+	if up, _ := tunnelState(t, tr, 0); !up {
+		t.Error("not up again once it spoke")
+	}
+
+	// silent past deadAfter: both are closed and gone from the tunnel
+	clk.Advance(deadAfter + time.Second)
+	if up, _ := tunnelState(t, tr, 0); up {
+		t.Error("up with only dead connections")
+	}
+	for name, l := range map[string]*linkConn{"the one that spoke": link, "the one that never did": mute} {
+		// a deadline, so a connection left open fails the test instead of hanging it
+		_ = l.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := l.Read(make([]byte, 8)); !errors.Is(err, net.ErrClosed) {
+			t.Errorf("%s: read after it died = %v, want it closed", name, err)
+		}
+	}
+	tr.nodes[0].mu.Lock()
+	left := len(tr.nodes[0].links)
+	tr.nodes[0].mu.Unlock()
+	if left != 0 {
+		t.Errorf("%d connections still on the tunnel", left)
 	}
 }
