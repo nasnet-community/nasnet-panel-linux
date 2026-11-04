@@ -93,6 +93,7 @@ const EVENT_KEYS = [
   'subscription_limit',
   'subscription_expired',
   'subscription_resumed',
+  'connections_cut',
   'keys_rotated',
   'xray_restarted',
 ]

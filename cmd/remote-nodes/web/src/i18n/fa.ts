@@ -389,6 +389,7 @@ export const fa: Record<MsgKey, Message> = {
   'event.subscription_limit': 'اشتراک متوقف شد: سقف ترافیک پر شد',
   'event.subscription_expired': 'اشتراک متوقف شد: تاریخ آن گذشت',
   'event.subscription_resumed': 'اشتراک دوباره کار می‌کند',
+  'event.connections_cut': 'Xray دوباره راه‌اندازی شد تا اتصال‌های باز اشتراک متوقف‌شده بسته شود',
   'event.keys_rotated': 'کلیدها تعویض شدند',
   'event.xray_restarted': 'Xray دوباره راه‌اندازی شد: آدرس روتر تغییر کرد',
   'node.port': 'پورت {port}',

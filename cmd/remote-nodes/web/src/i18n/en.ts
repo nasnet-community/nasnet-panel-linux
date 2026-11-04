@@ -398,6 +398,7 @@ export const en = {
   'event.subscription_limit': 'Subscription stopped: traffic limit reached',
   'event.subscription_expired': 'Subscription stopped: it expired',
   'event.subscription_resumed': 'Subscription running again',
+  'event.connections_cut': "Xray restarted to end a stopped subscription's connections",
   'event.keys_rotated': 'Keys rotated',
   'event.xray_restarted': "Xray restarted: the router's address changed",
   // the node page: header, menu, dialogs

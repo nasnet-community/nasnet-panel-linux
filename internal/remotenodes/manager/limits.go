@@ -4,6 +4,7 @@ package manager
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
@@ -23,6 +24,16 @@ import (
 // so a check that also cleared the mark would let a stopped subscription
 // through until the next poll. Only a change a person makes (a new limit or
 // date, or a reset) clears it.
+
+// Taking a stopped subscription's client off a node stops new connections, but
+// Xray lets the ones already open run to their end, so a long download or a
+// stream could go on past the limit for as long as it lasts. Where a stopped
+// subscription is still connected, or still moving bytes, the node is pushed
+// its config again: the config is built from the state, which leaves the
+// stopped client out, and a push restarts Xray. Every subscription on that node
+// drops for a moment and reconnects; the stopped one can't. A node is
+// restarted for this at most once every cutAgain.
+const cutAgain = time.Minute
 
 // DefaultLimitsEvery is how often the limits are looked at. A subscription can
 // go over by what it moves in that time and in a poll's, which is seconds.
@@ -56,7 +67,7 @@ func (m *Manager) watchLimits(ctx context.Context) {
 }
 
 // enforceLimits stops each running subscription that has used its limit or
-// reached its end date.
+// reached its end date, and then ends what the stopped ones still have open.
 func (m *Manager) enforceLimits(ctx context.Context) {
 	now := m.now()
 	for _, sub := range m.cfg.Store.Read().Subscriptions {
@@ -67,6 +78,82 @@ func (m *Manager) enforceLimits(ctx context.Context) {
 			m.stop(ctx, sub.ID, reason)
 		}
 	}
+	m.cutOpen(ctx)
+}
+
+// cutOpen restarts the Xray of each node where a stopped subscription is
+// still connected, or moved bytes since the last look, unless it was restarted
+// for this less than cutAgain ago. A node that can't be reached is left for
+// later: its usage isn't live, and its reconnect puts its clients right.
+func (m *Manager) cutOpen(ctx context.Context) {
+	st := m.cfg.Store.Read()
+	stopped := stoppedSet(st)
+	now := m.now()
+	due := map[uint][]string{}
+	m.cutMu.Lock()
+	for k := range m.cutSeen {
+		if !stopped[k[0]] {
+			delete(m.cutSeen, k)
+		}
+	}
+	for _, e := range st.Enablements {
+		if !e.Enabled || !stopped[e.SubscriptionID] {
+			continue
+		}
+		u := m.cfg.Usage.Subscription(e.SubscriptionID, e.NodeID)
+		if !u.Live {
+			continue
+		}
+		key := [2]uint{e.SubscriptionID, e.NodeID}
+		moved := sat(u.MonthUp, u.MonthDown)
+		before, seen := m.cutSeen[key]
+		m.cutSeen[key] = moved
+		if !u.Online && !(seen && moved > before) {
+			continue
+		}
+		if at, ok := m.cutAt[e.NodeID]; ok && now.Sub(at) < cutAgain && due[e.NodeID] == nil {
+			continue
+		}
+		m.cutAt[e.NodeID] = now
+		due[e.NodeID] = append(due[e.NodeID], st.FindSubscription(e.SubscriptionID).Name)
+	}
+	m.cutMu.Unlock()
+	for id, names := range due {
+		m.cut(ctx, id, names)
+	}
+}
+
+// cut pushes a node the config the state makes, which leaves the stopped
+// subscriptions' clients out, and restarts its Xray on it.
+func (m *Manager) cut(ctx context.Context, nodeID uint, names []string) {
+	ops, err := m.operate()
+	if err != nil {
+		return
+	}
+	p, err := m.beginPush(ctx, nodeID)
+	if err != nil {
+		m.log.Warn("a stopped subscription's open connections could not be ended; it is tried again", "node", nodeID, "err", err)
+		return
+	}
+	err = ops.PushConfig(ctx, p.link, p.old)
+	if err == nil {
+		// The agent applies a push through Xray's API when it can, so that
+		// nobody's connection drops, and a push that only leaves a client out
+		// is one it can: the restart that ends the connections is asked for
+		// itself, once the file it reloads leaves the client out.
+		rctx, cancel := context.WithTimeout(ctx, restartTimeout)
+		err = p.link.RestartXray(rctx, true)
+		cancel()
+	}
+	p.unlock()
+	if err != nil {
+		m.log.Warn("a stopped subscription's open connections could not be ended; it is tried again", "node", nodeID,
+			"err", without(err.Error(), p.old.PrivateKey))
+		return
+	}
+	detail := strings.Join(names, ", ")
+	m.Event(nodeID, EventConnectionsCut, detail)
+	m.log.Info("restarted a node's Xray to end a stopped subscription's open connections", "node", nodeID, "subscriptions", detail)
 }
 
 // stop marks a subscription stopped, if it is still running, and takes its
