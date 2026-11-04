@@ -351,6 +351,9 @@ export const fa: Record<MsgKey, Message> = {
   'subs.quota.plusDays': '+{n} روز',
   'subs.quota.plusYears': '+{n} سال',
   'subs.quota.presets': 'تعیین تاریخ پایان',
+  'date.choose': 'انتخاب روز',
+  'date.prev': 'ماه قبل',
+  'date.next': 'ماه بعد',
   // node and settings
   'node.reason.bridgeDown': 'بریج روتر در حال اجرا نیست',
   'node.reason.certExpired': 'گواهی منقضی شده است',

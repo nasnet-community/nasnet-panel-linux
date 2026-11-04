@@ -3,6 +3,7 @@
 import { useId } from 'react'
 import type { LucideIcon, LucideProps } from 'lucide-react'
 import {
+  CalendarDays as LCalendarDays,
   Check as LCheck,
   ChevronDown as LChevronDown,
   ChevronLeft as LChevronLeft,
@@ -38,6 +39,7 @@ const panel = (Icon: LucideIcon) => {
   return Styled
 }
 
+export const CalendarDays = panel(LCalendarDays)
 export const Check = panel(LCheck)
 export const ChevronDown = panel(LChevronDown)
 export const ChevronLeft = panel(LChevronLeft)

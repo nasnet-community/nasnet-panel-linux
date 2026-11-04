@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { PAGE, dialog, expect, test, toast } from './fixtures'
 import { isTable, openNodeSubscriptions, openSubscriptions, pick, row } from './subs'
 
@@ -15,6 +15,26 @@ function inDays(n: number): string {
   d.setDate(d.getDate() + n)
   const pad = (x: number) => String(x).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** The end-date field: a button that opens a calendar, holding its day in data-value. */
+const endField = (d: Locator, label = 'Expires on') => d.getByLabel(label, { exact: true })
+
+/** Picks a day on the end-date calendar: opens it, goes on a month at a time to the day, and clicks it. */
+async function pickDay(d: Locator, day: string, labels = { field: 'Expires on', calendar: 'Choose a day', next: 'Next month' }) {
+  await endField(d, labels.field).click()
+  const cal = d.getByRole('dialog', { name: labels.calendar })
+  for (let i = 0; i < 24 && !(await cal.locator(`[data-day="${day}"]`).count()); i += 1) await cal.getByRole('button', { name: labels.next }).click()
+  await cal.locator(`[data-day="${day}"]`).click()
+  await expect(cal).toHaveCount(0)
+}
+
+/** The same day n months on, or that month's last day if it is shorter, as the calendar moves. */
+function monthsOn(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number)
+  const last = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate()
+  const t = new Date(Date.UTC(y, m - 1 + n, Math.min(d, last)))
+  return t.toISOString().slice(0, 10)
 }
 
 /** A subscription with no limit and no date: the table says so in its two columns, and a card says nothing. */
@@ -52,7 +72,7 @@ test('each row has an Edit button that opens the dialog with what is set', async
   const d = edit(page, 'Sara')
   await expect(d.getByLabel('Name')).toHaveValue('Sara')
   await expect(d.getByLabel('Traffic limit')).toHaveValue('100')
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(41))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(41))
   await expect(d).toContainText('Used since the last reset: 62.0 GB')
   // the menu has it too, first after Share
   await d.getByRole('button', { name: 'Cancel' }).click()
@@ -65,7 +85,7 @@ test('a limit below what was used stops the subscription, and a higher one start
   await pick(page, 'Ali', 'Edit')
   const d = edit(page, 'Ali')
   await expect(d.getByLabel('Traffic limit')).toHaveValue('')
-  await expect(d.getByLabel('Expires on')).toHaveValue('')
+  await expect(endField(d)).toHaveAttribute('data-value', '')
   await expect(d).toContainText('Used since the last reset: 21.0 GB')
 
   await d.getByLabel('Traffic limit').fill('20')
@@ -95,7 +115,7 @@ test('the name, the limit and the date go in one save', async ({ page }) => {
   const d = edit(page, 'Mina')
   await d.getByLabel('Name').fill('Minoo')
   await d.getByLabel('Traffic limit').fill('25')
-  await d.getByLabel('Expires on').fill(inDays(10))
+  await pickDay(d, inDays(10))
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/subscriptions/4'))
   await d.getByRole('button', { name: 'Save' }).click()
   const body = (await sent).postDataJSON() as Record<string, unknown>
@@ -124,18 +144,30 @@ test('the limit field takes a comma, and refuses what is not a number above zero
   expect((await sent).postDataJSON()).toEqual({ trafficLimit: 12_500_000_000 })
 })
 
-test('an end date has to be a day that has not passed, and ends the subscription at the end of that day', async ({ page }) => {
+test('the calendar can\'t pick a day that has passed, and a picked day ends at its end', async ({ page }) => {
   await openSubscriptions(page)
   const seen = patches(page)
   await pick(page, 'Mina', 'Edit')
   const d = edit(page, 'Mina')
-  await d.getByLabel('Expires on').fill('2020-01-01')
-  await d.getByRole('button', { name: 'Save' }).click()
-  await expect(d.getByText('Pick a day that has not passed yet.')).toBeVisible()
+  await endField(d).click()
+  const cal = d.getByRole('dialog', { name: 'Choose a day' })
+  const yesterday = inDays(-1)
+  if (!(await cal.locator(`[data-day="${yesterday}"]`).count())) await cal.getByRole('button', { name: 'Previous month' }).click()
+  const past = cal.locator(`[data-day="${yesterday}"]`)
+  await expect(past).toHaveAttribute('aria-disabled', 'true')
+  // a click on it does nothing (force: Playwright itself won't click a disabled button)
+  await past.click({ force: true })
+  await expect(cal).toBeVisible()
+  await expect(endField(d)).toHaveAttribute('data-value', '')
+  // today is still to come: it ends tonight
+  await expect(cal.locator(`[data-day="${inDays(0)}"]`)).not.toHaveAttribute('aria-disabled', 'true')
+  await expect(cal.locator(`[data-day="${inDays(0)}"]`)).toHaveAttribute('aria-current', 'date')
+  await page.keyboard.press('Escape')
   expect(seen).toEqual([])
 
   const day = inDays(1)
-  await d.getByLabel('Expires on').fill(day)
+  await pickDay(d, day)
+  await expect(endField(d)).toHaveAttribute('data-value', day)
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/subscriptions/4'))
   await d.getByRole('button', { name: 'Save' }).click()
   const body = (await sent).postDataJSON() as { expiresAt: string }
@@ -146,21 +178,49 @@ test('an end date has to be a day that has not passed, and ends the subscription
   await expect(row(page, 'Mina')).toContainText(/in \d+ (day|days|hours?)/)
 })
 
+test('the calendar works from the keyboard, and Escape closes it and not the dialog', async ({ page }) => {
+  await openSubscriptions(page)
+  await pick(page, 'Kian', 'Edit')
+  const d = edit(page, 'Kian')
+  await endField(d).click()
+  const cal = d.getByRole('dialog', { name: 'Choose a day' })
+  // it opens on today, the earliest it can pick
+  await expect(cal.locator(`[data-day="${inDays(0)}"]`)).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await expect(cal.locator(`[data-day="${inDays(1)}"]`)).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(cal.locator(`[data-day="${inDays(8)}"]`)).toBeFocused()
+  await page.keyboard.press('PageDown')
+  const target = monthsOn(inDays(8), 1)
+  await expect(cal.locator(`[data-day="${target}"]`)).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(cal).toHaveCount(0)
+  await expect(endField(d)).toHaveAttribute('data-value', target)
+  await expect(endField(d)).toBeFocused()
+
+  await endField(d).click()
+  await expect(cal.locator(`[data-day="${target}"]`)).toBeFocused()
+  await expect(cal.locator(`[data-day="${target}"]`).locator('xpath=..')).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Escape')
+  await expect(cal).toHaveCount(0)
+  await expect(d).toBeVisible()
+})
+
 test('the quick days set the end date from today, and count on from a date already set', async ({ page }) => {
   await openSubscriptions(page)
   await pick(page, 'Kian', 'Edit')
   const d = edit(page, 'Kian')
   const presets = d.getByRole('group', { name: 'Set the end date' })
   await presets.getByRole('button', { name: '+30 days' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(30))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(30))
   await presets.getByRole('button', { name: '+30 days' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(60))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(60))
   // and the same button for no end date at all
   await presets.getByRole('button', { name: 'No end date' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue('')
+  await expect(endField(d)).toHaveAttribute('data-value', '')
   await expect(presets.getByRole('button', { name: 'No end date' })).toHaveCount(0)
   await presets.getByRole('button', { name: '+90 days' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(90))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(90))
   await presets.getByRole('button', { name: '+1 year' }).click()
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/subscriptions/7'))
   await d.getByRole('button', { name: 'Save' }).click()
@@ -181,7 +241,7 @@ test('an expired subscription is renewed from today, and says why it stopped', a
   const d = edit(page, 'Dana')
   await expect(d).toContainText(/Dana ended on .+, so it is stopped\. Pick a later date to start it again\./)
   await d.getByRole('group', { name: 'Set the end date' }).getByRole('button', { name: '+30 days' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(30))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(30))
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(toast(page, 'Dana saved')).toBeVisible()
   await expect(row(page, 'Dana')).not.toContainText('Expired')
@@ -192,7 +252,8 @@ test('emptying a field takes the limit or the date away', async ({ page }) => {
   await pick(page, 'Sara', 'Edit')
   const d = edit(page, 'Sara')
   await d.getByLabel('Traffic limit').fill('')
-  await d.getByLabel('Expires on').fill('')
+  await d.getByRole('group', { name: 'Set the end date' }).getByRole('button', { name: 'No end date' }).click()
+  await expect(endField(d)).toHaveAttribute('data-value', '')
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/subscriptions/1'))
   await d.getByRole('button', { name: 'Save' }).click()
   expect((await sent).postDataJSON()).toEqual({ trafficLimit: null, expiresAt: null })
@@ -245,7 +306,7 @@ test('adding a subscription can set a limit and a date at once', async ({ page }
 
   await d.getByLabel('Traffic limit').fill('5')
   await d.getByRole('group', { name: 'Set the end date' }).getByRole('button', { name: '+30 days' }).click()
-  await expect(d.getByLabel('Expires on')).toHaveValue(inDays(30))
+  await expect(endField(d)).toHaveAttribute('data-value', inDays(30))
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/subscriptions'))
   await d.getByRole('button', { name: 'Add subscription' }).click()
   const body = (await sent).postDataJSON() as { name: string; nodeIds: number[]; trafficLimit: number; expiresAt: string }
@@ -307,7 +368,19 @@ test('the edit dialog in Persian: right to left, its words, and the quick days',
   const d = dialog(page, 'ویرایش Sara')
   expect(await d.evaluate((el) => getComputedStyle(el).direction)).toBe('rtl')
   await expect(d.getByLabel('سقف ترافیک')).toHaveValue('100')
-  await expect(d.getByLabel('تاریخ پایان', { exact: true })).toHaveValue(inDays(41))
+  await expect(endField(d, 'تاریخ پایان')).toHaveAttribute('data-value', inDays(41))
+  // the calendar is the Persian one: Saturday first, Persian names and digits, and right to left on the keys
+  await endField(d, 'تاریخ پایان').click()
+  const cal = d.getByRole('dialog', { name: 'انتخاب روز' })
+  await expect(cal.getByRole('columnheader').first()).toHaveText('ش')
+  await expect(cal.getByRole('grid')).toHaveAttribute('aria-label', /آذر|دی|بهمن|اسفند|فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان/)
+  const chosen = cal.locator(`[data-day="${inDays(41)}"]`)
+  await expect(chosen).toHaveText(/^[۰-۹]+$/)
+  await expect(chosen).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(cal.locator(`[data-day="${inDays(42)}"]`)).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(cal).toHaveCount(0)
   await expect(d.getByRole('group', { name: 'تعیین تاریخ پایان' }).getByRole('button')).toHaveText(['+۳۰ روز', '+۹۰ روز', '+۱ سال', 'بدون تاریخ پایان'])
   await expect(d).toContainText('مصرف از آخرین صفر کردن')
 })

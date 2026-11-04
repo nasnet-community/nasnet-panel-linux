@@ -360,6 +360,9 @@ export const en = {
   'subs.quota.plusDays': '+{n} days',
   'subs.quota.plusYears': { one: '+{n} year', other: '+{n} years' },
   'subs.quota.presets': 'Set the end date',
+  'date.choose': 'Choose a day',
+  'date.prev': 'Previous month',
+  'date.next': 'Next month',
   // node and settings
   'node.reason.bridgeDown': "The router's bridge is not running",
   'node.reason.certExpired': 'The certificate has expired',
