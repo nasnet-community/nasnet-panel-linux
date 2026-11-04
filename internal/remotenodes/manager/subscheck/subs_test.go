@@ -63,7 +63,7 @@ func TestASubscriptionIsSwitchedAndItsLinkReplacedThroughARealAgent(t *testing.T
 
 	// made, with a Persian name, on the node that answers
 	const name = "علی‌رضا کریمی"
-	v, err := h.mgr.CreateSubscription(ctx, name, []uint{node.ID})
+	v, err := h.mgr.CreateSubscription(ctx, name, []uint{node.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	if v.ID != 1 || len(v.Nodes) != 1 || !v.Nodes[0].Enabled {
 		t.Fatalf("created = %+v", v)
@@ -122,7 +122,7 @@ func TestASubscriptionIsSwitchedAndItsLinkReplacedThroughARealAgent(t *testing.T
 	bridge()
 
 	// a second subscription is its own, and deleting the first leaves it alone
-	_, err = h.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID})
+	_, err = h.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	second, _ := clientOf(t, h, 2, node.ID)
 	eventually(t, "the second subscription never got its client", func() bool { return n.clients(t, 2)[nodecfg.SubscriptionEmail(2)] == second })
@@ -168,9 +168,9 @@ func TestWhatIsSwitchedWhileARealAgentIsAwayIsAppliedWhenItIsBack(t *testing.T) 
 	h.run()
 	ctx := context.Background()
 	eventually(t, "the manager never reached the node", func() bool { return h.connected(node.ID) })
-	_, err := h.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID})
+	_, err := h.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID}, api.SubscriptionLimits{})
 	must(t, err)
-	_, err = h.mgr.CreateSubscription(ctx, "Ali", nil)
+	_, err = h.mgr.CreateSubscription(ctx, "Ali", nil, api.SubscriptionLimits{})
 	must(t, err)
 	sara, _ := clientOf(t, h, 1, node.ID)
 	eventually(t, "Sara never got her client", func() bool { return n.clients(t, 1)[nodecfg.SubscriptionEmail(1)] == sara })

@@ -163,12 +163,16 @@ func (m *Manager) subscriptionView(id uint) (api.Subscription, error) {
 }
 
 // CreateSubscription adds a subscription, switched on at the nodes named, each
-// with a client id of its own. Only installed nodes may be named, and none whose
+// with a client id of its own, with the traffic limit and end date it is given
+// (none, for the zero values). Only installed nodes may be named, and none whose
 // install is still running. A node it can't reach takes the client when it is
 // back.
-func (m *Manager) CreateSubscription(ctx context.Context, name string, nodeIDs []uint) (api.Subscription, error) {
+func (m *Manager) CreateSubscription(ctx context.Context, name string, nodeIDs []uint, limits api.SubscriptionLimits) (api.Subscription, error) {
 	name, err := model.CleanName(name)
 	if err != nil {
+		return api.Subscription{}, err
+	}
+	if limits, err = m.checkLimits(limits, time.Time{}); err != nil {
 		return api.Subscription{}, err
 	}
 	ids := slices.Clone(nodeIDs)
@@ -189,7 +193,7 @@ func (m *Manager) CreateSubscription(ctx context.Context, name string, nodeIDs [
 	var made model.Subscription
 	clients := map[uint]subscriptions.Client{}
 	err = m.cfg.Store.Update(func(s *model.State) error {
-		sub, err := s.AddSubscription(model.Subscription{Name: name, CreatedAt: m.now()})
+		sub, err := s.AddSubscription(model.Subscription{Name: name, CreatedAt: m.now(), TrafficLimit: limits.TrafficLimit, ExpiresAt: limits.ExpiresAt})
 		if err != nil {
 			return err
 		}
@@ -223,24 +227,8 @@ func (m *Manager) CreateSubscription(ctx context.Context, name string, nodeIDs [
 // RenameSubscription gives a subscription another name. The nodes know it by
 // its number, and a link carries the name only as a label, so nothing changes
 // on a node and the links already handed out keep working.
-func (m *Manager) RenameSubscription(_ context.Context, id uint, name string) (api.Subscription, error) {
-	name, err := model.CleanName(name)
-	if err != nil {
-		return api.Subscription{}, err
-	}
-	// the store refuses a name another subscription has, whatever its case
-	err = m.cfg.Store.Update(func(s *model.State) error {
-		sub := s.FindSubscription(id)
-		if sub == nil {
-			return notFound("subscription", id)
-		}
-		sub.Name = name
-		return nil
-	})
-	if err != nil {
-		return api.Subscription{}, err
-	}
-	return m.subscriptionView(id)
+func (m *Manager) RenameSubscription(ctx context.Context, id uint, name string) (api.Subscription, error) {
+	return m.UpdateSubscription(ctx, id, api.SubscriptionPatch{Name: &name})
 }
 
 // DeleteSubscription removes a subscription and takes its client off every node
@@ -319,6 +307,7 @@ func (m *Manager) SetEnabled(ctx context.Context, subID, nodeID uint, enabled bo
 		client  subscriptions.Client
 		known   bool // the state has a client id for the pair
 		changed bool
+		stopped bool // the subscription is stopped, so its client stays off the node
 	)
 	err = m.cfg.Store.Update(func(s *model.State) error {
 		sub := s.FindSubscription(subID)
@@ -328,7 +317,7 @@ func (m *Manager) SetEnabled(ctx context.Context, subID, nodeID uint, enabled bo
 		if n := s.FindNode(nodeID); n == nil || n.State != model.NodeRegistered {
 			return notFound("node", nodeID)
 		}
-		name = sub.Name
+		name, stopped = sub.Name, !sub.Running()
 		e := s.FindEnablement(subID, nodeID)
 		switch {
 		case e == nil && !enabled:
@@ -349,9 +338,9 @@ func (m *Manager) SetEnabled(ctx context.Context, subID, nodeID uint, enabled bo
 	if err != nil {
 		return api.Subscription{}, err
 	}
-	if known && enabled {
+	if known && enabled && !stopped {
 		m.applyTo(ctx, nodeID, "on", func(ctx context.Context, a Client) error { return subscriptions.Enable(ctx, a, client) })
-	} else if known {
+	} else if known && !enabled {
 		m.applyTo(ctx, nodeID, "off", func(ctx context.Context, a Client) error { return subscriptions.Disable(ctx, a, client.Email) })
 	}
 	if changed {
@@ -436,9 +425,14 @@ func (m *Manager) ReplaceLink(ctx context.Context, subID, nodeID uint) (api.Link
 	if err != nil {
 		return api.Link{}, err
 	}
-	held, err := m.callNode(ctx, nodeID, func(ctx context.Context, a Client) error {
-		return subscriptions.Replace(ctx, a, clientOf(subID, fresh))
-	})
+	// a stopped subscription has no client on the node, and putting one there
+	// would start it again, so only the state changes
+	held, err := true, error(nil)
+	if sub.Running() {
+		held, err = m.callNode(ctx, nodeID, func(ctx context.Context, a Client) error {
+			return subscriptions.Replace(ctx, a, clientOf(subID, fresh))
+		})
+	}
 	switch {
 	case !held:
 		return api.Link{}, errCantReach
@@ -458,9 +452,11 @@ func (m *Manager) ReplaceLink(ctx context.Context, subID, nodeID uint) (api.Link
 		return nil
 	})
 	if err != nil {
-		m.applyTo(ctx, nodeID, "restore", func(ctx context.Context, a Client) error {
-			return subscriptions.Replace(ctx, a, clientOf(subID, was.ClientUUID))
-		})
+		if sub.Running() {
+			m.applyTo(ctx, nodeID, "restore", func(ctx context.Context, a Client) error {
+				return subscriptions.Replace(ctx, a, clientOf(subID, was.ClientUUID))
+			})
+		}
 		return api.Link{}, err
 	}
 	m.Event(nodeID, EventSubscriptionOn, sub.Name+" (new link)")

@@ -89,6 +89,7 @@ type Config struct {
 	BridgeEvery time.Duration // the bridge's status, and the spec it should have
 
 	ReconcileEvery time.Duration // putting a node's clients right when nothing announced a reason
+	LimitsEvery    time.Duration // looking at the subscriptions' traffic limits and end dates
 }
 
 // Manager keeps the hub's live state. All its methods are safe for concurrent
@@ -194,6 +195,7 @@ func New(cfg Config) (*Manager, error) {
 		{&cfg.PollEvery, DefaultPollEvery}, {&cfg.StateEvery, DefaultStateEvery},
 		{&cfg.EntryEvery, DefaultEntryEvery}, {&cfg.BridgeEvery, DefaultBridgeEvery},
 		{&cfg.ReconcileEvery, DefaultReconcileEvery},
+		{&cfg.LimitsEvery, DefaultLimitsEvery},
 	} {
 		if *d.v <= 0 {
 			*d.v = d.def
@@ -224,6 +226,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 	m.Sync()
 	m.spawn(m.watchState)
+	m.spawn(m.watchLimits)
 	m.spawn(m.watchEntry)
 	m.spawn(m.watchBridge)
 	m.spawn(m.watchReleases)

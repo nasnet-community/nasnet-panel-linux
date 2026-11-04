@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 )
@@ -29,12 +31,46 @@ type Link struct {
 // them where the old ones were. Its errors are the model's, the job engine's
 // busy error and *Error for the few that need a sentence of their own.
 type SubscriptionOps interface {
-	CreateSubscription(ctx context.Context, name string, nodeIDs []uint) (Subscription, error)
-	RenameSubscription(ctx context.Context, id uint, name string) (Subscription, error)
+	CreateSubscription(ctx context.Context, name string, nodeIDs []uint, limits SubscriptionLimits) (Subscription, error)
+	UpdateSubscription(ctx context.Context, id uint, patch SubscriptionPatch) (Subscription, error)
+	// ResetUsage starts a subscription's traffic count again from zero.
+	ResetUsage(ctx context.Context, id uint) (Subscription, error)
 	DeleteSubscription(ctx context.Context, id uint) error
 	SetEnabled(ctx context.Context, subID, nodeID uint, enabled bool) (Subscription, error)
 	Link(subID, nodeID uint) (Link, error)
 	ReplaceLink(ctx context.Context, subID, nodeID uint) (Link, error)
+}
+
+// SubscriptionLimits is what a subscription may use before it stops. The zero
+// value is no limit and no end date.
+type SubscriptionLimits struct {
+	TrafficLimit uint64    // bytes, both ways on every node; 0 is no limit
+	ExpiresAt    time.Time // zero is never
+}
+
+// Opt is a field of a patch that may be left out, null, or a value. A field
+// that isn't in the body is the zero Opt, which changes nothing; null clears.
+type Opt[T any] struct {
+	Set   bool // the body has the field
+	Null  bool // and it is null
+	Value T
+}
+
+func (o *Opt[T]) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	if string(bytes.TrimSpace(b)) == "null" {
+		o.Null = true
+		return nil
+	}
+	return json.Unmarshal(b, &o.Value)
+}
+
+// SubscriptionPatch is what PATCH /api/subscriptions/{id} may change. What
+// isn't in it stays.
+type SubscriptionPatch struct {
+	Name         *string        `json:"name"`
+	TrafficLimit Opt[uint64]    `json:"trafficLimit"` // bytes; null removes the limit
+	ExpiresAt    Opt[time.Time] `json:"expiresAt"`    // RFC 3339; null removes the end date
 }
 
 // maxSmallBody is the most a call that takes a few words may send.
@@ -48,7 +84,8 @@ func (a *API) subscriptionRoutes(route func(pattern string, h http.HandlerFunc))
 		return
 	}
 	route("POST /api/subscriptions", a.createSubscription)
-	route("PATCH /api/subscriptions/{id}", a.renameSubscription)
+	route("PATCH /api/subscriptions/{id}", a.updateSubscription)
+	route("POST /api/subscriptions/{id}/reset-usage", a.resetSubscriptionUsage)
 	route("DELETE /api/subscriptions/{id}", a.deleteSubscription)
 	route("PUT /api/subscriptions/{id}/nodes/{nodeId}", a.switchSubscription)
 	route("GET /api/subscriptions/{id}/nodes/{nodeId}/link", a.subscriptionLink)
@@ -121,8 +158,10 @@ func (a *API) failOp(w http.ResponseWriter, r *http.Request, err error) {
 
 func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name    string  `json:"name"`
-		NodeIDs *[]uint `json:"nodeIds"`
+		Name         string     `json:"name"`
+		NodeIDs      *[]uint    `json:"nodeIds"`
+		TrafficLimit *uint64    `json:"trafficLimit"`
+		ExpiresAt    *time.Time `json:"expiresAt"`
 	}
 	if err := strictJSON(w, r, maxSmallBody, &req); err != nil {
 		a.fail(w, err)
@@ -132,7 +171,14 @@ func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, &Error{CodeBadRequest, "nodeIds must be a list of node ids."})
 		return
 	}
-	v, err := a.cfg.Subs.CreateSubscription(r.Context(), req.Name, *req.NodeIDs)
+	var limits SubscriptionLimits
+	if req.TrafficLimit != nil {
+		limits.TrafficLimit = *req.TrafficLimit
+	}
+	if req.ExpiresAt != nil {
+		limits.ExpiresAt = *req.ExpiresAt
+	}
+	v, err := a.cfg.Subs.CreateSubscription(r.Context(), req.Name, *req.NodeIDs, limits)
 	if err != nil {
 		a.failOp(w, r, err)
 		return
@@ -140,20 +186,36 @@ func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, v)
 }
 
-func (a *API) renameSubscription(w http.ResponseWriter, r *http.Request) {
+func (a *API) updateSubscription(w http.ResponseWriter, r *http.Request) {
 	id, err := idPath(r, "id")
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := strictJSON(w, r, maxSmallBody, &req); err != nil {
+	var patch SubscriptionPatch
+	if err := strictJSON(w, r, maxSmallBody, &patch); err != nil {
 		a.fail(w, err)
 		return
 	}
-	v, err := a.cfg.Subs.RenameSubscription(r.Context(), id, req.Name)
+	if patch.Name == nil && !patch.TrafficLimit.Set && !patch.ExpiresAt.Set {
+		a.fail(w, &Error{CodeBadRequest, "There is nothing to change."})
+		return
+	}
+	v, err := a.cfg.Subs.UpdateSubscription(r.Context(), id, patch)
+	if err != nil {
+		a.failOp(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (a *API) resetSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
+	id, err := idPath(r, "id")
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	v, err := a.cfg.Subs.ResetUsage(r.Context(), id)
 	if err != nil {
 		a.failOp(w, r, err)
 		return

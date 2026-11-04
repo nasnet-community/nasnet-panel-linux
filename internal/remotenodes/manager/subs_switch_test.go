@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
 	"github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
@@ -24,7 +25,7 @@ func TestSwitchingOffKeepsTheClientIdAndSwitchingOnGivesItBack(t *testing.T) {
 		defer r.stop()
 		ctx := context.Background()
 		ag := r.net.agent(n.ID)
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		first := idOnNode(t, r.cfg.Store, sara.ID, n.ID).ClientUUID
 
@@ -74,7 +75,7 @@ func TestSwitchingOnAtANodeItWasNeverOnAtMakesAnIdOnce(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID}, api.SubscriptionLimits{})
 		must(t, err)
 
 		// off where it never was: no record, no call, no event
@@ -120,7 +121,7 @@ func TestAskingForWhatIsSoIsSentAgainAndMakesNoEvent(t *testing.T) {
 		defer r.stop()
 		ctx := context.Background()
 		ag := r.net.agent(n.ID)
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		writes := r.cfg.Store.Writes()
 		events := len(r.m.NodeEvents(n.ID))
@@ -158,9 +159,9 @@ func TestASwitchForANodeThatCantBeReachedIsAppliedWhenItIsBack(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
-		ali, err := r.m.CreateSubscription(ctx, "Ali", nil)
+		ali, err := r.m.CreateSubscription(ctx, "Ali", nil, api.SubscriptionLimits{})
 		must(t, err)
 		saraID := idOnNode(t, r.cfg.Store, sara.ID, n.ID).ClientUUID
 
@@ -208,7 +209,7 @@ func TestSwitchingIsRefusedForWhatIsNotThere(t *testing.T) {
 	cfg.Jobs = fakeJobs{running.ID: install}
 	m, err := New(cfg)
 	must(t, err)
-	sara, err := m.CreateSubscription(ctx, "Sara", []uint{good.ID})
+	sara, err := m.CreateSubscription(ctx, "Sara", []uint{good.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	before, writes := cfg.Store.Read(), cfg.Store.Writes()
 
@@ -363,7 +364,7 @@ func TestSwitchesThatComeAtOnceLeaveTheNodesAsTheStateSays(t *testing.T) {
 		defer r.stop()
 		var subs []uint
 		for i := 0; i < 3; i++ {
-			s, err := r.m.CreateSubscription(ctx, fmt.Sprint("sub ", i), []uint{nodes[0].ID})
+			s, err := r.m.CreateSubscription(ctx, fmt.Sprint("sub ", i), []uint{nodes[0].ID}, api.SubscriptionLimits{})
 			must(t, err)
 			subs = append(subs, s.ID)
 		}

@@ -59,7 +59,7 @@ func TestALinkHasTheNodesAddressAndTheClientsId(t *testing.T) {
 		n.Name, n.Host, n.EntryPort = "Tehran", "203.0.113.7", 8443
 		n.RealityPublicKey, n.RealityShortID, n.RealitySNI = "PUBLIC-KEY", "0a1b2c3d", "cover.example.com"
 	})
-	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID})
+	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 
 	l, err := m.Link(sub.ID, n.ID)
@@ -94,7 +94,7 @@ func TestALinkHasTheNodesAddressAndTheClientsId(t *testing.T) {
 func TestALinkTakesTheHandshakeTargetsHostWhenThereIsNoSNI(t *testing.T) {
 	m, st := quietManager(t)
 	n := addNode(t, st, func(n *model.Node) { n.RealitySNI, n.RealityTarget = "", "www.cover.example:8443" })
-	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID})
+	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	l, err := m.Link(sub.ID, n.ID)
 	must(t, err)
@@ -111,7 +111,7 @@ func TestAddressesOfEveryKindMakeALinkAClientCanRead(t *testing.T) {
 		"node2.example.com": "node2.example.com",
 	} {
 		n := addNode(t, st, func(n *model.Node) { n.Host = host })
-		sub, err := m.CreateSubscription(context.Background(), "s "+host, []uint{n.ID})
+		sub, err := m.CreateSubscription(context.Background(), "s "+host, []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		l, err := m.Link(sub.ID, n.ID)
 		must(t, err)
@@ -143,7 +143,7 @@ func TestNamesInAnyScriptComeThroughTheLinkIntact(t *testing.T) {
 		strings.Repeat("ن", model.MaxNameRunes),
 	}
 	for _, name := range names {
-		sub, err := m.CreateSubscription(ctx, name, []uint{n.ID})
+		sub, err := m.CreateSubscription(ctx, name, []uint{n.ID}, api.SubscriptionLimits{})
 		if err != nil {
 			t.Fatalf("%q: %v", name, err)
 		}
@@ -162,7 +162,7 @@ func TestNamesInAnyScriptComeThroughTheLinkIntact(t *testing.T) {
 	}
 
 	// and a rename shows in the link, with the same id
-	sub, err := m.CreateSubscription(ctx, "temp", []uint{n.ID})
+	sub, err := m.CreateSubscription(ctx, "temp", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	before, _ := m.Link(sub.ID, n.ID)
 	_, err = m.RenameSubscription(ctx, sub.ID, "نام تازه")
@@ -181,7 +181,7 @@ func TestThereIsNoLinkFromWhatIsNotThereOrSwitchedOff(t *testing.T) {
 	on := addNode(t, st)
 	never := addNode(t, st)
 	dead := addNode(t, st, func(n *model.Node) { n.State = model.NodeInstalling })
-	sub, err := m.CreateSubscription(ctx, "Sara", []uint{on.ID})
+	sub, err := m.CreateSubscription(ctx, "Sara", []uint{on.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	_, err = m.SetEnabled(ctx, sub.ID, on.ID, false)
 	must(t, err)
@@ -226,7 +226,7 @@ func TestOffAndOnAgainGivesBackTheSameLink(t *testing.T) {
 	m, st := quietManager(t)
 	ctx := context.Background()
 	n := addNode(t, st)
-	sub, err := m.CreateSubscription(ctx, "سارا", []uint{n.ID})
+	sub, err := m.CreateSubscription(ctx, "سارا", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	first, err := m.Link(sub.ID, n.ID)
 	must(t, err)
@@ -246,7 +246,7 @@ func TestOffAndOnAgainGivesBackTheSameLink(t *testing.T) {
 func TestAnInstalledNodeThatLacksItsRealityValuesIsTheHubsFault(t *testing.T) {
 	m, st := quietManager(t)
 	n := addNode(t, st, func(n *model.Node) { n.RealityPublicKey = "" })
-	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID})
+	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	_, err = m.Link(sub.ID, n.ID)
 	var plain *api.Error
@@ -263,7 +263,7 @@ func TestReplacingALinkGivesANewIdAndTheNodeTakesIt(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		old, err := r.m.Link(sub.ID, n.ID)
 		must(t, err)
@@ -319,7 +319,7 @@ func TestALinkIsNotReplacedWhileTheNodeCantBeReached(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		old, _ := r.m.Link(sub.ID, n.ID)
 
@@ -350,7 +350,7 @@ func TestALinkIsNotReplacedWhileTheNodeCantBeReached(t *testing.T) {
 func TestALinkIsNotReplacedForAManagerThatIsNotRunning(t *testing.T) {
 	m, st := quietManager(t)
 	n := addNode(t, st)
-	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID})
+	sub, err := m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	var refusal *api.Error
 	if _, err := m.ReplaceLink(context.Background(), sub.ID, n.ID); !errors.As(err, &refusal) || refusal.Code != api.CodeNodeUnreachable {
@@ -365,7 +365,7 @@ func TestReplacingALinkIsRefusedForWhatIsNotThere(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{on.ID})
+		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{on.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		_, err = r.m.SetEnabled(ctx, sub.ID, on.ID, false)
 		must(t, err)
@@ -424,7 +424,7 @@ func TestAReplacementTheNodeRefusesLeavesTheOldLinkAndRestoresIt(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		old, _ := r.m.Link(sub.ID, n.ID)
 		oldID := parseLink(t, old.Vless).id
@@ -469,7 +469,7 @@ func TestAReplacementThatCantBeSavedPutsTheNodeBack(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sub, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		oldID := idOnNode(t, flaky, sub.ID, n.ID).ClientUUID
 

@@ -317,10 +317,21 @@ export interface SubscriptionNode {
   monthDown: number
 }
 
+/** Why the hub took a subscription off the nodes: its traffic limit was reached, or its end date. */
+export type StoppedBy = 'limit' | 'expired'
+
 export interface Subscription {
   id: number
   name: string
   createdAt: string
+  /** bytes it may move in all, both ways on every node; 0 is no limit */
+  trafficLimit: number
+  /** bytes it has moved since its count was last reset */
+  trafficUsed: number
+  /** when it stops; null is never */
+  expiresAt: string | null
+  /** set while the hub keeps it off the nodes; its switches stay as they were */
+  stopped: StoppedBy | ''
   online: boolean | null
   lastSeenAt: string | null
   todayUp: number
@@ -336,6 +347,8 @@ export interface NodeSubscription {
   id: number
   name: string
   enabled: boolean
+  /** set while the hub keeps the subscription off the nodes */
+  stopped: StoppedBy | ''
   online: boolean | null
   connections: number | null
   lastSeenAt: string | null
@@ -349,6 +362,17 @@ export interface CreateSubscription {
   name: string
   /** the nodes it is switched on for */
   nodeIds: number[]
+  /** bytes; left out for no limit */
+  trafficLimit?: number
+  /** an instant, RFC 3339; left out for no end date */
+  expiresAt?: string
+}
+
+/** What a change to a subscription may carry. What is left out stays; null takes the limit or the date away. */
+export interface SubscriptionPatch {
+  name?: string
+  trafficLimit?: number | null
+  expiresAt?: string | null
 }
 
 export interface Link {
@@ -399,6 +423,9 @@ export const subscriptions = {
   list: () => request<Subscription[]>('GET', 'subscriptions'),
   create: (s: CreateSubscription) => request<Subscription>('POST', 'subscriptions', s),
   rename: (id: number, name: string) => request<Subscription>('PATCH', sub(id), { name }),
+  update: (id: number, patch: SubscriptionPatch) => request<Subscription>('PATCH', sub(id), patch),
+  /** starts its traffic count again from zero */
+  resetUsage: (id: number) => request<Subscription>('POST', `${sub(id)}/reset-usage`),
   remove: (id: number) => request<{ ok: boolean }>('DELETE', sub(id)),
   /** switches it on or off for one node; off removes the client, on adds it back with the same id */
   setNode: (id: number, nodeId: number, enabled: boolean) => request<Subscription>('PUT', `${sub(id)}/nodes/${nodeId}`, { enabled }),

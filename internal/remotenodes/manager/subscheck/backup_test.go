@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/nodecfg"
 )
 
@@ -51,9 +52,9 @@ func TestARestoredBackupReconnectsToARealAgentWithoutAnySSH(t *testing.T) {
 	old := newHub(t)
 	n := startNode(t, old.mgr.CA(), 1, time.Now())
 	node := old.addNode(n)
-	_, err := old.mgr.CreateSubscription(ctx, "علی", []uint{node.ID})
+	_, err := old.mgr.CreateSubscription(ctx, "علی", []uint{node.ID}, api.SubscriptionLimits{})
 	must(t, err)
-	_, err = old.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID})
+	_, err = old.mgr.CreateSubscription(ctx, "Sara", []uint{node.ID}, api.SubscriptionLimits{})
 	must(t, err)
 	_, err = old.mgr.SetEnabled(ctx, 2, node.ID, false)
 	must(t, err)

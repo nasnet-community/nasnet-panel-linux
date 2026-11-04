@@ -25,11 +25,13 @@ func bridgeOf(n model.Node) nodecfg.Bridge {
 }
 
 // clientsOf are the subscriptions switched on at a node, as clients, in the
-// order of their ids so that the same state gives the same config.
+// order of their ids so that the same state gives the same config. One that is
+// stopped for its limit or its end date is not among them.
 func clientsOf(st model.State, nodeID uint) []nodecfg.Client {
+	stopped := stoppedSet(st)
 	var on []model.Enablement
 	for _, e := range st.Enablements {
-		if e.NodeID == nodeID && e.Enabled {
+		if e.NodeID == nodeID && e.Enabled && !stopped[e.SubscriptionID] {
 			on = append(on, e)
 		}
 	}

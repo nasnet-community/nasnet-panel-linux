@@ -44,6 +44,7 @@ type Usage interface {
 	Node(nodeID uint) usage.NodeUsage
 	Subscription(subID, nodeID uint) usage.SubUsage
 	SubscriptionTotal(subID uint) usage.SubUsage
+	SubscriptionLifetime(subID uint) usage.Totals
 	Traffic(nodeID uint) []usage.Point
 	Forget(nodeID uint)
 	ForgetSubscription(subID uint)

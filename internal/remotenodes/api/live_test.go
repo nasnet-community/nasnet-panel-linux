@@ -23,6 +23,7 @@ type fakeLive struct {
 	events  map[uint][]NodeEvent
 	on      map[[2]uint]SubscriptionUsage
 	total   map[uint]SubscriptionUsage
+	life    map[uint]uint64
 	traffic map[uint]Traffic
 }
 
@@ -32,12 +33,13 @@ func (f *fakeLive) NodeLive(id uint) NodeLive                       { return f.n
 func (f *fakeLive) NodeEvents(id uint) []NodeEvent                  { return f.events[id] }
 func (f *fakeLive) SubscriptionOn(sub, node uint) SubscriptionUsage { return f.on[[2]uint{sub, node}] }
 func (f *fakeLive) SubscriptionTotal(sub uint) SubscriptionUsage    { return f.total[sub] }
+func (f *fakeLive) SubscriptionLifetime(sub uint) uint64            { return f.life[sub] }
 func (f *fakeLive) Traffic(node uint) Traffic                       { return f.traffic[node] }
 
 func newFakeLive() *fakeLive {
 	return &fakeLive{
 		nodes: map[uint]NodeLive{}, events: map[uint][]NodeEvent{}, on: map[[2]uint]SubscriptionUsage{},
-		total: map[uint]SubscriptionUsage{}, traffic: map[uint]Traffic{},
+		total: map[uint]SubscriptionUsage{}, life: map[uint]uint64{}, traffic: map[uint]Traffic{},
 	}
 }
 
@@ -330,7 +332,7 @@ func TestTheNewShapesAreTheContracts(t *testing.T) {
 
 	rows := decode[[]map[string]any](t, r.get("/api/nodes/1/subscriptions"))
 	for _, row := range rows {
-		wantKeys(t, "a node's subscription", row, "id name enabled online connections lastSeenAt todayUp todayDown monthUp monthDown")
+		wantKeys(t, "a node's subscription", row, "id name enabled stopped online connections lastSeenAt todayUp todayDown monthUp monthDown")
 	}
 
 	one := decode[map[string]any](t, r.get("/api/nodes/1"))

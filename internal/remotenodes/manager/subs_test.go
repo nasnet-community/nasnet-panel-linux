@@ -87,7 +87,7 @@ func TestCreatingASubscriptionSwitchesItOnAtTheNodesNamed(t *testing.T) {
 		r.advance(2 * time.Second)
 
 		// a name with spaces round it is trimmed, and a node named twice counts once
-		v, err := r.m.CreateSubscription(context.Background(), "  Sara ", []uint{n2.ID, n1.ID, n2.ID})
+		v, err := r.m.CreateSubscription(context.Background(), "  Sara ", []uint{n2.ID, n1.ID, n2.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		if v.ID != 1 || v.Name != "Sara" || !v.CreatedAt.Equal(r.cfg.Now().UTC().Truncate(time.Second)) {
 			t.Fatalf("view = %+v", v)
@@ -137,7 +137,7 @@ func TestASubscriptionWithNoNodesIsOffEverywhere(t *testing.T) {
 		n := addNode(t, r.cfg.Store)
 		r.start()
 		defer r.stop()
-		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{})
+		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{}, api.SubscriptionLimits{})
 		must(t, err)
 		if len(v.Nodes) != 1 || v.Nodes[0].Enabled || len(r.cfg.Store.Read().Enablements) != 0 {
 			t.Errorf("view = %+v", v)
@@ -164,7 +164,7 @@ func TestAClientForANodeThatCantBeReachedComesWhenItIsBack(t *testing.T) {
 			t.Fatalf("node 2 = %+v", p)
 		}
 
-		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n1.ID, n2.ID})
+		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n1.ID, n2.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		if !v.Nodes[1].Enabled {
 			t.Errorf("the view says node 2 is off: %+v", v.Nodes)
@@ -202,7 +202,7 @@ func TestASendThatFailsIsLoggedAndTheNodeIsReconnected(t *testing.T) {
 		made, _ := r.net.opened(n.ID)
 
 		ag.setDown(true)
-		if _, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}); err != nil {
+		if _, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{}); err != nil {
 			t.Fatalf("a failed send failed the call: %v", err)
 		}
 		if r.log.count("did not go through", "node=1") != 1 {
@@ -238,7 +238,7 @@ func TestCreatingASubscriptionIsRefusedWithTheRightErrors(t *testing.T) {
 			"a control character": "Sa\x07ra", "not UTF-8": "Sa\xffra",
 		} {
 			var inv *model.InvalidError
-			if _, err := m.CreateSubscription(ctx, bad, nil); !errors.As(err, &inv) {
+			if _, err := m.CreateSubscription(ctx, bad, nil, api.SubscriptionLimits{}); !errors.As(err, &inv) {
 				t.Errorf("%s: %v, want an invalid name", name, err)
 			}
 		}
@@ -251,17 +251,17 @@ func TestCreatingASubscriptionIsRefusedWithTheRightErrors(t *testing.T) {
 		cfg, _ := baseConfig(t)
 		m, err := New(cfg)
 		must(t, err)
-		_, err = m.CreateSubscription(ctx, "Émile", nil)
+		_, err = m.CreateSubscription(ctx, "Émile", nil, api.SubscriptionLimits{})
 		must(t, err)
 		for _, again := range []string{"Émile", "émile", "ÉMILE", " émile "} {
-			if _, err := m.CreateSubscription(ctx, again, nil); !errors.Is(err, model.ErrNameTaken) {
+			if _, err := m.CreateSubscription(ctx, again, nil, api.SubscriptionLimits{}); !errors.Is(err, model.ErrNameTaken) {
 				t.Errorf("%q: %v, want the name taken", again, err)
 			}
 		}
 		// Persian has no case and still counts as one name
-		_, err = m.CreateSubscription(ctx, "علی", nil)
+		_, err = m.CreateSubscription(ctx, "علی", nil, api.SubscriptionLimits{})
 		must(t, err)
-		if _, err := m.CreateSubscription(ctx, "علی", nil); !errors.Is(err, model.ErrNameTaken) {
+		if _, err := m.CreateSubscription(ctx, "علی", nil, api.SubscriptionLimits{}); !errors.Is(err, model.ErrNameTaken) {
 			t.Errorf("a Persian name twice: %v", err)
 		}
 		if got := len(cfg.Store.Read().Subscriptions); got != 2 {
@@ -275,11 +275,11 @@ func TestCreatingASubscriptionIsRefusedWithTheRightErrors(t *testing.T) {
 		m, err := New(cfg)
 		must(t, err)
 		for i := 0; i < model.MaxSubscriptions; i++ {
-			_, err := m.CreateSubscription(ctx, fmt.Sprint("sub ", i), []uint{n.ID})
+			_, err := m.CreateSubscription(ctx, fmt.Sprint("sub ", i), []uint{n.ID}, api.SubscriptionLimits{})
 			must(t, err)
 		}
 		before := cfg.Store.Read()
-		if _, err := m.CreateSubscription(ctx, "one too many", []uint{n.ID}); !errors.Is(err, model.ErrSubscriptionLimit) {
+		if _, err := m.CreateSubscription(ctx, "one too many", []uint{n.ID}, api.SubscriptionLimits{}); !errors.Is(err, model.ErrSubscriptionLimit) {
 			t.Fatalf("the eleventh: %v", err)
 		}
 		after := cfg.Store.Read()
@@ -307,13 +307,13 @@ func TestCreatingASubscriptionIsRefusedWithTheRightErrors(t *testing.T) {
 			"a node being installed":              {[]uint{good.ID, running.ID}, jobs.ErrBusy},
 			"a node being installed, named first": {[]uint{running.ID, good.ID}, jobs.ErrBusy},
 		} {
-			_, err := m.CreateSubscription(ctx, "Sara", c.ids)
+			_, err := m.CreateSubscription(ctx, "Sara", c.ids, api.SubscriptionLimits{})
 			if !errors.Is(err, c.want) {
 				t.Errorf("%s: %v, want %v", name, err, c.want)
 			}
 		}
 		var busy *jobs.BusyError
-		if _, err := m.CreateSubscription(ctx, "Sara", []uint{running.ID}); !errors.As(err, &busy) || busy.JobID != "job-7" || busy.NodeID != running.ID {
+		if _, err := m.CreateSubscription(ctx, "Sara", []uint{running.ID}, api.SubscriptionLimits{}); !errors.As(err, &busy) || busy.JobID != "job-7" || busy.NodeID != running.ID {
 			t.Errorf("the busy error doesn't name the job: %v", err)
 		}
 		if st := cfg.Store.Read(); len(st.Subscriptions) != 0 || len(st.Enablements) != 0 || st.NextSubscriptionID != 1 {
@@ -329,9 +329,9 @@ func TestRenamingKeepsTheLinksAndTheNodesAlone(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		a, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		a, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
-		_, err = r.m.CreateSubscription(ctx, "Ali", []uint{n.ID})
+		_, err = r.m.CreateSubscription(ctx, "Ali", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		was := idOnNode(t, r.cfg.Store, a.ID, n.ID).ClientUUID
 		ag := r.net.agent(n.ID)
@@ -383,9 +383,9 @@ func TestDeletingASubscriptionTakesItOffEveryNodeAndForgetsIt(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID, n2.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID, n2.ID}, api.SubscriptionLimits{})
 		must(t, err)
-		ali, err := r.m.CreateSubscription(ctx, "Ali", []uint{n1.ID})
+		ali, err := r.m.CreateSubscription(ctx, "Ali", []uint{n1.ID}, api.SubscriptionLimits{})
 		must(t, err)
 
 		// switched off at node 2, and the client is still there: an off that
@@ -431,7 +431,7 @@ func TestDeletingASubscriptionTakesItOffEveryNodeAndForgetsIt(t *testing.T) {
 			t.Errorf("deleting it again: %v", err)
 		}
 		// ids are not handed out again
-		again, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID})
+		again, err := r.m.CreateSubscription(ctx, "Sara", []uint{n1.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		if again.ID == sara.ID {
 			t.Error("a deleted subscription's id came back")
@@ -449,7 +449,7 @@ func TestADeletedSubscriptionIsTakenOffANodeThatWasAway(t *testing.T) {
 		r.start()
 		defer r.stop()
 		ctx := context.Background()
-		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID})
+		sara, err := r.m.CreateSubscription(ctx, "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		if _, ok := holds(ag, subEmail(sara.ID)); !ok {
 			t.Fatal("the node has no client to begin with")
@@ -479,7 +479,7 @@ func TestTheViewsTheCallsReturnAreTheOnesTheListShows(t *testing.T) {
 		n := addNode(t, r.cfg.Store)
 		r.start()
 		defer r.stop()
-		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n.ID})
+		v, err := r.m.CreateSubscription(context.Background(), "Sara", []uint{n.ID}, api.SubscriptionLimits{})
 		must(t, err)
 		list, _ := api.ViewSubscription(r.cfg.Store.Read(), v.ID, r.m)
 		got, err := json.Marshal(v)

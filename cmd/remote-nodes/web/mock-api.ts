@@ -125,6 +125,17 @@ export interface MockSub {
   month: number
   /** the nodes it is switched on for */
   on: Set<number>
+  /** the traffic limit in bytes, 0 for none; `used` is what it has moved since its count was reset */
+  limit: number
+  used: number
+  /** when it ends, if it does */
+  endsAt: number | null
+}
+
+/** Why the hub keeps a subscription off the nodes, if it does: the date wins over the limit. */
+export function stoppedOf(s: MockSub, now = Date.now()): 'limit' | 'expired' | '' {
+  if (s.endsAt !== null && s.endsAt <= now) return 'expired'
+  return s.limit > 0 && s.used >= s.limit ? 'limit' : ''
 }
 
 const split = (total: number) => {
@@ -200,7 +211,8 @@ export const event = (n: MockNode, kind: string, detail = '', at = Date.now()) =
 }
 
 function sub(name: string, o: Partial<MockSub> = {}): MockSub {
-  return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month: 0, on: new Set(), ...o }
+  const month = o.month ?? 0
+  return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month, on: new Set(), limit: 0, used: month, endsAt: null, ...o }
 }
 
 function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean } = {}) {
@@ -256,7 +268,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   }
 
   const names: [string, number[], Partial<MockSub>][] = [
-    ['Sara', [1, 2], { onlineOn: 1, conns: 3, lastSeen: now, today: 1.2 * GB, month: 38 * GB }],
+    ['Sara', [1, 2], { onlineOn: 1, conns: 3, lastSeen: now, today: 1.2 * GB, month: 38 * GB, limit: 100 * GB, used: 62 * GB, endsAt: now + 41 * DAY }],
     ['Ali', [1], { onlineOn: 1, conns: 2, lastSeen: now, today: 640 * MB, month: 21 * GB }],
     ['Reza', [1, 2], { onlineOn: 1, conns: 4, lastSeen: now, today: 1.9 * GB, month: 52 * GB }],
     ['Mina', [1], { lastSeen: now - 3 * H, today: 310 * MB, month: 9.4 * GB }],
@@ -442,6 +454,7 @@ function nodeSubView(s: MockSub, n: MockNode): NodeSubscription {
     id: s.id,
     name: s.name,
     enabled,
+    stopped: stoppedOf(s),
     online: enabled && known ? online : null,
     connections: enabled && known ? (online ? s.conns : 0) : null,
     lastSeenAt: s.lastSeen ? iso(s.lastSeen) : null,
@@ -460,6 +473,10 @@ function subView(s: MockSub): Subscription {
     id: s.id,
     name: s.name,
     createdAt: iso(s.createdAt),
+    trafficLimit: s.limit,
+    trafficUsed: s.used,
+    expiresAt: s.endsAt === null ? null : iso(s.endsAt),
+    stopped: stoppedOf(s),
     online: registered.some((n) => !n.down) ? s.onlineOn !== null : null,
     lastSeenAt: s.lastSeen ? iso(s.lastSeen) : null,
     todayUp: t.up,
