@@ -343,3 +343,68 @@ func TestADeletedSubscriptionNeedsNoLimitCheck(t *testing.T) {
 		}
 	})
 }
+
+func TestABackupTakesWhatEachSubscriptionUsedWithIt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		a, mtA, n := limitsRig(t)
+		defer a.stop()
+		near := a.subscribe(t, n, "Sara", api.SubscriptionLimits{TrafficLimit: 1000})
+		over := a.subscribe(t, n, "Ali", api.SubscriptionLimits{TrafficLimit: 1000})
+		// Sara was reset once at 300 and has used 600 since; Ali is past his limit
+		mtA.set(near, 300, 0)
+		_, err := a.m.ResetUsage(ctx, near)
+		must(t, err)
+		mtA.set(near, 500, 400)
+		mtA.set(over, 900, 300)
+		a.advance(30 * time.Second)
+		if a.stopped(over) != model.StopLimit || a.stopped(near) != "" {
+			t.Fatalf("before the backup: Sara %q, Ali %q", a.stopped(near), a.stopped(over))
+		}
+		_, file, err := a.m.ExportBackup(ctx, backupPass)
+		must(t, err)
+		// the live state keeps its own numbers: only the file carries them
+		if st := a.cfg.Store.Read(); st.FindSubscription(near).TrafficCarried != 0 || st.FindSubscription(near).TrafficBase != 300 {
+			t.Errorf("the export changed the live state: %+v", *st.FindSubscription(near))
+		}
+
+		// a fresh install, whose counters start at zero
+		mtB := &meter{moved: map[uint]usage.Totals{}}
+		b := newRig(t, func(c *Config) { mtB.Usage = c.Usage; c.Usage = mtB })
+		_, err = b.m.ImportBackup(ctx, backupPass, file)
+		must(t, err)
+		b.start()
+		defer b.stop()
+		b.advance(30 * time.Second)
+
+		v, err := b.m.subscriptionView(near)
+		must(t, err)
+		if v.TrafficUsed != 600 || v.Stopped != "" {
+			t.Errorf("Sara after the restore: used %d (want 600), stopped %q", v.TrafficUsed, v.Stopped)
+		}
+		if v, _ := b.m.subscriptionView(over); v.TrafficUsed != 1200 || v.Stopped != model.StopLimit {
+			t.Errorf("Ali after the restore: used %d (want 1200), stopped %q", v.TrafficUsed, v.Stopped)
+		}
+		// what it moves here adds to what it brought, and the limit is met where it would have been
+		mtB.set(near, 300, 50) // 600 brought + 350 here = 950 of 1000
+		b.advance(30 * time.Second)
+		if b.stopped(near) != "" {
+			t.Errorf("Sara at 950 of 1000 is %q", b.stopped(near))
+		}
+		mtB.set(near, 300, 150) // 600 + 450 = 1050
+		b.advance(30 * time.Second)
+		if b.stopped(near) != model.StopLimit {
+			t.Errorf("Sara at 1050 of 1000 is %q, want stopped for her limit", b.stopped(near))
+		}
+		// a reset counts from the restored total too
+		v, err = b.m.ResetUsage(ctx, near)
+		must(t, err)
+		if v.TrafficUsed != 0 || v.Stopped != "" {
+			t.Errorf("after a reset: %+v", v)
+		}
+		mtB.set(near, 300, 160)
+		if v, _ := b.m.subscriptionView(near); v.TrafficUsed != 10 {
+			t.Errorf("10 bytes after the reset read as %d", v.TrafficUsed)
+		}
+	})
+}

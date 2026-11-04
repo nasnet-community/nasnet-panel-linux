@@ -321,12 +321,17 @@ func expiry(sub model.Subscription) *time.Time {
 }
 
 // TrafficUsed is what a subscription has moved since its count was last reset,
-// given everything it has moved in all.
+// given everything it has moved in all on this install. What it brought from
+// a backup counts as moved here.
 func TrafficUsed(sub model.Subscription, lifetime uint64) uint64 {
-	if lifetime <= sub.TrafficBase {
+	total := lifetime + sub.TrafficCarried
+	if total < lifetime {
+		total = ^uint64(0)
+	}
+	if total <= sub.TrafficBase {
 		return 0
 	}
-	return lifetime - sub.TrafficBase
+	return total - sub.TrafficBase
 }
 
 func subscriptionViews(st model.State, live Live) []Subscription {

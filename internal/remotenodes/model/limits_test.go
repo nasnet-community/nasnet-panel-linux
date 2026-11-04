@@ -63,7 +63,7 @@ func TestASubscriptionsLimitsAreChecked(t *testing.T) {
 func TestLimitsSurviveTheFileAndAnOlderFileHasNone(t *testing.T) {
 	s := NewState()
 	end := time.Date(2027, 1, 2, 3, 4, 5, 0, time.UTC)
-	if _, err := s.AddSubscription(Subscription{Name: "Sara", CreatedAt: time.Now(), TrafficLimit: 5 << 30, TrafficBase: 1 << 20, ExpiresAt: end, Stopped: StopLimit}); err != nil {
+	if _, err := s.AddSubscription(Subscription{Name: "Sara", CreatedAt: time.Now(), TrafficLimit: 5 << 30, TrafficBase: 1 << 20, TrafficCarried: 7 << 20, ExpiresAt: end, Stopped: StopLimit}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := Encode(s)
@@ -75,7 +75,7 @@ func TestLimitsSurviveTheFileAndAnOlderFileHasNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	sub := got.Subscriptions[0]
-	if sub.TrafficLimit != 5<<30 || sub.TrafficBase != 1<<20 || !sub.ExpiresAt.Equal(end) || sub.Stopped != StopLimit {
+	if sub.TrafficLimit != 5<<30 || sub.TrafficBase != 1<<20 || sub.TrafficCarried != 7<<20 || !sub.ExpiresAt.Equal(end) || sub.Stopped != StopLimit {
 		t.Errorf("the subscription came back as %+v", sub)
 	}
 
@@ -88,7 +88,7 @@ func TestLimitsSurviveTheFileAndAnOlderFileHasNone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"traffic_limit", "traffic_base", "expires_at", "stopped"} {
+	for _, key := range []string{"traffic_limit", "traffic_base", "traffic_carried", "expires_at", "stopped"} {
 		if strings.Contains(string(b), key) {
 			t.Errorf("a plain subscription's file has %q", key)
 		}

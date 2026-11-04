@@ -43,6 +43,13 @@ func (m *Manager) ExportBackup(ctx context.Context, passphrase string) (name str
 		return "", nil, &model.InvalidError{Msg: "there is no certificate authority yet, so there is nothing to back up"}
 	}
 	st.LastBackupAt = at
+	// The usage counters live beside the state, not in it, and an install the
+	// file is restored on starts them at zero: each subscription takes what it
+	// has used with it, so its limit goes on from there.
+	for i := range st.Subscriptions {
+		sub := &st.Subscriptions[i]
+		sub.TrafficCarried, sub.TrafficBase = m.trafficUsed(*sub), 0
+	}
 	snapshot, err := model.Encode(st)
 	if err != nil {
 		return "", nil, err

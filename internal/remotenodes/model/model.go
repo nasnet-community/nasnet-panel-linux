@@ -169,8 +169,13 @@ type Subscription struct {
 	// on every node, since the count was last reset. Zero means no limit.
 	TrafficLimit uint64 `json:"traffic_limit,omitempty"`
 	// TrafficBase is what the subscription had moved in all when its count was
-	// last reset. What it has used is the total now minus this.
+	// last reset. What it has used is the total now, plus TrafficCarried, minus
+	// this.
 	TrafficBase uint64 `json:"traffic_base,omitempty"`
+	// TrafficCarried is what it had used when the backup it was restored from
+	// was made. A restored install counts from zero, so without it a limit
+	// would start again from nothing.
+	TrafficCarried uint64 `json:"traffic_carried,omitempty"`
 	// ExpiresAt is when the subscription stops working. Zero means never.
 	ExpiresAt time.Time `json:"expires_at,omitzero"`
 	// Stopped is why the hub took the subscription off the nodes: StopLimit or

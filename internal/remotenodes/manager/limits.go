@@ -232,7 +232,7 @@ func (m *Manager) ResetUsage(ctx context.Context, id uint) (api.Subscription, er
 		}
 		was = sub.Stopped
 		t := m.cfg.Usage.SubscriptionLifetime(id)
-		sub.TrafficBase = sat(t.Up, t.Down)
+		sub.TrafficBase = sat(sat(t.Up, t.Down), sub.TrafficCarried)
 		sub.Stopped = sub.StopReason(0, m.now())
 		return nil
 	})
