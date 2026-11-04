@@ -14,6 +14,7 @@ import {
   Download as LDownload,
   Ellipsis as LEllipsis,
   ExternalLink as LExternalLink,
+  Gauge as LGauge,
   History as LHistory,
   Info as LInfo,
   KeyRound as LKeyRound,
@@ -23,6 +24,7 @@ import {
   Plus as LPlus,
   QrCode as LQrCode,
   RefreshCw as LRefreshCw,
+  RotateCcw as LRotateCcw,
   Sun as LSun,
   Trash2 as LTrash2,
   TriangleAlert as LTriangleAlert,
@@ -48,6 +50,7 @@ export const Copy = panel(LCopy)
 export const Download = panel(LDownload)
 export const Ellipsis = panel(LEllipsis)
 export const ExternalLink = panel(LExternalLink)
+export const Gauge = panel(LGauge)
 export const History = panel(LHistory)
 export const Info = panel(LInfo)
 export const KeyRound = panel(LKeyRound)
@@ -57,6 +60,7 @@ export const Pencil = panel(LPencil)
 export const Plus = panel(LPlus)
 export const QrCode = panel(LQrCode)
 export const RefreshCw = panel(LRefreshCw)
+export const RotateCcw = panel(LRotateCcw)
 export const Sun = panel(LSun)
 export const Trash2 = panel(LTrash2)
 export const TriangleAlert = panel(LTriangleAlert)

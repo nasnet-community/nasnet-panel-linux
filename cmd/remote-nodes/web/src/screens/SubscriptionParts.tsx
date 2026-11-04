@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Ellipsis, Info, Pencil, Plus, QrCode as QrIcon, Trash2, Users } from '../components/icons'
+import { Ellipsis, Gauge, Info, Pencil, Plus, QrCode as QrIcon, RotateCcw, Trash2, Users } from '../components/icons'
 import { Badge, Button, Card, Menu, btn, cx, type Tone } from '../components/ui'
 import { useNow } from '../hooks/usePoll'
 import { useLang } from '../i18n'
-import type { NodeInfo, Status, StatusKey } from '../lib/subscriptions'
+import type { Subscription } from '../lib/api'
+import { expiryText, quotaTone, usedPercent, type NodeInfo, type Status, type StatusKey } from '../lib/subscriptions'
 
 /** One number of the row above a list, with what it is and a small line under it. */
 export function Tile({ label, value, unit, sub }: { label: string; value: ReactNode; unit?: string; sub: string }) {
@@ -38,7 +39,7 @@ export function Updated({ at }: { at: number | null }) {
   return <span className="text-xs text-faint">{at ? t('subs.updated', { ago: fmt.secondsAgo(new Date(at).toISOString(), now) }) : null}</span>
 }
 
-const TONE: Record<StatusKey, Tone> = { online: 'online', active: 'active', off: 'muted', unknown: 'muted' }
+const TONE: Record<StatusKey, Tone> = { online: 'online', active: 'active', off: 'muted', unknown: 'muted', limit: 'warn', expired: 'warn' }
 
 export const StatusBadge = ({ status }: { status: Status }) => <Badge tone={TONE[status.key]}>{status.label}</Badge>
 
@@ -77,6 +78,9 @@ export interface RowActions {
   share: () => void
   rename: () => void
   remove: () => void
+  /** the limits and the usage count belong to the subscription, so only its own list has these two */
+  quota?: () => void
+  reset?: () => void
 }
 
 /** The "…" menu of a row. `shareOff` is why Share link doesn't work, when it doesn't. */
@@ -88,7 +92,9 @@ export function RowMenu({ name, shareOff, actions }: { name: string; shareOff: s
       variant="ghost"
       items={[
         { label: t('subs.menu.share'), icon: <QrIcon />, disabled: !!shareOff, hint: shareOff ?? undefined, onSelect: actions.share },
+        ...(actions.quota ? [{ label: t('subs.menu.quota'), icon: <Gauge />, onSelect: actions.quota }] : []),
         { label: t('subs.menu.rename'), icon: <Pencil />, onSelect: actions.rename },
+        ...(actions.reset ? [{ label: t('subs.menu.reset'), icon: <RotateCcw />, onSelect: actions.reset }] : []),
         { label: t('subs.menu.delete'), icon: <Trash2 />, danger: true, divide: true, onSelect: actions.remove },
       ]}
     >
@@ -148,5 +154,37 @@ export function EmptyState({ noNodes, onAdd }: { noNodes: boolean; onAdd: () => 
         <Plus className="h-4 w-4" /> {t('subs.addFirst')}
       </Button>
     </Card>
+  )
+}
+
+const BAR: Record<ReturnType<typeof quotaTone>, string> = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-bad' }
+
+/** A thin bar for how much of a limit is used. */
+function Meter({ pct, label }: { pct: number; label: string }) {
+  return (
+    <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} className="h-1.5 w-full overflow-hidden rounded-full bg-track">
+      <div className={cx('h-full rounded-full', BAR[quotaTone(pct)])} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+/** A subscription's limits at a glance: how much of the traffic limit it used, and when it ends. */
+export function QuotaCell({ s, className }: { s: Subscription; className?: string }) {
+  const { t, fmt } = useLang()
+  const now = useNow(60000)
+  const pct = usedPercent(s.trafficUsed, s.trafficLimit)
+  const ends = expiryText(t, fmt, s.expiresAt, now)
+  return (
+    <div className={cx('flex min-w-[9.5rem] flex-col gap-1', className)}>
+      {s.trafficLimit > 0 ? (
+        <>
+          <span className="tabular text-[13px]">{t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) })}</span>
+          <Meter pct={pct} label={t('subs.quota.traffic')} />
+        </>
+      ) : (
+        <span className="text-xs text-faint">{t('subs.quota.none')}</span>
+      )}
+      <span className={cx('text-xs', s.stopped === 'expired' ? 'text-warn-text' : 'text-faint')}>{ends || t('subs.quota.noEnd')}</span>
+    </div>
   )
 }
