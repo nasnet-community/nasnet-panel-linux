@@ -90,6 +90,9 @@ const EVENT_KEYS = [
   'cert_renewed',
   'subscription_on',
   'subscription_off',
+  'subscription_limit',
+  'subscription_expired',
+  'subscription_resumed',
   'keys_rotated',
   'xray_restarted',
 ]

@@ -52,7 +52,7 @@ export function lastSeen(t: T, fmt: Format, iso: string | null, now = Date.now()
   return t('subs.sub.lastSeen', { ago: fmt.relative(iso, now) })
 }
 
-export type StatusKey = 'online' | 'active' | 'off' | 'unknown'
+export type StatusKey = 'online' | 'active' | 'off' | 'unknown' | 'limit' | 'expired'
 
 export interface Status {
   key: StatusKey
@@ -67,6 +67,8 @@ const WORD: Record<StatusKey, MsgKey> = {
   active: 'subs.status.active',
   off: 'subs.status.off',
   unknown: 'subs.status.unknown',
+  limit: 'subs.status.limit',
+  expired: 'subs.status.expired',
 }
 
 /**
@@ -75,6 +77,9 @@ const WORD: Record<StatusKey, MsgKey> = {
  */
 export function subscriptionStatus(s: Subscription, nodes: NodeInfo[], t: T, fmt: Format, lang: Lang, now = Date.now()): Status {
   const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
+  // stopped by the hub: it says more than "off", and the switches are still as they were
+  if (s.stopped === 'limit') return status('limit', t('subs.sub.limitUsed', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }))
+  if (s.stopped === 'expired') return status('expired', s.expiresAt ? t('subs.sub.expiredOn', { date: fmt.date(s.expiresAt) }) : '')
   if (!s.nodes.some((n) => n.enabled)) return status('off', t('subs.sub.offEvery'))
   if (s.online === true) {
     const where = s.nodes
@@ -91,6 +96,7 @@ export function subscriptionStatus(s: Subscription, nodes: NodeInfo[], t: T, fmt
 export function nodeSubscriptionStatus(s: NodeSubscription, t: T, fmt: Format, now = Date.now()): Status {
   const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
   if (!s.enabled) return status('off', t('subs.sub.offHere'))
+  if (s.stopped === 'limit' || s.stopped === 'expired') return status(s.stopped, '')
   if (s.online === true) return status('online', t('subs.sub.connections', { n: s.connections ?? 0 }))
   if (s.online === false) return status('active', lastSeen(t, fmt, s.lastSeenAt, now))
   return status('unknown', s.lastSeenAt ? t('subs.sub.nodeDown') : t('subs.sub.never'))
@@ -134,3 +140,82 @@ export const portableLink = (vless: string) =>
       return '%EF%BF%BD'
     }
   })
+
+// --- limits and expiry ------------------------------------------------------------
+
+/** What the page shows sizes in: 1 GB is a billion bytes, as in fmt.bytes. */
+const GB = 1e9
+
+/** The largest limit the field takes, in GB. The hub's own largest is 1 PiB. */
+export const MAX_LIMIT_GB = 1_000_000
+
+/** A limit in bytes as the field shows it: "50", "0.5", "12.345". */
+export const limitText = (bytes: number): string => (bytes > 0 ? String(Number((bytes / GB).toPrecision(6))) : '')
+
+/**
+ * What a limit field holds, in bytes: null for an empty field (no limit), undefined when the text is
+ * not a number of gigabytes above zero. A comma works as the decimal point.
+ */
+export function parseLimit(text: string): number | null | undefined {
+  const raw = text.trim().replace(',', '.')
+  if (raw === '') return null
+  if (!/^\d*\.?\d+$|^\d+\.$/.test(raw)) return undefined
+  const gb = Number(raw)
+  if (!Number.isFinite(gb) || gb <= 0 || gb > MAX_LIMIT_GB) return undefined
+  return Math.max(1, Math.round(gb * GB))
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const dayOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+/** The day an instant falls on in the person's own zone, as a date field holds it: "2027-01-31". */
+export const localDay = (iso: string): string => dayOf(new Date(iso))
+
+/** Today's day in the person's zone, for the date field's earliest choice. */
+export const today = (now = Date.now()): string => dayOf(new Date(now))
+
+/** A subscription ends with the day it is given: 23:59:59 in the person's zone, as an instant. Empty for no end. */
+export function endOfDay(day: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  if (!m) return null
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59)
+  // a day that doesn't exist (the 31st of February) rolls over, and is not what was asked
+  return dayOf(d) === day ? d.toISOString() : null
+}
+
+/** How full a limit is, 0 to 100, rounded down so "100%" means it is reached. */
+export const usedPercent = (used: number, limit: number): number => (limit > 0 ? Math.min(100, Math.floor((used / limit) * 100)) : 0)
+
+/** The colour of a limit's bar: calm, then a warning at 80%, then red at the limit. */
+export const quotaTone = (pct: number): 'ok' | 'warn' | 'bad' => (pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : 'ok')
+
+/** "Expires 5 Dec 2026 · in 12 days", or "Expired 5 Dec 2026"; empty with no end date. */
+export function expiryText(t: T, fmt: Format, iso: string | null, now = Date.now()): string {
+  if (!iso) return ''
+  if (Date.parse(iso) <= now) return t('subs.quota.expiredOn', { date: fmt.date(iso) })
+  return t('subs.quota.expiresIn', { date: fmt.date(iso), when: fmt.relative(iso, now) })
+}
+
+/** What the two limit fields hold. `limit` is bytes and `expiresAt` an instant; null is "none". A bad field is flagged and read as none. */
+export interface QuotaRead {
+  limit: number | null
+  expiresAt: string | null
+  badLimit: boolean
+  badDate: boolean
+}
+
+/** Reads the traffic limit field (in GB) and the date field. A date has to be a day that hasn't passed. */
+export function readQuota(gb: string, day: string, now = Date.now()): QuotaRead {
+  const parsed = parseLimit(gb)
+  const badLimit = parsed === undefined
+  let expiresAt: string | null = null
+  let badDate = false
+  if (day !== '') {
+    expiresAt = endOfDay(day)
+    if (expiresAt === null || Date.parse(expiresAt) <= now) {
+      expiresAt = null
+      badDate = true
+    }
+  }
+  return { limit: parsed ?? null, expiresAt, badLimit, badDate }
+}
