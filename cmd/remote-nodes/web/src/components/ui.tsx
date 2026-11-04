@@ -67,7 +67,7 @@ export function Button({ variant, size, busy = false, className, children, disab
   )
 }
 
-const FIELD = 'w-full rounded-md border border-border-strong bg-surface text-foreground placeholder:text-faint focus:outline focus:outline-2 focus:outline-accent disabled:opacity-60'
+export const FIELD = 'w-full rounded-md border border-border-strong bg-surface text-foreground placeholder:text-faint focus:outline focus:outline-2 focus:outline-accent disabled:opacity-60'
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx(FIELD, 'h-11 px-3 sm:h-9', className)} {...rest} />

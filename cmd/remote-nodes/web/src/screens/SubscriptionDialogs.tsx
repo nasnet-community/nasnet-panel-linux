@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { DatePicker } from '../components/DatePicker'
 import { RotateCcw } from '../components/icons'
 import { Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
@@ -121,7 +122,7 @@ function QuotaFields({
       </Field>
       <div className="flex flex-col gap-1.5">
         <Field label={t('subs.quota.date')} hint={t('subs.quota.dateHint')} error={dateError}>
-          {(p) => <Input {...p} type="date" dir="ltr" min={today()} value={form.day} onChange={(e) => onChange({ ...form, day: e.target.value })} />}
+          {(p) => <DatePicker {...p} value={form.day} min={today()} placeholder={t('subs.quota.noEnd')} onChange={(day) => onChange({ ...form, day })} />}
         </Field>
         {/* the usual terms, a click each: from the date set, or from today once it has passed */}
         <div role="group" aria-label={t('subs.quota.presets')} className="flex flex-wrap gap-1.5">
