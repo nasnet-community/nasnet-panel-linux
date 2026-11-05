@@ -23,6 +23,7 @@ export {
     useNodeStatsHistory,
     useNodeSparkline,
     useNodesStatsHistoryBulk,
+    useNodesDigest,
     sparklineFromBulk,
     useNodeHostInfo,
     useNodeInbounds,

@@ -22,6 +22,8 @@ export interface Node {
     is_persistent_stealth?: boolean
     is_active: boolean
     is_online: boolean
+    /** Someone stopped Xray on purpose; the agent won't restart it. */
+    xray_stopped?: boolean
     last_check: string
     /** Last recorded outage start; absent means no outage on record. */
     last_disconnected_at?: string | null
@@ -99,6 +101,26 @@ export interface NodeStats {
     reading_age_ms?: number
     /** Client-side: when this browser learned of the readings (its own clock). */
     received_at?: number
+}
+
+/** What the Nodes list shows for one node beyond its live stats (GET /nodes/digest). */
+export interface NodeDigest {
+    today: { uplink: number; downlink: number; peak_bps: number }
+    /** The previous UTC day's up+down bytes. */
+    yesterday: number
+    config_state: "in_sync" | "drifted" | "unknown"
+    /** Trailing run of one-minute CPU averages, oldest first; a gap ends it. */
+    cpu_recent: number[]
+    /** Last 24 hours in 15-minute buckets: average up+down bytes/s, peak users. */
+    series: { t: number; bps: number; users: number }[]
+    uptime: {
+        /** UTC days, oldest first; today so far is the last one. */
+        days: { date: string; observed_sec: number; downtime_sec: number; planned_sec: number; outages: number }[]
+        pct: number
+        outages: number
+    }
+    /** A down node's last known readings. */
+    last?: NodeStats
 }
 
 /** One fixed-width bucket of recorded stats; `t` is its start in unix seconds. */

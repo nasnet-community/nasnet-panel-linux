@@ -9,6 +9,9 @@ interface NodesState {
 
     // Bulk selection. We keep the Set as the source of truth; the setter
     // clones it so React picks up the change (Zustand compares by reference).
+    // Select mode is on from the Select button (or a long-press) until Done,
+    // so it can be on with nothing picked yet.
+    selectMode: boolean
     selectedIds: Set<number>
     lastSelectedId: number | null
 
@@ -35,6 +38,8 @@ interface NodesState {
     resetNewNode: () => void
 
     // Bulk selection actions
+    startSelecting: (nodeId?: number) => void
+    stopSelecting: () => void
     toggleSelected: (nodeId: number) => void
     selectRange: (fromId: number, toId: number, orderedIds: number[]) => void
     setSelected: (ids: number[]) => void
@@ -59,6 +64,7 @@ export const useNodesStore = create<NodesState>((set, get) => ({
     deployDialogOpen: false,
     selectedDeployNodeId: null,
     checkingHealthId: null,
+    selectMode: false,
     selectedIds: new Set<number>(),
     lastSelectedId: null,
     newNode: defaultNewNode,
@@ -73,6 +79,13 @@ export const useNodesStore = create<NodesState>((set, get) => ({
     })),
     resetNewNode: () => set({ newNode: defaultNewNode }),
 
+    startSelecting: (nodeId) => set((state) => {
+        if (nodeId === undefined) return { selectMode: true }
+        const next = new Set(state.selectedIds)
+        next.add(nodeId)
+        return { selectMode: true, selectedIds: next, lastSelectedId: nodeId }
+    }),
+    stopSelecting: () => set({ selectMode: false, selectedIds: new Set<number>(), lastSelectedId: null }),
     toggleSelected: (nodeId) => set((state) => {
         const next = new Set(state.selectedIds)
         if (next.has(nodeId)) {

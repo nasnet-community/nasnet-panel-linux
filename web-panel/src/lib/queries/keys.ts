@@ -30,6 +30,7 @@ export const queryKeys = {
     // Prefix matcher for all bulk-stats variants (different sorted id lists).
     nodeStatsBulkAll: () => [...queryKeys.nodes, 'stats_bulk'] as const,
     nodeStatsHistory: (id: number) => [...queryKeys.nodes, 'stats_history', id] as const,
+    nodeDigest: () => [...queryKeys.nodes, 'digest'] as const,
     nodeStatsHistoryBulk: (ids?: number[], limit?: number) =>
         [...queryKeys.nodes, 'stats_history_bulk', ids ?? 'all', limit ?? 'default'] as const,
     nodeStatsHistoryBulkAll: () => [...queryKeys.nodes, 'stats_history_bulk'] as const,

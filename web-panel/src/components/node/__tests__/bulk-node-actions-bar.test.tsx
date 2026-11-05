@@ -32,13 +32,14 @@ const nodes = [
 
 beforeEach(() => {
     vi.clearAllMocks()
-    useNodesStore.getState().clearSelection()
+    useNodesStore.getState().stopSelecting()
     agentDue = { "1": true, "2": false }
 })
 
 describe("BulkNodeActionsBar", () => {
     it("updates Xray on the full nodes only", async () => {
         const user = userEvent.setup()
+        useNodesStore.getState().startSelecting()
         useNodesStore.getState().setSelected([1, 4])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Update Xray/ })[0])
@@ -47,6 +48,7 @@ describe("BulkNodeActionsBar", () => {
 
     it("leaves MTProto nodes out of the Xray actions", async () => {
         const user = userEvent.setup()
+        useNodesStore.getState().startSelecting()
         useNodesStore.getState().setSelected([1, 4])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Restart Xray/ })[0])
@@ -56,6 +58,7 @@ describe("BulkNodeActionsBar", () => {
     })
 
     it("disables the Xray actions when only MTProto nodes are selected", () => {
+        useNodesStore.getState().startSelecting()
         useNodesStore.getState().setSelected([4])
         render(<BulkNodeActionsBar />)
         for (const b of screen.getAllByRole("button", { name: /Restart Xray|Push Config|Update Xray/i })) {
@@ -65,6 +68,7 @@ describe("BulkNodeActionsBar", () => {
 
     it("updates agents only where the panel ships a new one", async () => {
         const user = userEvent.setup()
+        useNodesStore.getState().startSelecting()
         useNodesStore.getState().setSelected([1, 2, 4])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Update Agent/i })[0])
@@ -73,6 +77,7 @@ describe("BulkNodeActionsBar", () => {
 
     it("turns the agent update off when the selected nodes run the panel's agent", () => {
         agentDue = { "1": false, "2": false }
+        useNodesStore.getState().startSelecting()
         useNodesStore.getState().setSelected([1, 2])
         render(<BulkNodeActionsBar />)
         for (const b of screen.getAllByRole("button", { name: /Update Agent/i })) {

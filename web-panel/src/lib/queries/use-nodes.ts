@@ -14,6 +14,7 @@ import {
     getNodeUptimeSummary,
     getHubGaps,
     getNodesStatsBulk,
+    getNodesDigest,
     getNodesStatsHistoryBulk,
     getNodeHostInfo,
     getNodeStatsHistory,
@@ -68,7 +69,8 @@ import { toast } from "@/lib/toast"
 
 // List all nodes. Only the nodes list page polls (`poll`); everywhere else
 // the list is read once and kept fresh by node events.
-export function useNodes(enabled = true, { poll = false }: { poll?: boolean } = {}) {
+/** `poll` true follows the auto-refresh setting; a number polls at that many ms. */
+export function useNodes(enabled = true, { poll = false }: { poll?: boolean | number } = {}) {
     const refreshInterval = useRefreshInterval()
     return useQuery({
         queryKey: queryKeys.nodeList(),
@@ -78,8 +80,26 @@ export function useNodes(enabled = true, { poll = false }: { poll?: boolean } = 
             if (!res.success) throw new Error(res.error || "Failed to fetch nodes")
             return res.data || []
         },
-        refetchInterval: poll ? refreshInterval : false,
+        refetchInterval: typeof poll === "number" ? poll : poll ? refreshInterval : false,
         refetchIntervalInBackground: false,
+    })
+}
+
+/**
+ * Every node's digest for the Nodes list. Under `nodes`, so the SSE
+ * online/offline invalidation refreshes it; the panel caches it for 75s.
+ */
+export function useNodesDigest(enabled = true) {
+    return useQuery({
+        queryKey: queryKeys.nodeDigest(),
+        queryFn: async () => {
+            const res = await getNodesDigest()
+            if (!res.success) throw new Error(res.error || "Failed to fetch node digests")
+            return res.data || {}
+        },
+        enabled,
+        staleTime: 30 * 1000,
+        refetchInterval: 60 * 1000,
     })
 }
 
@@ -175,26 +195,48 @@ export function useNodeOverview(id: number, enabled = true) {
 // Stats for many nodes in one request (no ids = all). Fans out each entry
 // into the per-node nodeStats(id) cache so detail sheet / /nodes/:id
 // renders instantly. SSE drives freshness; 60s poll is dropped-event fallback.
-export function useNodesStatsBulk(ids?: number[], enabled = true) {
+export function useNodesStatsBulk(ids?: number[], enabled = true, refetchInterval = 60 * 1000) {
     const queryClient = useQueryClient()
     const stableIds = ids && ids.length > 0 ? [...ids].sort((a, b) => a - b) : undefined
     return useQuery({
         queryKey: queryKeys.nodeStatsBulk(stableIds),
         queryFn: async (): Promise<NodeStatsBulkMap> => {
-            const res = await getNodesStatsBulk(stableIds)
-            if (!res.success) throw new Error(res.error || "Failed to fetch bulk node stats")
-            const data = res.data || {}
+            const key = queryKeys.nodeStatsBulk(stableIds)
+            const previous = queryClient.getQueryData<NodeStatsBulkMap>(key) || {}
+            let data: NodeStatsBulkMap
+            try {
+                const res = await getNodesStatsBulk(stableIds)
+                if (!res.success) throw new Error(res.error || "Failed to fetch bulk node stats")
+                data = res.data || {}
+            } catch (error) {
+                if (!Object.keys(previous).length) throw error
+                data = Object.fromEntries(Object.keys(previous).map(id => [id, { error: "Stats unavailable" }]))
+            }
             for (const idStr in data) {
                 const entry = data[idStr]
                 if (entry?.stats) {
+                    // Both copies carry when this browser got the reading, from
+                    // the hub-measured age (see useNodeStats).
+                    const age = entry.stats.reading_age_ms
+                    entry.stats = {
+                        ...entry.stats,
+                        stats_unavailable: entry.stats.stats_unavailable === true,
+                        received_at: age != null ? Date.now() - age : undefined,
+                    }
                     queryClient.setQueryData(queryKeys.nodeStats(Number(idStr)), entry.stats)
+                } else if (entry?.error) {
+                    const last = queryClient.getQueryData<NodeStats>(queryKeys.nodeStats(Number(idStr))) || previous[idStr]?.stats
+                    if (last) {
+                        entry.stats = { ...last, stats_unavailable: true }
+                        queryClient.setQueryData(queryKeys.nodeStats(Number(idStr)), entry.stats)
+                    }
                 }
             }
             return data
         },
         enabled,
         staleTime: 15 * 1000,
-        refetchInterval: 60 * 1000,
+        refetchInterval,
     })
 }
 

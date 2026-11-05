@@ -16,10 +16,11 @@ import { BulkXrayVersionDialog } from "@/components/node/bulk-xray-version-dialo
 import { BulkAgentUpdateDialog } from "@/components/node/bulk-agent-update-dialog"
 import { useAgentUpdates } from "@/lib/queries/use-bulk-agent-update"
 
-// BulkNodeActionsBar is a floating bar rendered only while at least one
-// node is selected. It reads selection from the Zustand store directly so
-// the parent page doesn't need to re-render when the selection changes.
+// BulkNodeActionsBar floats over the Nodes list while select mode is on.
+// It reads selection from the Zustand store directly so the parent page
+// doesn't need to re-render when the selection changes.
 export function BulkNodeActionsBar() {
+    const selectMode = useNodesStore((s) => s.selectMode)
     const selectedIds = useNodesStore((s) => s.selectedIds)
     const clearSelection = useNodesStore((s) => s.clearSelection)
     const confirm = useConfirm()
@@ -31,7 +32,7 @@ export function BulkNodeActionsBar() {
     const [agentTargets, setAgentTargets] = useState<number[] | null>(null)
 
     const count = selectedIds.size
-    const anyPending = restartMut.isPending || pushMut.isPending || healthMut.isPending || agentTargets !== null
+    const anyPending = count === 0 || restartMut.isPending || pushMut.isPending || healthMut.isPending || agentTargets !== null
 
     const ids = useCallback(() => Array.from(selectedIds), [selectedIds])
     // The built-in node updates with the panel; restarting it drops LAN clients.
@@ -43,13 +44,14 @@ export function BulkNodeActionsBar() {
     const xrayIds = useCallback(() => Array.from(selectedIds).filter((id) => !liteIds.has(id)), [selectedIds, liteIds])
     const xrayCount = Array.from(selectedIds).filter((id) => !liteIds.has(id)).length
     const xrayDisabled = anyPending || xrayCount === 0
-    const xrayTitle = xrayCount === 0 ? "MTProto nodes run no Xray" : undefined
+    const xrayTitle = count > 0 && xrayCount === 0 ? "MTProto nodes run no Xray" : undefined
     // only nodes the panel ships a different agent for; the rest have nothing to take
     const { data: agentDue } = useAgentUpdates(count > 0)
     const remoteIds = useCallback(() => xrayIds().filter((id) => id !== localId), [xrayIds, localId])
     const agentIds = useCallback(() => remoteIds().filter((id) => agentDue?.[String(id)]), [remoteIds, agentDue])
     const agentDisabled = anyPending || agentIds().length === 0
-    const agentTitle = xrayCount === 0 ? "MTProto nodes update from their own page"
+    const agentTitle = count === 0 ? undefined
+        : xrayCount === 0 ? "MTProto nodes update from their own page"
         : includesLocal && count === 1 ? "Built in, updates with the panel"
         : remoteIds().length > 0 && agentIds().length === 0 ? (agentDue ? "Already up to date" : "Checking for updates…")
         : undefined
@@ -79,24 +81,24 @@ export function BulkNodeActionsBar() {
         healthMut.mutate(ids())
     }, [healthMut, ids])
 
-    if (count === 0 && agentTargets === null) return null
+    if (!selectMode && agentTargets === null) return null
 
     return (
         <>
-            {count > 0 && <div className="fixed bottom-[100px] md:bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[calc(100vw-2rem)] animate-in slide-in-from-bottom-4 fade-in duration-300">
+            {selectMode && <div className="fixed bottom-[100px] md:bottom-6 left-1/2 -translate-x-1/2 z-50 w-max max-w-[calc(100vw-2rem)] animate-in slide-in-from-bottom-4 fade-in duration-300">
                 {/* Desktop */}
                 <div className="hidden md:flex flex-wrap justify-center items-center gap-2 bg-background/95 backdrop-blur-sm border rounded-xl shadow-2xl px-4 py-3">
-                    <Badge variant="secondary" className="font-mono text-sm px-3">
-                        {count} selected
+                    <Badge variant="secondary" className="px-3 text-sm tabular-nums">
+                        {count ? `${count} selected` : "Pick nodes"}
                     </Badge>
                     <div className="h-6 w-px bg-border" />
                     <Button variant="outline" size="sm" onClick={onHealth} disabled={anyPending}>
                         <HiOutlineRefresh className={healthMut.isPending ? "w-3.5 h-3.5 mr-1.5 animate-spin" : "w-3.5 h-3.5 mr-1.5"} />
-                        Health Check
+                        Check connection
                     </Button>
                     <Button variant="outline" size="sm" onClick={onPush} disabled={xrayDisabled} title={xrayTitle}>
                         <Upload className={pushMut.isPending ? "w-3.5 h-3.5 mr-1.5 animate-pulse" : "w-3.5 h-3.5 mr-1.5"} />
-                        Push Config
+                        Push config
                     </Button>
                     <Button
                         variant="outline"
@@ -111,7 +113,7 @@ export function BulkNodeActionsBar() {
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setAgentTargets(agentIds())} disabled={agentDisabled} title={agentTitle}>
                         <Download className="w-3.5 h-3.5 mr-1.5" />
-                        Update Agent
+                        Update agent
                     </Button>
                     <Button
                         variant="outline"
@@ -133,11 +135,11 @@ export function BulkNodeActionsBar() {
 
                 {/* Mobile */}
                 <div className="flex md:hidden flex-wrap justify-center items-center gap-1.5 bg-background/95 backdrop-blur-sm border rounded-xl shadow-2xl px-3 py-2.5">
-                    <Badge variant="secondary" className="font-mono text-xs px-2">
+                    <Badge variant="secondary" className="px-2 text-xs tabular-nums">
                         {count}
                     </Badge>
                     <div className="h-5 w-px bg-border" />
-                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={onHealth} disabled={anyPending} aria-label="Health check">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={onHealth} disabled={anyPending} aria-label="Check connection">
                         <HiOutlineRefresh className={healthMut.isPending ? "w-3.5 h-3.5 animate-spin" : "w-3.5 h-3.5"} />
                     </Button>
                     <Button variant="outline" size="icon" className="h-8 w-8" onClick={onPush} disabled={xrayDisabled} title={xrayTitle} aria-label="Push config">

@@ -5,6 +5,7 @@ import type {
     Node,
     NodeStats,
     NodeStatsSeries,
+    NodeDigest,
     StatsRange,
     NodeOverview,
     NodeOutage,
@@ -103,6 +104,11 @@ export type NodeStatsBulkMap = Record<string, NodeStatsBulkEntry>
 export async function getNodesStatsBulk(ids?: number[]): Promise<ApiResponse<NodeStatsBulkMap>> {
     const suffix = ids && ids.length > 0 ? `?ids=${ids.join(",")}` : ""
     return api.get<NodeStatsBulkMap>(`/api/v1/nodes/stats/bulk${suffix}`)
+}
+
+export async function getNodesDigest(ids?: number[]): Promise<ApiResponse<Record<string, NodeDigest>>> {
+    const suffix = ids && ids.length > 0 ? `?ids=${ids.join(",")}` : ""
+    return api.get<Record<string, NodeDigest>>(`/api/v1/nodes/digest${suffix}`)
 }
 
 export async function getNodeHostInfo(id: number): Promise<ApiResponse<NodeHostInfo>> {

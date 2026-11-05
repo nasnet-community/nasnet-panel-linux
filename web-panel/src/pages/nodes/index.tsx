@@ -1,8 +1,8 @@
-import { useState, useCallback, memo, useEffect, useMemo, useRef } from "react"
-import { PageHeader } from "@/components/shared/page-header"
-import { Card, CardContent } from "@/components/ui/card"
+import { useState, useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react"
+import { useNavigate } from "react-router"
+import { useQueryClient } from "@tanstack/react-query"
+import { ArrowLeftRight, Loader2, Plus, Server, ShieldAlert, SquareCheck, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,443 +14,152 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import {
-    HiOutlineServer,
-    HiOutlinePlus,
-    HiOutlineRefresh,
-    HiOutlineTrash,
-    HiOutlinePencil,
-    HiOutlineDotsVertical,
-    HiOutlineTerminal,
-} from "react-icons/hi"
-import {
-    ShieldAlert,
-    Trash2,
-    ArrowLeftRight,
-    Cpu,
-    Network,
-    Loader2,
-    Server,
-    Globe,
-    ShieldOffIcon,
-} from "lucide-react"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { DeployAgentDialog } from "@/components/deploy-agent-dialog"
-import { NodeDetailSheet } from "@/components/node/node-detail-sheet"
-import { MetricBar } from "@/components/ui/metric-bar"
-import { Sparkline } from "@/components/ui/sparkline"
-import type { Node } from "@/lib/types"
-import { cn, formatBytes, formatSpeed } from "@/lib/utils"
-import { toast } from "@/lib/toast"
-import { MigrationDialog } from "@/components/node/migration-dialog"
-import { Link, useNavigate } from "react-router"
-import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, sparklineFromBulk, useCreateNode, useDeleteNode, useCheckNodeHealth, useNodeAggregateStats, useMtprotoNodes } from "@/lib/queries"
-import type { MtprotoNodeSummary } from "@/lib/api/mtproto"
-import { MtprotoCardMetrics } from "@/components/mtproto/mtproto-node-summary"
-import { queryKeys } from "@/lib/queries/keys"
-import type { NodeStats } from "@/lib/types"
-import { useNodesStore } from "@/store/nodes-store"
-import { useQueryClient } from "@tanstack/react-query"
 import { useConfirm } from "@/components/ui/confirm-dialog"
-import { nodeSchema } from "@/lib/validations/node-schema"
-import { AutoRefreshControl } from "@/components/ui/auto-refresh-control"
-import { Checkbox } from "@/components/ui/checkbox"
+import { DeployAgentDialog } from "@/components/deploy-agent-dialog"
+import { UpdateAgentDialog } from "@/components/update-agent-dialog"
+import { MigrationDialog } from "@/components/node/migration-dialog"
 import { BulkNodeActionsBar } from "@/components/node/bulk-node-actions-bar"
 import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
-import { wipeNode } from "@/lib/api/nuke"
-import { LocalNodeBadge } from "@/components/node/local-node-badge"
-import { isLiteNode, isLocalNode, nodeAddress, outageReasonLabel } from "@/lib/node-kind"
-import { AddMtprotoNodeDialog } from "@/components/mtproto/add-mtproto-node-dialog"
 import { AddNodeKindPicker } from "@/components/node/add-node-kind-picker"
-import { useChartPalette } from "@/lib/design/palette"
+import { AddMtprotoNodeDialog } from "@/components/mtproto/add-mtproto-node-dialog"
+import { useEventsStatus } from "@/components/providers/events-provider"
+import { FleetTiles } from "@/components/nodes-list/fleet-tiles"
+import { NodeCard, NodeCardSkeleton } from "@/components/nodes-list/node-card"
+import { NodesTable, NodeRowsPhone } from "@/components/nodes-list/nodes-table"
+import { MaintenanceDialog } from "@/components/nodes-list/maintenance-dialog"
+import { ViewSwitch, type NodesView } from "@/components/nodes-list/view-switch"
+import type { NodeActions } from "@/components/nodes-list/node-menu"
+import { buildView, DEFAULT_SORT, firstDir, orderViews, type NodeView, type Sort, type SortKey } from "@/components/nodes-list/facts"
+import { useIsMobile } from "@/hooks/use-is-mobile"
+import { useLocalStorage } from "@/hooks/use-local-storage"
+import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, useNodesDigest, useCreateNode, useDeleteNode, useCheckNodeHealth, useMtprotoNodes } from "@/lib/queries"
+import { useAgentUpdates } from "@/lib/queries/use-bulk-agent-update"
+import { queryKeys } from "@/lib/queries/keys"
+import { wipeNode } from "@/lib/api/nuke"
+import { setNodeMaintenance } from "@/lib/api/maintenance"
+import { getApiBaseUrl } from "@/lib/config"
+import { nodeSchema } from "@/lib/validations/node-schema"
+import { isLiteNode } from "@/lib/node-kind"
+import type { Node, NodeStats } from "@/lib/types"
+import { cn } from "@/lib/utils"
+import { toast } from "@/lib/toast"
+import { useNodesStore } from "@/store/nodes-store"
 
-// ─── Compact Node Card ────────────────────────────────────────────
-
-// Stable-reference empty array for Sparkline props when history hasn't loaded.
-// Using a shared constant avoids creating a new [] on each render, which would
-// defeat the memo() wrapper on CompactNodeCard.
-/** Compact "3h" / "2d" style age, for the card's last-outage hint. */
-function relativeSince(iso: string): string {
-    const sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-    if (sec < 60) return `${sec}s ago`
-    const min = Math.floor(sec / 60)
-    if (min < 60) return `${min}m ago`
-    const h = Math.floor(min / 60)
-    if (h < 24) return `${h}h ago`
-    const d = Math.floor(h / 24)
-    return `${d}d ago`
+/** Re-render on an interval so durations and "last reading" stay current. */
+function useNow(intervalMs: number) {
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), intervalMs)
+        return () => clearInterval(id)
+    }, [intervalMs])
+    return now
 }
 
-const EMPTY_SERIES: number[] = []
-
-const CompactNodeCard = memo(function CompactNodeCard({
-    node,
-    stats,
-    isStatsLoading,
-    sparkline,
-    mtproto,
-    onCheckHealth,
-    onDelete,
-    onWipe,
-    onDeploy,
-    onSelect,
-    onToggleSelect,
-    onRangeSelect,
-}: {
-    node: Node
-    stats?: NodeStats
-    isStatsLoading: boolean
-    sparkline: { cpu: number[]; memory: number[] }
-    /** an MTProto node's numbers; it has no stats sweep */
-    mtproto?: MtprotoNodeSummary
-    onCheckHealth: (nodeId: number) => void
-    onDelete: (node: Node) => void
-    onWipe: (node: Node) => void
-    onDeploy: (nodeId: number) => void
-    onSelect: (node: Node) => void
-    onToggleSelect: (nodeId: number) => void
-    onRangeSelect: (nodeId: number) => void
-}) {
-    // Subscribe to exactly the slices this card cares about. Zustand
-    // compares each returned primitive, so unaffected cards skip the
-    // render when selection state changes elsewhere.
-    const isSelected = useNodesStore((s) => s.selectedIds.has(node.id))
-    const selectionMode = useNodesStore((s) => s.selectedIds.size > 0)
-    const isChecking = useNodesStore((s) => s.checkingHealthId === node.id)
-
-    const cpuHistory = sparkline.cpu.length > 0 ? sparkline.cpu : EMPTY_SERIES
-
-    const isPending = new Date(node.last_check).getFullYear() < 2000
-    const local = isLocalNode(node)
-    const lite = isLiteNode(node)
-    const palette = useChartPalette()
-
-    // While selection mode is active, tapping the card toggles selection
-    // instead of opening the detail sheet. Shift-click always extends a
-    // range. Ctrl/Meta-click toggles (matches file-manager convention).
-    const handleCardClick = (e: React.MouseEvent) => {
-        if (e.shiftKey) {
-            e.preventDefault()
-            onRangeSelect(node.id)
-            return
-        }
-        if (e.ctrlKey || e.metaKey || selectionMode) {
-            e.preventDefault()
-            onToggleSelect(node.id)
-            return
-        }
-        onSelect(node)
-    }
-
+function Reconnecting({ className }: { className?: string }) {
     return (
-        <div
-            onClick={handleCardClick}
-            className={cn(
-                "group relative rounded-lg border bg-card/80 backdrop-blur-sm p-4 sm:p-5 lg:p-6 cursor-pointer",
-                "transition-all duration-200 hover:shadow-md",
-                isSelected ? "border-primary ring-2 ring-primary/30" : "border-border/50 hover:border-border",
-                !node.is_online && !isSelected && "opacity-75"
-            )}
-        >
-            {/* Selection checkbox — visible in selection mode or on hover. */}
-            <div
-                className={cn(
-                    "absolute top-3 left-3 z-10 transition-opacity",
-                    selectionMode || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                )}
-                onClick={(e) => { e.stopPropagation(); onToggleSelect(node.id) }}
-            >
-                <Checkbox
-                    checked={isSelected}
-                    aria-label={`Select ${node.name}`}
-                    onClick={(e) => e.stopPropagation()}
-                    onCheckedChange={() => onToggleSelect(node.id)}
-                    className="bg-background/80 backdrop-blur-sm"
-                />
-            </div>
-            {/* Header row */}
-            <div className={cn(
-                "flex items-start justify-between gap-3 mb-4 md:mb-5 transition-[padding]",
-                (selectionMode || isSelected) && "pl-7"
-            )}>
-                <div className="flex items-center gap-2.5 md:gap-3 min-w-0">
-                    <div className={cn(
-                        "w-2.5 h-2.5 md:w-3 md:h-3 rounded-full shrink-0",
-                        isPending ? "bg-amber-500 animate-pulse" : node.is_online ? "bg-emerald-500" : "bg-red-500"
-                    )} />
-                    <h3 className="text-sm md:text-base lg:text-lg font-semibold truncate">{node.name}</h3>
-                    {/* Last outage: for a node that's down this is when it went
-                        down; for one that's up it's the most recent blip. Reads
-                        from the stamped column, so it survives event pruning. */}
-                    {node.last_disconnected_at && (
-                        <span
-                            className="text-[11px] md:text-[12px] text-muted-foreground/70 font-mono shrink-0"
-                            title={`Last disconnected ${new Date(node.last_disconnected_at).toLocaleString()}${
-                                node.last_offline_reason ? ` — ${outageReasonLabel(node.last_offline_reason, isLocalNode(node))}` : ""
-                            }`}
-                        >
-                            {node.is_online ? "last down " : "down "}
-                            {relativeSince(node.last_disconnected_at)}
-                        </span>
-                    )}
-                    {local && <LocalNodeBadge />}
-                    {lite && <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[11px] uppercase tracking-wider">MTProto</Badge>}
-                </div>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 md:h-8 md:w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label="Node actions"
-                        >
-                            <HiOutlineDotsVertical className="w-4 h-4 md:w-5 md:h-5" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44 md:w-48">
-                        <DropdownMenuLabel className="text-xs md:text-sm">Actions</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild className="md:text-[14px]">
-                            <Link to={`/nodes/${node.id}`} onClick={(e) => e.stopPropagation()}>
-                                <HiOutlinePencil className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Edit
-                            </Link>
-                        </DropdownMenuItem>
-                        {!node.is_online && !local && !lite && (
-                            <DropdownMenuItem className="md:text-[14px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeploy(node.id) }}>
-                                <HiOutlineTerminal className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2 text-blue-500" /> Deploy
-                            </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem className="md:text-[14px]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCheckHealth(node.id) }} disabled={isChecking}>
-                            <HiOutlineRefresh className={cn("w-3.5 h-3.5 md:w-4 md:h-4 mr-2", isChecking && "animate-spin")} /> Health Check
-                        </DropdownMenuItem>
-                        {lite && (
-                            <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild className="text-red-500 focus:text-red-500 md:text-[14px]">
-                                    <Link to={`/nodes/${node.id}`} onClick={(e) => e.stopPropagation()}>
-                                        <HiOutlineTrash className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Remove…
-                                    </Link>
-                                </DropdownMenuItem>
-                            </>
-                        )}
-                        {!local && !lite && (
-                            <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWipe(node) }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-500/10 md:text-[14px]">
-                                    <ShieldOffIcon className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Wipe…
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(node) }} className="text-red-500 focus:text-red-500 md:text-[14px]">
-                                    <HiOutlineTrash className="w-3.5 h-3.5 md:w-4 md:h-4 mr-2" /> Delete
-                                </DropdownMenuItem>
-                            </>
-                        )}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>
-
-            {/* IP & Location */}
-            <div className="flex items-center gap-2 md:gap-3 mb-4 md:mb-5 text-[12px] md:text-sm text-muted-foreground">
-                <span className={cn(!local && "font-mono")}>{nodeAddress(node)}</span>
-                {local ? (
-                    <>
-                        <span className="text-border">|</span>
-                        <span>Built in</span>
-                    </>
-                ) : (
-                    <>
-                        <span className="text-border">|</span>
-                        <span className="capitalize">{node.connect_mode}</span>
-                    </>
-                )}
-                {node.country_code && (
-                    <>
-                        <span className="text-border">|</span>
-                        <span>{node.country_code}</span>
-                    </>
-                )}
-                {node.datacenter && (
-                    <>
-                        <span className="text-border">|</span>
-                        <span className="truncate">{node.datacenter}</span>
-                    </>
-                )}
-            </div>
-
-            {/* Metrics (for online agent nodes) */}
-            {lite && node.is_online && <MtprotoCardMetrics s={mtproto} />}
-            {!lite && node.is_online && stats?.stats_unavailable && (
-                <p role="status" className="text-xs text-amber-500">Stats unavailable · showing last readings</p>
-            )}
-            {!lite && node.is_online && !stats && !isStatsLoading && (
-                <p role="status" className="text-xs text-muted-foreground">Stats unavailable · retrying automatically</p>
-            )}
-            {lite && node.is_online ? null : node.is_online && stats ? (
-                <div className="space-y-3 md:space-y-4 lg:space-y-5">
-                    {/* Resource bars */}
-                    <div className="grid grid-cols-3 gap-3 md:gap-4 lg:gap-5">
-                        <MetricBar value={stats.cpu_percent ?? 0} label="CPU" size="sm" />
-                        <MetricBar value={stats.memory_percent ?? 0} label="RAM" size="sm" />
-                        <MetricBar value={stats.disk_percent ?? 0} label="Disk" size="sm" />
-                    </div>
-                    {/* Sparkline + stats row */}
-                    <div className="flex items-center justify-between pt-2 md:pt-3 border-t border-border/30">
-                        <div className="flex items-center gap-3 md:gap-4 text-[12px] md:text-[14px] text-muted-foreground">
-                            <span>↑{formatSpeed(stats.up_speed ?? 0)}</span>
-                            <span>↓{formatSpeed(stats.down_speed ?? 0)}</span>
-                            {stats.online_users !== undefined && (
-                                <span className="text-foreground font-medium">{stats.online_users} online</span>
-                            )}
-                        </div>
-                        {cpuHistory.length > 2 && (
-                            <div className="w-16 md:w-20 lg:w-24">
-                                <Sparkline data={cpuHistory} height={20} color={palette.success} />
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ) : node.is_online && isStatsLoading ? (
-                <div className="space-y-3 md:space-y-4">
-                    <div className="grid grid-cols-3 gap-3 md:gap-4 lg:gap-5">
-                        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-6 md:h-7 w-full" />)}
-                    </div>
-                    <Skeleton className="h-5 md:h-6 w-full" />
-                </div>
-            ) : !node.is_online ? (
-                <div className="flex items-center justify-between pt-1 md:pt-2">
-                    <span className="text-[12px] md:text-[14px] text-muted-foreground">{isPending ? "Never connected" : `Last seen: ${new Date(node.last_check).toLocaleString()}`}</span>
-                    {!local && !lite && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-[11px] md:text-xs h-6 md:h-8 px-2 md:px-3"
-                            onClick={(e) => { e.stopPropagation(); onDeploy(node.id) }}
-                        >
-                            <HiOutlineTerminal className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-1.5" /> Deploy
-                        </Button>
-                    )}
-                </div>
-            ) : null}
-        </div>
-    )
-})
-
-function NodeCardSkeleton() {
-    return (
-        <div className="rounded-lg border border-border/50 p-4 sm:p-5 lg:p-6 space-y-4 md:space-y-5">
-            <div className="flex items-center gap-2.5 md:gap-3">
-                <Skeleton className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" />
-                <Skeleton className="h-4 md:h-5 lg:h-6 w-28 md:w-36 lg:w-40" />
-            </div>
-            <Skeleton className="h-3 md:h-4 lg:h-5 w-36 md:w-48 lg:w-56" />
-            <div className="grid grid-cols-3 gap-3 md:gap-4 lg:gap-5">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-6 md:h-7 w-full" />)}
-            </div>
-            <Skeleton className="h-4 md:h-5 lg:h-6 w-full" />
-        </div>
+        <span role="status" className={cn("inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground", className)}>
+            <Loader2 className="size-3.5 animate-spin" aria-hidden /> Reconnecting…
+        </span>
     )
 }
-
-// ─── Main Page ────────────────────────────────────────────────────
 
 export default function NodesPage() {
+    const navigate = useNavigate()
     const queryClient = useQueryClient()
-    const { data: rawNodes, isLoading, isRefetching, dataUpdatedAt } = useNodes(true, { poll: true })
-    // The built-in node first, then the order the panel returns.
-    const nodes = useMemo(
-        () => [...(rawNodes ?? [])].sort((a, b) => Number(isLocalNode(b)) - Number(isLocalNode(a))),
-        [rawNodes],
-    )
-    const { data: aggregateStats } = useNodeAggregateStats()
+    const isMobile = useIsMobile()
+    const now = useNow(15_000)
+
+    // Live from the event stream; poll only while it's down.
+    const live = useEventsStatus() === "connected"
+    const everLive = useRef(false)
+    if (live) everLive.current = true
+    const reconnecting = !live && everLive.current
+
+    // Edits the stream doesn't announce (maintenance, Xray stopped) still
+    // arrive within a minute.
+    const { data: nodes = [], isLoading } = useNodes(true, { poll: live ? 60_000 : 15_000 })
+    // MTProto nodes have no stats sweep; one call covers them all.
+    const onlineIds = useMemo(() => nodes.filter((n) => n.is_online && !isLiteNode(n)).map((n) => n.id), [nodes])
+    const { data: mtprotoSummaries } = useMtprotoNodes(nodes.some(isLiteNode))
+    const { data: bulkStats } = useNodesStatsBulk(onlineIds, onlineIds.length > 0, live ? 60_000 : 15_000)
+    const { data: history } = useNodesStatsHistoryBulk(onlineIds, 15, onlineIds.length > 0)
+    const { data: digests } = useNodesDigest(nodes.length > 0)
+    const { data: agentDue } = useAgentUpdates(nodes.length > 0)
+
     const createNodeMutation = useCreateNode()
     const deleteNodeMutation = useDeleteNode()
     const checkHealthMutation = useCheckNodeHealth()
 
-    // Batch-fetch stats for all online nodes in one request (replaces per-card useNodeStats).
-    // Memoized so the identity stays stable across re-renders that don't change
-    // the online set — without it, every render would re-alloc the array, and
-    // dependent useCallbacks downstream would churn their identity too.
-    const onlineIds = useMemo(
-        () => nodes.filter((n) => n.is_online && !isLiteNode(n)).map((n) => n.id),
-        [nodes],
-    )
-    // MTProto nodes have no stats sweep: one call covers them all
-    const hasLite = nodes.some(isLiteNode)
-    const { data: mtprotoSummaries } = useMtprotoNodes(hasLite)
-    const mtprotoById = useMemo(() => new Map((mtprotoSummaries ?? []).map((r) => [r.node_id, r])), [mtprotoSummaries])
-    const { data: bulkStats, isLoading: isBulkStatsLoading } = useNodesStatsBulk(
-        onlineIds,
-        onlineIds.length > 0,
-    )
+    const [view, setView] = useLocalStorage<NodesView>("nodes:view", "cards")
+    const [sort, setSort] = useLocalStorage<Sort>("nodes:list-sort", DEFAULT_SORT)
 
-    // Bulk history (one request instead of N per-card sparkline queries).
-    // Parent passes the per-node slice down as a prop; the selector
-    // keeps object identity stable so memo'd cards don't re-render on
-    // refetches that return unchanged data.
-    const { data: bulkHistory } = useNodesStatsHistoryBulk(onlineIds, 15, onlineIds.length > 0)
+    const views = useMemo(() => nodes.map((n) => {
+        const key = String(n.id)
+        // A node that just went down keeps the readings the browser already had.
+        const reading = bulkStats?.[key]?.stats ?? queryClient.getQueryData<NodeStats>(queryKeys.nodeStats(n.id))
+        const mtproto = isLiteNode(n) ? mtprotoSummaries?.find((s) => s.node_id === n.id) : undefined
+        return buildView(n, reading, digests?.[key], !!agentDue?.[key], now, mtproto)
+    }), [nodes, bulkStats, digests, agentDue, now, queryClient, mtprotoSummaries])
+
+    const cardsOrder = useMemo(() => orderViews(views), [views])
+    const listOrder = useMemo(() => orderViews(views, sort), [views, sort])
+    const shown = view === "list" ? listOrder : cardsOrder
 
     const {
         addDialogOpen, openAddDialog, closeAddDialog,
         deployDialogOpen, openDeployDialog, closeDeployDialog,
         selectedDeployNodeId, setCheckingHealth,
         newNode, updateNewNode, resetNewNode,
-        selectedIds, lastSelectedId, toggleSelected, selectRange, setSelected, clearSelection,
+        selectMode, selectedIds, lastSelectedId,
+        startSelecting, stopSelecting, toggleSelected, selectRange, setSelected,
     } = useNodesStore()
 
-    const selectionMode = selectedIds.size > 0
+    // Selection belongs to this visit; coming back starts fresh.
+    useEffect(() => () => stopSelecting(), [stopSelecting])
 
-    // Esc clears the selection — quick escape hatch so a misclick never
-    // blocks the workflow. Skip while a dialog or input is active (best
-    // effort: we check document.activeElement tag).
+    // Esc leaves select mode, unless a field or dialog has the key.
     useEffect(() => {
-        if (!selectionMode) return
+        if (!selectMode) return
         const onKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape") return
-            const tag = (document.activeElement?.tagName ?? "").toLowerCase()
-            if (tag === "input" || tag === "textarea") return
-            clearSelection()
+            if (e.key !== "Escape" || e.defaultPrevented) return
+            const el = document.activeElement
+            if (el && (el.closest("input, textarea, [role=dialog], [role=menu]"))) return
+            stopSelecting()
         }
         window.addEventListener("keydown", onKey)
         return () => window.removeEventListener("keydown", onKey)
-    }, [selectionMode, clearSelection])
+    }, [selectMode, stopSelecting])
 
-    const orderedNodeIds = useMemo(() => nodes.map((n) => n.id), [nodes])
-    const handleToggleSelect = useCallback((nodeId: number) => {
-        toggleSelected(nodeId)
-    }, [toggleSelected])
+    const shownIds = useMemo(() => shown.map((v) => v.node.id), [shown])
 
-    // Read ordered ids + anchor via refs so the callback identity stays stable
-    // across selection changes — otherwise memo'd cards would re-render every
-    // time the user selects anything (handleRangeSelect prop would flip).
-    const lastSelectedIdRef = useRef(lastSelectedId)
-    lastSelectedIdRef.current = lastSelectedId
-    const orderedNodeIdsRef = useRef(orderedNodeIds)
-    orderedNodeIdsRef.current = orderedNodeIds
-    const handleRangeSelect = useCallback((nodeId: number) => {
-        const anchor = lastSelectedIdRef.current ?? nodeId
-        selectRange(anchor, nodeId, orderedNodeIdsRef.current)
-    }, [selectRange])
-
-    const allSelected = nodes.length > 0 && selectedIds.size === nodes.length
-    const handleToggleSelectAll = useCallback(() => {
-        if (allSelected) {
-            clearSelection()
-        } else {
-            setSelected(nodes.map(n => n.id))
+    const onActivate = useCallback((v: NodeView, e: MouseEvent) => {
+        const id = v.node.id
+        if (selectMode || e.shiftKey) {
+            if (!selectMode) startSelecting(id)
+            else if (e.shiftKey && lastSelectedId != null) selectRange(lastSelectedId, id, shownIds)
+            else toggleSelected(id)
+            return
         }
-    }, [allSelected, clearSelection, setSelected, nodes])
+        if (e.metaKey || e.ctrlKey || e.button === 1) {
+            window.open(`${getApiBaseUrl()}/nodes/${id}`, "_blank", "noopener")
+            return
+        }
+        navigate(`/nodes/${id}`)
+    }, [selectMode, lastSelectedId, shownIds, startSelecting, selectRange, toggleSelected, navigate])
+
+    const onToggle = useCallback((v: NodeView) => toggleSelected(v.node.id), [toggleSelected])
+    const onLongPress = useCallback((v: NodeView) => {
+        if (selectMode) toggleSelected(v.node.id)
+        else startSelecting(v.node.id)
+    }, [selectMode, toggleSelected, startSelecting])
+
+    const onSort = (key: SortKey) => {
+        setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: firstDir(key) }))
+    }
 
     const confirm = useConfirm()
-    const navigate = useNavigate()
     const [mtprotoDialogOpen, setMtprotoDialogOpen] = useState(false)
-    // the add dialog opens on a choice of node kind
+    // The add dialog opens on a choice of node kind.
     const [addKind, setAddKind] = useState<"choose" | "full">("choose")
     const startAdd = () => {
         setAddKind("choose")
@@ -463,22 +172,18 @@ export default function NodesPage() {
     }
     const [migrationNode, setMigrationNode] = useState<Node | null>(null)
     const [deleteConflictNode, setDeleteConflictNode] = useState<Node | null>(null)
-    const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+    const [maintenanceNode, setMaintenanceNode] = useState<Node | null>(null)
+    const [maintenancePending, setMaintenancePending] = useState(false)
+    const [agentNode, setAgentNode] = useState<Node | null>(null)
 
-    // ── Wipe state ────────────────────────────────────────────────────────────
+    // ── Wipe ──────────────────────────────────────────────────────────
     // The ref is read by the onConfirm closure to get the latest checkbox value.
     // WipeConfirmBody owns the visual state; it writes back here via onAlsoRemoveChange.
     const alsoRemoveHubRecordRef = useRef(false)
 
-    const updateAlsoRemoveHubRecord = (v: boolean) => {
-        alsoRemoveHubRecordRef.current = v
-    }
-
     const handleWipeNode = useCallback(async (node: Node) => {
-        // Reset ref before opening (WipeConfirmBody resets its own visual state on mount)
         alsoRemoveHubRecordRef.current = false
-
-        const confirmed = await confirm({
+        await confirm({
             variant: "warning",
             title: "Wipe node data",
             typeToConfirm: node.name,
@@ -487,7 +192,7 @@ export default function NodesPage() {
             description: (
                 <WipeConfirmBody
                     nodeName={node.name}
-                    onAlsoRemoveChange={updateAlsoRemoveHubRecord}
+                    onAlsoRemoveChange={(v) => { alsoRemoveHubRecordRef.current = v }}
                 />
             ),
             onConfirm: async () => {
@@ -505,38 +210,61 @@ export default function NodesPage() {
                 }
             },
         })
-        void confirmed
     }, [confirm, queryClient])
 
     const handleCheckHealth = useCallback((nodeId: number) => {
         setCheckingHealth(nodeId)
-        checkHealthMutation.mutate(nodeId, {
-            onSettled: () => setCheckingHealth(null)
-        })
+        checkHealthMutation.mutate(nodeId, { onSettled: () => setCheckingHealth(null) })
     }, [checkHealthMutation, setCheckingHealth])
 
     const handleDeleteNode = useCallback(async (node: Node) => {
         const confirmed = await confirm({
-            title: "Delete Node",
-            description: `Are you sure you want to delete "${node.name}"? This action cannot be undone.`,
+            title: "Delete node",
+            description: `Delete "${node.name}"? This can't be undone.`,
             confirmLabel: "Delete",
             variant: "destructive",
         })
         if (!confirmed) return
-
         deleteNodeMutation.mutate({ id: node.id }, {
-            onError: (error: any) => {
-                if (error?.code === "NODE_HAS_CHILDREN") {
-                    setDeleteConflictNode(node)
-                }
-            }
+            onError: (error: unknown) => {
+                if ((error as { code?: string })?.code === "NODE_HAS_CHILDREN") setDeleteConflictNode(node)
+            },
         })
     }, [confirm, deleteNodeMutation])
+
+    const setMaintenance = useCallback(async (node: Node, enabled: boolean, message: string) => {
+        setMaintenancePending(true)
+        try {
+            const r = await setNodeMaintenance(node.id, { enabled, message })
+            if (!r.success) {
+                toast.error(r.error || "Couldn't change maintenance")
+                return
+            }
+            toast.success(enabled ? `${node.name} is in maintenance` : `Maintenance ended on ${node.name}`)
+            setMaintenanceNode(null)
+            queryClient.invalidateQueries({ queryKey: queryKeys.nodes })
+            queryClient.invalidateQueries({ queryKey: ["maintenance"] })
+        } catch (e) {
+            toast.error(`Couldn't change maintenance: ${(e as Error).message}`)
+        } finally {
+            setMaintenancePending(false)
+        }
+    }, [queryClient])
+
+    const actions: NodeActions = useMemo(() => ({
+        checkConnection: (n) => handleCheckHealth(n.id),
+        deploy: (n) => openDeployDialog(n.id),
+        updateAgent: (n) => setAgentNode(n),
+        startMaintenance: (n) => setMaintenanceNode(n),
+        endMaintenance: (n) => void setMaintenance(n, false, ""),
+        wipe: (n) => void handleWipeNode(n),
+        remove: (n) => void handleDeleteNode(n),
+    }), [handleCheckHealth, openDeployDialog, setMaintenance, handleWipeNode, handleDeleteNode])
 
     const handleForceDelete = () => {
         if (!deleteConflictNode) return
         deleteNodeMutation.mutate({ id: deleteConflictNode.id, force: true }, {
-            onSuccess: () => setDeleteConflictNode(null)
+            onSuccess: () => setDeleteConflictNode(null),
         })
     }
 
@@ -552,7 +280,6 @@ export default function NodesPage() {
             toast.error(result.error.issues[0].message)
             return
         }
-
         createNodeMutation.mutate({
             name: newNode.name,
             ip: newNode.ip,
@@ -563,173 +290,125 @@ export default function NodesPage() {
             connect_mode: newNode.connect_mode,
         }, {
             // Straight on to the deploy step for the node just added.
-            onSuccess: (created) => { closeAddDialog(); resetNewNode(); if (created?.id) openDeployDialog(created.id) }
+            onSuccess: (created) => { closeAddDialog(); resetNewNode(); if (created?.id) openDeployDialog(created.id) },
         })
     }
 
-    const handleRefresh = useCallback(() => {
-        // Scoped refresh: list + bulk stats + bulk history only. Avoids
-        // blasting inbound / outbound / routing / config-diff caches on
-        // every auto-refresh tick.
-        queryClient.invalidateQueries({ queryKey: queryKeys.nodeList() })
-        queryClient.invalidateQueries({ queryKey: queryKeys.nodeStatsBulkAll(), exact: false })
-        queryClient.invalidateQueries({ queryKey: queryKeys.nodeStatsHistoryBulkAll(), exact: false })
-    }, [queryClient])
-
-    const handleDeployFromSheet = useCallback(() => {
-        if (selectedNode) {
-            const nodeId = selectedNode.id
-            setSelectedNode(null)
-            openDeployDialog(nodeId)
-        }
-    }, [selectedNode, openDeployDialog])
-
-    const onlineCount = nodes.filter(n => n.is_online).length
-    const totalTraffic = aggregateStats?.totalTraffic ?? 0
-    const avgCpu = aggregateStats?.avgCpu ?? 0
-    const totalConnections = aggregateStats?.totalConnections ?? 0
+    const toggleSelectMode = () => (selectMode ? stopSelecting() : startSelecting())
+    const empty = !isLoading && nodes.length === 0
+    const selectedSet: ReadonlySet<number> = selectedIds
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Mobile Compact Header */}
-            <div className="md:hidden flex items-center justify-between px-4 py-2.5">
-                <div className="flex items-baseline gap-2">
+            {/* Phone header */}
+            <div className="flex items-center justify-between gap-2 px-4 py-2 md:hidden">
+                <div className="grid">
                     <h1 className="text-xl font-bold tracking-tight">Nodes</h1>
-                    <span className="text-sm text-muted-foreground">
-                        <span className="text-emerald-500">{onlineCount}</span>/{nodes.length}
-                    </span>
+                    {reconnecting && <Reconnecting className="text-xs" />}
                 </div>
-                <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-9 w-9"
-                        onClick={() => handleRefresh()}
-                        disabled={isRefetching} aria-label="Refresh">
-                        <HiOutlineRefresh className={cn("w-4.5 h-4.5", isRefetching && "animate-spin")} />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-9 w-9"
-                        onClick={startAdd} aria-label="Add node">
-                        <HiOutlinePlus className="w-4.5 h-4.5" />
-                    </Button>
-                </div>
-            </div>
-
-            {/* Header */}
-            <div className="hidden md:block">
-                <PageHeader
-                    title="Nodes"
-                    description="This router and the servers it manages"
-                    actions={
-                        <>
-                            <AutoRefreshControl isRefreshing={isRefetching} dataUpdatedAt={dataUpdatedAt} />
-                            <Button onClick={startAdd}>
-                                <HiOutlinePlus className="w-4 h-4 mr-2" />
-                                Add node
-                            </Button>
-                        </>
-                    }
-                />
-            </div>
-
-            {/* Aggregate Stats Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 lg:gap-5">
-                <div className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
-                        <Server className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                        <span className="uppercase tracking-wider font-medium">Nodes</span>
-                    </div>
-                    {isLoading ? <Skeleton className="h-6 md:h-7 lg:h-8 w-16 md:w-20" /> : (
-                        <p className="text-lg md:text-xl lg:text-2xl font-bold">
-                            <span className="text-emerald-500">{onlineCount}</span>
-                            <span className="text-muted-foreground font-normal text-sm md:text-base"> / {nodes.length}</span>
-                        </p>
+                <div className="flex items-center gap-0.5">
+                    {!empty && <ViewSwitch value={view} onChange={setView} iconsOnly />}
+                    {!empty && (
+                        <Button variant="ghost" size="icon" className={cn("size-10", selectMode && "bg-muted")} onClick={toggleSelectMode} aria-pressed={selectMode} aria-label={selectMode ? "Done selecting" : "Select nodes"}>
+                            <SquareCheck className="size-[18px]" />
+                        </Button>
                     )}
-                </div>
-                <div className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
-                        <Globe className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                        <span className="uppercase tracking-wider font-medium">Total Traffic</span>
-                    </div>
-                    <p className="text-lg md:text-xl lg:text-2xl font-bold">{formatBytes(totalTraffic)}</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
-                        <Cpu className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                        <span className="uppercase tracking-wider font-medium">Avg CPU</span>
-                    </div>
-                    <p className={cn(
-                        "text-lg md:text-xl lg:text-2xl font-bold",
-                        avgCpu > 80 ? "text-red-500" : avgCpu > 50 ? "text-amber-500" : "text-emerald-500"
-                    )}>{avgCpu.toFixed(0)}%</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-card/50 p-3 md:p-4 lg:p-5">
-                    <div className="flex items-center gap-2 text-muted-foreground mb-1 md:mb-2 text-[11px] sm:text-[12px] md:text-xs">
-                        <Network className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                        <span className="uppercase tracking-wider font-medium">Connections</span>
-                    </div>
-                    <p className="text-lg md:text-xl lg:text-2xl font-bold">{totalConnections.toLocaleString()}</p>
+                    <Button variant="ghost" size="icon" className="size-10" onClick={startAdd} aria-label="Add node">
+                        <Plus className="size-[18px]" />
+                    </Button>
                 </div>
             </div>
 
-            {/* Nodes Grid */}
-            <div className="space-y-2">
-                {!isLoading && nodes.length > 0 && (
-                    <div className="flex items-center justify-between gap-3">
-                        <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
-                            <Checkbox
-                                checked={allSelected}
-                                onCheckedChange={handleToggleSelectAll}
-                                aria-label={allSelected ? "Deselect all nodes" : "Select all nodes"}
-                            />
-                            <span>{allSelected ? "Deselect all" : "Select all"}</span>
-                        </label>
-                        {selectionMode && (
-                            <span className="text-xs tabular-nums text-muted-foreground">
-                                {selectedIds.size} of {nodes.length} selected
-                            </span>
+            {/* Desktop header */}
+            <div className="hidden items-center justify-between gap-4 md:flex">
+                <div className="flex min-w-0 items-baseline gap-3.5">
+                    <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Nodes</h1>
+                    {reconnecting && <Reconnecting />}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                    {!empty && <ViewSwitch value={view} onChange={setView} />}
+                    {selectMode && (
+                        <Button variant="ghost" size="sm" onClick={() => setSelected(shownIds)}>Select all</Button>
+                    )}
+                    {!empty && (
+                        <Button variant="outline" size="sm" onClick={toggleSelectMode} aria-pressed={selectMode} className={cn(selectMode && "bg-muted")}>
+                            <SquareCheck className="size-3.5" />
+                            {selectMode ? "Done" : "Select"}
+                        </Button>
+                    )}
+                    <Button onClick={startAdd}>
+                        <Plus className="size-4" />
+                        Add node
+                    </Button>
+                </div>
+            </div>
+
+            {empty ? (
+                <div className="grid justify-items-center gap-3 rounded-2xl border border-dashed px-6 py-16 text-center">
+                    <Server className="size-9 text-muted-foreground/60" aria-hidden />
+                    <h2 className="text-base font-semibold">No nodes yet</h2>
+                    <p className="max-w-[42ch] text-sm text-muted-foreground">
+                        A node is a server that runs the NasNet agent and carries your users' traffic. Add one, and the next step installs the agent.
+                    </p>
+                    <Button onClick={startAdd}><Plus className="size-4" />Add node</Button>
+                </div>
+            ) : (
+                <>
+                    <FleetTiles views={views} history={history} now={now} compact={isMobile} loading={isLoading} />
+
+                    <div className="pb-24 md:pb-20">
+                        {view === "list" ? (
+                            isMobile ? (
+                                <NodeRowsPhone
+                                    views={shown}
+                                    now={now}
+                                    selectMode={selectMode}
+                                    selected={selectedSet}
+                                    onActivate={onActivate}
+                                    onToggle={onToggle}
+                                    onLongPress={onLongPress}
+                                />
+                            ) : (
+                                <NodesTable
+                                    views={shown}
+                                    now={now}
+                                    loading={isLoading}
+                                    sort={sort}
+                                    onSort={onSort}
+                                    actions={actions}
+                                    selectMode={selectMode}
+                                    selected={selectedSet}
+                                    onToggle={onToggle}
+                                    onToggleAll={(all) => (all ? setSelected(shownIds) : setSelected([]))}
+                                    onActivate={onActivate}
+                                />
+                            )
+                        ) : (
+                            // Two across up to four nodes, three from five, by the grid's own width.
+                            <div className="@container">
+                            <div className={cn("grid grid-cols-1 gap-3 md:gap-4 @min-[700px]:grid-cols-2", nodes.length > 4 && "@min-[1040px]:grid-cols-3")}>
+                                {isLoading
+                                    ? Array.from({ length: 2 }, (_, i) => <NodeCardSkeleton key={i} />)
+                                    : shown.map((v) => (
+                                        <NodeCard
+                                            key={v.node.id}
+                                            view={v}
+                                            now={now}
+                                            actions={actions}
+                                            selectMode={selectMode}
+                                            selected={selectedSet.has(v.node.id)}
+                                            compact={isMobile}
+                                            onActivate={onActivate}
+                                            onToggle={onToggle}
+                                            onLongPress={onLongPress}
+                                        />
+                                    ))}
+                            </div>
+                            </div>
                         )}
                     </div>
-                )}
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {isLoading ? (
-                        Array.from({ length: 6 }).map((_, i) => <NodeCardSkeleton key={i} />)
-                    ) : nodes.length > 0 ? (
-                        nodes.map((node) => (
-                            <CompactNodeCard
-                                key={node.id}
-                                node={node}
-                                stats={bulkStats?.[String(node.id)]?.stats}
-                                isStatsLoading={node.is_online && isBulkStatsLoading && !bulkStats?.[String(node.id)]}
-                                sparkline={sparklineFromBulk(bulkHistory, node.id)}
-                                mtproto={mtprotoById.get(node.id)}
-                                onCheckHealth={handleCheckHealth}
-                                onDelete={handleDeleteNode}
-                                onWipe={handleWipeNode}
-                                onDeploy={openDeployDialog}
-                                onSelect={setSelectedNode}
-                                onToggleSelect={handleToggleSelect}
-                                onRangeSelect={handleRangeSelect}
-                            />
-                        ))
-                    ) : (
-                        <Card className="col-span-full">
-                            <CardContent className="flex flex-col items-center justify-center py-12">
-                                <HiOutlineServer className="w-12 h-12 text-muted-foreground/50 mb-4" />
-                                <p className="text-muted-foreground mb-4">No nodes configured</p>
-                                <Button onClick={startAdd}>
-                                    <HiOutlinePlus className="w-4 h-4 mr-2" /> Add Your First Node
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    )}
-                </div>
-            </div>
-
-            {/* Node Detail Sheet */}
-            <NodeDetailSheet
-                node={selectedNode}
-                open={!!selectedNode}
-                onOpenChange={(open) => !open && setSelectedNode(null)}
-                onDeploy={selectedNode ? handleDeployFromSheet : undefined}
-            />
+                </>
+            )}
 
             <AddMtprotoNodeDialog
                 open={mtprotoDialogOpen}
@@ -739,7 +418,7 @@ export default function NodesPage() {
                     startAdd()
                 }}
                 onInstalled={(id) => {
-                    handleRefresh()
+                    queryClient.invalidateQueries({ queryKey: queryKeys.nodeList() })
                     navigate(`/nodes/${id}`)
                 }}
             />
@@ -819,6 +498,24 @@ export default function NodesPage() {
                 open={deployDialogOpen}
                 onOpenChange={(open) => open ? undefined : closeDeployDialog()}
             />
+
+            <MaintenanceDialog
+                node={maintenanceNode}
+                pending={maintenancePending}
+                onConfirm={(message) => maintenanceNode && void setMaintenance(maintenanceNode, true, message)}
+                onOpenChange={(open) => !open && setMaintenanceNode(null)}
+            />
+
+            {agentNode && (
+                <UpdateAgentDialog
+                    nodeId={agentNode.id}
+                    nodeName={agentNode.name}
+                    currentVersion={bulkStats?.[String(agentNode.id)]?.stats?.agent_version || agentNode.agent_version}
+                    open={!!agentNode}
+                    onOpenChange={(open) => !open && setAgentNode(null)}
+                    onSuccess={() => queryClient.invalidateQueries({ queryKey: queryKeys.nodes })}
+                />
+            )}
 
             {/* Delete Conflict Dialog */}
             <Dialog open={!!deleteConflictNode} onOpenChange={(open) => !open && setDeleteConflictNode(null)}>
