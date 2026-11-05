@@ -158,7 +158,6 @@ func (u *nodeUsecase) GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOv
 		return nil, err
 	}
 	snap, _, hasSnap := u.liveStats.get(nodeID)
-	agentHash := u.liveStats.configHash(nodeID)
 
 	out := &NodeOverview{}
 	if node.IsLocal() {
@@ -183,24 +182,7 @@ func (u *nodeUsecase) GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOv
 		out.Agent.UpdateAvailable, out.Agent.Build, out.Agent.BundledBuild = u.agentUpdate(node, out.Agent.Version)
 	}
 
-	out.Config.State = "unknown"
-	if node.IsOnline {
-		if agentHash == "" && u.heartbeatMgr != nil {
-			if _, h, ok := u.heartbeatMgr.GetSessionInfo(nodeID); ok {
-				agentHash = h
-			}
-		}
-		u.configHashMu.RLock()
-		pushed := u.lastPushedConfigHash[nodeID]
-		u.configHashMu.RUnlock()
-		switch {
-		case pushed == "" || agentHash == "":
-		case pushed == agentHash:
-			out.Config.State = "in_sync"
-		default:
-			out.Config.State = "drifted"
-		}
-	}
+	out.Config.State = u.configState(node)
 
 	now := time.Now().UTC()
 	if rows, err := u.nodeRepo.GetNodeDailyTraffic(ctx, nodeID, 1); err == nil {
@@ -215,6 +197,31 @@ func (u *nodeUsecase) GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOv
 		out.Today.PeakBps = peak
 	}
 	return out, nil
+}
+
+// configState compares the agent's running config with the last one the hub
+// pushed: "in_sync", "drifted", or "unknown" when either side is missing.
+func (u *nodeUsecase) configState(node *domain.Node) string {
+	if !node.IsOnline {
+		return "unknown"
+	}
+	agentHash := u.liveStats.configHash(node.ID)
+	if agentHash == "" && u.heartbeatMgr != nil {
+		if _, h, ok := u.heartbeatMgr.GetSessionInfo(node.ID); ok {
+			agentHash = h
+		}
+	}
+	u.configHashMu.RLock()
+	pushed := u.lastPushedConfigHash[node.ID]
+	u.configHashMu.RUnlock()
+	switch {
+	case pushed == "" || agentHash == "":
+		return "unknown"
+	case pushed == agentHash:
+		return "in_sync"
+	default:
+		return "drifted"
+	}
 }
 
 // nodeRTT reads the latest heartbeat latency. The HeartbeatManager sees

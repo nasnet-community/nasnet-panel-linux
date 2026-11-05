@@ -83,6 +83,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		// Bulk stats (before :id routes to avoid conflict)
 		nodes.GET("/stats/bulk", h.GetNodesStatsBulk)
 		nodes.GET("/stats/history/bulk", h.GetNodesStatsHistoryBulk)
+		nodes.GET("/digest", h.GetNodesDigest)
 
 		// Bulk actions (before :id routes to avoid conflict)
 		nodes.POST("/bulk/restart", h.BulkRestartXray)
@@ -672,6 +673,37 @@ func (h *Handler) GetNodesStatsBulk(c *gin.Context) {
 	out := make(map[string]*usecase.NodeStatsResult, len(results))
 	for id, r := range results {
 		out[strconv.FormatUint(uint64(id), 10)] = r
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
+// GetNodesDigest: GET /nodes/digest[?ids=1,2,3] (empty = all). What the Nodes
+// list shows beyond live stats: traffic today, a day of throughput, 30 days of
+// uptime. Response: { success, data: { "<nodeID>": NodeDigest } }.
+func (h *Handler) GetNodesDigest(c *gin.Context) {
+	var ids []uint
+	if raw := strings.TrimSpace(c.Query("ids")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			id, err := strconv.ParseUint(part, 10, 32)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": fmt.Sprintf("invalid id %q", part)})
+				return
+			}
+			ids = append(ids, uint(id))
+		}
+	}
+	digests, err := h.nodeUsecase.GetNodesDigest(c.Request.Context(), ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	out := make(map[string]*usecase.NodeDigest, len(digests))
+	for id, d := range digests {
+		out[strconv.FormatUint(uint64(id), 10)] = d
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
 }
