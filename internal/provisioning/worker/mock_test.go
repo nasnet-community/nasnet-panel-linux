@@ -263,6 +263,9 @@ func (m *mockNodeUsecase) GetNodeStats(context.Context, uint) (*nodeUC.NodeStats
 func (m *mockNodeUsecase) GetNodesStatsBulk(context.Context, []uint) (map[uint]*nodeUC.NodeStatsResult, error) {
 	return map[uint]*nodeUC.NodeStatsResult{}, nil
 }
+func (m *mockNodeUsecase) GetNodesDigest(context.Context, []uint) (map[uint]*nodeUC.NodeDigest, error) {
+	return map[uint]*nodeUC.NodeDigest{}, nil
+}
 func (m *mockNodeUsecase) GetNodeHostInfo(context.Context, uint) (*nodeDomain.HostInfo, error) {
 	return nil, nil
 }

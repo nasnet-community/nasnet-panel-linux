@@ -172,6 +172,8 @@ type NodeUsecase interface {
 	// GetNodeOverview returns the Overview tab's facts beyond live stats.
 	GetNodeOverview(ctx context.Context, nodeID uint) (*NodeOverview, error)
 	GetNodesStatsBulk(ctx context.Context, ids []uint) (map[uint]*NodeStatsResult, error)
+	// GetNodesDigest returns what the Nodes list shows beyond live stats.
+	GetNodesDigest(ctx context.Context, ids []uint) (map[uint]*NodeDigest, error)
 	GetNodeHostInfo(ctx context.Context, nodeID uint) (*domain.HostInfo, error)
 	GetInboundStats(ctx context.Context, inboundID uint) (*InboundStats, error)
 
@@ -501,6 +503,8 @@ type nodeUsecase struct {
 
 	// seriesCache memoizes the ranged chart aggregates per (node, range).
 	seriesCache statsSeriesCache
+
+	digestCache digestCache
 
 	// Stats-sweep cadence + capability tracking: per-node last-run stamps
 	// for the slow collectors (online IPs, access-log summaries) and the
