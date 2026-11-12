@@ -72,22 +72,18 @@ export const X = panel(LX)
 export function RemoteNodesLogo({ size = 32 }: { size?: number }) {
   // each logo on the page needs its own gradient id, or the first one's is used for all
   const grad = `rn-${useId().replace(/\W/g, '')}`
+  // the Xray mark the panel and the store card use; the faint edge keeps the tile visible on a dark page
   return (
     <svg viewBox="0 0 64 64" width={size} height={size} role="img" aria-label="V2ray/Xray logo">
       <defs>
         <linearGradient id={grad} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#A855F7" />
-          <stop offset="100%" stopColor="#6D28D9" />
+          <stop offset="0%" stopColor="#3B3F51" />
+          <stop offset="100%" stopColor="#14161F" />
         </linearGradient>
       </defs>
       <rect width="64" height="64" rx="14" fill={`url(#${grad})`} />
-      <g stroke="#ffffff" strokeWidth="3" strokeLinecap="round">
-        <path d="M32 32 18 19M32 32l14-13M32 32v17" />
-      </g>
-      <circle cx="32" cy="32" r="6" fill="#ffffff" />
-      <circle cx="18" cy="19" r="4.5" fill="#ffffff" />
-      <circle cx="46" cy="19" r="4.5" fill="#ffffff" />
-      <circle cx="32" cy="49" r="4.5" fill="#ffffff" />
+      <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="#ffffff" strokeOpacity="0.12" />
+      <path d="M20 19h7.3l4.7 7.3 4.7-7.3H44L36.7 32 44 45h-7.3L32 37.7 27.3 45H20l7.3-13L20 19Z" fill="#ffffff" />
     </svg>
   )
 }
