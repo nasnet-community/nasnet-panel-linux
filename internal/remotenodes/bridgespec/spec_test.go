@@ -34,6 +34,32 @@ func validSpec() *Spec {
 	}
 }
 
+// validLocal is the router's own entry as the hub would send it: on the
+// address the router forwards its public port to, with two clients.
+func validLocal() *Local {
+	return &Local{
+		ListenAddr:  "192.168.50.18",
+		Port:        8443,
+		PrivateKey:  base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
+		ShortIDs:    []string{"0123456789abcdef"},
+		ServerNames: []string{"www.example.com"},
+		Target:      "www.example.com:443",
+		Flow:        VisionFlow,
+		Clients: []Client{
+			{Email: "sub-1@remote-nodes", UUID: "11111111-2222-4333-8444-555555555551"},
+			{Email: "sub-2@remote-nodes", UUID: "11111111-2222-4333-8444-555555555552"},
+		},
+		Token: "0123456789abcdef0123456789abcdef",
+	}
+}
+
+// withLocal is validSpec with the router's own entry switched on.
+func withLocal() *Spec {
+	s := validSpec()
+	s.Local = validLocal()
+	return s
+}
+
 // extraNode is a second node that clashes with nothing in validSpec.
 func extraNode(i int) Node {
 	n := validSpec().Nodes[0]
@@ -55,7 +81,8 @@ func TestValidate(t *testing.T) {
 		mutate func(*Spec)
 		want   string // part of the error
 	}{
-		{"wrong version", func(s *Spec) { s.Version = 2 }, "version"},
+		{"an older version", func(s *Spec) { s.Version = Version - 1 }, "version"},
+		{"a newer version", func(s *Spec) { s.Version = Version + 1 }, "version"},
 		{"no version", func(s *Spec) { s.Version = 0 }, "version"},
 		{"unknown log level", func(s *Spec) { s.LogLevel = "verbose" }, "log_level"},
 
@@ -218,6 +245,139 @@ func TestValidateAccepts(t *testing.T) {
 	}
 }
 
+func TestValidateLocal(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Spec)
+		want   string // part of the error
+	}{
+		{"no listen address", func(s *Spec) { s.Local.ListenAddr = "" }, "local.listen_addr"},
+		{"a name to listen on", func(s *Spec) { s.Local.ListenAddr = "router.lan" }, "local.listen_addr"},
+		{"listening on every address", func(s *Spec) { s.Local.ListenAddr = "0.0.0.0" }, "local.listen_addr"},
+		{"listening on the exit's address", func(s *Spec) { s.Local.ListenAddr = s.Exit.Addr }, "leave through the exit"},
+		{"no port", func(s *Spec) { s.Local.Port = 0 }, "local.port"},
+		{"the status page's address", func(s *Spec) {
+			s.Local.ListenAddr, s.Local.Port = "127.0.0.1", 18080
+		}, "status page"},
+		{"no key", func(s *Spec) { s.Local.PrivateKey = "" }, "local.private_key"},
+		{"a short key", func(s *Spec) { s.Local.PrivateKey = "BwcHBwc" }, "local.private_key"},
+		{"a key in standard base64", func(s *Spec) {
+			s.Local.PrivateKey = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xff}, 32))
+		}, "local.private_key"},
+		{"no short id", func(s *Spec) { s.Local.ShortIDs = nil }, "local.short_ids: none"},
+		{"an empty short id", func(s *Spec) { s.Local.ShortIDs = []string{""} }, "local.short_ids[0]"},
+		{"a short id of odd length", func(s *Spec) { s.Local.ShortIDs = []string{"ab", "abc"} }, "local.short_ids[1]"},
+		{"too many short ids", func(s *Spec) { s.Local.ShortIDs = make([]string, MaxShortIDs+1) }, "local.short_ids"},
+		{"no server name", func(s *Spec) { s.Local.ServerNames = nil }, "local.server_names: none"},
+		{"an address as a server name", func(s *Spec) { s.Local.ServerNames = []string{"203.0.113.1"} }, "local.server_names[0]"},
+		{"too many server names", func(s *Spec) { s.Local.ServerNames = make([]string, MaxServerNames+1) }, "local.server_names"},
+		{"no target", func(s *Spec) { s.Local.Target = "" }, "local.target"},
+		{"a target without a port", func(s *Spec) { s.Local.Target = "www.example.com" }, "local.target"},
+		{"a target on port 0", func(s *Spec) { s.Local.Target = "www.example.com:0" }, "local.target"},
+		{"a target that is no name", func(s *Spec) { s.Local.Target = "exa mple.com:443" }, "local.target"},
+		{"a target on every address", func(s *Spec) { s.Local.Target = "0.0.0.0:443" }, "local.target"},
+		{"an unknown flow", func(s *Spec) { s.Local.Flow = "xtls-rprx-direct" }, "local.flow"},
+		{"no token", func(s *Spec) { s.Local.Token = "" }, "local.token"},
+		{"a short token", func(s *Spec) { s.Local.Token = "abc" }, "local.token"},
+		{"a token with a space", func(s *Spec) { s.Local.Token = "0123456789abcdef 123" }, "local.token"},
+		{"too many clients", func(s *Spec) { s.Local.Clients = make([]Client, MaxLocalClients+1) }, "local.clients"},
+		{"a client without an email", func(s *Spec) { s.Local.Clients[0].Email = "" }, "local.clients[0].email"},
+		{"a client's email with a space", func(s *Spec) { s.Local.Clients[1].Email = "sub 2" }, "local.clients[1].email"},
+		{"two clients with one email", func(s *Spec) { s.Local.Clients[1].Email = s.Local.Clients[0].Email }, "already used by local.clients[0].email"},
+		{"a client named like a tunnel", func(s *Spec) { s.Local.Clients[0].Email = s.Nodes[0].Tag }, "already used by nodes[0].tag"},
+		{"a client's id that is no UUID", func(s *Spec) { s.Local.Clients[0].UUID = "not-a-uuid" }, "local.clients[0].uuid"},
+		{"two clients with one id", func(s *Spec) {
+			s.Local.Clients[1].UUID = strings.ToUpper(s.Local.Clients[0].UUID)
+		}, "the same id as local.clients[0].uuid"},
+		{"a node tagged like the entry", func(s *Spec) { s.Nodes[0].Tag = LocalTag }, "already used by the local entry"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := withLocal()
+			tt.mutate(s)
+			err := s.Validate()
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error %q does not mention %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateAcceptsLocal(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Spec)
+	}{
+		{"beside a node", func(*Spec) {}},
+		{"with no node at all", func(s *Spec) { s.Nodes = nil }},
+		{"with no client yet", func(s *Spec) { s.Local.Clients = nil }},
+		{"no flow", func(s *Spec) { s.Local.Flow = "" }},
+		{"a target by address", func(s *Spec) { s.Local.Target = "203.0.113.9:8443" }},
+		{"a target by IPv6 address", func(s *Spec) { s.Local.Target = "[2001:db8::9]:443" }},
+		{"several short ids and names", func(s *Spec) {
+			s.Local.ShortIDs = []string{"ab", "0123456789abcdef"}
+			s.Local.ServerNames = []string{"www.example.com", "example.com"}
+		}},
+		{"everything on loopback", func(s *Spec) {
+			s.DialAddr, s.Exit.Addr = "127.0.0.1", "127.0.0.1"
+			s.Nodes = nil
+			s.Exit.Blocked = []string{"10.0.0.0/8"}
+			s.DNS.Servers = []string{"127.0.0.1:5353"}
+			s.Local.ListenAddr, s.Local.Target = "127.0.0.1", "127.0.0.1:9443"
+			s.Local.ServerNames = []string{"localhost"}
+		}},
+		{"the status page's port on another address", func(s *Spec) { s.Local.Port = 18080 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := withLocal()
+			tt.mutate(s)
+			if err := s.Validate(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// Without a node and without the entry there is nothing to run.
+func TestNoNodesNeedsTheLocalEntry(t *testing.T) {
+	s := validSpec()
+	s.Nodes = nil
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "nodes: none") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSplitTarget(t *testing.T) {
+	for in, want := range map[string]string{
+		"www.example.com:443":    "www.example.com 443",
+		"203.0.113.9:8443":       "203.0.113.9 8443",
+		"[2001:db8::9]:443":      "2001:db8::9 443",
+		"[::ffff:203.0.113.9]:1": "203.0.113.9 1",
+		"localhost:65535":        "localhost 65535",
+	} {
+		host, port, err := SplitTarget(in)
+		if err != nil {
+			t.Errorf("%q: %v", in, err)
+			continue
+		}
+		if got := fmt.Sprintf("%s %d", host, port); got != want {
+			t.Errorf("%q: got %s, want %s", in, got, want)
+		}
+	}
+	for _, in := range []string{
+		"", "www.example.com", ":443", "www.example.com:", "www.example.com:0", "www.example.com:65536",
+		"www.example.com:https", "under_score.example:443", "[fe80::1%eth0]:443", "224.0.0.1:443", "[::]:443",
+	} {
+		if host, port, err := SplitTarget(in); err == nil {
+			t.Errorf("%q: accepted as %s %d", in, host, port)
+		}
+	}
+}
+
 func TestDefaults(t *testing.T) {
 	s := validSpec()
 	if got := s.Nodes[0].FingerprintOrDefault(); got != "chrome" {
@@ -318,6 +478,30 @@ func TestParseServer(t *testing.T) {
 		if err != nil || got.String() != tt.want {
 			t.Errorf("%q: got %s, %v; want %s", tt.in, got, err, tt.want)
 		}
+	}
+}
+
+// The entry's key, its token and its clients' ids stay out of a log line too.
+func TestStringKeepsTheEntrysSecretsOut(t *testing.T) {
+	s := withLocal()
+	l := s.Local
+	for _, out := range []string{
+		fmt.Sprint(s), fmt.Sprintf("%+v", s), fmt.Sprint(l), fmt.Sprintf("%v", l),
+		fmt.Sprint(l.Clients[0]), fmt.Sprintf("%+v", l.Clients[0]), fmt.Sprintf("%v", l.Clients),
+	} {
+		for what, secret := range map[string]string{
+			"key": l.PrivateKey, "token": l.Token, "first id": l.Clients[0].UUID, "second id": l.Clients[1].UUID,
+		} {
+			if strings.Contains(out, secret) {
+				t.Errorf("%q has the entry's %s", out, what)
+			}
+		}
+	}
+	if out := fmt.Sprint(s); !strings.Contains(out, "192.168.50.18:8443") || !strings.Contains(out, "2 client(s)") {
+		t.Errorf("%q does not say where the entry listens and for how many", out)
+	}
+	if out := fmt.Sprint(validSpec()); !strings.Contains(out, "local off") {
+		t.Errorf("%q does not say the entry is off", out)
 	}
 }
 

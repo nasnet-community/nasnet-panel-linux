@@ -61,7 +61,7 @@ func portalLink(n bridgespec.Node) string {
 func panelBridgeConfig(t *testing.T, s *bridgespec.Spec) map[string]any {
 	t.Helper()
 	outbounds := []any{xray.ReverseExitOutbound()}
-	var rules []any
+	rules := []any{} // not nil: a spec with no node still has a rules list to add to
 	for _, n := range s.Nodes {
 		out, err := sharelink.ReverseBridgeOutbound(portalLink(n), n.Tag, n.ReverseTag)
 		if err != nil {
@@ -195,7 +195,7 @@ func TestParityWithDeltas(t *testing.T) {
 			}
 			want := load(t, cfg)
 
-			got, err := buildConfig(s)
+			got, err := buildConfig(s, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -211,7 +211,7 @@ func TestParityLogNone(t *testing.T) {
 	cfg := panelBridgeConfig(t, s)
 	bridgeDeltas(t, cfg, s)
 	cfg["log"] = map[string]any{"loglevel": "none"}
-	got, err := buildConfig(s)
+	got, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestParityIPv6(t *testing.T) {
 	bridgeDeltas(t, cfg, s)
 	cfg["outbounds"].([]any)[0].(map[string]any)["targetStrategy"] = "forceipv6"
 	cfg["dns"].(map[string]any)["queryStrategy"] = "UseIPv6"
-	got, err := buildConfig(s)
+	got, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestParityIPv6(t *testing.T) {
 func TestParityOutboundsUnchanged(t *testing.T) {
 	s := testSpec()
 	panel := load(t, panelBridgeConfig(t, s))
-	got, err := buildConfig(s)
+	got, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,6 +314,18 @@ func sameConfig(t *testing.T, got, want *core.Config) {
 	}
 	if len(got.Inbound) != len(want.Inbound) {
 		t.Errorf("%d inbounds, want %d", len(got.Inbound), len(want.Inbound))
+	}
+	for i := 0; i < len(got.Inbound) && i < len(want.Inbound); i++ {
+		g, w := got.Inbound[i], want.Inbound[i]
+		if g.Tag != w.Tag {
+			t.Errorf("inbound %d: tag %q, want %q", i, g.Tag, w.Tag)
+		}
+		if !proto.Equal(g.ReceiverSettings, w.ReceiverSettings) {
+			t.Errorf("inbound %s: receiver settings differ:\n%s\nwant\n%s", g.Tag, text(t, g.ReceiverSettings), text(t, w.ReceiverSettings))
+		}
+		if !proto.Equal(g.ProxySettings, w.ProxySettings) {
+			t.Errorf("inbound %s: proxy settings differ:\n%s\nwant\n%s", g.Tag, text(t, g.ProxySettings), text(t, w.ProxySettings))
+		}
 	}
 	if len(got.Outbound) != len(want.Outbound) {
 		t.Errorf("%d outbounds, want %d", len(got.Outbound), len(want.Outbound))

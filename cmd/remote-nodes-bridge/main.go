@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	// What the config needs, and no more: the outbound that dials, REALITY,
-	// the exit, and the apps around them. Importing all of main/distro/all
+	// What the config needs, and no more: the outbound that dials, the inbound
+	// of the router's own entry, REALITY, the exit, and the apps around them. Importing all of main/distro/all
 	// would add the other protocols, the transports, the gRPC services and the
 	// config loaders.
 	_ "github.com/xtls/xray-core/app/dispatcher"
@@ -34,6 +34,7 @@ import (
 	_ "github.com/xtls/xray-core/app/router"
 	_ "github.com/xtls/xray-core/app/stats"
 	_ "github.com/xtls/xray-core/proxy/freedom"
+	_ "github.com/xtls/xray-core/proxy/vless/inbound"
 	_ "github.com/xtls/xray-core/proxy/vless/outbound"
 	_ "github.com/xtls/xray-core/transport/internet/reality"
 	_ "github.com/xtls/xray-core/transport/internet/tcp"
@@ -86,7 +87,11 @@ func run(ctx context.Context, in io.Reader, logw io.Writer) error {
 		return err
 	}
 	srv := b.serve(l)
-	fmt.Fprintf(logw, "remote-nodes-bridge: %d tunnel(s), status on %s\n", len(spec.Nodes), l.Addr())
+	entry := "no local entry"
+	if spec.Local != nil {
+		entry = "local entry on " + spec.Local.String()
+	}
+	fmt.Fprintf(logw, "remote-nodes-bridge: %d tunnel(s), %s, status on %s\n", len(spec.Nodes), entry, l.Addr())
 
 	// The hub holds stdin open for as long as it wants the bridge to run,
 	// and closing it is how it says stop when a signal can't reach us.

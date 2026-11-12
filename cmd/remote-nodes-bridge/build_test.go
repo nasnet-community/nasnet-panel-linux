@@ -37,7 +37,7 @@ func TestBuildRejectsWhatItCannotRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := testSpec()
 			tt.mutate(s)
-			_, err := buildConfig(s)
+			_, err := buildConfig(s, "")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("got %v, want an error about %q", err, tt.want)
 			}
@@ -47,7 +47,7 @@ func TestBuildRejectsWhatItCannotRun(t *testing.T) {
 
 func TestBuildStructure(t *testing.T) {
 	s := testSpec()
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestBuildStructure(t *testing.T) {
 // node's reverse tag.
 func TestRoutesSendEverythingToTheExit(t *testing.T) {
 	s := testSpec()
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestRoutesSendEverythingToTheExit(t *testing.T) {
 
 func finalRules(t *testing.T, s *bridgespec.Spec) []*freedom.FinalRuleConfig {
 	t.Helper()
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestExitResolvesWithXray(t *testing.T) {
 			s.Nodes = s.Nodes[:1]
 			s.Nodes[0].Addr = tt.portal
 			s.DNS.Servers = tt.servers
-			cfg, err := buildConfig(s)
+			cfg, err := buildConfig(s, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -228,7 +228,7 @@ func TestExitResolvesWithXray(t *testing.T) {
 func TestDNSServers(t *testing.T) {
 	s := testSpec()
 	s.DNS.Servers = []string{"1.1.1.1", "9.9.9.9:5353", "8.8.8.8:53"}
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestDNSServers(t *testing.T) {
 // level 0, where the reverse flows run, counts both directions.
 func TestCountersByNode(t *testing.T) {
 	s := testSpec()
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestLogLevels(t *testing.T) {
 	} {
 		s := testSpec()
 		s.LogLevel = level
-		cfg, err := buildConfig(s)
+		cfg, err := buildConfig(s, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -297,7 +297,7 @@ func TestLogLevels(t *testing.T) {
 
 func TestSendersAreBoundToTheirAddresses(t *testing.T) {
 	s := testSpec()
-	cfg, err := buildConfig(s)
+	cfg, err := buildConfig(s, "")
 	if err != nil {
 		t.Fatal(err)
 	}
