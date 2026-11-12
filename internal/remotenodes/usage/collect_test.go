@@ -1083,7 +1083,7 @@ func TestBucketsFromTheFutureAreSkipped(t *testing.T) {
 func TestNothingIsAcknowledgedWhileTheFileIsFromANewerRelease(t *testing.T) {
 	r := newRig(t)
 	path := filepath.Join(r.dir, FileName)
-	newer := []byte(`{"version":2,"nodes":[]}` + "\n")
+	newer := []byte(`{"version":99,"nodes":[]}` + "\n")
 	must(t, os.WriteFile(path, newer, 0o600))
 	r.reopen()
 	a := r.agent(1)

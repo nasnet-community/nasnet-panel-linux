@@ -589,3 +589,109 @@ func TestConcurrentUse(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// withEntry is specFor with the router's own entry and one client on it.
+func withEntry(t testing.TB, tag string) *bridgespec.Spec {
+	t.Helper()
+	spec := specFor(t, tag)
+	spec.Local = &bridgespec.Local{
+		ListenAddr:  "127.0.0.1",
+		Port:        8443,
+		PrivateKey:  base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
+		ShortIDs:    []string{"0123456789abcdef"},
+		ServerNames: []string{"localhost"},
+		Target:      "127.0.0.1:9443",
+		Clients:     []bridgespec.Client{{Email: "sub-1@remote-nodes", UUID: "11111111-2222-4333-8444-555555555551"}},
+		Token:       "0123456789abcdef0123456789abcdef",
+	}
+	return spec
+}
+
+func waitForPage(t *testing.T, s *Supervisor) {
+	t.Helper()
+	eventually(t, 10*time.Second, "the bridge's status page", func() bool { return s.Status().Bridge != nil })
+}
+
+// The hub changes the entry's clients on the running bridge: the whole set,
+// with the spec's token, and no restart.
+func TestSetClientsReachesTheRunningBridge(t *testing.T) {
+	s := supervise(t, "serve")
+	if err := s.Start(withEntry(t, "n1")); err != nil {
+		t.Fatal(err)
+	}
+	waitForPage(t, s)
+	pid := s.Status().PID
+
+	second := bridgespec.Client{Email: "sub-2@remote-nodes", UUID: "11111111-2222-4333-8444-555555555552"}
+	res, err := s.SetClients([]bridgespec.Client{second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Added) != 1 || res.Added[0] != second.Email || len(res.Removed) != 1 || res.Removed[0] != "sub-1@remote-nodes" || res.Closed != 1 {
+		t.Fatalf("result %+v", res)
+	}
+	// nobody at all is a set too, and not a null the bridge would have to guess at
+	if res, err = s.SetClients(nil); err != nil || len(res.Removed) != 1 {
+		t.Fatalf("an empty set: %+v, %v", res, err)
+	}
+	if st := s.Status(); st.PID != pid || st.Restarts != 0 {
+		t.Fatalf("the bridge was restarted for a change of clients: %+v", st)
+	}
+
+	// what the bridge refuses comes back as an error with its words, and no id
+	_, err = s.SetClients([]bridgespec.Client{{Email: "fail", UUID: second.UUID}})
+	if err == nil || !strings.Contains(err.Error(), "refused by the fake") || strings.Contains(err.Error(), second.UUID) {
+		t.Fatalf("a refused set: %v", err)
+	}
+}
+
+// With no bridge, or one that has no entry, there is nothing to send to.
+func TestSetClientsNeedsARunningEntry(t *testing.T) {
+	s := supervise(t, "serve")
+	if _, err := s.SetClients(nil); !errors.Is(err, ErrNoEntry) {
+		t.Fatalf("before any start: %v", err)
+	}
+	if err := s.Start(specFor(t, "n1")); err != nil {
+		t.Fatal(err)
+	}
+	waitForPage(t, s)
+	if _, err := s.SetClients(nil); !errors.Is(err, ErrNoEntry) {
+		t.Fatalf("a bridge with no entry: %v", err)
+	}
+	s.Stop()
+	if _, err := s.SetClients(nil); !errors.Is(err, ErrNoEntry) {
+		t.Fatalf("after a stop: %v", err)
+	}
+}
+
+// A bridge whose page doesn't answer fails the call rather than hang it.
+func TestSetClientsWhenThePageIsNotThere(t *testing.T) {
+	s := supervise(t, "noserve")
+	if err := s.Start(withEntry(t, "n1")); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	if _, err := s.SetClients(nil); err == nil || errors.Is(err, ErrNoEntry) {
+		t.Fatalf("got %v", err)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Fatalf("the call took %v", took)
+	}
+}
+
+// A spec with the entry and no node runs like any other.
+func TestABridgeWithOnlyTheEntry(t *testing.T) {
+	s := supervise(t, "serve")
+	spec := withEntry(t, "n1")
+	spec.Nodes = nil
+	if err := s.Start(spec); err != nil {
+		t.Fatal(err)
+	}
+	waitForPage(t, s)
+	if st := s.Status(); st.State != StateRunning || len(st.Bridge.Nodes) != 0 {
+		t.Fatalf("status %+v", st)
+	}
+	if _, err := s.SetClients(nil); err != nil {
+		t.Fatal(err)
+	}
+}

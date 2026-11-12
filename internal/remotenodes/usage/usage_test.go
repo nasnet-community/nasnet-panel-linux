@@ -122,7 +122,7 @@ func TestTheHistoryComesBackAfterARestart(t *testing.T) {
 func TestAFileFromANewerReleaseIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, FileName)
-	newer := []byte(`{"version":2,"nodes":[{"id":1,"something":"this build has never seen"}]}` + "\n")
+	newer := []byte(`{"version":99,"nodes":[{"id":1,"something":"this build has never seen"}]}` + "\n")
 	must(t, os.WriteFile(path, newer, 0o600))
 
 	c, l := open(t, dir, newClock(t0))

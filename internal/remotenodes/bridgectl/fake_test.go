@@ -7,11 +7,13 @@ package bridgectl
 // test starts. The modes are the ways a real one can go wrong or right.
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -33,7 +35,10 @@ func fakeBridge(mode string) int {
 		fmt.Fprintln(os.Stderr, "fake bridge: reading the spec:", err)
 		return 2
 	}
-	tag := spec.Nodes[0].Tag
+	tag := "no node"
+	if len(spec.Nodes) > 0 {
+		tag = spec.Nodes[0].Tag
+	}
 	switch {
 	case mode == "serve":
 		fmt.Println("fake bridge up:", tag)
@@ -98,8 +103,52 @@ func serveFakeStatus(spec *bridgespec.Spec) {
 	now := time.Now()
 	mux := http.NewServeMux()
 	mux.HandleFunc(bridgespec.StatusPath, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"running":true,"started":%q,"xray":"fake","nodes":[{"tag":%q,"up":true,"since":%q,"bytes_up":7,"bytes_down":9,"connections":2}]}`,
-			now.Format(time.RFC3339), spec.Nodes[0].Tag, now.Format(time.RFC3339))
+		nodes := "[]"
+		if len(spec.Nodes) > 0 {
+			nodes = fmt.Sprintf(`[{"tag":%q,"up":true,"since":%q,"bytes_up":7,"bytes_down":9,"connections":2}]`, spec.Nodes[0].Tag, now.Format(time.RFC3339))
+		}
+		fmt.Fprintf(w, `{"running":true,"started":%q,"xray":"fake","nodes":%s}`, now.Format(time.RFC3339), nodes)
 	})
+	if spec.Local != nil {
+		// The entry's clients, as the real bridge takes them: the token, then
+		// the set, answered with what changed. A client named "fail" is refused.
+		have := map[string]bool{}
+		for _, c := range spec.Local.Clients {
+			have[c.Email] = true
+		}
+		mux.HandleFunc("PUT "+bridgespec.ClientsPath, func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(bridgespec.TokenHeader) != spec.Local.Token {
+				http.Error(w, "wrong or missing token", http.StatusForbidden)
+				return
+			}
+			var req bridgespec.ClientsRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			res := bridgespec.ClientsResult{Added: []string{}, Removed: []string{}, Replaced: []string{}}
+			want := map[string]bool{}
+			for _, c := range req.Clients {
+				if c.Email == "fail" {
+					http.Error(w, "bad clients: clients[0].email: refused by the fake", http.StatusBadRequest)
+					return
+				}
+				want[c.Email] = true
+				if !have[c.Email] {
+					res.Added = append(res.Added, c.Email)
+				}
+			}
+			for email := range have {
+				if !want[email] {
+					res.Removed = append(res.Removed, email)
+					res.Closed++
+				}
+			}
+			have = want
+			sort.Strings(res.Added)
+			sort.Strings(res.Removed)
+			json.NewEncoder(w).Encode(res)
+		})
+	}
 	go http.ListenAndServe(spec.StatusAddr, mux)
 }
