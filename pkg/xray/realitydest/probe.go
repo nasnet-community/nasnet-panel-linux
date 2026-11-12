@@ -31,6 +31,10 @@ type Request struct {
 	Xver        uint64        // PROXY protocol version written before TLS (0, 1 or 2)
 	ServerNames []string      // SNIs clients will present; each one is checked
 	Timeout     time.Duration // per server name; DefaultTimeout when zero
+	// Dial connects to dest, for a caller whose inbound reaches it some other
+	// way than the system would: from one source address, say. Nil dials
+	// plainly, as Xray does.
+	Dial func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 // DefaultTimeout bounds connect plus handshake for one server name.
@@ -182,7 +186,7 @@ func Probe(ctx context.Context, req Request) (*Report, error) {
 			}
 			probeCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			report.Checks[i] = probeOne(probeCtx, network, address, req.Xver, name)
+			report.Checks[i] = probeOne(probeCtx, req.Dial, network, address, req.Xver, name)
 		}(i, name)
 	}
 	wg.Wait()
@@ -249,12 +253,14 @@ func displayName(sni string) subject {
 	return subject{start: sni, mid: sni}
 }
 
-func probeOne(ctx context.Context, network, address string, xver uint64, sni string) Check {
+func probeOne(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), network, address string, xver uint64, sni string) Check {
 	check := Check{ServerName: sni}
 	who := displayName(sni)
 
-	dialer := &net.Dialer{}
-	raw, err := dialer.DialContext(ctx, network, address)
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	raw, err := dial(ctx, network, address)
 	if err != nil {
 		check.Reason, check.Message = ReasonDialFailed, fmt.Sprintf("Could not connect to %s: %s", address, trimErr(err))
 		return check

@@ -124,20 +124,58 @@ func parseTarget(s string) (host string, port int, err error) {
 	return hostPart, port, nil
 }
 
+// prober runs the check of a target somewhere: on a node, through its agent,
+// or on the router itself.
+type prober struct {
+	// who ran it, for the messages: "node" or "router".
+	who   string
+	probe func(context.Context, *pb.RealityDestProbeRequest) (*pb.RealityDestProbeResponse, error)
+	// failed words what stopped a check.
+	failed func(error) error
+}
+
+func agentProber(c *agent.Client) prober {
+	return prober{who: "node", probe: c.ProbeRealityDest, failed: func(err error) error { return probeFailure(err, c) }}
+}
+
+// LocalProbe is the check of a Reality target run on this machine, with the
+// agent's request and answer: the router's own entry reaches its target from
+// here, so here is where the check has to run.
+type LocalProbe func(context.Context, *pb.RealityDestProbeRequest) (*pb.RealityDestProbeResponse, error)
+
+func localProber(probe LocalProbe) prober {
+	return prober{who: "router", probe: probe, failed: func(err error) error {
+		if ctxDone(err) {
+			return err
+		}
+		return &opError{msg: sentence("The router couldn't check the target: " + err.Error()), cause: err}
+	}}
+}
+
 // CheckTarget has the node try one target: connect to it, shake hands the way
 // a client would, and judge what comes back. What is wrong with the target is
 // in the result; an error is for what stopped the check, such as a target that
 // isn't written as host:port, or an agent too old to run it.
-func (e *Env) CheckTarget(ctx context.Context, c *agent.Client, target string) (_ HandshakeCheck, err error) {
+func (e *Env) CheckTarget(ctx context.Context, c *agent.Client, target string) (HandshakeCheck, error) {
+	return checkOne(ctx, agentProber(c), target)
+}
+
+// CheckTargetHere is CheckTarget for the router's own entry: the same check,
+// judged the same way, run by probe on this machine.
+func CheckTargetHere(ctx context.Context, probe LocalProbe, target string) (HandshakeCheck, error) {
+	return checkOne(ctx, localProber(probe), target)
+}
+
+func checkOne(ctx context.Context, p prober, target string) (_ HandshakeCheck, err error) {
 	defer func() { err = ctxErr(ctx, err) }()
 	host, port, err := parseTarget(target)
 	if err != nil {
 		return HandshakeCheck{}, err
 	}
-	return checkTarget(ctx, c, host, port)
+	return checkTarget(ctx, p, host, port)
 }
 
-func checkTarget(ctx context.Context, c *agent.Client, host string, port int) (HandshakeCheck, error) {
+func checkTarget(ctx context.Context, p prober, host string, port int) (HandshakeCheck, error) {
 	// the name in the hello is the host's, which an address can't be
 	sni := host
 	if net.ParseIP(host) != nil {
@@ -145,16 +183,16 @@ func checkTarget(ctx context.Context, c *agent.Client, host string, port int) (H
 	}
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout+6*time.Second)
 	defer cancel()
-	resp, err := c.ProbeRealityDest(ctx, &pb.RealityDestProbeRequest{
+	resp, err := p.probe(ctx, &pb.RealityDestProbeRequest{
 		Dest:        net.JoinHostPort(host, strconv.Itoa(port)),
 		ServerNames: []string{sni},
 		TimeoutMs:   int32(probeTimeout / time.Millisecond),
 	})
 	if err != nil {
-		return HandshakeCheck{}, probeFailure(err, c)
+		return HandshakeCheck{}, p.failed(err)
 	}
-	if len(resp.Checks) != 1 {
-		return HandshakeCheck{}, &opError{msg: "The node's check of the target didn't come back with an answer.", cause: nil}
+	if resp == nil || len(resp.Checks) != 1 {
+		return HandshakeCheck{}, &opError{msg: fmt.Sprintf("The %s's check of the target didn't come back with an answer.", p.who), cause: nil}
 	}
 	return handshakeCheck(resp.Checks[0]), nil
 }
@@ -219,7 +257,17 @@ func explainCheck(c *pb.RealityDestCheck) string {
 // the best of them. Candidates are host or host:port, with 443 for the port;
 // none given means DefaultTargets. A target that doesn't work isn't an error:
 // it is a result that says why. An error is for what stopped the checks.
-func (e *Env) ProbeTargets(ctx context.Context, c *agent.Client, candidates []string) (_ TargetChoice, err error) {
+func (e *Env) ProbeTargets(ctx context.Context, c *agent.Client, candidates []string) (TargetChoice, error) {
+	return probeTargets(ctx, agentProber(c), candidates)
+}
+
+// ProbeTargetsHere is ProbeTargets for the router's own entry, run by probe
+// on this machine.
+func ProbeTargetsHere(ctx context.Context, probe LocalProbe, candidates []string) (TargetChoice, error) {
+	return probeTargets(ctx, localProber(probe), candidates)
+}
+
+func probeTargets(ctx context.Context, p prober, candidates []string) (_ TargetChoice, err error) {
 	defer func() { err = ctxErr(ctx, err) }()
 	if len(candidates) == 0 {
 		candidates = DefaultTargets()
@@ -261,7 +309,7 @@ func (e *Env) ProbeTargets(ctx context.Context, c *agent.Client, candidates []st
 				errs[i] = ctx.Err()
 				return
 			}
-			chk, err := checkTarget(ctx, c, cd.host, cd.port)
+			chk, err := checkTarget(ctx, p, cd.host, cd.port)
 			results[i], errs[i] = TargetResult{Target: cd.target, Check: chk}, err
 		}()
 	}
