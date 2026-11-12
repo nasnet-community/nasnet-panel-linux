@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Ellipsis, Info, Pencil, Plus, QrCode as QrIcon, RotateCcw, Trash2, Users } from '../components/icons'
-import { Badge, Button, Card, Menu, btn, cx, type Tone } from '../components/ui'
+import { Info, Pencil, Plus, QrCode as QrIcon, Users } from '../components/icons'
+import { Badge, Button, Card, btn, cx } from '../components/ui'
 import { useNow } from '../hooks/usePoll'
 import { useLang } from '../i18n'
-import { expiryParts, expiryText, quotaTone, usedPercent, type Editable, type Place, type Status, type StatusKey } from '../lib/subscriptions'
+import { limitsOf, quotaTone, statusText, type Editable, type Place, type Status, type StatusKey } from '../lib/subscriptions'
 
 /** One number of the row above a list, with what it is and a small line under it. */
 export function Tile({ label, value, unit, sub }: { label: string; value: ReactNode; unit?: string; sub: string }) {
@@ -38,9 +38,45 @@ export function Updated({ at }: { at: number | null }) {
   return <span className="text-xs text-faint">{at ? t('subs.updated', { ago: fmt.secondsAgo(new Date(at).toISOString(), now) }) : null}</span>
 }
 
-const TONE: Record<StatusKey, Tone> = { online: 'online', active: 'active', off: 'muted', unknown: 'muted', limit: 'warn', expired: 'warn' }
+// the dot before a status: green while connected, hollow while switched on with nobody connected,
+// amber when the hub stopped it, faint when it is off or nothing is known
+const DOT: Record<StatusKey, string> = {
+  online: 'bg-ok',
+  active: 'border border-border-strong',
+  off: 'bg-border-strong',
+  unknown: 'bg-border-strong',
+  limit: 'bg-warn',
+  expired: 'bg-warn',
+}
 
-export const StatusBadge = ({ status }: { status: Status }) => <Badge tone={TONE[status.key]}>{status.label}</Badge>
+/** Where a subscription stands, in one line under its name: a dot, the word, and what there is to add. */
+export function StatusLine({ status, className }: { status: Status; className?: string }) {
+  const stopped = status.key === 'limit' || status.key === 'expired'
+  return (
+    <span data-status={status.key} className={cx('flex items-center gap-1.5 text-xs font-normal', stopped ? 'text-warn-text' : status.key === 'online' ? 'text-ok-text' : 'text-muted', className)}>
+      <span aria-hidden="true" className={cx('h-1.5 w-1.5 shrink-0 rounded-full', DOT[status.key])} />
+      <span className="min-w-0">{statusText(status)}</span>
+    </span>
+  )
+}
+
+/**
+ * A switch with what goes beside it: a green dot while the subscription is connected at that place,
+ * and "when it is back" under one that is switched on for a place that isn't answering.
+ */
+export function PlaceSwitch({ children, online, later }: { children: ReactNode; /** connected there now */ online: boolean; /** on, and waiting for the place */ later: boolean }) {
+  const { t } = useLang()
+  return (
+    <span className="inline-flex flex-col gap-0.5">
+      <span className="inline-flex items-center gap-1.5">
+        {children}
+        <span aria-hidden="true" className={cx('h-1.5 w-1.5 shrink-0 rounded-full', online ? 'bg-ok' : 'bg-transparent')} />
+        {online && <span className="sr-only">{t('subs.connectedHere')}</span>}
+      </span>
+      {later && <span className="whitespace-nowrap text-[11px] leading-tight text-faint">{t('subs.whenBack')}</span>}
+    </span>
+  )
+}
 
 /**
  * A subscription's name. It reads in its own direction (a Persian name in an English page and the other
@@ -52,14 +88,21 @@ export const Name = ({ children, className }: { children: string; className?: st
   </span>
 )
 
-/** A place's name over a column of switches, with a dot for how it is doing. */
-export function NodeHead({ node }: { node: Place }) {
+/**
+ * A place's name over a column of switches, with a dot for how it is doing. `brief`: beside a switch on a
+ * phone's card. There a green dot means "connected here", so a place that is fine has none, and one that
+ * isn't has a red one that stands for the word, which only screen readers get.
+ */
+export function NodeHead({ node, brief = false }: { node: Place; brief?: boolean }) {
   const { t } = useLang()
+  const word = t(node.id === 'router' ? 'subs.notWorking' : 'subs.unreachable')
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span dir="auto">{node.name}</span>
-      <span aria-hidden="true" className={cx('h-1.5 w-1.5 rounded-full', node.unreachable ? 'bg-bad' : 'bg-ok')} />
-      {node.unreachable && <span className="text-xs font-medium text-bad-text">{t(node.id === 'router' ? 'subs.notWorking' : 'subs.unreachable')}</span>}
+    <span className="inline-flex max-w-full items-center gap-1.5">
+      <span dir="auto" className={brief ? 'truncate' : undefined}>
+        {node.name}
+      </span>
+      {(!brief || node.unreachable) && <span aria-hidden="true" className={cx('h-1.5 w-1.5 shrink-0 rounded-full', node.unreachable ? 'bg-bad' : 'bg-ok')} />}
+      {node.unreachable && <span className={brief ? 'sr-only' : 'text-xs font-medium text-bad-text'}>{word}</span>}
     </span>
   )
 }
@@ -84,30 +127,20 @@ export const ShareButton = ({ onClick, className }: { onClick: () => void; class
   )
 }
 
+/** What a row can do. Resetting its usage and deleting it are in the Edit dialog. */
 export interface RowActions {
   share: () => void
   /** name, traffic limit and end date, in one dialog */
   edit: () => void
-  reset: () => void
-  remove: () => void
 }
 
-/** The "…" menu of a row. `shareOff` is why Share link doesn't work, when it doesn't. */
-export function RowMenu({ name, shareOff, actions }: { name: string; shareOff: string | null; actions: RowActions }) {
-  const { t } = useLang()
+/** A row's two actions: Share while it has a link somewhere, and Edit. */
+export function RowButtons({ name, shareable, actions, className }: { name: string; shareable: boolean; actions: RowActions; className?: string }) {
   return (
-    <Menu
-      label={t('subs.menu.actions', { name })}
-      variant="ghost"
-      items={[
-        { label: t('subs.menu.share'), icon: <QrIcon />, disabled: !!shareOff, hint: shareOff ?? undefined, onSelect: actions.share },
-        { label: t('subs.menu.edit'), icon: <Pencil />, onSelect: actions.edit },
-        { label: t('subs.menu.reset'), icon: <RotateCcw />, onSelect: actions.reset },
-        { label: t('subs.menu.delete'), icon: <Trash2 />, danger: true, divide: true, onSelect: actions.remove },
-      ]}
-    >
-      <Ellipsis className="h-4 w-4" />
-    </Menu>
+    <div className={cx('flex items-center justify-end gap-1', className)}>
+      {shareable && <ShareButton onClick={actions.share} />}
+      <EditButton name={name} onClick={actions.edit} />
+    </div>
   )
 }
 
@@ -180,65 +213,37 @@ type Quota = Pick<Editable, 'trafficLimit' | 'trafficUsed' | 'expiresAt' | 'stop
 
 const WHEN: Record<'muted' | 'warn' | 'bad', string> = { muted: 'text-faint', warn: 'text-warn-text', bad: 'text-bad-text' }
 
-/** The Traffic limit column: what is used of it, a bar, and what is left. */
-export function LimitCell({ s }: { s: Quota }) {
-  const { t, fmt } = useLang()
-  if (s.trafficLimit <= 0) return <span className="text-xs text-faint">{t('subs.quota.none')}</span>
-  const pct = usedPercent(s.trafficUsed, s.trafficLimit)
-  const left = s.trafficLimit - s.trafficUsed
-  return (
-    <div className="flex min-w-[8.5rem] flex-col gap-1">
-      <span className="tabular whitespace-nowrap text-[13px]">{t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) })}</span>
-      <Meter pct={pct} label={t('subs.quota.traffic')} />
-      <span className={cx('tabular text-xs', left > 0 ? 'text-faint' : 'text-bad-text')}>
-        {left > 0 ? t('subs.quota.left', { size: fmt.bytes(left) }) : t('subs.quota.usedUp')}
-      </span>
-    </div>
-  )
-}
-
-/** The Expires column: the day, and how far off it is, warmer in its last week and red once it is past. */
-export function ExpiryCell({ s }: { s: Quota }) {
+/** The Limits column: the traffic limit with its bar and what is left, and the end date beside it; the date alone when there is no limit. */
+export function LimitsCell({ s }: { s: Quota }) {
   const { t, fmt } = useLang()
   const now = useNow(60000)
-  if (!s.expiresAt) return <span className="text-xs text-faint">{t('subs.quota.never')}</span>
-  const e = expiryParts(t, fmt, s.expiresAt, now)
+  const l = limitsOf(s, t, fmt, now)
+  if (l.pct === null && !l.foot) return <span className="text-xs text-faint">{l.head}</span>
   return (
-    <div className="flex flex-col gap-0.5 whitespace-nowrap">
-      <span className="tabular text-[13px]">{e.date}</span>
-      <span className={cx('text-xs', WHEN[e.tone])}>{e.when}</span>
+    <div className="flex min-w-[9rem] max-w-[15rem] flex-col gap-1">
+      <span className="tabular whitespace-nowrap text-[13px]">{l.head}</span>
+      {l.pct !== null && <Meter pct={l.pct} label={t('subs.quota.traffic')} />}
+      <span className={cx('tabular text-xs', WHEN[l.tone])}>{l.foot}</span>
     </div>
   )
 }
 
 /**
- * Both on a phone's card, in a small box. A card has no column to keep in line, so the box is left
+ * The same on a phone's card, in a small box. A card has no column to keep in line, so the box is left
  * out when there is no limit and no date.
  */
 export function QuotaSummary({ s }: { s: Quota }) {
   const { t, fmt } = useLang()
   const now = useNow(60000)
-  if (s.trafficLimit <= 0 && !s.expiresAt) return null
-  const pct = usedPercent(s.trafficUsed, s.trafficLimit)
-  const left = s.trafficLimit - s.trafficUsed
+  const l = limitsOf(s, t, fmt, now)
+  if (l.pct === null && !l.foot) return null
   return (
     <div className="flex flex-col gap-1 rounded-md border border-border px-3 py-2">
-      {s.trafficLimit > 0 ? (
-        <>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="tabular text-[13px]">{t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) })}</span>
-            <span className={cx('tabular text-xs', left > 0 ? 'text-faint' : 'text-bad-text')}>
-              {left > 0 ? t('subs.quota.left', { size: fmt.bytes(left) }) : t('subs.quota.usedUp')}
-            </span>
-          </div>
-          <Meter pct={pct} label={t('subs.quota.traffic')} />
-        </>
-      ) : (
-        <span className="text-xs text-faint">{t('subs.quota.none')}</span>
-      )}
-      <span className={cx('text-xs', s.expiresAt && Date.parse(s.expiresAt) <= now ? 'text-bad-text' : 'text-faint')}>
-        {expiryText(t, fmt, s.expiresAt, now) || t('subs.quota.noEnd')}
-      </span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="tabular text-[13px]">{l.head}</span>
+        <span className={cx('tabular text-xs', WHEN[l.tone])}>{l.foot}</span>
+      </div>
+      {l.pct !== null && <Meter pct={l.pct} label={t('subs.quota.traffic')} />}
     </div>
   )
 }

@@ -7,7 +7,7 @@ test('before setup the entry is off, the page says what is missing, and nodes ca
   await expect(page.getByText('Checked 2 min ago')).toBeVisible()
   await expect(chip(page, 'Domestic link', 'missing')).toBeVisible()
   await expect(chip(page, 'VPN', 'missing')).toBeVisible()
-  await expect(chip(page, 'Bridge', 'stopped')).toBeVisible()
+  await expect(chip(page, "Router's Xray", 'stopped')).toBeVisible()
 
   // one item for each thing that is missing, each with a way to the setup
   const items = attention(page)
@@ -53,7 +53,7 @@ const CASES: [string, Reset['entry'], { heading: string; chips: [string, string]
   [
     'the VPN is down',
     'vpn-offline',
-    { heading: 'Entry is off', chips: [['Domestic link', 'online'], ['VPN', 'offline'], ['Bridge', 'waiting']], items: ['The VPN is offline'] },
+    { heading: 'Entry is off', chips: [['Domestic link', 'online'], ['VPN', 'offline'], ["Router's Xray", 'waiting']], items: ['The VPN is offline'] },
   ],
   [
     'RouterOS is too old',
@@ -67,7 +67,7 @@ const CASES: [string, Reset['entry'], { heading: string; chips: [string, string]
   [
     'the router has not reported for a while',
     'stale',
-    { heading: 'Entry is on', chips: [['Domestic link', 'online'], ['Bridge', 'running']], note: 'Checked 20 min ago, may be out of date' },
+    { heading: 'Entry is on', chips: [['Domestic link', 'online'], ["Router's Xray", 'running']], note: 'Checked 20 min ago, may be out of date' },
   ],
 ]
 

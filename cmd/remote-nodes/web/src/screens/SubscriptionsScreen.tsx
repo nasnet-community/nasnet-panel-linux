@@ -21,16 +21,14 @@ import {
 import { shareTarget, useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
-  EditButton,
   EmptyState,
-  ExpiryCell,
-  LimitCell,
+  LimitsCell,
   Name,
   NodeHead,
+  PlaceSwitch,
   QuotaSummary,
-  RowMenu,
-  ShareButton,
-  StatusBadge,
+  RowButtons,
+  StatusLine,
   Tile,
   Tiles,
   Updated,
@@ -90,34 +88,33 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
 
   const rows = list.map((s) => {
     const target = shareTarget(s, nodes ?? [])
-    const actions: RowActions = {
-      share: () => dialogs.share(target),
-      edit: () => dialogs.edit(s),
-      reset: () => dialogs.reset(s),
-      remove: () => dialogs.remove(s),
-    }
+    const actions: RowActions = { share: () => dialogs.share(target), edit: () => dialogs.edit(s) }
     return {
       s,
       status: subscriptionStatus(s, nodes ?? [], t, fmt, lang),
       traffic: trafficText(t, fmt, s.todayUp + s.todayDown, s.monthUp + s.monthDown),
       shareable: target.places.length > 0,
       actions,
-      on: (n: Place) => enabledAt(s, n.id),
     }
   })
 
-  const toggle = (s: Subscription, n: Place, on: boolean) => (
-    <Switch
-      checked={on}
-      disabled={pending.has(`${s.id}:${n.id}`)}
-      onChange={(next) => void flip(s, n, next)}
-      label={t('subs.switch', { name: s.name, node: n.name })}
-    />
-  )
+  // a switch that is on for a place that isn't answering takes effect later
+  const waits = (s: Subscription, n: Place) => enabledAt(s, n.id) && n.unreachable && !s.stopped
+
+  // one place's switch for one subscription, with the dot that says it is connected there. On a phone
+  // the "when it is back" goes under the place's name, where there is room for it.
+  const toggle = (s: Subscription, n: Place, later = true) => {
+    const on = enabledAt(s, n.id)
+    return (
+      <PlaceSwitch online={!s.stopped && onlineAt(s, n.id)} later={later && waits(s, n)}>
+        <Switch checked={on} disabled={pending.has(`${s.id}:${n.id}`)} onChange={(next) => void flip(s, n, next)} label={t('subs.switch', { name: s.name, node: n.name })} />
+      </PlaceSwitch>
+    )
+  }
 
   // the numbers above the list
   const online = list.filter((s) => s.online === true)
-  // with no node (or no subscription) there is nothing to be unsure about
+  // with no place (or no subscription) there is nothing to be unsure about
   const known = list.length === 0 || ready.length === 0 || list.some((s) => s.online !== null)
   const where = ready.filter((n) => online.some((s) => onlineAt(s, n.id))).map((n) => n.name)
   const sum = totals(list)
@@ -160,46 +157,45 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
               <table aria-label={t('tabs.subscriptions')} className="w-full text-[13px]">
                 <thead className="border-b border-border text-xs text-muted">
                   <tr>
-                    <th scope="col" className="py-2.5 pe-3 ps-4 text-start font-medium">
+                    <th scope="col" rowSpan={2} className="py-2.5 pe-3 ps-4 text-start align-bottom font-medium">
                       {t('subs.col.subscription')}
                     </th>
+                    {/* the places sit under one heading, so four columns of switches read as one thing */}
+                    {ready.length > 0 && (
+                      <th scope="colgroup" colSpan={ready.length} className="px-3 pb-1 pt-2.5 text-start font-medium">
+                        {t('subs.col.places')}
+                      </th>
+                    )}
+                    <th scope="col" rowSpan={2} className="px-3 py-2.5 text-start align-bottom font-medium">
+                      {t('subs.col.traffic')}
+                    </th>
+                    <th scope="col" rowSpan={2} className="px-3 py-2.5 text-start align-bottom font-medium">
+                      {t('subs.col.limits')}
+                    </th>
+                    <th scope="col" rowSpan={2} className="px-3 py-2.5">
+                      <span className="sr-only">{t('subs.col.actions')}</span>
+                    </th>
+                  </tr>
+                  <tr>
                     {ready.map((n) => (
-                      <th key={n.id} scope="col" className="px-3 py-2.5 text-start font-medium">
+                      <th key={n.id} scope="col" className="whitespace-nowrap px-3 pb-2.5 text-start font-medium text-foreground">
                         <NodeHead node={n} />
                       </th>
                     ))}
-                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.status')}
-                    </th>
-                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.traffic')}
-                    </th>
-                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.limit')}
-                    </th>
-                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.expires')}
-                    </th>
-                    <th scope="col" className="px-3 py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(({ s, status, traffic, shareable, actions, on }) => (
+                  {rows.map(({ s, status, traffic, shareable, actions }) => (
                     <tr key={s.id} className="border-b border-border last:border-0">
                       <th scope="row" className="py-3 pe-3 ps-4 text-start font-medium">
-                        <Name className="max-w-[200px]">{s.name}</Name>
+                        <Name className="max-w-[220px]">{s.name}</Name>
+                        <StatusLine status={status} className="mt-0.5" />
                       </th>
                       {ready.map((n) => (
-                        <td key={n.id} className="px-3 py-3">
-                          {toggle(s, n, on(n))}
+                        <td key={n.id} className="px-3 py-3 align-top">
+                          {toggle(s, n)}
                         </td>
                       ))}
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col gap-0.5">
-                          <StatusBadge status={status} />
-                          <span className="text-xs text-faint">{status.sub}</span>
-                        </div>
-                      </td>
                       <td className="tabular whitespace-nowrap px-3 py-3">
                         <div>
                           {traffic.today} <span className="text-xs text-faint">{t('time.today')}</span>
@@ -207,17 +203,10 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                         <div className="text-xs text-faint">{traffic.month}</div>
                       </td>
                       <td className="px-3 py-3">
-                        <LimitCell s={s} />
+                        <LimitsCell s={s} />
                       </td>
                       <td className="px-3 py-3">
-                        <ExpiryCell s={s} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex justify-end gap-1">
-                          {shareable && <ShareButton onClick={actions.share} />}
-                          <EditButton name={s.name} onClick={actions.edit} />
-                          <RowMenu name={s.name} shareOff={shareable ? null : t(router ? 'subs.menu.shareOffPlace' : 'subs.menu.shareOff')} actions={actions} />
-                        </div>
+                        <RowButtons name={s.name} shareable={shareable} actions={actions} />
                       </td>
                     </tr>
                   ))}
@@ -228,26 +217,24 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
 
           {/* cards on phones */}
           <ul aria-label={t('tabs.subscriptions')} className="flex flex-col gap-3 md:hidden">
-            {rows.map(({ s, status, traffic, shareable, actions, on }) => (
+            {rows.map(({ s, status, traffic, shareable, actions }) => (
               <li key={s.id} className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">
-                      <Name>{s.name}</Name>
-                    </div>
-                    <div className="text-xs text-faint">{status.sub}</div>
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    <Name>{s.name}</Name>
                   </div>
-                  <StatusBadge status={status} />
-                  <div className="-me-2 -mt-1.5">
-                    <RowMenu name={s.name} shareOff={shareable ? null : t(router ? 'subs.menu.shareOffPlace' : 'subs.menu.shareOff')} actions={actions} />
-                  </div>
+                  <StatusLine status={status} className="mt-0.5" />
                 </div>
                 {ready.length > 0 && (
-                  <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+                  // two to a row, so a card stays short with the router and three nodes
+                  <ul className="grid grid-cols-2 gap-x-4 rounded-md border border-border px-3">
                     {ready.map((n) => (
-                      <li key={n.id} className="flex min-h-11 items-center justify-between gap-3 px-3 text-[13px]">
-                        <NodeHead node={n} />
-                        {toggle(s, n, on(n))}
+                      <li key={n.id} className="flex min-h-11 items-center justify-between gap-2 py-1 text-[13px]">
+                        <span className="flex min-w-0 flex-col">
+                          <NodeHead node={n} brief />
+                          {waits(s, n) && <span className="text-[11px] leading-tight text-faint">{t('subs.whenBack')}</span>}
+                        </span>
+                        {toggle(s, n, false)}
                       </li>
                     ))}
                   </ul>
@@ -255,16 +242,16 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                 <QuotaSummary s={s} />
                 <div className="flex items-end gap-2">
                   <div className="tabular min-w-0 flex-1 text-xs text-muted">{traffic.line}</div>
-                  {shareable && <ShareButton className="-my-1" onClick={actions.share} />}
-                  <EditButton name={s.name} className="-my-1" onClick={actions.edit} />
+                  <RowButtons name={s.name} shareable={shareable} actions={actions} className="-my-1" />
                 </div>
               </li>
             ))}
           </ul>
 
-          {installing.length > 0 && (
-            <p className="text-xs text-faint">{t('subs.installing', { n: installing.length, nodes: nameList(lang, installing) })}</p>
-          )}
+          <p className="text-xs text-faint">
+            {t('subs.legend')}
+            {installing.length > 0 && ` ${t('subs.installing', { n: installing.length, nodes: nameList(lang, installing) })}`}
+          </p>
         </>
       )}
 

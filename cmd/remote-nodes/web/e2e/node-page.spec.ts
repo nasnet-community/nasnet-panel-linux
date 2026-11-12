@@ -206,15 +206,15 @@ test.describe('the header card and the list of notes', () => {
     await expect(attention(page)).toContainText('Xray -test failed: port 443 already in use.')
   })
 
-  test("a bridge that is not running is the router's trouble, and the page says it will come back", async ({ page, request }) => {
+  test("the router's Xray not running is the router's trouble, and the page says it will come back", async ({ page, request }) => {
     await setNode(request, { id: 1, bridgeDown: true })
     await openNode(page, 1)
     await expect(page.getByText('Needs attention', { exact: true })).toBeVisible()
-    await expect(attention(page)).toContainText("The router's bridge is not running")
+    await expect(attention(page)).toContainText("The router's Xray is not running")
     await expect(attention(page)).toContainText('The plugin starts it again by itself.')
     await page.getByRole('tab', { name: 'Status' }).click()
     await expect(page.getByRole('heading', { level: 2, name: "Subscriptions can't connect right now" })).toBeVisible()
-    await expect(verdictChip(page, 'Bridge', 'stopped')).toBeVisible()
+    await expect(verdictChip(page, "Router's Xray", 'stopped')).toBeVisible()
     await expect(verdictChip(page, 'Portal', 'listening')).toBeVisible()
   })
 

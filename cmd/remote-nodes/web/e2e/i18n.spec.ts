@@ -17,7 +17,7 @@ test('the language button switches the whole page to Persian: right to left, Per
   await expect(page.getByText('بررسی ۲ دقیقه پیش')).toBeVisible()
   await expect(chip(page, 'آپ‌لینک داخلی', 'آنلاین')).toBeVisible()
   await expect(chip(page, 'وی پی ان', 'وایرگارد')).toBeVisible()
-  await expect(chip(page, 'بریج', 'در حال اجرا')).toBeVisible()
+  await expect(chip(page, 'Xray روتر', 'در حال اجرا')).toBeVisible()
   // tabs and the nodes header
   await expect(page.getByRole('tab', { name: 'نودها' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tab', { name: 'اشتراک‌ها' })).toBeVisible()

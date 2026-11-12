@@ -1,19 +1,19 @@
 import type { Page } from '@playwright/test'
 import { PAGE, dialog, expect, liftLimit, reset, test, toast } from './fixtures'
-import { addViaApi, fillToLimit, flipper, isTable, listed, openNodeSubscriptions, openSubscriptions, pick, row } from './subs'
+import { addButton, addViaApi, fillToLimit, flipper, isTable, listed, openNodeSubscriptions, openSubscriptions, pick, placeTabs, row } from './subs'
 
 const tile = (page: Page, label: string) => page.locator('main .grid > div').filter({ hasText: label })
 const add = (page: Page) => page.getByRole('button', { name: 'Add subscription' })
 
-// what the design board shows: who is on which node (Node 1, Node 2), how each is doing, what it moved
-const SAMPLE: [name: string, on: [boolean, boolean], status: string, sub: string, today: string, month: string][] = [
-  ['Sara', [true, true], 'Online', 'on Node 1', '1.2 GB', '38.0 GB in 30 days'],
-  ['Ali', [true, false], 'Online', 'on Node 1', '640 MB', '21.0 GB in 30 days'],
-  ['Reza', [true, true], 'Online', 'on Node 1', '1.9 GB', '52.0 GB in 30 days'],
-  ['Mina', [true, false], 'Active', 'last seen 3 hours ago', '310 MB', '9.4 GB in 30 days'],
-  ['Parsa', [true, false], 'Active', 'last seen yesterday', '0 B', '1.1 GB in 30 days'],
-  ['Dana', [true, true], 'Active', 'last seen 2 days ago', '0 B', '600 MB in 30 days'],
-  ['Kian', [false, true], 'Active', 'last seen 25 minutes ago', '210 MB', '5.2 GB in 30 days'],
+// what the design board shows: who is on which node (Node 1, Node 2), how each is doing (the line under its name), what it moved
+const SAMPLE: [name: string, on: [boolean, boolean], status: string, today: string, month: string][] = [
+  ['Sara', [true, true], 'Online on Node 1 · 3 connections', '1.2 GB', '38.0 GB in 30 days'],
+  ['Ali', [true, false], 'Online on Node 1 · 2 connections', '640 MB', '21.0 GB in 30 days'],
+  ['Reza', [true, true], 'Online on Node 1 · 4 connections', '1.9 GB', '52.0 GB in 30 days'],
+  ['Mina', [true, false], 'Offline · last seen 3 hours ago', '310 MB', '9.4 GB in 30 days'],
+  ['Parsa', [true, false], 'Offline · last seen yesterday', '0 B', '1.1 GB in 30 days'],
+  ['Dana', [true, true], 'Offline · last seen 2 days ago', '0 B', '600 MB in 30 days'],
+  ['Kian', [false, true], 'Offline · last seen 25 minutes ago', '210 MB', '5.2 GB in 30 days'],
 ]
 
 test('the tab shows the sample data: the tiles, the toolbar, and every subscription with its switches, status and traffic', async ({ page, isMobile }) => {
@@ -29,33 +29,37 @@ test('the tab shows the sample data: the tiles, the toolbar, and every subscript
   await expect(add(page)).toBeVisible()
   await expect(add(page)).not.toHaveAttribute('aria-disabled', 'true')
 
-  for (const [name, on, status, sub, today, month] of SAMPLE) {
+  for (const [name, on, status, today, month] of SAMPLE) {
     const r = row(page, name)
     await expect(r, name).toBeVisible()
     await expect(r).toContainText(status)
-    await expect(r).toContainText(sub)
     await expect(r).toContainText(`${today} today`)
     await expect(r).toContainText(month)
     await expect(flipper(page, name, 'Node 1'), `${name} on Node 1`).toHaveAttribute('aria-checked', String(on[0]))
     await expect(flipper(page, name, 'Node 2'), `${name} on Node 2`).toHaveAttribute('aria-checked', String(on[1]))
+    // a row has two actions and no menu: the rest is in the Edit dialog
     await expect(r.getByRole('button', { name: 'Share', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: `Actions for ${name}`, exact: true })).toBeVisible()
+    await expect(r.getByRole('button', { name: `Edit ${name}`, exact: true })).toBeVisible()
+    await expect(r.getByRole('button')).toHaveCount(2)
   }
 
   // Node 2 can't be reached, and says so where its switches are
   if (isMobile) await expect(row(page, 'Sara')).toContainText(/Node 2\s*unreachable/)
   else {
+    // the nodes sit under one heading, with the other columns beside it
     const heads = page.getByRole('columnheader')
-    await expect(heads.nth(0)).toHaveText('Subscription')
-    await expect(heads.nth(1)).toHaveText('Node 1')
-    await expect(heads.nth(2)).toContainText('Node 2')
-    await expect(heads.nth(2)).toContainText('unreachable')
-    await expect(heads.nth(3)).toHaveText('Status')
-    await expect(heads.nth(4)).toHaveText('Traffic')
+    await expect(heads).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Limits', 'Actions', 'Node 1', /^Node 2\s*unreachable$/])
     // a dot for how each node is doing
-    await expect(heads.nth(1).locator('[aria-hidden]')).toHaveClass(/bg-ok/)
-    await expect(heads.nth(2).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
+    await expect(heads.nth(5).locator('[aria-hidden]')).toHaveClass(/bg-ok/)
+    await expect(heads.nth(6).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
   }
+  // where a switch is on for the node that is down, it says when it takes effect
+  await expect(row(page, 'Sara')).toContainText('when it is back')
+  await expect(row(page, 'Ali')).not.toContainText('when it is back')
+  // a green dot beside the switch of the place a subscription is connected at, and nowhere else
+  await expect(row(page, 'Sara').getByText('connected here')).toHaveCount(1)
+  await expect(row(page, 'Mina').getByText('connected here')).toHaveCount(0)
+  await expect(page.getByText('A green dot beside a switch shows where it is connected now.')).toBeVisible()
 
   // a node still installing has no switches yet, and the page says it will
   await expect(page.getByText("Node 3 is installing. It shows up here when it's ready.")).toBeVisible()
@@ -72,7 +76,8 @@ test('a table on wide screens, cards on phones', async ({ page, isMobile }) => {
     await expect(card).toContainText('1.2 GB today · 38.0 GB in 30 days')
   } else {
     await expect(page.getByRole('table')).toHaveCount(1)
-    await expect(page.getByRole('row')).toHaveCount(8)
+    // two rows of headings, then one per subscription
+    await expect(page.getByRole('row')).toHaveCount(9)
   }
 })
 
@@ -115,7 +120,9 @@ test('adds a subscription on the nodes ticked, then offers its link', async ({ p
 
   await d.getByLabel('Name').fill('  Nika ')
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/subscriptions') && r.method() === 'POST')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  // with a node ticked its link is ready at once, and the button says what comes next
+  await expect(addButton(d)).toHaveText('Add and share')
+  await addButton(d).click()
   expect((await sent).postDataJSON()).toEqual({ name: 'Nika', nodeIds: [1] })
   await expect(toast(page, 'Nika added')).toBeVisible()
 
@@ -142,13 +149,14 @@ test('ticking the unreachable node too gives one link for each, and the picker s
   await d.getByLabel('Name').fill('Nika')
   await d.getByRole('checkbox', { name: 'Node 2 unreachable' }).check()
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/subscriptions') && r.method() === 'POST')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(d).click()
   expect((await sent).postDataJSON()).toEqual({ name: 'Nika', nodeIds: [1, 2] })
-  const share = dialog(page, "Share Nika's link")
-  const picker = share.getByRole('group', { name: 'Node' })
-  await expect(picker.getByRole('button')).toHaveText(['Node 1', 'Node 2 unreachable'])
-  await expect(picker.getByRole('button', { name: 'Node 2 unreachable' })).toBeVisible()
-  await expect(picker.getByRole('button', { name: 'Node 1' })).toHaveAttribute('aria-pressed', 'true')
+  // two links, so the dialog says links, and has a tab for each
+  const share = dialog(page, "Share Nika's links")
+  await expect(share).toContainText('One link per place.')
+  await expect(placeTabs(share)).toHaveText(['Node 1', 'Node 2 unreachable'])
+  await expect(share.getByRole('tab', { name: 'Node 2 unreachable' })).toBeVisible()
+  await expect(share.getByRole('tab', { name: 'Node 1' })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('a subscription on no node is allowed: it has no link to share yet', async ({ page }) => {
@@ -158,19 +166,17 @@ test('a subscription on no node is allowed: it has no link to share yet', async 
   await d.getByLabel('Name').fill('Nika')
   await d.getByRole('checkbox', { name: 'Node 1', exact: true }).uncheck()
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/subscriptions') && r.method() === 'POST')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  // with nothing ticked there is no link to share, and the button doesn't promise one
+  await expect(addButton(d)).toHaveText('Add subscription')
+  await addButton(d).click()
   expect((await sent).postDataJSON()).toEqual({ name: 'Nika', nodeIds: [] })
   await expect(toast(page, 'Nika added')).toBeVisible()
-  // nothing to share, so no dialog, no Share button, and the menu says why
+  // nothing to share, so no dialog and no Share button, and its line says why
   await expect(page.getByRole('dialog')).toHaveCount(0)
   const r = row(page, 'Nika')
-  await expect(r).toContainText('Off')
-  await expect(r).toContainText('off on every node')
+  await expect(r).toContainText('Off on every node')
   await expect(r.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Actions for Nika' }).click()
-  const item = page.getByRole('menuitem', { name: /Share link/ })
-  await expect(item).toHaveAttribute('aria-disabled', 'true')
-  await expect(item).toContainText('Switch it on for a node first')
+  await expect(r.getByRole('button', { name: 'Edit Nika', exact: true })).toBeVisible()
 })
 
 test('a name is needed, and one already used is refused under the field, keeping what was typed', async ({ page }) => {
@@ -179,14 +185,14 @@ test('a name is needed, and one already used is refused under the field, keeping
   const d = dialog(page, 'Add a subscription')
   let posts = 0
   page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/subscriptions') && (posts += 1))
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(d).click()
   await expect(d).toContainText('Give the subscription a name.')
   await expect(d.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
   expect(posts).toBe(0)
 
   // case doesn't make a name new
   await d.getByLabel('Name').fill('sara')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(d).click()
   await expect(d).toContainText('That name is already used.')
   await expect(d.getByLabel('Name')).toHaveValue('sara')
   await expect(d.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
@@ -195,7 +201,7 @@ test('a name is needed, and one already used is refused under the field, keeping
 
   // another name goes through, and the message is gone with the dialog
   await d.getByLabel('Name').fill('Sam')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(d).click()
   await expect(toast(page, 'Sam added')).toBeVisible()
   await expect(dialog(page, 'Add a subscription')).toHaveCount(0)
 })
@@ -266,7 +272,7 @@ test.describe('at the limit', () => {
     await d.getByLabel('Name').fill('Nika')
     // somebody else takes the last place
     expect((await addViaApi(request, 'Taken')).ok()).toBe(true)
-    await d.getByRole('button', { name: 'Add subscription' }).click()
+    await addButton(d).click()
     await expect(d.getByRole('alert')).toHaveText('This router has reached its limit of subscriptions. Remove one to add another.')
     // the name is kept, and nothing was added
     await expect(d.getByLabel('Name')).toHaveValue('Nika')
@@ -343,7 +349,7 @@ test('holds a name to 64 characters, in the add dialog and in an edit, and shows
   // one that got past the field is refused by the hub in its own words
   await liftLimit(add.getByLabel('Name'))
   await add.getByLabel('Name').fill('y'.repeat(65))
-  await add.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(add).click()
   await expect(add.getByRole('alert')).toContainText('The name can have at most 64 characters.')
   await add.getByRole('button', { name: 'Cancel' }).click()
 
@@ -361,13 +367,14 @@ test('deletes a subscription after asking, and the count drops', async ({ page }
   await openSubscriptions(page)
   await pick(page, 'Sara', 'Delete subscription')
   const d = page.getByRole('alertdialog', { name: 'Delete Sara?' })
-  await expect(d).toContainText('The subscription is removed from every node, and its links stop working.')
+  await expect(d).toContainText('The subscription is removed everywhere, and its links stop working.')
   // the button that does it is the danger one
   await expect(d.getByRole('button', { name: 'Delete subscription' })).toHaveClass(/bg-bad/)
 
-  // Cancel keeps it
+  // Cancel keeps it, and closes the Edit dialog the question came from
   await d.getByRole('button', { name: 'Cancel' }).click()
   await expect(d).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(row(page, 'Sara')).toBeVisible()
 
   await pick(page, 'Sara', 'Delete subscription')
@@ -476,8 +483,8 @@ test.describe('before there is anything', () => {
     await reset(request, { fresh: true })
     await page.goto('/#/subscriptions')
     await expect(page.getByRole('heading', { name: 'No subscriptions yet' })).toBeVisible()
-    await expect(page.getByText('A subscription is a name with one link for each node it is on. Add one, then share its link.')).toBeVisible()
-    await expect(page.getByText('Add a node first: subscriptions connect through nodes.')).toBeVisible()
+    await expect(page.getByText('A subscription is a name with one link for each place it is on. Add one, then share its link.')).toBeVisible()
+    await expect(page.getByText('Turn on This router or add a node first: subscriptions connect through them.')).toBeVisible()
     await expect(tile(page, 'Subscriptions')).toContainText('0 of 10')
     await expect(tile(page, 'Online now')).toContainText('no connections now')
     await page.getByRole('button', { name: 'Add your first subscription' }).click()
@@ -485,16 +492,16 @@ test.describe('before there is anything', () => {
     await expect(d).toContainText('There are no nodes yet. You can add the subscription now and switch it on for a node later.')
     await expect(d.getByRole('checkbox')).toHaveCount(0)
     await d.getByLabel('Name').fill('Nika')
-    await d.getByRole('button', { name: 'Add subscription' }).click()
+    await addButton(d).click()
     await expect(toast(page, 'Nika added')).toBeVisible()
-    await expect(row(page, 'Nika')).toContainText('off on every node')
+    await expect(row(page, 'Nika')).toContainText('Off on every node')
   })
 
   test('with nodes but no subscriptions, the empty state offers the first one', async ({ page, request }) => {
     for (let id = 1; id <= 7; id += 1) expect((await request.delete(`/api/subscriptions/${id}`, { headers: PAGE })).ok()).toBe(true)
     await page.goto('/#/subscriptions')
     await expect(page.getByRole('heading', { name: 'No subscriptions yet' })).toBeVisible()
-    await expect(page.getByText('Add a node first')).toHaveCount(0)
+    await expect(page.getByText('add a node first')).toHaveCount(0)
     await expect(page.getByText('0 of 10 subscriptions')).toBeVisible()
     await page.getByRole('button', { name: 'Add your first subscription' }).click()
     await dialog(page, 'Add a subscription').getByLabel('Name').fill('Nika')

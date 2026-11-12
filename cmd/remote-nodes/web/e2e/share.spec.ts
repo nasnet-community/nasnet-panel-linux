@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { PAGE, dialog, expect, test, toast } from './fixtures'
-import { addViaApi, linkText, openNodeSubscriptions, openSubscriptions, pick, qrPath, row, shownQrPath } from './subs'
+import { addViaApi, linkText, openNodeSubscriptions, openSubscriptions, pick, placeTabs, qrPath, row, shownQrPath } from './subs'
 
 // Sara's link on Node 1, as the design board shows it
 const BOARD_LINK =
@@ -14,21 +14,28 @@ test('shows a subscription on a node as a QR code and a link, and copies the lin
   page.on('request', (r) => /\/link$/.test(r.url()) && asked.push(new URL(r.url()).pathname.replace(/^.*subscriptions\//, '')))
   await openSubscriptions(page)
   await shareButton(page, 'Sara').click()
-  const d = dialog(page, "Share Sara's link")
-  await expect(d).toContainText('Anyone with this link can use this subscription.')
+  // she is on two nodes, so there are two links, and the dialog says links
+  const d = dialog(page, "Share Sara's links")
+  await expect(d).toContainText('One link per place. Anyone with a link can use this subscription.')
 
-  // one choice per node it is on; the one that can't be reached carries a red dot, which a screen reader hears as a word
-  const picker = d.getByRole('group', { name: 'Node' })
-  await expect(picker.getByRole('button')).toHaveText(['Node 1', 'Node 2 unreachable'])
-  await expect(picker.getByRole('button', { name: 'Node 1', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(picker.getByRole('button', { name: 'Node 2 unreachable' })).toHaveAttribute('aria-pressed', 'false')
-  await expect(picker.getByRole('button', { name: 'Node 2 unreachable' }).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
-  await expect(picker.getByRole('button', { name: 'Node 1', exact: true }).locator('[aria-hidden]')).toHaveCount(0)
+  // a tab per node it is on; the one that can't be reached carries a red dot, which a screen reader hears as a word
+  await expect(placeTabs(d)).toHaveText(['Node 1', 'Node 2 unreachable'])
+  await expect(d.getByRole('tab', { name: 'Node 1', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(d.getByRole('tab', { name: 'Node 2 unreachable' })).toHaveAttribute('aria-selected', 'false')
+  await expect(d.getByRole('tab', { name: 'Node 2 unreachable' }).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
+  await expect(d.getByRole('tab', { name: 'Node 1', exact: true }).locator('[aria-hidden]')).toHaveCount(0)
 
   const link = d.locator('[data-link]')
   await expect(link).toHaveText(BOARD_LINK)
   // a link reads left to right in any language
   await expect(link).toHaveAttribute('dir', 'ltr')
+  // it is long, so it shows as one line until it is asked for whole
+  const oneLine = (await link.boundingBox())!.height
+  expect(oneLine).toBeLessThan(40)
+  await d.getByRole('button', { name: 'Show', exact: true }).click()
+  expect((await link.boundingBox())!.height).toBeGreaterThan(oneLine * 2)
+  await d.getByRole('button', { name: 'Hide', exact: true }).click()
+  expect((await link.boundingBox())!.height).toBe(oneLine)
   await expect(d.getByRole('img', { name: "QR code of Sara's link on Node 1" })).toBeVisible()
   // the code holds exactly this link
   expect(await shownQrPath(page)).toBe(qrPath(BOARD_LINK))
@@ -40,24 +47,64 @@ test('shows a subscription on a node as a QR code and a link, and copies the lin
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(BOARD_LINK)
 
   // Node 2 has its own link, address and id; going back needs no second call
-  await picker.getByRole('button', { name: 'Node 2 unreachable' }).click()
+  await d.getByRole('tab', { name: 'Node 2 unreachable' }).click()
   await expect(link).toHaveText(/^vless:\/\/[0-9a-f-]{36}@198\.51\.100\.7:443\?.*#Sara$/)
   await expect(d.getByRole('img', { name: "QR code of Sara's link on Node 2" })).toBeVisible()
   const two = await linkText(page)
   expect(two).not.toBe(BOARD_LINK)
   expect(await shownQrPath(page)).toBe(qrPath(two))
-  await expect(picker.getByRole('button', { name: 'Node 2 unreachable' })).toHaveAttribute('aria-pressed', 'true')
-  await picker.getByRole('button', { name: 'Node 1', exact: true }).click()
+  await expect(d.getByRole('tab', { name: 'Node 2 unreachable' })).toHaveAttribute('aria-selected', 'true')
+  await d.getByRole('tab', { name: 'Node 1', exact: true }).click()
   await expect(link).toHaveText(BOARD_LINK)
   expect(asked).toEqual(['1/nodes/1/link', '1/nodes/2/link'])
 })
 
-test('opens from the menu too, and a subscription on one node offers that node only', async ({ page }) => {
+test('a subscription on one node has one link: no tabs, and nothing to copy all of', async ({ page }) => {
   await openSubscriptions(page)
   await pick(page, 'Ali', 'Share link')
   const d = dialog(page, "Share Ali's link")
-  await expect(d.getByRole('group', { name: 'Node' }).getByRole('button')).toHaveText(['Node 1'])
+  await expect(d).toContainText('Anyone with this link can use this subscription.')
+  await expect(d.getByRole('tablist')).toHaveCount(0)
+  await expect(d.getByRole('button', { name: /Copy all/ })).toHaveCount(0)
   await expect(d.locator('[data-link]')).toHaveText(/^vless:\/\/[0-9a-f-]{36}@203\.0\.113\.24:443\?.*#Ali$/)
+})
+
+test('saves the QR code as an image named after the subscription and the node', async ({ page }) => {
+  await openSubscriptions(page)
+  await shareButton(page, 'Sara').click()
+  const d = dialog(page, "Share Sara's links")
+  await expect(d.locator('[data-link]')).toHaveText(BOARD_LINK)
+  const saved = page.waitForEvent('download')
+  await d.getByRole('button', { name: 'Save QR image' }).click()
+  const file = await saved
+  expect(file.suggestedFilename()).toBe('Sara - Node 1.png')
+  // a PNG, square, and big enough to be read off another screen
+  const bytes = await (await import('node:fs/promises')).readFile(await file.path())
+  expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+  const [width, height] = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)]
+  expect(width).toBe(height)
+  expect(width).toBeGreaterThanOrEqual(720)
+})
+
+test('copies the links of every place at once, one to a line', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await openSubscriptions(page)
+  await shareButton(page, 'Sara').click()
+  const d = dialog(page, "Share Sara's links")
+  await expect(d.locator('[data-link]')).toHaveText(BOARD_LINK)
+  await expect(d).toContainText('One paste adds every link, so the app can use another place.')
+  await d.getByRole('button', { name: 'Copy all 2 links' }).click()
+  await expect(toast(page, '2 links copied')).toBeVisible()
+  const [one, two, ...more] = (await page.evaluate(() => navigator.clipboard.readText())).split('\n')
+  expect(one).toBe(BOARD_LINK)
+  expect(two).toMatch(/^vless:\/\/[0-9a-f-]{36}@198\.51\.100\.7:443\?.*#Sara$/)
+  expect(more).toEqual([])
+  // what was fetched for it is kept: the other tab opens without another call
+  const asked: string[] = []
+  page.on('request', (r) => /\/link$/.test(r.url()) && asked.push(r.url()))
+  await d.getByRole('tab', { name: 'Node 2 unreachable' }).click()
+  await expect(d.locator('[data-link]')).toHaveText(two)
+  expect(asked).toEqual([])
 })
 
 test('keeps its focus inside, and Escape closes it and gives the focus back', async ({ page, isMobile }) => {
@@ -65,16 +112,16 @@ test('keeps its focus inside, and Escape closes it and gives the focus back', as
   await openSubscriptions(page)
   await shareButton(page, 'Sara').click()
   const d = dialog(page, "Share Sara's link")
-  await expect(d.getByRole('button', { name: 'Node 1', exact: true })).toBeFocused()
+  await expect(d.getByRole('tab', { name: 'Node 1', exact: true })).toBeFocused()
   await expect(d.getByRole('button', { name: 'Copy link' })).toBeEnabled()
   // Tab goes round the dialog and never out of it
   const seen = new Set<string>()
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 9; i += 1) {
     await page.keyboard.press('Tab')
     seen.add(await page.evaluate(() => (document.activeElement as HTMLElement).getAttribute('aria-label') ?? (document.activeElement as HTMLElement).textContent!.trim()))
     expect(await d.evaluate((el) => el.contains(document.activeElement))).toBe(true)
   }
-  expect([...seen]).toEqual(expect.arrayContaining(['Node 2 unreachable', 'Copy link', 'Replace this link…', 'Close', 'Node 1']))
+  expect([...seen]).toEqual(expect.arrayContaining(['Node 2 unreachable', 'Show', 'Copy link', 'Save QR image', 'Copy all 2 links', 'Replace this link…', 'Close', 'Node 1']))
   await page.keyboard.press('Escape')
   await expect(d).toHaveCount(0)
   await expect(shareButton(page, 'Sara')).toBeFocused()
@@ -88,10 +135,10 @@ test.describe('replacing a link', () => {
     const old = BOARD_LINK
     await expect(d.locator('[data-link]')).toHaveText(old)
     // Node 2's link, to see it stay as it is
-    await d.getByRole('button', { name: 'Node 2 unreachable' }).click()
+    await d.getByRole('tab', { name: 'Node 2 unreachable' }).click()
     await expect(d.locator('[data-link]')).toHaveText(/@198\.51\.100\.7:/)
     const two = await linkText(page)
-    await d.getByRole('button', { name: 'Node 1', exact: true }).click()
+    await d.getByRole('tab', { name: 'Node 1', exact: true }).click()
 
     const replace = d.getByRole('button', { name: 'Replace this link…' })
     await replace.click()
@@ -125,7 +172,7 @@ test.describe('replacing a link', () => {
     // the share dialog stays, with the question's button focused again
     await expect(d).toBeVisible()
     await expect(replace).toBeFocused()
-    await d.getByRole('button', { name: 'Node 2 unreachable' }).click()
+    await d.getByRole('tab', { name: 'Node 2 unreachable' }).click()
     expect(await linkText(page)).toBe(two)
     await d.getByRole('button', { name: 'Close', exact: true }).click()
 
@@ -169,9 +216,10 @@ test('a link that cannot be fetched says why, and offers nothing to copy', async
   await expect(d.locator('[data-link]')).toHaveCount(0)
   await expect(d.getByRole('img')).toHaveCount(0)
   await expect(d.getByRole('button', { name: 'Copy link' })).toBeDisabled()
+  await expect(d.getByRole('button', { name: 'Save QR image' })).toBeDisabled()
   await expect(d.getByRole('button', { name: 'Replace this link…' })).toBeDisabled()
   // the other node still works
-  await d.getByRole('button', { name: 'Node 2 unreachable' }).click()
+  await d.getByRole('tab', { name: 'Node 2 unreachable' }).click()
   await expect(d.locator('[data-link]')).toHaveText(/@198\.51\.100\.7:/)
   await expect(d.getByRole('alert')).toHaveCount(0)
 })
@@ -204,6 +252,7 @@ test("a node's own tab shares the subscription's link on that node", async ({ pa
   await openNodeSubscriptions(page, 1)
   await shareButton(page, 'Sara').click()
   const d = dialog(page, "Share Sara's link")
-  await expect(d.getByRole('group', { name: 'Node' }).getByRole('button')).toHaveText(['Node 1'])
+  // one place, so nothing to choose
+  await expect(d.getByRole('tablist')).toHaveCount(0)
   await expect(d.locator('[data-link]')).toHaveText(BOARD_LINK)
 })

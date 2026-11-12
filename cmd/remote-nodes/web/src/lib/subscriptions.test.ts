@@ -17,6 +17,7 @@ import {
   readyNodes,
   routerPlace,
   sortByName,
+  statusText,
   subscriptionStatus,
   switchedText,
   totals,
@@ -168,32 +169,37 @@ describe('a subscription across the nodes', () => {
     local: null,
     ...o,
   })
+  // the status as the line under a subscription's name reads
   const status = (s: Subscription, c = en) => {
-    const { key, label, sub: line } = subscriptionStatus(s, infos, c.t, c.fmt, c.lang, NOW)
-    return [key, label, plain(line)]
+    const st = subscriptionStatus(s, infos, c.t, c.fmt, c.lang, NOW)
+    return [st.key, plain(statusText(st))]
   }
 
-  it('is online, and says where', () => {
-    expect(status(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: null })] }))).toEqual(['online', 'Online', 'on Node 1'])
-    expect(status(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })] }))).toEqual(['online', 'Online', 'on Node 1 and Node 2'])
-    expect(status(sub({ online: true, nodes: [on(1, { online: true })] }), fa)).toEqual(['online', 'آنلاین', 'روی Node 1'])
+  it('is online, and says where and on how many connections', () => {
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: 3 }), on(2, { online: null })] }))).toEqual(['online', 'Online on Node 1 · 3 connections'])
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: 1 }), on(2, { online: true, connections: 2 })] }))).toEqual(['online', 'Online on Node 1 and Node 2 · 3 connections'])
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: 1 })] }))).toEqual(['online', 'Online on Node 1 · 1 connection'])
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: 2 })] }), fa)).toEqual(['online', 'آنلاین روی Node 1 · ۲ اتصال'])
+    // a node that doesn't count connections leaves the count out, and one that isn't the one it is on doesn't add to it
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: null })] }))).toEqual(['online', 'Online on Node 1'])
+    expect(status(sub({ online: true, nodes: [on(1, { online: true, connections: 2 }), on(2, { online: false, connections: 5 })] }))).toEqual(['online', 'Online on Node 1 · 2 connections'])
   })
 
-  it('is active when nobody is connected, with the last time somebody was', () => {
-    expect(status(sub({ lastSeenAt: at(-3 * HOUR) }))).toEqual(['active', 'Active', 'last seen 3 hours ago'])
-    expect(status(sub({}))).toEqual(['active', 'Active', 'never connected'])
-    expect(status(sub({ lastSeenAt: at(-24 * HOUR) }), fa)).toEqual(['active', 'فعال', 'آخرین بازدید دیروز'])
+  it('is offline when nobody is connected, with the last time somebody was', () => {
+    expect(status(sub({ lastSeenAt: at(-3 * HOUR) }))).toEqual(['active', 'Offline · last seen 3 hours ago'])
+    expect(status(sub({}))).toEqual(['active', 'Offline · never connected'])
+    expect(status(sub({ lastSeenAt: at(-24 * HOUR) }), fa)).toEqual(['active', 'آفلاین · آخرین بازدید دیروز'])
   })
 
   it('is off when no node has it switched on', () => {
-    expect(status(sub({ nodes: [on(1, { enabled: false }), on(2, { enabled: false })] }))).toEqual(['off', 'Off', 'off on every node'])
-    expect(status(sub({ nodes: [] }), fa)).toEqual(['off', 'خاموش', 'روی همهٔ نودها خاموش است'])
+    expect(status(sub({ nodes: [on(1, { enabled: false }), on(2, { enabled: false })] }))).toEqual(['off', 'Off on every node'])
+    expect(status(sub({ nodes: [] }), fa)).toEqual(['off', 'خاموش روی همهٔ نودها'])
   })
 
   it('is unknown while its nodes cannot be reached', () => {
-    expect(status(sub({ online: null, lastSeenAt: at(-HOUR) }))).toEqual(['unknown', 'Unknown', 'node unreachable'])
-    expect(status(sub({ online: null }))).toEqual(['unknown', 'Unknown', 'never connected'])
-    expect(status(sub({ online: null, lastSeenAt: at(-HOUR) }), fa)).toEqual(['unknown', 'نامشخص', 'نود در دسترس نیست'])
+    expect(status(sub({ online: null, lastSeenAt: at(-HOUR) }))).toEqual(['unknown', 'Unknown · node unreachable'])
+    expect(status(sub({ online: null }))).toEqual(['unknown', 'Unknown · never connected'])
+    expect(status(sub({ online: null, lastSeenAt: at(-HOUR) }), fa)).toEqual(['unknown', 'نامشخص · نود در دسترس نیست'])
   })
 
   describe("with the router's own entry among the places", () => {
@@ -201,8 +207,8 @@ describe('a subscription across the nodes', () => {
     const router: Place = { id: 'router', name: 'This router', unreachable: false, installing: false }
     const places = placesOf(router, infos)
     const at2 = (s: Subscription, c = en) => {
-      const { key, sub: line } = subscriptionStatus(s, places, c.t, c.fmt, c.lang, NOW)
-      return [key, plain(line)]
+      const st = subscriptionStatus(s, places, c.t, c.fmt, c.lang, NOW)
+      return [st.key, plain(statusText(st))]
     }
 
     it('is a place of its own, before the nodes, while it is switched on', () => {
@@ -229,17 +235,17 @@ describe('a subscription across the nodes', () => {
     })
 
     it('is online on the router, alone or beside a node', () => {
-      expect(at2(sub({ online: true, nodes: [on(1)], local: here({ online: true }) }))).toEqual(['online', 'on This router'])
-      expect(at2(sub({ online: true, nodes: [on(1, { online: true })], local: here({ online: true }) }))).toEqual(['online', 'on This router and Node 1'])
+      expect(at2(sub({ online: true, nodes: [on(1)], local: here({ online: true, connections: 2 }) }))).toEqual(['online', 'Online on This router · 2 connections'])
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true, connections: 1 })], local: here({ online: true, connections: 2 }) }))).toEqual(['online', 'Online on This router and Node 1 · 3 connections'])
       // three of them are places, and not nodes
-      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }))).toEqual(['online', 'on 3 places'])
-      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }), fa)).toEqual(['online', 'روی ۳ جا'])
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }))).toEqual(['online', 'Online on 3 places'])
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }), fa)).toEqual(['online', 'آنلاین روی ۳ جا'])
     })
 
     it('is on while only the router has it, and off when nothing has', () => {
-      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here() }))).toEqual(['active', 'never connected'])
-      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here({ enabled: false }) }))).toEqual(['off', 'off everywhere'])
-      expect(at2(sub({ nodes: [], local: here({ enabled: false }) }), fa)).toEqual(['off', 'همه‌جا خاموش است'])
+      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here() }))).toEqual(['active', 'Offline · never connected'])
+      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here({ enabled: false }) }))).toEqual(['off', 'Off everywhere'])
+      expect(at2(sub({ nodes: [], local: here({ enabled: false }) }), fa)).toEqual(['off', 'خاموش در همه‌جا'])
     })
   })
 })
@@ -263,34 +269,34 @@ describe('a subscription on one node', () => {
     ...o,
   })
   const status = (s: NodeSubscription, c = en) => {
-    const { key, label, sub } = nodeSubscriptionStatus(s, c.t, c.fmt, NOW)
-    return [key, label, plain(sub)]
+    const st = nodeSubscriptionStatus(s, c.t, c.fmt, NOW)
+    return [st.key, plain(statusText(st))]
   }
 
   it('counts the connections of one that is online', () => {
-    expect(status(row({ online: true, connections: 3 }))).toEqual(['online', 'Online', '3 connections'])
-    expect(status(row({ online: true, connections: 1 }))).toEqual(['online', 'Online', '1 connection'])
-    expect(status(row({ online: true, connections: 3 }), fa)).toEqual(['online', 'آنلاین', '۳ اتصال'])
+    expect(status(row({ online: true, connections: 3 }))).toEqual(['online', 'Online · 3 connections'])
+    expect(status(row({ online: true, connections: 1 }))).toEqual(['online', 'Online · 1 connection'])
+    expect(status(row({ online: true, connections: 3 }), fa)).toEqual(['online', 'آنلاین · ۳ اتصال'])
     // a node that doesn't report connections still has it online
-    expect(status(row({ online: true, connections: null }))[2]).toBe('0 connections')
+    expect(status(row({ online: true, connections: null }))[1]).toBe('Online · 0 connections')
   })
 
-  it('is active with a last seen time, off on this node, or unknown while the node is down', () => {
-    expect(status(row({ lastSeenAt: at(-2 * 24 * HOUR) }))).toEqual(['active', 'Active', 'last seen 2 days ago'])
-    expect(status(row({ enabled: false, online: null }))).toEqual(['off', 'Off', 'off on this node'])
-    expect(status(row({ enabled: false, online: null }), fa)).toEqual(['off', 'خاموش', 'روی این نود خاموش است'])
-    expect(status(row({ online: null, lastSeenAt: at(-HOUR) }))).toEqual(['unknown', 'Unknown', 'node unreachable'])
-    expect(status(row({ online: null }))).toEqual(['unknown', 'Unknown', 'never connected'])
+  it('is offline with a last seen time, just off (the switch beside it says where), or unknown while the node is down', () => {
+    expect(status(row({ lastSeenAt: at(-2 * 24 * HOUR) }))).toEqual(['active', 'Offline · last seen 2 days ago'])
+    expect(status(row({ enabled: false, online: null }))).toEqual(['off', 'Off'])
+    expect(status(row({ enabled: false, online: null }), fa)).toEqual(['off', 'خاموش'])
+    expect(status(row({ online: null, lastSeenAt: at(-HOUR) }))).toEqual(['unknown', 'Unknown · node unreachable'])
+    expect(status(row({ online: null }))).toEqual(['unknown', 'Unknown · never connected'])
   })
 
   it("words the router's own list for the router, and not for a node", () => {
-    const here = (s: NodeSubscription, c = en) => plain(nodeSubscriptionStatus(s, c.t, c.fmt, NOW, true).sub)
-    expect(here(row({ enabled: false, online: null }))).toBe('off on this router')
-    expect(here(row({ enabled: false, online: null }), fa)).toBe('روی این روتر خاموش است')
-    expect(here(row({ online: null, lastSeenAt: at(-HOUR) }))).toBe('this router is not working')
+    const here = (s: NodeSubscription, c = en) => plain(statusText(nodeSubscriptionStatus(s, c.t, c.fmt, NOW, true)))
+    expect(here(row({ online: null, lastSeenAt: at(-HOUR) }))).toBe('Unknown · this router is not working')
+    expect(here(row({ online: null, lastSeenAt: at(-HOUR) }), fa)).toBe('نامشخص · این روتر کار نمی‌کند')
     // what doesn't name the place reads the same
-    expect(here(row({ online: true, connections: 2 }))).toBe('2 connections')
-    expect(here(row({ online: null }))).toBe('never connected')
+    expect(here(row({ enabled: false, online: null }))).toBe('Off')
+    expect(here(row({ online: true, connections: 2 }))).toBe('Online · 2 connections')
+    expect(here(row({ online: null }))).toBe('Unknown · never connected')
   })
 })
 

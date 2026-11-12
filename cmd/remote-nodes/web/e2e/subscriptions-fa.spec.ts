@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { PAGE, dialog, expect, test, toast } from './fixtures'
-import { addViaApi, fillToLimit, flipper, listed, openNodeSubscriptions, openSubscriptions, pick, qrPath, row, shownQrPath } from './subs'
+import { addButton, addViaApi, fillToLimit, flipper, listed, openNodeSubscriptions, openSubscriptions, pick, placeTabs, qrPath, row, shownQrPath } from './subs'
 
 const LRM = '‎'
 
@@ -30,44 +30,45 @@ test('the tab in Persian: right to left, Persian digits and separators, the word
   await expect(add(page)).toBeVisible()
   await expect(page.getByText('Node 3 در حال نصب است. وقتی آماده شد اینجا نشان داده می‌شود.')).toBeVisible()
 
-  // every row, in the design's words
-  const rows: [string, string, string, string, string][] = [
-    ['Sara', 'آنلاین', 'روی Node 1', '۱٫۲ گیگابایت امروز', '۳۸٫۰ گیگابایت در ۳۰ روز'],
-    ['Ali', 'آنلاین', 'روی Node 1', '۶۴۰ مگابایت امروز', '۲۱٫۰ گیگابایت در ۳۰ روز'],
-    ['Mina', 'فعال', 'آخرین بازدید ۳ ساعت پیش', '۳۱۰ مگابایت امروز', '۹٫۴ گیگابایت در ۳۰ روز'],
-    ['Parsa', 'فعال', 'آخرین بازدید دیروز', '۰ بایت امروز', '۱٫۱ گیگابایت در ۳۰ روز'],
-    ['Dana', 'فعال', 'آخرین بازدید ۲ روز پیش', '۰ بایت امروز', '۶۰۰ مگابایت در ۳۰ روز'],
-    ['Kian', 'فعال', 'آخرین بازدید ۲۵ دقیقه پیش', '۲۱۰ مگابایت امروز', '۵٫۲ گیگابایت در ۳۰ روز'],
+  // every row, in the design's words: the line under the name says how it is doing
+  const rows: [string, string, string, string][] = [
+    ['Sara', 'آنلاین روی Node 1 · ۳ اتصال', '۱٫۲ گیگابایت امروز', '۳۸٫۰ گیگابایت در ۳۰ روز'],
+    ['Ali', 'آنلاین روی Node 1 · ۲ اتصال', '۶۴۰ مگابایت امروز', '۲۱٫۰ گیگابایت در ۳۰ روز'],
+    ['Mina', 'آفلاین · آخرین بازدید ۳ ساعت پیش', '۳۱۰ مگابایت امروز', '۹٫۴ گیگابایت در ۳۰ روز'],
+    ['Parsa', 'آفلاین · آخرین بازدید دیروز', '۰ بایت امروز', '۱٫۱ گیگابایت در ۳۰ روز'],
+    ['Dana', 'آفلاین · آخرین بازدید ۲ روز پیش', '۰ بایت امروز', '۶۰۰ مگابایت در ۳۰ روز'],
+    ['Kian', 'آفلاین · آخرین بازدید ۲۵ دقیقه پیش', '۲۱۰ مگابایت امروز', '۵٫۲ گیگابایت در ۳۰ روز'],
   ]
-  for (const [name, status, sub, today, month] of rows) {
+  for (const [name, status, today, month] of rows) {
     const r = row(page, name)
-    await expect(r, name).toContainText(status)
-    await expect(r).toContainText(sub)
+    await expect(r.locator('[data-status]'), name).toContainText(status)
     await expect(r).toContainText(today)
     await expect(r).toContainText(month)
     await expect(r.getByRole('button', { name: 'اشتراک‌گذاری', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: `اقدام‌ها برای ${name}`, exact: true })).toBeVisible()
+    await expect(r.getByRole('button', { name: `ویرایش ${name}`, exact: true })).toBeVisible()
     await expect(page.getByRole('switch', { name: `${name} روی Node 1`, exact: true })).toBeVisible()
   }
+  // the note under the list, and what a switch for the node that is down says
+  await expect(page.getByText('نقطهٔ سبز کنار هر کلید نشان می‌دهد اکنون به کجا وصل است.')).toBeVisible()
+  await expect(row(page, 'Sara')).toContainText('وقتی برگردد')
 })
 
 test('the table lays out from the right, with the unreachable node marked in Persian', async ({ page, isMobile }) => {
   test.skip(isMobile, 'the table is for wide screens')
   await openSubscriptions(page)
   const heads = page.getByRole('columnheader')
-  await expect(heads.nth(0)).toHaveText('اشتراک')
-  await expect(heads.nth(2)).toContainText('در دسترس نیست')
-  await expect(heads.nth(3)).toHaveText('وضعیت')
-  await expect(heads.nth(4)).toHaveText('ترافیک')
-  const x = await Promise.all([0, 1, 2, 3, 4].map(async (i) => (await heads.nth(i).boundingBox())!.x))
+  await expect(heads).toHaveText(['اشتراک', 'روشن برای', 'ترافیک', 'محدودیت‌ها', 'کارها', 'Node 1', /^Node 2\s*در دسترس نیست$/])
+  const x = await Promise.all([0, 1, 2, 3].map(async (i) => (await heads.nth(i).boundingBox())!.x))
   // the first column is the right-most, and each next one is further left
   for (let i = 1; i < x.length; i += 1) expect(x[i]).toBeLessThan(x[i - 1])
+  // the nodes under their heading run the same way
+  expect((await heads.nth(6).boundingBox())!.x).toBeLessThan((await heads.nth(5).boundingBox())!.x)
   // the action buttons sit at the left end, the name at the right end
   const table = (await page.getByRole('table').boundingBox())!
-  const name = (await page.getByRole('rowheader', { name: 'Sara', exact: true }).boundingBox())!
-  const menu = (await page.getByRole('button', { name: 'اقدام‌ها برای Sara' }).boundingBox())!
+  const name = (await row(page, 'Sara').getByRole('rowheader').boundingBox())!
+  const edit = (await page.getByRole('button', { name: 'ویرایش Sara', exact: true }).boundingBox())!
   expect(name.x + name.width).toBeGreaterThan(table.x + table.width - 40)
-  expect(menu.x).toBeLessThan(table.x + 40)
+  expect(edit.x).toBeLessThan(table.x + 40)
 })
 
 test('a switch knob moves to the end it points at: left when on in Persian, right when on in English', async ({ page }) => {
@@ -117,7 +118,8 @@ test('the add dialog in Persian: right to left, a Persian name goes through, its
 
   await d.getByLabel('نام').fill('نیکا')
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/subscriptions') && r.method() === 'POST')
-  await d.getByRole('button', { name: 'افزودن اشتراک' }).click()
+  await expect(addButton(d)).toHaveText('افزودن و اشتراک‌گذاری')
+  await addButton(d).click()
   expect((await sent).postDataJSON()).toEqual({ name: 'نیکا', nodeIds: [1] })
   await expect(toast(page, 'نیکا اضافه شد')).toBeVisible()
 
@@ -147,25 +149,26 @@ test('a name already used, and one that is missing, in Persian', async ({ page }
   await openSubscriptions(page)
   await add(page).click()
   const d = dialog(page, 'افزودن اشتراک')
-  await d.getByRole('button', { name: 'افزودن اشتراک' }).click()
+  await addButton(d).click()
   await expect(d).toContainText('برای اشتراک یک نام وارد کنید.')
   await d.getByLabel('نام').fill('Sara')
-  await d.getByRole('button', { name: 'افزودن اشتراک' }).click()
+  await addButton(d).click()
   await expect(d).toContainText('این نام قبلاً استفاده شده است.')
 })
 
 test('edit, delete and replace-link questions in Persian', async ({ page }) => {
   await openSubscriptions(page)
-  await pick(page, 'Sara', 'ویرایش', 'اقدام‌ها برای')
+  await pick(page, 'Sara', 'Edit', 'fa')
   const rename = dialog(page, 'ویرایش Sara')
   expect(await direction(rename)).toBe('rtl')
   await rename.getByLabel('نام').fill('Sarah')
   await rename.getByRole('button', { name: 'ذخیره' }).click()
   await expect(toast(page, 'نام به Sarah تغییر کرد')).toBeVisible()
 
-  await pick(page, 'Sarah', 'حذف اشتراک', 'اقدام‌ها برای')
+  // deleting starts in the Edit dialog
+  await pick(page, 'Sarah', 'Delete subscription', 'fa')
   const del = page.getByRole('alertdialog', { name: 'حذف Sarah؟' })
-  await expect(del).toContainText('اشتراک از همهٔ نودها حذف می‌شود و لینک‌هایش از کار می‌افتند.')
+  await expect(del).toContainText('اشتراک از همه‌جا حذف می‌شود و لینک‌هایش از کار می‌افتند.')
   await expect(del.getByRole('button', { name: 'حذف اشتراک' })).toHaveClass(/bg-bad/)
   await del.getByRole('button', { name: 'لغو' }).click()
 
@@ -180,13 +183,16 @@ test('edit, delete and replace-link questions in Persian', async ({ page }) => {
 test('the node picker, with a node that is down, and the question that names the node, in Persian', async ({ page }) => {
   await openSubscriptions(page)
   await share(page, 'Sara').click()
-  const d = dialog(page, 'اشتراک‌گذاری لینک Sara')
-  const picker = d.getByRole('group', { name: 'نود' })
-  await expect(picker.getByRole('button')).toHaveText(['Node 1', 'Node 2 در دسترس نیست'])
+  // two nodes, two links: the title says links, and each has a tab
+  const d = dialog(page, 'اشتراک‌گذاری لینک‌های Sara')
+  await expect(d).toContainText('برای هر جا یک لینک.')
+  await expect(placeTabs(d)).toHaveText(['Node 1', 'Node 2 در دسترس نیست'])
   // the first node is at the right end
-  const one = (await picker.getByRole('button', { name: 'Node 1', exact: true }).boundingBox())!
-  const two = (await picker.getByRole('button', { name: /Node 2/ }).boundingBox())!
+  const one = (await d.getByRole('tab', { name: 'Node 1', exact: true }).boundingBox())!
+  const two = (await d.getByRole('tab', { name: /Node 2/ }).boundingBox())!
   expect(one.x).toBeGreaterThan(two.x)
+  // the rest of the dialog's words
+  for (const name of ['نمایش', 'کپی لینک', 'ذخیرهٔ تصویر QR', 'کپی هر ۲ لینک']) await expect(d.getByRole('button', { name, exact: true })).toBeVisible()
   await d.getByRole('button', { name: 'جایگزینی این لینک…' }).click()
   await expect(page.getByRole('alertdialog', { name: 'لینک Sara جایگزین شود؟' })).toContainText('این فقط لینک Node 1 را تغییر می‌دهد.')
 })
@@ -210,7 +216,7 @@ test('the limit, in Persian: the count, the badge, the tooltip and the error', a
   await expect(d).toContainText('۱ جای خالی.')
   await d.getByLabel('نام').fill('نیکا')
   expect((await addViaApi(request, 'Taken')).ok()).toBe(true)
-  await d.getByRole('button', { name: 'افزودن اشتراک' }).click()
+  await addButton(d).click()
   await expect(d.getByRole('alert')).toHaveText('این روتر به حداکثر تعداد اشتراک رسیده است. برای افزودن اشتراک تازه یکی را حذف کنید.')
   await d.getByRole('button', { name: 'لغو' }).click()
 
@@ -230,7 +236,7 @@ test('the empty state, in Persian', async ({ page, request }) => {
   for (let id = 1; id <= 7; id += 1) expect((await request.delete(`/api/subscriptions/${id}`, { headers: PAGE })).ok()).toBe(true)
   await page.goto('/#/subscriptions')
   await expect(page.getByRole('heading', { name: 'هنوز اشتراکی نیست' })).toBeVisible()
-  await expect(page.getByText('اشتراک یک نام است با یک لینک برای هر نودی که روی آن روشن است. یکی اضافه کنید و لینکش را به اشتراک بگذارید.')).toBeVisible()
+  await expect(page.getByText('اشتراک یک نام است با یک لینک برای هر جایی که روی آن روشن است. یکی اضافه کنید و لینکش را به اشتراک بگذارید.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'افزودن اولین اشتراک' })).toBeVisible()
 })
 
@@ -242,13 +248,17 @@ test("a node's tab in Persian", async ({ page }) => {
   await expect(tile(page, '۳۰ روز اخیر')).toHaveText(`۳۰ روز اخیر ۱۲۲ گیگابایت ↑ ${LRM}۲۸٫۰ گیگابایت · ↓ ${LRM}۹۴٫۰ گیگابایت`, { useInnerText: true })
   await expect(page.getByRole('link', { name: 'همهٔ اشتراک‌ها' })).toBeVisible()
   await expect(add(page)).toBeVisible()
-  await expect(row(page, 'Ali')).toContainText('۲ اتصال')
-  await expect(row(page, 'Sara')).toContainText('۳ اتصال')
-  await expect(row(page, 'Kian')).toContainText('خاموش')
-  await expect(row(page, 'Kian')).toContainText('روی این نود خاموش است')
+  await expect(row(page, 'Ali').locator('[data-status]')).toHaveText('آنلاین · ۲ اتصال')
+  await expect(row(page, 'Sara').locator('[data-status]')).toHaveText('آنلاین · ۳ اتصال')
+  await expect(row(page, 'Dana').locator('[data-status]')).toHaveText('آفلاین · آخرین بازدید ۲ روز پیش')
+  await expect(row(page, 'Kian').locator('[data-status]')).toHaveText('خاموش')
   await expect(row(page, 'Kian').getByRole('button', { name: 'اشتراک‌گذاری', exact: true })).toHaveCount(0)
   await expect(page.getByText('۷ از ۷ نمایش داده می‌شود · مرتب‌شده بر اساس نام')).toBeVisible()
   await expect(flipper(page, 'Kian', 'Node 1', 'روی')).toHaveAttribute('aria-checked', 'false')
-  await page.getByRole('button', { name: 'Actions for Kian' }).or(page.getByRole('button', { name: 'اقدام‌ها برای Kian' })).click()
-  await expect(page.getByRole('menuitem', { name: /اشتراک‌گذاری لینک/ })).toContainText('ابتدا آن را برای این نود روشن کنید')
+  // one that is off here has Edit and nothing else, and the dialog it opens holds delete and reset
+  await expect(row(page, 'Kian').getByRole('button')).toHaveCount(1)
+  await pick(page, 'Kian', 'Edit', 'fa')
+  const d = dialog(page, 'ویرایش Kian')
+  await expect(d.getByRole('button', { name: 'صفر کردن مصرف…' })).toBeVisible()
+  await expect(d.getByRole('button', { name: 'حذف اشتراک…' })).toBeVisible()
 })

@@ -63,7 +63,7 @@ test('the entry card says the entry is on, with what it rests on', async ({ page
   await expect(page.getByText('Checked 2 min ago')).toBeVisible()
   await expect(chip(page, 'Domestic link', 'online')).toBeVisible()
   await expect(chip(page, 'VPN', 'WireGuard')).toBeVisible()
-  await expect(chip(page, 'Bridge', 'running')).toBeVisible()
+  await expect(chip(page, "Router's Xray", 'running')).toBeVisible()
   await expect(attention(page)).toHaveCount(0)
 })
 

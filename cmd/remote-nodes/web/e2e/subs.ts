@@ -20,10 +20,10 @@ export async function openNodeSubscriptions(page: Page, id: number) {
   await expect(page.getByRole('switch', { name: /^Sara on Node \d$|^Sara روی Node \d$/ })).toBeVisible()
 }
 
-/** One subscription's row in a table, or its card on a phone. */
+/** One subscription's row in a table (its heading cell holds the name and, under it, how it is doing), or its card on a phone. */
 export const row = (page: Page, name: string): Locator =>
   isTable(page)
-    ? page.getByRole('row').filter({ has: page.getByRole('rowheader', { name, exact: true }) })
+    ? page.getByRole('row').filter({ has: page.getByRole('rowheader').getByText(name, { exact: true }) })
     : page.locator('main ul > li').filter({ has: page.getByText(name, { exact: true }) })
 
 /** The switch of a subscription on a node. */
@@ -33,11 +33,24 @@ export const flipper = (page: Page, name: string, node: string, on = 'on') => pa
 export const listed = (page: Page, node: string, on = 'on') =>
   page.getByRole('switch', { name: new RegExp(` ${on} ${node}$`) }).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')!.replace(/ \S+ Node \d$/, '')))
 
-/** Opens the "…" menu of a subscription and picks an item. */
-export async function pick(page: Page, name: string, item: string | RegExp, actions = 'Actions for') {
-  await page.getByRole('button', { name: `${actions} ${name}`, exact: true }).click()
-  await page.getByRole('menuitem', { name: item }).click()
+/**
+ * Starts one of a subscription's actions. Share and Edit are buttons of its row; resetting its usage and
+ * deleting it are in the Edit dialog. `lang`: the page is in Persian.
+ */
+export async function pick(page: Page, name: string, item: 'Edit' | 'Share link' | 'Reset usage' | 'Delete subscription', lang: 'en' | 'fa' = 'en') {
+  if (item === 'Share link') return row(page, name).getByRole('button', { name: lang === 'fa' ? 'اشتراک‌گذاری' : 'Share', exact: true }).click()
+  const edit = lang === 'fa' ? `ویرایش ${name}` : `Edit ${name}`
+  await page.getByRole('button', { name: edit, exact: true }).click()
+  if (item === 'Edit') return
+  const inside = { en: { 'Reset usage': 'Reset usage…', 'Delete subscription': 'Delete subscription…' }, fa: { 'Reset usage': 'صفر کردن مصرف…', 'Delete subscription': 'حذف اشتراک…' } }
+  await page.getByRole('dialog', { name: edit }).getByRole('button', { name: inside[lang][item] }).click()
 }
+
+/** The button that adds, in the Add dialog: "Add and share" while a place is ticked, since its link is ready at once. */
+export const addButton = (d: Locator) => d.getByRole('button', { name: /^(Add and share|Add subscription|افزودن و اشتراک‌گذاری|افزودن اشتراک)$/ })
+
+/** The tabs of the Share dialog, one per place the subscription has a link on. */
+export const placeTabs = (d: Locator) => d.getByRole('tablist', { name: /^(Place|جا)$/ }).getByRole('tab')
 
 /** The link in the share dialog, as text. */
 export const linkText = (page: Page) => page.locator('[data-link]').innerText()
