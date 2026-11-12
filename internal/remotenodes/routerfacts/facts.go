@@ -58,6 +58,21 @@ type Facts struct {
 	RouteVPN      bool
 	RouteDomestic bool
 
+	// What the router keeps for its own entry (see Asks). All of it is zero
+	// while the entry is off, and with a script from before there was one.
+	//
+	// LocalPort is the port on the Domestic link the router forwards to the
+	// entry, 0 while it has picked none. LocalRules is whether that forward is
+	// in place now: the port is kept while the entry is off, so that switching
+	// it on again gives the same links.
+	LocalPort  uint16
+	LocalRules bool
+	// CloudName is the router's IP Cloud name, in lower case, and PublicAddr
+	// its address as IP Cloud sees it. Either is empty when the router has
+	// none, and also when it gave something that isn't one.
+	CloudName  string
+	PublicAddr netip.Addr
+
 	ROS      string // the RouterOS version as reported, such as 7.24.5 or 7.12rc1
 	FreeMem  Size
 	FreeDisk Size
@@ -126,6 +141,14 @@ func (f *Facts) line(s string) {
 		ok = flag(&f.RouteVPN, val)
 	case "route_domestic":
 		ok = flag(&f.RouteDomestic, val)
+	case "local_port":
+		ok = port(&f.LocalPort, val)
+	case "local_rules":
+		ok = flag(&f.LocalRules, val)
+	case "cloud_name":
+		ok = hostName(&f.CloudName, val)
+	case "public_addr":
+		ok = address(&f.PublicAddr, val)
 	case "vpn_kind":
 		f.VPNKind = kind(val)
 	case "vpn_label":
@@ -173,6 +196,52 @@ func address(dst *netip.Addr, v string) bool {
 		return false
 	}
 	*dst = a
+	return true
+}
+
+// port takes a port in decimal, or nothing or 0 for none. Like an address, a
+// value that fails leaves none: a link must not be made from a port the
+// router didn't really give.
+func port(dst *uint16, v string) bool {
+	*dst = 0
+	if v == "" {
+		return true
+	}
+	n, err := strconv.ParseUint(v, 10, 16)
+	if err != nil || (len(v) > 1 && v[0] == '0') {
+		return false
+	}
+	*dst = uint16(n)
+	return true
+}
+
+// hostName takes a DNS name the way a link can carry one: labels of letters,
+// digits and hyphens, at least two of them, 253 characters at most, and not an
+// address. It comes out in lower case. An empty value is the router saying it
+// has no name, which is a good line; whatever fails leaves none.
+func hostName(dst *string, v string) bool {
+	*dst = ""
+	if v == "" {
+		return true
+	}
+	v = strings.ToLower(strings.TrimSuffix(v, "."))
+	if len(v) > 253 || !strings.Contains(v, ".") {
+		return false
+	}
+	if _, err := netip.ParseAddr(v); err == nil {
+		return false
+	}
+	for _, label := range strings.Split(v, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			if c := label[i]; !('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	*dst = v
 	return true
 }
 
