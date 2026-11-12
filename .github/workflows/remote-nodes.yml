@@ -150,6 +150,9 @@ jobs:
             hub=$(GOARCH=$arch go list -deps ./cmd/remote-nodes)
             bridge=$(GOARCH=$arch go list -deps ./cmd/remote-nodes-bridge)
             echo "linux/$arch: the hub links $(wc -l <<<"$hub") packages, the bridge $(wc -l <<<"$bridge")"
+            # realitydest is the one part of pkg/xray the hub may link: the check of a Reality target,
+            # which it runs itself for the router's own entry (cmd/remote-nodes/deps_test.go says the same)
+            hub=$(grep -vx 'github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest' <<<"$hub")
             guard "the hub (linux/$arch)" "$hub" 'xtls/xray-core|sagernet|gvisor|gorm|nasnet-panel-linux/(pkg/xray|pkg/geoip|internal/node/domain)'
             guard "the bridge (linux/$arch)" "$bridge" 'nasnet-panel-linux/pkg/agent|golang.org/x/crypto/ssh'
           done
@@ -160,27 +163,31 @@ jobs:
 
       # xray-core has two known data races upstream, which show up in process:
       # the reverse outbound's constructor against its first dial, and Vision's
-      # reader against its writer. TestE2EVisionFlow skips itself under -race, so
-      # it runs here on its own, and has to pass rather than be skipped.
+      # reader against its writer. The two Vision tests (a node's tunnel, and the
+      # router's own entry) skip themselves under -race, so they run here on
+      # their own, and have to pass rather than be skipped.
       - name: Test the Vision flow (no race detector)
         run: |
           set -euo pipefail
-          out=$(go test -count=1 -v -run 'TestE2EVisionFlow' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          out=$(go test -count=1 -v -run 'TestE2EVisionFlow|TestE2ELocalEntryVisionFlow' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
-          grep -q -- '--- PASS: TestE2EVisionFlow ' <<<"$out" || { echo "::error::TestE2EVisionFlow did not run and pass"; exit 1; }
+          for t in TestE2EVisionFlow TestE2ELocalEntryVisionFlow; do
+            grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
+          done
 
-      # These only run on Linux, which this is: one binds 127.0.0.17 and
-      # 127.0.0.18, the other checks no_new_privs. A skip would hide a bridge
-      # that doesn't do what the hub relies on, so a skip fails the step.
+      # These only run on Linux, which this is: three bind 127.0.0.17 and
+      # 127.0.0.18 (a tunnel's, the router's own entry's, and the forwarder to
+      # its Reality target), the other checks no_new_privs. A skip would hide a
+      # bridge that doesn't do what the hub relies on, so a skip fails the step.
       - name: Linux-only bridge tests
         run: |
           set -euo pipefail
-          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestE2ELocalEntrySourceAddresses|TestForwarderDialsFromItsAddress|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
           skipped=$(grep -c -- '--- SKIP' <<<"$out" || true)
           echo "skipped: $skipped"
           [ "$skipped" = 0 ] || { echo "::error::$skipped of the Linux-only bridge tests were skipped"; exit 1; }
-          for t in TestE2ESourceAddresses TestNoNewPrivs; do
+          for t in TestE2ESourceAddresses TestE2ELocalEntrySourceAddresses TestForwarderDialsFromItsAddress TestNoNewPrivs; do
             grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
           done
 
