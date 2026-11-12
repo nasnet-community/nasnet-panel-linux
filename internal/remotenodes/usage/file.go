@@ -22,7 +22,14 @@ const (
 
 	// SchemaVersion is the file's format. Bump it whenever a change would make
 	// an older build misread the file.
-	SchemaVersion = 1
+	//
+	// 2 added the router's own record. An older build would read past it and
+	// write the file again without it.
+	SchemaVersion = 2
+
+	// RouterID is the id the router's own entry is counted under, wherever a
+	// node's id is asked for. It is no node's: theirs start at 1.
+	RouterID uint = 0
 )
 
 // errNewer means a newer release wrote the file. Reading it would drop what
@@ -34,6 +41,10 @@ var errNewer = errors.New("usage file was written by a newer version")
 type fileDoc struct {
 	Version int        `json:"version"`
 	Nodes   []fileNode `json:"nodes"`
+	// Router is what was counted on the router's own entry. It has a key of
+	// its own and no id, so that a node's record that lost its id is still
+	// told from it.
+	Router *fileNode `json:"router,omitempty"`
 	// Retired is what subscriptions moved through nodes that have since been
 	// removed, so that taking a node away doesn't give a limit its bytes back.
 	Retired []fileTotal `json:"retired,omitempty"`
@@ -45,7 +56,7 @@ type fileTotal struct {
 }
 
 type fileNode struct {
-	ID            uint              `json:"id"`
+	ID            uint              `json:"id,omitempty"`
 	AckedThrough  int64             `json:"acked_through"`
 	Bridge        Totals            `json:"bridge"`
 	Days          map[string]Totals `json:"days"`
@@ -58,6 +69,41 @@ type fileSub struct {
 	// Total is what the subscription has moved through the node in all. A file
 	// from before totals were kept has none, and the days stand in for it.
 	Total *Totals `json:"total,omitempty"`
+}
+
+// decodeNode reads one record, a node's or the router's; who says which in an
+// error.
+func decodeNode(fn fileNode, who string) (*nodeHist, error) {
+	if fn.AckedThrough < 0 {
+		return nil, fmt.Errorf("unreadable: %s has a negative mark", who)
+	}
+	h := newNodeHist()
+	h.through, h.bridge = fn.AckedThrough, fn.Bridge
+	var err error
+	if h.days, err = parseDays(fn.Days); err != nil {
+		return nil, fmt.Errorf("unreadable: %s: %w", who, err)
+	}
+	seen := map[uint]bool{}
+	for _, sub := range fn.Subscriptions {
+		if sub.ID == 0 || seen[sub.ID] {
+			return nil, fmt.Errorf("unreadable: %s: subscription id %d is zero or repeated", who, sub.ID)
+		}
+		seen[sub.ID] = true
+		series, err := parseDays(sub.Days)
+		if err != nil {
+			return nil, fmt.Errorf("unreadable: %s, subscription %d: %w", who, sub.ID, err)
+		}
+		if len(series) > 0 {
+			h.subs[sub.ID] = series
+		}
+		switch {
+		case sub.Total != nil:
+			h.life[sub.ID] = *sub.Total
+		case len(series) > 0:
+			h.life[sub.ID] = span(series, math.MinInt64, math.MaxInt64)
+		}
+	}
+	return h, nil
 }
 
 func dayStrings(series map[day]Totals) map[string]Totals {
@@ -92,6 +138,10 @@ func encodeDoc(nodes map[uint]*nodeHist, retired map[uint]Totals) ([]byte, error
 			fn.Subscriptions = append(fn.Subscriptions, fileSub{ID: sid, Days: dayStrings(h.subs[sid]), Total: &total})
 		}
 		slices.SortFunc(fn.Subscriptions, func(a, b fileSub) int { return cmp.Compare(a.ID, b.ID) })
+		if id == RouterID {
+			doc.Router = &fn
+			continue
+		}
 		doc.Nodes = append(doc.Nodes, fn)
 	}
 	slices.SortFunc(doc.Nodes, func(a, b fileNode) int { return cmp.Compare(a.ID, b.ID) })
@@ -139,36 +189,21 @@ func decodeDoc(b []byte) (map[uint]*nodeHist, map[uint]Totals, error) {
 		if fn.ID == 0 || out[fn.ID] != nil {
 			return nil, nil, fmt.Errorf("unreadable: node id %d is zero or repeated", fn.ID)
 		}
-		if fn.AckedThrough < 0 {
-			return nil, nil, fmt.Errorf("unreadable: node %d has a negative mark", fn.ID)
-		}
-		h := newNodeHist()
-		h.through, h.bridge = fn.AckedThrough, fn.Bridge
-		var err error
-		if h.days, err = parseDays(fn.Days); err != nil {
-			return nil, nil, fmt.Errorf("unreadable: node %d: %w", fn.ID, err)
-		}
-		seen := map[uint]bool{}
-		for _, sub := range fn.Subscriptions {
-			if sub.ID == 0 || seen[sub.ID] {
-				return nil, nil, fmt.Errorf("unreadable: node %d: subscription id %d is zero or repeated", fn.ID, sub.ID)
-			}
-			seen[sub.ID] = true
-			series, err := parseDays(sub.Days)
-			if err != nil {
-				return nil, nil, fmt.Errorf("unreadable: node %d, subscription %d: %w", fn.ID, sub.ID, err)
-			}
-			if len(series) > 0 {
-				h.subs[sub.ID] = series
-			}
-			switch {
-			case sub.Total != nil:
-				h.life[sub.ID] = *sub.Total
-			case len(series) > 0:
-				h.life[sub.ID] = span(series, math.MinInt64, math.MaxInt64)
-			}
+		h, err := decodeNode(fn, fmt.Sprintf("node %d", fn.ID))
+		if err != nil {
+			return nil, nil, err
 		}
 		out[fn.ID] = h
+	}
+	if doc.Router != nil {
+		if doc.Router.ID != 0 {
+			return nil, nil, fmt.Errorf("unreadable: the router's record has a node's id, %d", doc.Router.ID)
+		}
+		h, err := decodeNode(*doc.Router, "the router")
+		if err != nil {
+			return nil, nil, err
+		}
+		out[RouterID] = h
 	}
 	retired := make(map[uint]Totals, len(doc.Retired))
 	for _, r := range doc.Retired {

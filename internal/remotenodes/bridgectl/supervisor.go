@@ -10,6 +10,7 @@
 package bridgectl
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -292,6 +294,55 @@ func (s *Supervisor) Status() Status {
 		}
 	}
 	return st
+}
+
+// ErrNoEntry is returned by SetClients when the bridge isn't running, or runs
+// a spec without a local entry: there is nothing to give the clients to.
+var ErrNoEntry = errors.New("bridgectl: no running bridge with a local entry")
+
+// SetClients makes the clients of the router's own entry the given set, on
+// the bridge that is running, without restarting it. It is the whole set each
+// time, so sending it again is harmless, and whoever starts or restarts the
+// bridge sends it afterwards: a bridge that has just started holds only the
+// clients its spec came with.
+func (s *Supervisor) SetClients(clients []bridgespec.Client) (bridgespec.ClientsResult, error) {
+	var res bridgespec.ClientsResult
+	s.mu.Lock()
+	var addr, token string
+	if s.state == StateRunning && s.spec != nil && s.spec.Local != nil {
+		addr, token = s.spec.StatusAddr, s.spec.Local.Token
+	}
+	s.mu.Unlock()
+	if addr == "" {
+		return res, ErrNoEntry
+	}
+	if clients == nil {
+		clients = []bridgespec.Client{}
+	}
+	body, err := json.Marshal(bridgespec.ClientsRequest{Clients: clients})
+	if err != nil {
+		return res, fmt.Errorf("bridgectl: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, "http://"+addr+bridgespec.ClientsPath, bytes.NewReader(body))
+	if err != nil {
+		return res, fmt.Errorf("bridgectl: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(bridgespec.TokenHeader, token)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return res, fmt.Errorf("the entry's clients: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// what the bridge says names emails and never an id
+		said, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return res, fmt.Errorf("the entry's clients: the bridge answered %s: %s", resp.Status, strings.TrimSpace(string(said)))
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&res); err != nil {
+		return res, fmt.Errorf("the entry's clients: %w", err)
+	}
+	return res, nil
 }
 
 // Output is what the bridge printed lately, and what the supervisor said

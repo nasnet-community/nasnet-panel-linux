@@ -85,7 +85,7 @@ func TestTheFileHasItsDocumentedShape(t *testing.T) {
 func TestAnEmptyHistoryIsAnEmptyList(t *testing.T) {
 	b, err := encode(map[uint]*nodeHist{})
 	must(t, err)
-	if string(b) != `{"version":1,"nodes":[]}`+"\n" {
+	if string(b) != `{"version":2,"nodes":[]}`+"\n" {
 		t.Fatalf("empty history is %s", b)
 	}
 	// a node with nothing in it is not worth a place; one with only a mark is
@@ -152,9 +152,9 @@ func TestDecodeRefusesWhatItCannotUse(t *testing.T) {
 
 func TestANewerFileIsRecognisedWhateverElseIsInIt(t *testing.T) {
 	for _, doc := range []string{
-		`{"version":2,"nodes":[]}`,
+		`{"version":99,"nodes":[]}`,
 		`{"version":99,"nodes":"something this build has never seen","extra":{"a":[1,2,3]}}`,
-		`{"version":2}`,
+		`{"version":99}`,
 	} {
 		_, err := decode([]byte(doc))
 		if !errors.Is(err, errNewer) {
@@ -169,5 +169,59 @@ func TestDecodeIgnoresFieldsItDoesNotKnow(t *testing.T) {
 	must(t, err)
 	if h[1] == nil || h[1].through != 3 {
 		t.Fatalf("decoded %+v", h)
+	}
+}
+
+// The router's own entry is counted like a node and kept under a key of its
+// own, so a node's record that lost its id can't pass for it.
+func TestTheRoutersRecordGoesThroughTheFile(t *testing.T) {
+	h := newNodeHist()
+	d, err := parseDay("2026-10-30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.through = 5
+	h.days[d] = Totals{Up: 3, Down: 30}
+	h.subs[2] = map[day]Totals{d: {Up: 3, Down: 30}}
+	h.life[2] = Totals{Up: 3, Down: 30}
+	node := newNodeHist()
+	node.through = 9
+	node.days[d] = Totals{Up: 1, Down: 2}
+
+	b, err := encode(map[uint]*nodeHist{RouterID: h, 1: node})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"router":{"acked_through":5`) || strings.Contains(string(b), `"id":0`) {
+		t.Fatalf("the router's record is not under its own key: %s", b)
+	}
+	back, err := decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != 2 || !reflect.DeepEqual(back[RouterID], h) || !reflect.DeepEqual(back[1], node) {
+		t.Fatalf("read back %+v and %+v", back[RouterID], back[1])
+	}
+	again, _ := encode(back)
+	if !bytes.Equal(again, b) {
+		t.Fatal("encoding twice gave different bytes")
+	}
+
+	for name, doc := range map[string]string{
+		"a node's record with no id":     `{"version":2,"nodes":[{"days":{},"subscriptions":[]}]}`,
+		"the router's record with an id": `{"version":2,"nodes":[],"router":{"id":3,"days":{},"subscriptions":[]}}`,
+		"a bad day in the router's":      `{"version":2,"nodes":[],"router":{"days":{"soon":{"up":1,"down":1}},"subscriptions":[]}}`,
+		"a negative mark in it":          `{"version":2,"nodes":[],"router":{"acked_through":-1,"days":{},"subscriptions":[]}}`,
+	} {
+		if _, err := decode([]byte(doc)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	// a file from before the router was counted reads as it always did
+	old := `{"version":1,"nodes":[{"id":1,"acked_through":9,"bridge":{"up":0,"down":0},"days":{"2026-10-30":{"up":1,"down":2}},"subscriptions":[]}]}`
+	got, err := decode([]byte(old))
+	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[1], node) {
+		t.Fatalf("a version 1 file: %+v, %v", got, err)
 	}
 }
