@@ -119,7 +119,7 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 		return errors.New("The connection broke.")
 	})
 	// an install refused at its first step: nothing was changed, nothing kept, and the form for another try
-	const xrayHere = "This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray). Use a server without one."
+	const xrayHere = "This server already runs an Xray that this plugin did not install (/usr/local/bin/xray). Use a server without one."
 	refused := r.finished(jobs.Spec{
 		Kind: jobs.KindInstall, NodeID: 4, Target: "third", Steps: []string{"Check the server", "Download the agent", "Discard the node"},
 		Install: &jobs.InstallForm{Name: "third", Host: "203.0.113.4", SSHPort: 22, SSHUser: "root", EntryPort: 443},

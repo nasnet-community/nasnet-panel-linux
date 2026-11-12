@@ -271,7 +271,7 @@ test.describe('the router\'s Settings tab in Persian', () => {
     await expect(about.getByRole('link', { name: 'کد منبع' })).toBeVisible()
     await expect(about.getByRole('link', { name: 'اطلاعیه‌های مجوز' })).toBeVisible()
     // the version, commit and licence are what they are in any language
-    await expect(row(about, 'نسخه')).toContainText('Remote Nodes 0.1.0')
+    await expect(row(about, 'نسخه')).toContainText('V2ray/Xray 0.1.0')
     await expect(row(about, 'مجوز')).toContainText('AGPL-3.0')
   })
 

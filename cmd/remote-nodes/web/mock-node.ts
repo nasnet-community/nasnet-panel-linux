@@ -270,7 +270,7 @@ export async function nodeApi({ method, path, body, res, send, fail }: Ctx): Pro
     if (!passphrase || !data) return fail(400, 'bad_request', 'give a passphrase and a file'), true
     await sleep(350)
     const opened = openBackup(passphrase, data)
-    if (opened === 'backup_bad_file') return fail(400, 'backup_bad_file', 'this is not a Remote Nodes backup'), true
+    if (opened === 'backup_bad_file') return fail(400, 'backup_bad_file', 'this is not a backup of this plugin'), true
     if (opened === 'backup_bad_passphrase') return fail(400, 'backup_bad_passphrase', 'the passphrase does not open this backup'), true
     if (nodes.length) return fail(409, 'bad_request', 'a backup can only be imported on an empty install, with no nodes'), true
     // the nodes come back as they were, already trusting this router, so none needs a login; an install

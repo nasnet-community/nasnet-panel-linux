@@ -73,7 +73,7 @@ export function RemoteNodesLogo({ size = 32 }: { size?: number }) {
   // each logo on the page needs its own gradient id, or the first one's is used for all
   const grad = `rn-${useId().replace(/\W/g, '')}`
   return (
-    <svg viewBox="0 0 64 64" width={size} height={size} role="img" aria-label="Remote Nodes logo">
+    <svg viewBox="0 0 64 64" width={size} height={size} role="img" aria-label="V2ray/Xray logo">
       <defs>
         <linearGradient id={grad} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#A855F7" />

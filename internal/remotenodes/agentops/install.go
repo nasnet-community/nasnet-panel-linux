@@ -201,7 +201,7 @@ func (in *install) inspect(ctx context.Context) (string, error) {
 	case other:
 		return "", newErr(ErrServerHasAgent, nil, "This server already runs an agent that trusts another hub. A node belongs to one hub: use a server without one, or remove that agent first.")
 	case !mine && (in.state.present[agentBin] || in.state.present[agentUnitPath]):
-		return "", newErr(ErrServerHasAgent, nil, "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.")
+		return "", newErr(ErrServerHasAgent, nil, "This server already runs a nasnet-agent that this plugin did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.")
 	}
 	// this hub's marker for another of its nodes: the same server under another
 	// address, which a failed install would clean away

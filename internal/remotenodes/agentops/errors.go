@@ -155,7 +155,7 @@ func (e *ServerHasXrayError) Error() string {
 	if e.Process {
 		found = append(found, "a running xray process")
 	}
-	msg := "This server already runs an Xray that Remote Nodes did not install"
+	msg := "This server already runs an Xray that this plugin did not install"
 	if len(found) > 0 {
 		msg += " (" + strings.Join(found, ", ") + ")"
 	}

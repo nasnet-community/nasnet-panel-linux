@@ -63,7 +63,7 @@ func backupError(err error) error {
 	case errors.Is(err, store.ErrNotEmpty):
 		return &Error{CodeBadRequest, "This install already has nodes or subscriptions, and a backup can only be imported into an empty one."}
 	case errors.Is(err, model.ErrNewer):
-		return &Error{CodeBackupBadFile, "That backup was made by a newer version of Remote Nodes."}
+		return &Error{CodeBackupBadFile, "That backup was made by a newer version of this plugin."}
 	case errors.Is(err, store.ErrBadSnapshot):
 		return &Error{CodeBackupBadFile, "That backup holds a state this version can't use."}
 	}

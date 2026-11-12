@@ -58,7 +58,7 @@ export function App() {
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
           <RouteLink to={{ page: 'root', tab: 'nodes' }} className="flex shrink-0 items-center gap-2.5 font-semibold">
             <RemoteNodesLogo size={30} />
-            <span dir="ltr">Remote Nodes</span>
+            <span dir="ltr">V2ray/Xray</span>
           </RouteLink>
           <span className="hidden truncate text-xs text-faint md:inline">{t('app.subtitle')}</span>
           <div className="ms-auto flex items-center gap-1 sm:gap-2">

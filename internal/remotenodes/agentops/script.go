@@ -68,7 +68,7 @@ const (
 
 // sysctlText is the file that keeps retries2Want across a reboot. Both the
 // file and the live value go when the agent does, if nobody changed them.
-const sysctlText = `# Written by the Remote Nodes plugin with the agent, and removed with it.
+const sysctlText = `# Written by the V2ray/Xray plugin with the agent, and removed with it.
 # A tunnel connection whose other end has gone away, such as the router's
 # after its address changed, is given up after about a minute and not about
 # fifteen. The kernel's default is 15.
@@ -472,7 +472,7 @@ func union(a, b []int) []int {
 // internal/agent/config reads, and a test loads the result with it. The
 // profile line is what keeps a shell, file writes, mode switches and
 // uninstalls off this node: no call can change it, only this file.
-var agentConfigTmpl = template.Must(template.New("config.yaml").Parse(`# Written by the Remote Nodes plugin. The hub writes this file again when it
+var agentConfigTmpl = template.Must(template.New("config.yaml").Parse(`# Written by the V2ray/Xray plugin. The hub writes this file again when it
 # installs the agent again, so changes made here don't last.
 profile: managed
 

@@ -117,7 +117,7 @@ test.describe('about', () => {
   test('gives the version, the commit, the licence, and where the source is', async ({ page }) => {
     await page.goto('/#/settings')
     const about = panel(page, 'About')
-    await expect(row(about, 'Version')).toContainText('Remote Nodes 0.1.0')
+    await expect(row(about, 'Version')).toContainText('V2ray/Xray 0.1.0')
     await expect(row(about, 'Commit')).toContainText('a1b2c3d')
     await expect(row(about, 'License')).toContainText('AGPL-3.0')
     await expect(about).toContainText('Update this plugin from the Plugins page in NasNet Panel.')
@@ -242,13 +242,13 @@ test.describe('importing a backup', () => {
     // a file that is not a backup at all
     await d.getByLabel('Backup file').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('shopping list') })
     await go.click()
-    await expect(d.getByRole('alert')).toContainText("This file isn't a Remote Nodes backup.")
+    await expect(d.getByRole('alert')).toContainText("This file isn't a V2ray/Xray backup.")
 
     // a file too big to be one is turned away without being sent
     await d.getByLabel('Backup file').setInputFiles({ name: 'movie.bak', mimeType: 'application/octet-stream', buffer: Buffer.alloc(3 * 1024 * 1024) })
     const before = sent
     await go.click()
-    await expect(d.getByRole('alert')).toContainText("This file isn't a Remote Nodes backup.")
+    await expect(d.getByRole('alert')).toContainText("This file isn't a V2ray/Xray backup.")
     expect(sent).toBe(before)
 
     // the right file with the right passphrase

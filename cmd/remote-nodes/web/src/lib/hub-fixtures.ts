@@ -1029,7 +1029,7 @@ export const jobs: Job[] = [
         "key": "check_server",
         "name": "Check the server",
         "state": "failed",
-        "detail": "This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray). Use a server without one."
+        "detail": "This server already runs an Xray that this plugin did not install (/usr/local/bin/xray). Use a server without one."
       },
       {
         "key": "download_agent",
@@ -1042,7 +1042,7 @@ export const jobs: Job[] = [
         "state": "ok"
       }
     ],
-    "error": "This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray). Use a server without one. Nothing was changed on the server, and nothing was kept.",
+    "error": "This server already runs an Xray that this plugin did not install (/usr/local/bin/xray). Use a server without one. Nothing was changed on the server, and nothing was kept.",
     "code": "server_has_xray",
     "errorInfo": {
       "found": [

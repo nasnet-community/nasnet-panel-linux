@@ -128,7 +128,7 @@ describe('what a failed install says is wrong, once', () => {
 
   it('says it from the hub\'s own refused install', () => {
     const job = hub.jobs.find((j) => j.code === 'server_has_xray')!
-    expect(failureText(en.t, job).reason).toBe('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')
+    expect(failureText(en.t, job).reason).toBe('This server already runs an Xray that this plugin did not install. Use a server without one, or take it over.')
     expect(failureText(en.t, job).detail).toBe('')
   })
 })

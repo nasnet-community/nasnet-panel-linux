@@ -156,7 +156,7 @@ test('the root tabs go by address', async ({ page }) => {
   await expect(page.getByRole('tab', { name: 'Subscriptions' })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: 'Settings' }).click()
   await expect(page).toHaveURL(/#\/settings$/)
-  await page.getByRole('link', { name: /Remote Nodes/ }).click()
+  await page.getByRole('link', { name: /V2ray\/Xray/ }).click()
   await expect(page.getByRole('tab', { name: 'Nodes' })).toHaveAttribute('aria-selected', 'true')
   // the entry card stays above every tab
   await expect(page.getByRole('heading', { name: 'Entry is on' })).toBeVisible()

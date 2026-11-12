@@ -44,9 +44,9 @@ LC_ALL=C sort -u "$tmp/linked" | grep . >"$tmp/modules"
 
 notices=$out/NOTICES
 cat >"$notices" <<EOF
-The licences of the software built into the Remote Nodes programs. The
-programs themselves are free software under the GNU Affero General Public
-License, version 3 or later: see LICENSE.
+The licences of the software built into the programs of the V2ray/Xray
+plugin. The programs themselves are free software under the GNU Affero
+General Public License, version 3 or later: see LICENSE.
 
 EOF
 
@@ -86,7 +86,7 @@ done <"$tmp/modules"
 cp LICENSE "$out/LICENSE"
 
 cat >"$out/README" <<EOF
-Remote Nodes: licences and source
+V2ray/Xray plugin: licences and source
 
 This image holds two programs, /remote-nodes (the hub) and
 /remote-nodes-bridge. Both are built from the source in
