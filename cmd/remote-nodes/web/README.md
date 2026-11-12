@@ -31,7 +31,10 @@ page and the router's Settings tab (traffic, renaming, settings, updates, remova
 lists what `POST /api/__node` can do to a node, such as putting it in the Xray mismatch state. `POST /api/__reset` puts the data
 back and takes `{ fresh, nodes, maxNodes, entry, pace, unfinished }` to set up other states (the browser tests use
 it). The calls that change subscriptions (add, rename, delete, the switch per node, the links) are in
-`mock-subscriptions.ts`. It is not part of the build.
+`mock-subscriptions.ts`. The router's own entry, This router, is answered by `mock-local.ts`: it works in
+the sample data, and a reset with `{ local }` puts it in another state (off, starting, no port, no name,
+and so on; its header lists them). The browser tests reset with it off unless a test asks for it. It is not
+part of the build.
 
 The mock follows the hub where the page can tell: an install is the hub's fifteen steps, a failed one cleans the server
 up and leaves no node (or, when the cleanup fails too, an unfinished install that only Clean up or Forget takes out), a

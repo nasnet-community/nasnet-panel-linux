@@ -25,6 +25,8 @@ const WORDED = new Set([
   'needs_root',
   'reality_target_failed',
   'busy',
+  'local_off',
+  'no_address',
   'backup_bad_passphrase',
   'backup_bad_file',
 ])

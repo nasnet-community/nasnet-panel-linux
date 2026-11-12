@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, JOB_LOST, api, followJob, subscriptions, type Job } from './api'
+import { ApiError, JOB_LOST, api, followJob, local, subscriptions, type Job } from './api'
 
 const job = (state: Job['state'], steps: Job['steps'] = []): Job => ({
   id: 'j1',
@@ -76,6 +76,54 @@ describe('request', () => {
       'GET api/nodes/1/subscriptions',
     ])
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ enabled: false })
+  })
+
+  it("builds the paths of the router's own entry, which has no node id", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(reply(200, {})))
+    await local.get()
+    await local.setEnabled(true)
+    await local.settings({ host: '' })
+    await local.newPort()
+    await local.rotateKeys()
+    await local.handshakeCheck('www.example.com:443')
+    await local.subscriptions()
+    await local.traffic()
+    const calls = fetchMock.mock.calls.map(([url, init]) => `${init.method} ${url}`)
+    expect(calls).toEqual([
+      'GET api/local',
+      'PUT api/local',
+      'PATCH api/local/settings',
+      'POST api/local/new-port',
+      'POST api/local/rotate-keys',
+      'POST api/local/handshake-check',
+      'GET api/local/subscriptions',
+      'GET api/local/traffic',
+    ])
+    const body = (i: number) => JSON.parse(fetchMock.mock.calls[i][1].body)
+    expect(body(1)).toEqual({ enabled: true })
+    // an empty name is sent as it is: it is what takes the name away
+    expect(body(2)).toEqual({ host: '' })
+    expect(body(5)).toEqual({ target: 'www.example.com:443' })
+  })
+
+  it('sends a switch and a link to the place they are for: a node, or the router', async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(reply(200, {})))
+    await subscriptions.setPlace(2, 3, true)
+    await subscriptions.linkAt(2, 3)
+    await subscriptions.replaceLinkAt(2, 3)
+    await subscriptions.setPlace(2, 'router', false)
+    await subscriptions.linkAt(2, 'router')
+    await subscriptions.replaceLinkAt(2, 'router')
+    const calls = fetchMock.mock.calls.map(([url, init]) => `${init.method} ${url}`)
+    expect(calls).toEqual([
+      'PUT api/subscriptions/2/nodes/3',
+      'GET api/subscriptions/2/nodes/3/link',
+      'POST api/subscriptions/2/nodes/3/replace-link',
+      'PUT api/subscriptions/2/local',
+      'GET api/subscriptions/2/local/link',
+      'POST api/subscriptions/2/local/replace-link',
+    ])
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ enabled: false })
   })
 
   it("turns an error body into an ApiError and keeps the server's code and extra fields", async () => {

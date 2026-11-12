@@ -8,6 +8,7 @@ import { health, issues, nodeNotes } from './health'
 import * as hub from './hub-fixtures'
 import { failedAtLink, jobLine, jobStep, jobTitle, stepLabel } from './jobs'
 import { agentMemory, agentUptime, plot, renewLeadDays, roundTrip, settingsState } from './node'
+import { hasLinks, routerHealth, routerNotes, routerVerdict } from './router'
 import { nodeInfos, nodeSubscriptionStatus, subscriptionStatus } from './subscriptions'
 
 // What the hub sends, as hub-fixtures.ts holds it (written by a Go test in internal/remotenodes/api
@@ -171,5 +172,43 @@ describe('the router', () => {
     expect(drawn.drawn).toBe(true)
     expect(drawn.last).toEqual({ up: 9, down: 10 })
     expect(plot({ stepSec: 5, samples: [] }, NOW, 300, 80).drawn).toBe(false)
+  })
+})
+
+describe("the router's own entry", () => {
+  it('reads as working, with a name and a port for its links, and as off on a router that never switched it on', () => {
+    expect(routerHealth(hub.local, hub.config.entry, en.t)).toEqual({ tone: 'online', label: 'Working', reason: '' })
+    expect(routerNotes(hub.local, hub.config.entry, en.t)).toEqual([])
+    expect(hasLinks(hub.local)).toBe(true)
+    expect(hub.config.local).toEqual({ enabled: true, state: 'working' })
+
+    expect(routerHealth(hub.bareLocal, hub.bareConfig.entry, en.t).label).toBe('Off')
+    expect(hasLinks(hub.bareLocal)).toBe(false)
+    expect(hub.bareLocal.port).toBeNull()
+    expect(hub.bareConfig.local).toEqual({ enabled: false, state: 'off' })
+  })
+
+  it('says when it last reported, and has its events in a list either way', () => {
+    const v = routerVerdict(hub.local, hub.config.entry, en.t, en.fmt, NOW)
+    expect(v.title).toBe('Everything is working')
+    expect(v.note).toBe('Last report 60 s ago')
+    expect(v.chips.map((c) => c.value)).toEqual(['open', 'set', 'running'])
+    for (const l of [hub.local, hub.bareLocal]) expect(Array.isArray(l.events)).toBe(true)
+  })
+
+  it('has its list of subscriptions in the words for the router', () => {
+    const subs = hub.localSubscriptions.map((s) => {
+      const st = nodeSubscriptionStatus(s, en.t, en.fmt, NOW, true)
+      return [s.name, st.key, st.sub]
+    })
+    expect(subs).toEqual([
+      ['علی', 'online', '2 connections'],
+      ['sara', 'off', 'off on this router'],
+    ])
+  })
+
+  it('gives each subscription its row on the entry while the entry is on, and none while it is off', () => {
+    for (const s of hub.subscriptions) expect(s.local, s.name).not.toBeNull()
+    for (const s of hub.bareSubscriptions) expect(s.local, s.name).toBeNull()
   })
 })

@@ -22,7 +22,7 @@ test('the language button switches the whole page to Persian: right to left, Per
   await expect(page.getByRole('tab', { name: 'نودها' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tab', { name: 'اشتراک‌ها' })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'تنظیمات' })).toBeVisible()
-  await expect(page.getByText('هر نود سروری است که اشتراک‌ها به آن وصل می‌شوند.')).toBeVisible()
+  await expect(page.getByText('جاهایی که اشتراک‌ها به آن‌ها وصل می‌شوند: این روتر و نودهای شما.')).toBeVisible()
   await expect(page.getByText('۳ از ۳ نود')).toBeVisible()
   await expect(page.getByText('به حد مجاز رسید')).toBeVisible()
 

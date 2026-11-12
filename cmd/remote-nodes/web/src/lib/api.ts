@@ -430,6 +430,8 @@ export interface CreateSubscription {
   name: string
   /** the nodes it is switched on for */
   nodeIds: number[]
+  /** switched on for the router's own entry too; refused (local_off) while that entry is off */
+  local?: boolean
   /** bytes; left out for no limit */
   trafficLimit?: number
   /** an instant, RFC 3339; left out for no end date */
@@ -463,6 +465,19 @@ export interface NodeSettings {
   sni?: string
 }
 
+/** What may change on the router's own entry. What is left out stays; an empty string clears it. */
+export interface LocalSettings {
+  /** the name its links carry; '' goes back to the router's IP Cloud name */
+  host?: string
+  /** '' lets the router choose one */
+  handshakeTarget?: string
+  /** '' is the Reality target's own name */
+  sni?: string
+}
+
+/** Where a subscription can be switched on: a node by its id, or the router's own entry. */
+export type PlaceId = number | 'router'
+
 /** The longest a node or subscription name may be, in characters: the hub's model.MaxNameRunes. */
 export const MAX_NAME_LENGTH = 64
 
@@ -489,6 +504,23 @@ export const api = {
   traffic: (id: number) => request<Traffic>('GET', `${node(id)}/traffic`),
 }
 
+/** The router's own entry. None of these is a job: nothing here signs in to a server. */
+export const local = {
+  get: () => request<Local>('GET', 'local'),
+  /** off keeps its keys and the subscriptions' switches, so on again gives the same links */
+  setEnabled: (enabled: boolean) => request<Local>('PUT', 'local', { enabled }),
+  settings: (s: LocalSettings) => request<Local>('PATCH', 'local/settings', s),
+  /** asks the router for another port: every link changes */
+  newPort: () => request<Local>('POST', 'local/new-port'),
+  rotateKeys: () => request<Local>('POST', 'local/rotate-keys'),
+  /** tries a Reality target from the router */
+  handshakeCheck: (target: string) => request<HandshakeCheck>('POST', 'local/handshake-check', { target }),
+  subscriptions: () => request<NodeSubscription[]>('GET', 'local/subscriptions'),
+  traffic: () => request<Traffic>('GET', 'local/traffic'),
+}
+
+const place = (id: number, at: PlaceId) => (at === 'router' ? `${sub(id)}/local` : `${sub(id)}/nodes/${at}`)
+
 export const subscriptions = {
   list: () => request<Subscription[]>('GET', 'subscriptions'),
   create: (s: CreateSubscription) => request<Subscription>('POST', 'subscriptions', s),
@@ -502,6 +534,10 @@ export const subscriptions = {
   link: (id: number, nodeId: number) => request<Link>('GET', `${sub(id)}/nodes/${nodeId}/link`),
   /** a new id: the old link stops working */
   replaceLink: (id: number, nodeId: number) => request<Link>('POST', `${sub(id)}/nodes/${nodeId}/replace-link`),
+  /** the same three for a place, which is a node or the router's own entry */
+  setPlace: (id: number, at: PlaceId, enabled: boolean) => request<Subscription>('PUT', place(id, at), { enabled }),
+  linkAt: (id: number, at: PlaceId) => request<Link>('GET', `${place(id, at)}/link`),
+  replaceLinkAt: (id: number, at: PlaceId) => request<Link>('POST', `${place(id, at)}/replace-link`),
 }
 
 export interface BackupFile {

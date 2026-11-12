@@ -37,10 +37,15 @@ export interface Reset {
   pace?: number
   /** an install that didn't finish beside the nodes: "Old install", 192.0.2.77, id 9 */
   unfinished?: boolean
+  /** This router: "on" is the sample data's working entry; left out here, it is off */
+  local?: 'off' | 'on' | 'starting' | 'no-port' | 'no-address' | 'bridge-down' | 'target' | 'nat'
 }
 
-/** Puts the mock back to its sample data, or to the state asked for; installs run at twice the usual speed. */
-export const reset = (request: APIRequestContext, state: Reset = {}) => request.post('/api/__reset', { data: { pace: 0.5, ...state } })
+/**
+ * Puts the mock back to its sample data, or to the state asked for; installs run at twice the usual speed.
+ * This router is off unless a test asks for it, so the nodes' tests see the nodes alone.
+ */
+export const reset = (request: APIRequestContext, state: Reset = {}) => request.post('/api/__reset', { data: { pace: 0.5, local: 'off', ...state } })
 
 /** The header the page sends on every API call except the job stream; a test calling the API directly needs it too. */
 export const PAGE = { 'X-RemoteNodes-UI': '1' }

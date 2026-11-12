@@ -34,7 +34,7 @@ function useConfirmed() {
 }
 
 /** The number a confirmation turns on, big, with what it means; the number is in the language's digits. */
-function Impact({ n, children }: { n: number; children: ReactNode }) {
+export function Impact({ n, children }: { n: number; children: ReactNode }) {
   const { fmt } = useLang()
   return (
     <div className={cx('flex items-center gap-3 rounded-md p-3 text-[13px] text-foreground', n ? 'bg-warn-tint' : 'bg-card2')}>
@@ -98,12 +98,12 @@ export function RenewDialog({ node, start, onClose }: { node: Node; start: Start
 
 // --- changes that make every link new ------------------------------------------------
 
-/** What changing a port, a Reality target or a server name does to the links. */
-function LinksNotice() {
+/** What changing a port, a Reality target or a server name does to the links: a node's, or (`router`) the router's own. */
+export function LinksNotice({ router = false }: { router?: boolean }) {
   const { t } = useLang()
   return (
     <Notice tone="warn">
-      <b>{t('links.warnTitle')}</b> {t('links.warnBody')}
+      <b>{t(router ? 'router.links.warnTitle' : 'links.warnTitle')}</b> {t('links.warnBody')}
     </Notice>
   )
 }

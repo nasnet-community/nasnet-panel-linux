@@ -5,7 +5,7 @@ const tooltip = (page: import('@playwright/test').Page) => page.getByRole('toolt
 test('the Nodes tab shows a node that works, one that is down and one being installed', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('tab', { name: 'Nodes' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByText('Each node is a server that subscriptions connect to.')).toBeVisible()
+  await expect(page.getByText('Places subscriptions connect to: this router and your nodes.')).toBeVisible()
 
   const one = card(page, 'Node 1')
   await expect(one).toContainText('203.0.113.24')

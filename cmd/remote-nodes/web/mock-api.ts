@@ -11,9 +11,12 @@
 // Seven subscriptions, the entry is on (WireGuard). The router is at its cap of
 // 3 nodes; remove one (or reset with { nodes: 2 }) to add another. The job tray
 // starts with that install and two finished jobs. Usage moves every few seconds.
+// The router's own entry, "This router", is working, with five of the subscriptions
+// on it and two of them connected (mock-local.ts has it and its other states).
 //
 // `npm run dev:mock:fresh` starts from the first-run state instead: no nodes, no
-// subscriptions, the entry off because there is no Domestic link and no VPN.
+// subscriptions, the entry off because there is no Domestic link and no VPN, and
+// This router switched off.
 //
 // Add-node scenarios, picked by the address you type:
 //   address contains "offline" -> the host key check can't connect
@@ -44,19 +47,21 @@
 //   address contains "poll"    -> the job's event stream answers 503, so the page polls
 //   an existing address        -> refused: it is already a node here
 //
-// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished }:
+// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished, local }:
 //   fresh     the first-run state above
 //   nodes     0 to 3: how many of the sample nodes stay (1 keeps only Node 1)
 //   unfinished true: an install that didn't finish beside them ("Old install", 192.0.2.77, id 9)
 //   maxNodes  the router's cap (3)
 //   entry     "off", "domestic-offline", "vpn-offline", "stale" or "old-routeros"
 //   pace      how long install steps take, as a multiple of the usual (1)
+//   local     the state of This router: "off", "starting", "no-port", "no-address", "bridge-down", "target" or "nat"
 // Every call but the job event stream needs the page's X-RemoteNodes-UI header, as the hub
 // does; the stream can't carry one (EventSource), so it is refused only when the browser says
 // the request came from another site. GET /licenses, which the Notices link opens in a new
 // tab, is plain text and needs none, as on the hub; the text is a short sample.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Connect, Plugin } from 'vite'
+import { localApi, localBrief, localLive, seedLocal, seedLocalSubscriptions, subscriptionLocal, tickLocal, type LocalMode } from './mock-local'
 import { nodeApi } from './mock-node'
 import type { AgentState, AppConfig, Entry, ErrorInfo, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
 import { subscriptionRoutes } from './mock-subscriptions'
@@ -75,6 +80,7 @@ const VERSION = '0.1.0'
 // what an update installs: the versions this plugin pins
 const AGENT = '1.3.0'
 const XRAY = '26.10.21'
+export const XRAY_VERSION = XRAY
 const NEW_KEY = 'SHA256:u3Rq0Q1uV3Jc0mYw7b6o8xk3j2m9Pq5c1f0aZyXwVb8'
 const OLD_KEY = 'SHA256:Zk9wP2mA7sQ1tR4yU6iO8pLhJgFdSaXcVbNmQwErTyU'
 const MAX_SUBSCRIPTIONS = 10
@@ -180,6 +186,10 @@ let nextSubId = 1
 let maxNodes = 3
 let entryMode = 'on'
 let pace = 1
+/** The Domestic link and the VPN are both usable. */
+export const entryIsOn = () => entryMode === 'on' || entryMode === 'stale'
+/** How long things take, as a multiple of the usual. */
+export const stepPace = () => pace
 
 export function node(o: Partial<MockNode> & Pick<MockNode, 'id' | 'name' | 'host'>): MockNode {
   const now = Date.now()
@@ -215,7 +225,7 @@ function sub(name: string, o: Partial<MockSub> = {}): MockSub {
   return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month, on: new Set(), limit: 0, used: month, endsAt: null, ...o }
 }
 
-function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean } = {}) {
+function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean; local?: LocalMode } = {}) {
   const now = Date.now()
   nodes = []
   subs = []
@@ -227,6 +237,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   entryMode = o.fresh ? 'off' : (o.entry ?? 'on')
   jobs.clear()
   installing.clear()
+  seedLocal(o.fresh ? 'off' : o.local)
   if (o.fresh) return
 
   const keep = o.nodes ?? 3
@@ -277,6 +288,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
     ['Kian', [2], { lastSeen: now - 25 * MIN, today: 210 * MB, month: 5.2 * GB }],
   ]
   subs = names.map(([name, on, rest]) => sub(name, { ...rest, on: new Set(on.filter((id) => wanted.some((n) => n.id === id))) }))
+  seedLocalSubscriptions()
 
   // what the tray shows from before: Node 3's install, still going, and two finished jobs
   if (wanted.includes(n3)) {
@@ -480,15 +492,14 @@ function subView(s: MockSub): Subscription {
     trafficUsed: s.used,
     expiresAt: s.endsAt === null ? null : iso(s.endsAt),
     stopped: stoppedOf(s),
-    online: registered.some((n) => !n.down) ? s.onlineOn !== null : null,
+    online: registered.some((n) => !n.down) || localLive() ? s.onlineOn !== null : null,
     lastSeenAt: s.lastSeen ? iso(s.lastSeen) : null,
     todayUp: t.up,
     todayDown: t.down,
     monthUp: m.up,
     monthDown: m.down,
     nodes: registered.map((n) => ({ ...nodeSubView(s, n), nodeId: n.id })).map(({ id: _id, name: _name, stopped: _s, trafficLimit: _l, trafficUsed: _u, expiresAt: _e, ...rest }) => rest),
-    // the router's own entry is off in the sample data until its screens are mocked
-    local: null,
+    local: subscriptionLocal(s),
   }
 }
 
@@ -529,13 +540,14 @@ export function configView(): AppConfig {
     entry: entryView(),
     backup: { lastExportAt: null },
     xray: XRAY,
-    local: { enabled: false, state: 'off' },
+    local: localBrief(),
   }
 }
 
 // Moving numbers. Started by the dev server only, so importing this file (as
 // vite.config.ts does) never keeps a `vite build` process alive.
 function tick() {
+  tickLocal()
   for (const n of nodes) {
     if (!reachable(n) || n.installJob) continue
     n.rate = { up: rand(150_000, 450_000), down: rand(800_000, 1_800_000) }
@@ -973,7 +985,8 @@ export function mockApi(): Plugin {
         }
         if (path === 'health') return send(200, { ok: true, version: VERSION, commit: 'a1b2c3d', writes: 0 })
         if (path === 'config' && method === 'GET') return send(200, configView())
-        if (subscriptionRoutes({ method, path, body, send, fail, subs, nodes, max: MAX_SUBSCRIPTIONS, maxName: MAX_NAME, make: sub, view: subView, nodeView: view })) return
+        if (localApi({ method, path, body, send, fail, view: subView })) return
+        if (subscriptionRoutes({ method, path, body, send, fail, subs, nodes, max: MAX_SUBSCRIPTIONS, maxName: MAX_NAME, make: sub, view: subView, nodeView: view, localOn: localBrief().enabled })) return
 
         if (path === 'probe' && method === 'POST') {
           const host = String(body.host ?? '').trim()

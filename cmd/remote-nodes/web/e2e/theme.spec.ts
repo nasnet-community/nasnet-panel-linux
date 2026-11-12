@@ -89,7 +89,7 @@ for (const theme of ['dark', 'light'] as const) {
     const texts = {
       'page text': page.getByRole('heading', { name: 'Entry is on' }),
       'faint note': page.getByText('Checked 2 min ago'),
-      'muted line': page.getByText('Each node is a server that subscriptions connect to.'),
+      'muted line': page.getByText('Places subscriptions connect to: this router and your nodes.'),
       'a chip label': page.getByRole('listitem').filter({ hasText: 'Domestic link' }).locator('span').first(),
       'a chip value': page.getByRole('listitem').filter({ hasText: 'Domestic link' }).locator('b'),
       'selected tab': page.getByRole('tab', { name: 'Nodes' }),

@@ -3,8 +3,8 @@ import { DatePicker } from '../components/DatePicker'
 import { RotateCcw } from '../components/icons'
 import { Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
-import { ApiError, MAX_NAME_LENGTH, subscriptions, type Subscription, type SubscriptionPatch } from '../lib/api'
-import { defaultNodeIds, extendDay, limitText, localDay, readQuota, today, type Editable, type NodeInfo } from '../lib/subscriptions'
+import { ApiError, MAX_NAME_LENGTH, subscriptions, type PlaceId, type Subscription, type SubscriptionPatch } from '../lib/api'
+import { defaultNodeIds, enabledAt, extendDay, limitText, localDay, readQuota, today, type Editable, type Place } from '../lib/subscriptions'
 import { ShareDialog, type ShareTarget } from './ShareDialog'
 
 /** A subscription as the dialogs see it. */
@@ -15,15 +15,12 @@ export interface Named {
 
 type Modal = { kind: 'add' } | { kind: 'share'; target: ShareTarget } | { kind: 'delete' | 'reset'; sub: Named } | { kind: 'edit'; sub: Editable }
 
-/** The share dialog's target for a subscription the API returned: the nodes it is on. */
-export function shareTarget(s: Subscription, nodes: NodeInfo[]): ShareTarget {
+/** The share dialog's target for a subscription the API returned: the places it is on, the router's own entry first. */
+export function shareTarget(s: Subscription, places: Place[]): ShareTarget {
   return {
     id: s.id,
     name: s.name,
-    nodes: s.nodes.flatMap((n) => {
-      const info = nodes.find((x) => x.id === n.nodeId)
-      return n.enabled && info ? [{ id: info.id, name: info.name, unreachable: info.unreachable }] : []
-    }),
+    places: places.filter((p) => enabledAt(s, p.id)).map((p) => ({ id: p.id, name: p.name, unreachable: p.unreachable })),
   }
 }
 
@@ -154,8 +151,8 @@ function AddSubscription({
   onClose,
   onAdded,
 }: {
-  /** null while the list loads */
-  nodes: NodeInfo[] | null
+  /** the places it can be switched on for; null while the list loads */
+  nodes: Place[] | null
   /** places left under the limit; null until the limit is known */
   left: number | null
   onClose: () => void
@@ -164,13 +161,15 @@ function AddSubscription({
   const { t } = useLang()
   const toast = useToast()
   const [name, setName] = useState('')
-  // null until a box is touched: the nodes that work are ticked, whenever the list arrives
-  const [picked, setPicked] = useState<Set<number> | null>(null)
+  // null until a box is touched: the places that work are ticked, whenever the list arrives
+  const [picked, setPicked] = useState<Set<PlaceId> | null>(null)
   const [quota, setQuota] = useState<QuotaForm>({ gb: '', day: '' })
   const [quotaError, setQuotaError] = useState<{ traffic: boolean; date: boolean }>({ traffic: false, date: false })
   const [busy, setBusy] = useState(false)
   const errors = useSaveErrors()
-  const ticked = picked ?? new Set(defaultNodeIds(nodes ?? []))
+  const ticked = picked ?? new Set<PlaceId>(defaultNodeIds(nodes ?? []))
+  // the router's own entry is one of the choices: the words are for places then, and not for nodes alone
+  const router = (nodes ?? []).some((n) => n.id === 'router')
 
   const submit = async () => {
     errors.clear()
@@ -181,10 +180,11 @@ function AddSubscription({
     if (read.badLimit || read.badDate) return setQuotaError({ traffic: read.badLimit, date: read.badDate })
     setBusy(true)
     try {
-      const nodeIds = (nodes ?? []).filter((n) => ticked.has(n.id) && !n.installing).map((n) => n.id)
+      const on = (nodes ?? []).filter((n) => ticked.has(n.id) && !n.installing).map((n) => n.id)
       const created = await subscriptions.create({
         name: trimmed,
-        nodeIds,
+        nodeIds: on.filter((id): id is number => id !== 'router'),
+        ...(on.includes('router') && { local: true }),
         ...(read.limit !== null && { trafficLimit: read.limit }),
         ...(read.expiresAt !== null && { expiresAt: read.expiresAt }),
       })
@@ -196,7 +196,7 @@ function AddSubscription({
     }
   }
 
-  const toggle = (id: number, on: boolean) => {
+  const toggle = (id: PlaceId, on: boolean) => {
     const next = new Set(ticked)
     if (on) next.add(id)
     else next.delete(id)
@@ -223,7 +223,7 @@ function AddSubscription({
         ) : (
           nodes && (
             <fieldset className="flex flex-col">
-              <legend className="mb-1 text-[13px] font-medium text-muted">{t('subs.add.nodes')}</legend>
+              <legend className="mb-1 text-[13px] font-medium text-muted">{t(router ? 'subs.add.places' : 'subs.add.nodes')}</legend>
               {nodes.map((n) => (
                 <label key={n.id} className={cx('flex min-h-11 items-center gap-2.5 text-[13px] sm:min-h-8', n.installing && 'cursor-not-allowed text-muted')}>
                   <input
@@ -235,12 +235,13 @@ function AddSubscription({
                   />
                   <span>
                     <span dir="auto">{n.name}</span>
-                    {n.unreachable && <span className="text-xs text-faint"> {t('subs.unreachable')}</span>}
+                    {n.id === 'router' && !n.unreachable && <span className="text-xs text-faint"> {t('subs.add.noServer')}</span>}
+                    {n.unreachable && <span className="text-xs text-faint"> {t(n.id === 'router' ? 'subs.notWorking' : 'subs.unreachable')}</span>}
                     {n.installing && <span className="text-xs text-faint"> {t('subs.add.installing')}</span>}
                   </span>
                 </label>
               ))}
-              <p className="mt-1 text-xs text-faint">{t('subs.add.nodesHint')}</p>
+              <p className="mt-1 text-xs text-faint">{t(router ? 'subs.add.placesHint' : 'subs.add.nodesHint')}</p>
             </fieldset>
           )
         )}
@@ -337,10 +338,11 @@ function EditSubscription({ sub, onClose, onSaved, onReset }: { sub: Editable; o
 
 /**
  * The dialogs of the subscription screens, and how to open each: add, share, edit, reset usage, delete.
- * `nodes` are the choices when adding and the names a created subscription's share dialog
- * shows; `onChanged` runs after anything was added, edited, reset or deleted, to reload the list.
+ * `nodes` are the places to choose from when adding (the nodes, and the router's own entry while it is
+ * on) and the names a created subscription's share dialog shows; `onChanged` runs after anything was
+ * added, edited, reset or deleted, to reload the list.
  */
-export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes: NodeInfo[] | null; count: number; max: number; onChanged: () => void }) {
+export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes: Place[] | null; count: number; max: number; onChanged: () => void }) {
   const { t } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
@@ -358,7 +360,7 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
             onChanged()
             // its link is ready at once, so the next thing is to hand it over
             const target = shareTarget(created, nodes ?? [])
-            setModal(target.nodes.length ? { kind: 'share', target } : null)
+            setModal(target.places.length ? { kind: 'share', target } : null)
           }}
         />
       )}

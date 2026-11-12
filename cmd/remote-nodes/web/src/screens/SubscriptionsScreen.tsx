@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Card, ErrorBox, Spinner, Switch, useToast } from '../components/ui'
+import { usePlaces } from '../hooks/usePlaces'
 import { usePoll } from '../hooks/usePoll'
 import { useErrorText, useLang } from '../i18n'
-import { api, subscriptions as subscriptionsApi, type AppConfig, type Subscription } from '../lib/api'
+import { subscriptions as subscriptionsApi, type AppConfig, type Subscription } from '../lib/api'
 import {
+  enabledAt,
   nameList,
-  nodeInfos,
   onNodes,
+  onlineAt,
   readyNodes,
   sortByName,
   subscriptionStatus,
@@ -14,7 +16,7 @@ import {
   totals,
   trafficText,
   upDown,
-  type NodeInfo,
+  type Place,
 } from '../lib/subscriptions'
 import { shareTarget, useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
@@ -36,25 +38,26 @@ import {
   type RowActions,
 } from './SubscriptionParts'
 
-/** The Subscriptions tab: every subscription, a switch for each node it can be on, and what it has moved. */
+/** The Subscriptions tab: every subscription, a switch for each place it can be on (the router's own entry and the nodes), and what it has moved. */
 export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig | null; onChanged: () => void }) {
   const { t, fmt, lang } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
   const subs = usePoll(subscriptionsApi.list, 10000)
-  const nodeList = usePoll(api.nodes, 10000)
+  const { places: nodes, error: placesError } = usePlaces()
   const loadedAt = useLoadedAt(subs.data)
-  // the switches in flight, as "subscription:node", so each can't be flipped twice at once
+  // the switches in flight, as "subscription:place", so each can't be flipped twice at once
   const [pending, setPending] = useState<Set<string>>(() => new Set())
 
-  const nodes = useMemo(() => (nodeList.data ? nodeInfos(nodeList.data) : null), [nodeList.data])
   const ready = useMemo(() => readyNodes(nodes ?? []), [nodes])
+  // with the router's own entry among them they are places, and not nodes alone
+  const router = ready.some((n) => n.id === 'router')
   const installing = (nodes ?? []).filter((n) => n.installing).map((n) => n.name)
   const list = useMemo(() => sortByName(subs.data ?? [], lang), [subs.data, lang])
   const loaded = subs.data !== null && nodes !== null
   const max = config?.maxSubscriptions ?? 0
   const count = subs.data?.length ?? config?.subscriptionCount ?? 0
-  const error = subs.error ?? nodeList.error
+  const error = subs.error ?? placesError
 
   const dialogs = useSubscriptionDialogs({
     nodes,
@@ -66,13 +69,13 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
     },
   })
 
-  const flip = async (s: Subscription, n: NodeInfo, on: boolean): Promise<void> => {
+  const flip = async (s: Subscription, n: Place, on: boolean): Promise<void> => {
     const key = `${s.id}:${n.id}`
     setPending((p) => new Set(p).add(key))
     try {
-      await subscriptionsApi.setNode(s.id, n.id, on)
-      // the hub keeps the choice for a node it can't reach and applies it when the node is back
-      toast(switchedText(t, on, n.unreachable, s.name, n.name), 'ok', on ? undefined : { label: t('subs.toast.undo'), run: () => void flip(s, n, true) })
+      await subscriptionsApi.setPlace(s.id, n.id, on)
+      // the hub keeps the choice for a place that isn't answering and applies it when it is back
+      toast(switchedText(t, on, n.unreachable, s.name, n.name, n.id === 'router'), 'ok', on ? undefined : { label: t('subs.toast.undo'), run: () => void flip(s, n, true) })
       await subs.reload()
     } catch (e) {
       toast(errorText(e), 'error')
@@ -97,13 +100,13 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
       s,
       status: subscriptionStatus(s, nodes ?? [], t, fmt, lang),
       traffic: trafficText(t, fmt, s.todayUp + s.todayDown, s.monthUp + s.monthDown),
-      shareable: target.nodes.length > 0,
+      shareable: target.places.length > 0,
       actions,
-      on: (n: NodeInfo) => s.nodes.find((x) => x.nodeId === n.id)?.enabled === true,
+      on: (n: Place) => enabledAt(s, n.id),
     }
   })
 
-  const toggle = (s: Subscription, n: NodeInfo, on: boolean) => (
+  const toggle = (s: Subscription, n: Place, on: boolean) => (
     <Switch
       checked={on}
       disabled={pending.has(`${s.id}:${n.id}`)}
@@ -116,7 +119,7 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
   const online = list.filter((s) => s.online === true)
   // with no node (or no subscription) there is nothing to be unsure about
   const known = list.length === 0 || ready.length === 0 || list.some((s) => s.online !== null)
-  const where = ready.filter((n) => online.some((s) => s.nodes.some((x) => x.nodeId === n.id && x.online === true))).map((n) => n.name)
+  const where = ready.filter((n) => online.some((s) => onlineAt(s, n.id))).map((n) => n.name)
   const sum = totals(list)
 
   return (
@@ -132,7 +135,7 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
           <Tile
             label={t('subs.tile.online')}
             value={known ? fmt.num(online.length) : '–'}
-            sub={!known ? t('subs.tile.unknown') : online.length ? onNodes(t, lang, where) : t('subs.tile.nobody')}
+            sub={!known ? t('subs.tile.unknown') : online.length ? onNodes(t, lang, where, router) : t('subs.tile.nobody')}
           />
           <Tile label={t('subs.tile.today')} value={fmt.bytes(sum.todayUp + sum.todayDown)} sub={upDown(t, fmt, sum.todayUp, sum.todayDown)} />
           <Tile label={t('subs.tile.month')} value={fmt.bytes(sum.monthUp + sum.monthDown)} sub={upDown(t, fmt, sum.monthUp, sum.monthDown)} />
@@ -213,7 +216,7 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                         <div className="flex justify-end gap-1">
                           {shareable && <ShareButton onClick={actions.share} />}
                           <EditButton name={s.name} onClick={actions.edit} />
-                          <RowMenu name={s.name} shareOff={shareable ? null : t('subs.menu.shareOff')} actions={actions} />
+                          <RowMenu name={s.name} shareOff={shareable ? null : t(router ? 'subs.menu.shareOffPlace' : 'subs.menu.shareOff')} actions={actions} />
                         </div>
                       </td>
                     </tr>
@@ -236,7 +239,7 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                   </div>
                   <StatusBadge status={status} />
                   <div className="-me-2 -mt-1.5">
-                    <RowMenu name={s.name} shareOff={shareable ? null : t('subs.menu.shareOff')} actions={actions} />
+                    <RowMenu name={s.name} shareOff={shareable ? null : t(router ? 'subs.menu.shareOffPlace' : 'subs.menu.shareOff')} actions={actions} />
                   </div>
                 </div>
                 {ready.length > 0 && (
