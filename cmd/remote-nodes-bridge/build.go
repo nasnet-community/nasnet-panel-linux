@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/netip"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/proxy/freedom"
 	"github.com/xtls/xray-core/proxy/vless"
+	vlessin "github.com/xtls/xray-core/proxy/vless/inbound"
 	vlessout "github.com/xtls/xray-core/proxy/vless/outbound"
 	"github.com/xtls/xray-core/transport/internet"
 	"github.com/xtls/xray-core/transport/internet/reality"
@@ -41,7 +43,12 @@ import (
 // with a reverse tag and one freedom exit that blocks the LAN, plus what a
 // router needs: each end bound to its own source address, name lookups kept
 // behind the exit, and per-node counters.
-func buildConfig(s *bridgespec.Spec) (*core.Config, error) {
+//
+// With a local entry in the spec it also carries that: a node's entry inbound,
+// here on the router, whose clients go straight to the same exit. localTarget
+// is where its REALITY takes a handshake that is not a client's, the bridge's
+// own forwarder (target.go); it is not looked at without an entry.
+func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
@@ -59,6 +66,15 @@ func buildConfig(s *bridgespec.Spec) (*core.Config, error) {
 	// Name lookups carry the dns tag. Say outright that they leave through the
 	// exit, from its address, rather than lean on it being the default.
 	rules := []*router.RoutingRule{toExit(bridgespec.DNSTag)}
+	var inbounds []*core.InboundHandlerConfig
+	if s.Local != nil {
+		entry, err := localInbound(s.Local, localTarget)
+		if err != nil {
+			return nil, fmt.Errorf("local: %w", err)
+		}
+		inbounds = append(inbounds, entry)
+		rules = append(rules, toExit(bridgespec.LocalTag))
+	}
 	for _, n := range s.Nodes {
 		link, err := tunnelOutbound(n, dial)
 		if err != nil {
@@ -73,6 +89,7 @@ func buildConfig(s *bridgespec.Spec) (*core.Config, error) {
 		return nil, err
 	}
 	return &core.Config{
+		Inbound:  inbounds,
 		Outbound: outbounds,
 		App: []*serial.TypedMessage{
 			serial.ToTypedMessage(logConfig(s.LogLevelOrDefault())),
@@ -210,6 +227,75 @@ func tunnelOutbound(n bridgespec.Node, dial netip.Addr) (*core.OutboundHandlerCo
 				User:    &protocol.User{Email: n.Tag, Account: serial.ToTypedMessage(account)},
 			},
 		}),
+	}, nil
+}
+
+// localInbound is the entry on the router: VLESS over TCP with REALITY, the
+// inbound nodecfg gives a node, listening on one address. Sniffing is on as it
+// is there, so a flow that names its site is sent on by that name and the
+// exit's resolver, not the client's, says where it is.
+func localInbound(l *bridgespec.Local, target string) (*core.InboundHandlerConfig, error) {
+	if _, _, err := net.SplitHostPort(target); err != nil {
+		return nil, fmt.Errorf("target %q is not an address and port", target)
+	}
+	private, err := base64.RawURLEncoding.DecodeString(l.PrivateKey)
+	if err != nil || len(private) != 32 {
+		return nil, fmt.Errorf("private key: not 32 bytes of base64url")
+	}
+	shortIDs := make([][]byte, len(l.ShortIDs))
+	for i, raw := range l.ShortIDs {
+		// REALITY compares all 8 bytes, a shorter id padded with zeros.
+		shortIDs[i] = make([]byte, 8)
+		if _, err := hex.Decode(shortIDs[i], []byte(raw)); err != nil {
+			return nil, fmt.Errorf("short id: %w", err)
+		}
+	}
+	users := make([]*protocol.User, len(l.Clients))
+	for i, c := range l.Clients {
+		if users[i], err = localUser(c, l.Flow); err != nil {
+			return nil, err
+		}
+	}
+
+	security := serial.ToTypedMessage(&reality.Config{
+		Dest:                  target,
+		Type:                  "tcp",
+		ServerNames:           l.ServerNames,
+		PrivateKey:            private,
+		ShortIds:              shortIDs,
+		LimitFallbackUpload:   &reality.LimitFallback{},
+		LimitFallbackDownload: &reality.LimitFallback{},
+	})
+	listen := netip.MustParseAddr(l.ListenAddr).Unmap()
+	return &core.InboundHandlerConfig{
+		Tag: bridgespec.LocalTag,
+		ReceiverSettings: serial.ToTypedMessage(&proxyman.ReceiverConfig{
+			PortList: &xnet.PortList{Range: []*xnet.PortRange{xnet.SinglePortRange(xnet.Port(l.Port))}},
+			Listen:   ipOrDomain(listen),
+			StreamSettings: &internet.StreamConfig{
+				ProtocolName:     "tcp",
+				SecurityType:     security.Type,
+				SecuritySettings: []*serial.TypedMessage{security},
+			},
+			SniffingSettings: &proxyman.SniffingConfig{
+				Enabled:             true,
+				DestinationOverride: []string{"http", "tls"},
+			},
+		}),
+		ProxySettings: serial.ToTypedMessage(&vlessin.Config{Users: users, Decryption: "none"}),
+	}, nil
+}
+
+// localUser is a subscription as the entry's inbound knows it. Its email names
+// its byte counters, as a tunnel's tag names the tunnel's.
+func localUser(c bridgespec.Client, flow string) (*protocol.User, error) {
+	id, err := uuid.ParseString(c.UUID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: uuid: %w", c.Email, err)
+	}
+	return &protocol.User{
+		Email:   c.Email,
+		Account: serial.ToTypedMessage(&vless.Account{Id: id.String(), Flow: flow}),
 	}, nil
 }
 

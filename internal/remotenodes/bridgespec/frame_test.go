@@ -223,7 +223,7 @@ func TestSizeBoundary(t *testing.T) {
 func TestParseReadsHubJSON(t *testing.T) {
 	// The shape the hub's tests and the docs can rely on.
 	doc := `{
-		"version": 1,
+		"version": 2,
 		"nodes": [{
 			"tag": "node-1", "addr": "203.0.113.10", "port": 443,
 			"uuid": "7f8b1a9e-3c2d-4b5a-9e6f-0a1b2c3d4e5f",
@@ -231,6 +231,14 @@ func TestParseReadsHubJSON(t *testing.T) {
 			"short_id": "0123456789abcdef", "server_name": "www.example.com",
 			"flow": "xtls-rprx-vision", "reverse_tag": "rvs-from-node-1"
 		}],
+		"local": {
+			"listen_addr": "192.168.50.18", "port": 8443,
+			"private_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
+			"short_ids": ["0123456789abcdef"], "server_names": ["www.example.com"],
+			"target": "www.example.com:443", "flow": "xtls-rprx-vision",
+			"clients": [{"email": "sub-1@remote-nodes", "uuid": "11111111-2222-4333-8444-555555555551"}],
+			"token": "0123456789abcdef0123456789abcdef"
+		},
 		"dial_addr": "192.168.50.18",
 		"exit": {"addr": "192.168.50.17"},
 		"dns": {"servers": ["1.1.1.1"]},
@@ -242,6 +250,33 @@ func TestParseReadsHubJSON(t *testing.T) {
 	}
 	if s.Nodes[0].Tag != "node-1" || s.Exit.Addr != "192.168.50.17" || len(s.Exit.Blocked) != 0 {
 		t.Fatalf("parsed %+v", s)
+	}
+	if l := s.Local; l == nil || l.Port != 8443 || len(l.Clients) != 1 || l.Clients[0].Email != "sub-1@remote-nodes" {
+		t.Fatalf("parsed the entry as %+v", s.Local)
+	}
+}
+
+// The entry travels in the frame like the rest, and a spec without one says
+// nothing about it.
+func TestLocalRoundTrip(t *testing.T) {
+	want := withLocal()
+	frame, err := Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(bytes.NewReader(frame))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("read back %+v, sent %+v", got, want)
+	}
+	frame, err = Encode(validSpec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(frame, []byte(`"local"`)) {
+		t.Fatalf("a spec with the entry off still mentions it: %s", frame[4:])
 	}
 }
 

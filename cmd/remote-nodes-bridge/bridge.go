@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,7 @@ type bridge struct {
 	xray    *core.Instance
 	stats   featstats.Manager
 	tracker *tracker
+	target  *targetForwarder // nil without a local entry
 	started time.Time
 
 	stopping  atomic.Bool
@@ -33,22 +35,48 @@ type bridge struct {
 // newBridge builds the instance for spec. Nothing runs, and nothing listens,
 // until start.
 func newBridge(spec *bridgespec.Spec) (*bridge, error) {
-	cfg, err := buildConfig(spec)
-	if err != nil {
+	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
-	b := &bridge{spec: spec, tracker: newTracker(spec, time.Now), started: time.Now(), done: make(chan struct{})}
+	b := &bridge{spec: spec, started: time.Now(), done: make(chan struct{})}
+	localTarget := ""
+	if l := spec.Local; l != nil {
+		fwd, err := newTargetForwarder(l.Target, netip.MustParseAddr(l.ListenAddr).Unmap())
+		if err != nil {
+			return nil, fmt.Errorf("local: the Reality target's forwarder: %w", err)
+		}
+		b.target, localTarget = fwd, fwd.addr()
+	}
+	cfg, err := buildConfig(spec, localTarget)
+	if err != nil {
+		b.closeTarget()
+		return nil, err
+	}
+	b.tracker = newTracker(spec, time.Now)
 	useTracker(b.tracker)
 	if b.xray, err = core.New(cfg); err != nil {
 		useTracker(nil)
+		b.closeTarget()
 		return nil, fmt.Errorf("xray: %w", err)
 	}
 	b.stats, _ = b.xray.GetFeature(featstats.ManagerType()).(featstats.Manager)
 	return b, nil
 }
 
-// start runs the instance: the tunnels begin to dial.
+// closeTarget ends the Reality target's forwarder, if there is one.
+func (b *bridge) closeTarget() {
+	if b.target != nil {
+		b.target.close()
+	}
+}
+
+// start runs the instance: the tunnels begin to dial, and the local entry, if
+// there is one, to listen.
 func (b *bridge) start() error {
+	if b.target != nil {
+		// first, so that the entry's very first handshake finds its target
+		go b.target.serve()
+	}
 	if err := b.xray.Start(); err != nil {
 		return fmt.Errorf("xray: %w", err)
 	}
@@ -74,6 +102,7 @@ func (b *bridge) close() error {
 		b.stopping.Store(true)
 		close(b.done)
 		err = b.xray.Close()
+		b.closeTarget()
 		useTracker(nil)
 	})
 	return err

@@ -131,8 +131,8 @@ func TestProcessRefusesBadInput(t *testing.T) {
 		{"empty frame", frame(""), "empty"},
 		{"oversize frame", binary.BigEndian.AppendUint32(nil, bridgespec.MaxSize+1), "too large"},
 		{"not JSON", frame("hello"), "invalid"},
-		{"a spec that isn't one", frame(`{"version":1}`), "dial_addr: missing"},
-		{"a bad address", frame(`{"version":1,"nodes":[],"dial_addr":"router.lan"}`), "dial_addr"},
+		{"a spec that isn't one", frame(`{"version":2}`), "dial_addr: missing"},
+		{"a bad address", frame(`{"version":2,"nodes":[],"dial_addr":"router.lan"}`), "dial_addr"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

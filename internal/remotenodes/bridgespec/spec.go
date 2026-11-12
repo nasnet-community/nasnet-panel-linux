@@ -9,26 +9,34 @@ package bridgespec
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 // Version is the spec revision this package reads and writes. Hub and bridge
 // ship in one image, so there is no negotiation: a different number is an error.
-const Version = 1
+//
+// 2 added Local, the entry on the router itself.
+const Version = 2
 
 // Limits that keep a bad spec from costing memory or time.
 const (
-	MaxNodes      = 16
-	MaxBlocked    = 256
-	MaxDNSServers = 8
+	MaxNodes        = 16
+	MaxBlocked      = 256
+	MaxDNSServers   = 8
+	MaxLocalClients = 64
+	MaxServerNames  = 8
+	MaxShortIDs     = 8
 )
 
 // Names the bridge gives its own Xray parts. A node's tags may not reuse them.
 const (
-	ExitTag = "exit"
-	DNSTag  = "dns"
+	ExitTag  = "exit"
+	DNSTag   = "dns"
+	LocalTag = "local"
 )
 
 // VisionFlow is the only flow a tunnel may use besides none.
@@ -37,8 +45,11 @@ const VisionFlow = "xtls-rprx-vision"
 // Spec is everything the bridge needs to run. The hub builds one from its
 // state and router facts; the bridge runs it as is.
 type Spec struct {
-	Version int    `json:"version"`
-	Nodes   []Node `json:"nodes"`
+	Version int `json:"version"`
+	// Nodes are the portals to dial. There may be none when Local is set.
+	Nodes []Node `json:"nodes"`
+	// Local is the entry on the router itself, nil while it is switched off.
+	Local *Local `json:"local,omitempty"`
 	// DialAddr is the source address of the connections to the portals: the
 	// router's Domestic link.
 	DialAddr string `json:"dial_addr"`
@@ -71,6 +82,41 @@ type Node struct {
 	Flow string `json:"flow,omitempty"`
 	// ReverseTag is the reverse tag the portal registers for this client.
 	ReverseTag string `json:"reverse_tag"`
+}
+
+// Local is the entry on the router itself: a VLESS + REALITY inbound, as a
+// node's entry is, whose clients are the subscriptions switched on for this
+// router. What they send leaves through the shared exit, like what comes in
+// through a tunnel.
+type Local struct {
+	// ListenAddr is where the inbound listens: the address the router forwards
+	// its public port to, and whose replies it sends back out through the
+	// Domestic link.
+	ListenAddr string `json:"listen_addr"`
+	Port       uint16 `json:"port"`
+	// PrivateKey is the inbound's REALITY private key, base64url without padding.
+	PrivateKey string `json:"private_key"`
+	// ShortIDs and ServerNames are what a client may present.
+	ShortIDs    []string `json:"short_ids"`
+	ServerNames []string `json:"server_names"`
+	// Target is the Reality target, host:port: where REALITY takes a handshake
+	// that isn't a client's. The bridge reaches it from ListenAddr.
+	Target string `json:"target"`
+	// Flow is empty or VisionFlow, matching the clients' links.
+	Flow string `json:"flow,omitempty"`
+	// Clients are the subscriptions that may connect when the bridge starts.
+	// The hub changes them afterwards over the control path, without a restart.
+	Clients []Client `json:"clients,omitempty"`
+	// Token is what the hub sends with every change of clients. The control
+	// path listens on loopback, and this keeps it the hub's alone.
+	Token string `json:"token"`
+}
+
+// Client is one subscription's login on the router's entry.
+type Client struct {
+	// Email names the client and its byte counters. Unique within the spec.
+	Email string `json:"email"`
+	UUID  string `json:"uuid"`
 }
 
 // Exit is where tunnel traffic leaves the bridge.
@@ -135,9 +181,21 @@ func (s *Spec) String() string {
 	for i, n := range s.Nodes {
 		tags[i] = n.Tag
 	}
-	return fmt.Sprintf("bridge spec v%d (nodes %s, dial %s, exit %s, status %s)",
-		s.Version, strings.Join(tags, ","), s.DialAddr, s.Exit.Addr, s.StatusAddr)
+	local := "off"
+	if s.Local != nil {
+		local = s.Local.String()
+	}
+	return fmt.Sprintf("bridge spec v%d (nodes %s, local %s, dial %s, exit %s, status %s)",
+		s.Version, strings.Join(tags, ","), local, s.DialAddr, s.Exit.Addr, s.StatusAddr)
 }
+
+// String leaves the key, the ids and the token out, like Spec.
+func (l *Local) String() string {
+	return fmt.Sprintf("%s:%d with %d client(s)", l.ListenAddr, l.Port, len(l.Clients))
+}
+
+// String leaves the id out.
+func (c Client) String() string { return "client " + c.Email }
 
 // String leaves the id out, like Spec.
 func (n Node) String() string {
@@ -150,6 +208,8 @@ var (
 	shortIDRe     = regexp.MustCompile(`^([0-9a-fA-F]{2}){1,8}$`)
 	fingerprintRe = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 	labelRe       = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+	emailRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`)
+	tokenRe       = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 	logLevels     = map[string]bool{"debug": true, "info": true, "warning": true, "error": true, "none": true}
 )
 
@@ -193,19 +253,22 @@ func (s *Spec) Validate() error {
 		return fmt.Errorf("status_addr: %s must be a loopback address with a port", s.StatusAddr)
 	}
 
-	return s.validateNodes(dial)
+	if err := s.validateNodes(dial); err != nil {
+		return err
+	}
+	return s.validateLocal(exit, status)
 }
 
 func (s *Spec) validateNodes(dial netip.Addr) error {
-	if len(s.Nodes) == 0 {
-		return fmt.Errorf("nodes: none")
+	if len(s.Nodes) == 0 && s.Local == nil {
+		return fmt.Errorf("nodes: none, and no local entry either")
 	}
 	if len(s.Nodes) > MaxNodes {
 		return fmt.Errorf("nodes: %d is more than %d", len(s.Nodes), MaxNodes)
 	}
 
 	// Every tag lands in the Xray config; two with one name would shadow each other.
-	used := map[string]string{ExitTag: "the exit", DNSTag: "the dns"}
+	used := map[string]string{ExitTag: "the exit", DNSTag: "the dns", LocalTag: "the local entry"}
 	claim := func(field, tag string) error {
 		if !tagRe.MatchString(tag) {
 			return fmt.Errorf("%s: %q must be 1-63 lowercase letters, digits, '.', '_' or '-'", field, tag)
@@ -262,6 +325,120 @@ func (s *Spec) validateNodes(dial netip.Addr) error {
 		}
 	}
 	return nil
+}
+
+func (s *Spec) validateLocal(exit netip.Addr, status netip.AddrPort) error {
+	l := s.Local
+	if l == nil {
+		return nil
+	}
+	listen, err := parseIP("local.listen_addr", l.ListenAddr)
+	if err != nil {
+		return err
+	}
+	// Loopback is the exception, as it is for the dial address.
+	if listen == exit && !listen.IsLoopback() {
+		return fmt.Errorf("local.listen_addr: same as exit.addr (%s), so replies to clients would leave through the exit", listen)
+	}
+	if l.Port == 0 {
+		return fmt.Errorf("local.port: missing")
+	}
+	if netip.AddrPortFrom(listen, l.Port) == status {
+		return fmt.Errorf("local.port: %s is the status page's address", status)
+	}
+	if raw, err := base64.RawURLEncoding.DecodeString(l.PrivateKey); err != nil || len(raw) != 32 {
+		return fmt.Errorf("local.private_key: not a 32-byte base64url key")
+	}
+
+	if len(l.ShortIDs) == 0 {
+		return fmt.Errorf("local.short_ids: none")
+	}
+	if len(l.ShortIDs) > MaxShortIDs {
+		return fmt.Errorf("local.short_ids: %d is more than %d", len(l.ShortIDs), MaxShortIDs)
+	}
+	for i, id := range l.ShortIDs {
+		if !shortIDRe.MatchString(id) {
+			return fmt.Errorf("local.short_ids[%d]: %q must be 2 to 16 hex digits, in pairs", i, id)
+		}
+	}
+	if len(l.ServerNames) == 0 {
+		return fmt.Errorf("local.server_names: none")
+	}
+	if len(l.ServerNames) > MaxServerNames {
+		return fmt.Errorf("local.server_names: %d is more than %d", len(l.ServerNames), MaxServerNames)
+	}
+	for i, name := range l.ServerNames {
+		if !validHostname(name) {
+			return fmt.Errorf("local.server_names[%d]: %q is not a host name", i, name)
+		}
+	}
+	if _, _, err := SplitTarget(l.Target); err != nil {
+		return fmt.Errorf("local.target: %w", err)
+	}
+	if l.Flow != "" && l.Flow != VisionFlow {
+		return fmt.Errorf("local.flow: %q is not empty or %s", l.Flow, VisionFlow)
+	}
+	if !tokenRe.MatchString(l.Token) {
+		return fmt.Errorf("local.token: must be 16 to 128 letters, digits, '_' or '-'")
+	}
+	return s.validateClients()
+}
+
+// validateClients holds every client's email apart from the others and from
+// the nodes' tags: a tunnel counts its bytes under its tag, as if the tag were
+// an email, so a client by that name would be counted into the tunnel.
+func (s *Spec) validateClients() error {
+	clients := s.Local.Clients
+	if len(clients) > MaxLocalClients {
+		return fmt.Errorf("local.clients: %d is more than %d", len(clients), MaxLocalClients)
+	}
+	emails := map[string]string{}
+	for i, n := range s.Nodes {
+		emails[n.Tag] = fmt.Sprintf("nodes[%d].tag", i)
+	}
+	ids := map[string]string{}
+	for i, c := range clients {
+		at := func(field string) string { return fmt.Sprintf("local.clients[%d].%s", i, field) }
+		if !emailRe.MatchString(c.Email) {
+			return fmt.Errorf("%s: %q must be 1-64 letters, digits, '.', '_', '@' or '-'", at("email"), c.Email)
+		}
+		if prev, dup := emails[c.Email]; dup {
+			return fmt.Errorf("%s: %q is already used by %s", at("email"), c.Email, prev)
+		}
+		emails[c.Email] = at("email")
+		if !uuidRe.MatchString(c.UUID) {
+			return fmt.Errorf("%s: %q is not a UUID", at("uuid"), redact(c.UUID))
+		}
+		id := strings.ToLower(c.UUID)
+		if prev, dup := ids[id]; dup {
+			return fmt.Errorf("%s: the same id as %s", at("uuid"), prev)
+		}
+		ids[id] = at("uuid")
+	}
+	return nil
+}
+
+// SplitTarget reads a Reality target, "host:port" with a host name or an IP
+// address.
+func SplitTarget(s string) (host string, port uint16, err error) {
+	host, raw, err := net.SplitHostPort(s)
+	if err != nil {
+		return "", 0, fmt.Errorf("%q is not a host and a port", s)
+	}
+	n, err := strconv.ParseUint(raw, 10, 16)
+	if err != nil || n == 0 {
+		return "", 0, fmt.Errorf("%q has no usable port", s)
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		if a.Zone() != "" || a.IsUnspecified() || a.IsMulticast() {
+			return "", 0, fmt.Errorf("%q is not a unicast address", host)
+		}
+		return a.Unmap().String(), uint16(n), nil
+	}
+	if !validHostname(host) {
+		return "", 0, fmt.Errorf("%q is not a host name", host)
+	}
+	return host, uint16(n), nil
 }
 
 func (s *Spec) validateDNS(exit netip.Addr, blocked []netip.Prefix) error {
