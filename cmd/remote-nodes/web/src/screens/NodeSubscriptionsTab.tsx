@@ -2,11 +2,12 @@ import { useMemo, useState } from 'react'
 import { RouteLink } from '../components/link'
 import { Card, ErrorBox, Spinner, Switch, btn, cx, useToast } from '../components/ui'
 import { useConfig, useConfigState } from '../hooks/useConfig'
+import { usePlaces } from '../hooks/usePlaces'
 import { usePoll } from '../hooks/usePoll'
 import { useErrorText, useLang } from '../i18n'
-import { api, subscriptions as subscriptionsApi, type Node, type NodeSubscription } from '../lib/api'
+import { api, local, subscriptions as subscriptionsApi, type Node, type NodeSubscription, type NodeUsage, type PlaceId } from '../lib/api'
 import { unreachable } from '../lib/health'
-import { nodeInfos, nodeSubscriptionStatus, sortByName, switchedText, trafficText, upDown } from '../lib/subscriptions'
+import { nodeSubscriptionStatus, sortByName, switchedText, trafficText, upDown } from '../lib/subscriptions'
 import { useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
@@ -26,21 +27,35 @@ import {
   type RowActions,
 } from './SubscriptionParts'
 
+/** The place a list of subscriptions is for: a node, or the router's own entry. */
+export interface ListPlace {
+  id: PlaceId
+  name: string
+  /** it isn't answering: a switch is kept and takes effect when it is back */
+  down: boolean
+  usage: NodeUsage
+}
+
 /** A node's Subscriptions tab: every subscription of the router, and whether it is switched on for this node. */
-export function NodeSubscriptionsTab({ node }: { node: Node }) {
+export const NodeSubscriptionsTab = ({ node }: { node: Node }) => (
+  <PlaceSubscriptions place={{ id: node.id, name: node.name, down: unreachable(node), usage: node.usage }} />
+)
+
+/** Every subscription of the router, and whether it is switched on for one place. */
+export function PlaceSubscriptions({ place: node }: { place: ListPlace }) {
   const { t, fmt, lang } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
   const config = useConfig()
   const { reload: reloadConfig } = useConfigState()
-  const list = usePoll(() => api.nodeSubscriptions(node.id), 10000, [node.id])
-  const nodeList = usePoll(api.nodes, 10000)
+  const router = node.id === 'router'
+  const list = usePoll(() => (node.id === 'router' ? local.subscriptions() : api.nodeSubscriptions(node.id)), 10000, [node.id])
+  const { places: nodes } = usePlaces()
   const loadedAt = useLoadedAt(list.data)
   const [pending, setPending] = useState<Set<number>>(() => new Set())
 
-  const nodes = useMemo(() => (nodeList.data ? nodeInfos(nodeList.data) : null), [nodeList.data])
   const rows = useMemo(() => sortByName(list.data ?? [], lang), [list.data, lang])
-  const down = unreachable(node)
+  const down = node.down
   const max = config?.maxSubscriptions ?? 0
   const count = list.data?.length ?? config?.subscriptionCount ?? 0
 
@@ -57,9 +72,9 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
   const flip = async (s: NodeSubscription, on: boolean): Promise<void> => {
     setPending((p) => new Set(p).add(s.id))
     try {
-      await subscriptionsApi.setNode(s.id, node.id, on)
-      // the hub keeps the choice for a node it can't reach and applies it when the node is back
-      toast(switchedText(t, on, down, s.name, node.name), 'ok', on ? undefined : { label: t('subs.toast.undo'), run: () => void flip(s, true) })
+      await subscriptionsApi.setPlace(s.id, node.id, on)
+      // the hub keeps the choice for a place that isn't answering and applies it when it is back
+      toast(switchedText(t, on, down, s.name, node.name, router), 'ok', on ? undefined : { label: t('subs.toast.undo'), run: () => void flip(s, true) })
       await list.reload()
     } catch (e) {
       toast(errorText(e), 'error')
@@ -74,18 +89,18 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
 
   const view = rows.map((s) => {
     const actions: RowActions = {
-      share: () => dialogs.share({ id: s.id, name: s.name, nodes: [{ id: node.id, name: node.name, unreachable: down }] }),
+      share: () => dialogs.share({ id: s.id, name: s.name, places: [{ id: node.id, name: node.name, unreachable: down }] }),
       edit: () => dialogs.edit(s),
       reset: () => dialogs.reset(s),
       remove: () => dialogs.remove(s),
     }
     return {
       s,
-      status: nodeSubscriptionStatus(s, t, fmt),
+      status: nodeSubscriptionStatus(s, t, fmt, Date.now(), router),
       traffic: trafficText(t, fmt, s.todayUp + s.todayDown, s.monthUp + s.monthDown),
       actions,
-      // a link exists only while it is switched on for this node
-      shareOff: s.enabled ? null : t('subs.menu.shareOffHere'),
+      // a link exists only while it is switched on here
+      shareOff: s.enabled ? null : t(router ? 'subs.menu.shareOffRouter' : 'subs.menu.shareOffHere'),
       switch: (
         <Switch
           checked={s.enabled}
@@ -107,7 +122,7 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
       {list.data && (
         <Tiles>
           <Tile
-            label={t('subs.tile.thisNode')}
+            label={t(router ? 'subs.tile.thisRouter' : 'subs.tile.thisNode')}
             value={fmt.num(rows.length - off.length)}
             unit={t('subs.tile.of', { total: rows.length })}
             sub={
@@ -121,7 +136,7 @@ export function NodeSubscriptionsTab({ node }: { node: Node }) {
             label={t('subs.tile.online')}
             value={u.live ? fmt.num(online.length) : '–'}
             sub={
-              !u.live ? (down ? t('subs.tile.unknown') : t('subs.tile.notYet'))
+              !u.live ? (down ? t(router ? 'subs.tile.unknownRouter' : 'subs.tile.unknown') : t('subs.tile.notYet'))
               : online.length ? t('subs.tile.connections', { n: online.reduce((sum, s) => sum + (s.connections ?? 0), 0) })
               : t('subs.tile.nobody')
             }

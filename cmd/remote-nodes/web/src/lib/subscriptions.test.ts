@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { translate, type MsgKey, type Params } from '../i18n/translate'
 import type { Lang } from '../i18n/lang'
-import type { Node, NodeSubscription, Subscription, SubscriptionNode } from './api'
+import type { Node, NodeSubscription, Subscription, SubscriptionLocal, SubscriptionNode } from './api'
 import { makeFormat } from './format'
 import {
   defaultNodeIds,
+  enabledAt,
   lastSeen,
   nameList,
   nodeInfos,
   nodeSubscriptionStatus,
   onNodes,
+  onlineAt,
+  placesOf,
   portableLink,
   readyNodes,
+  routerPlace,
   sortByName,
   subscriptionStatus,
   switchedText,
@@ -19,6 +23,7 @@ import {
   trafficText,
   upDown,
   type NodeInfo,
+  type Place,
 } from './subscriptions'
 
 const NOW = new Date('2026-10-03T12:00:00').getTime()
@@ -100,6 +105,8 @@ describe('node names in a sentence', () => {
     expect(onNodes(en.t, 'en', ['Node 1'])).toBe('on Node 1')
     expect(onNodes(en.t, 'en', ['Node 1', 'Node 2'])).toBe('on Node 1 and Node 2')
     expect(onNodes(en.t, 'en', ['Node 1', 'Node 2', 'Node 3'])).toBe('on 3 nodes')
+    expect(onNodes(en.t, 'en', ['This router', 'Node 1', 'Node 2'], true)).toBe('on 3 places')
+    expect(onNodes(en.t, 'en', ['This router', 'Node 1'], true)).toBe('on This router and Node 1')
     expect(plain(onNodes(fa.t, 'fa', ['نود ۱']))).toBe('روی نود ۱')
     expect(plain(onNodes(fa.t, 'fa', ['a', 'b', 'c']))).toBe('روی ۳ نود')
   })
@@ -188,6 +195,53 @@ describe('a subscription across the nodes', () => {
     expect(status(sub({ online: null }))).toEqual(['unknown', 'Unknown', 'never connected'])
     expect(status(sub({ online: null, lastSeenAt: at(-HOUR) }), fa)).toEqual(['unknown', 'نامشخص', 'نود در دسترس نیست'])
   })
+
+  describe("with the router's own entry among the places", () => {
+    const here = (o: Partial<SubscriptionLocal> = {}): SubscriptionLocal => ({ enabled: true, online: false, connections: 0, lastSeenAt: null, todayUp: 0, todayDown: 0, monthUp: 0, monthDown: 0, ...o })
+    const router: Place = { id: 'router', name: 'This router', unreachable: false, installing: false }
+    const places = placesOf(router, infos)
+    const at2 = (s: Subscription, c = en) => {
+      const { key, sub: line } = subscriptionStatus(s, places, c.t, c.fmt, c.lang, NOW)
+      return [key, plain(line)]
+    }
+
+    it('is a place of its own, before the nodes, while it is switched on', () => {
+      expect(routerPlace(en.t, { enabled: true, state: 'working' })).toEqual(router)
+      expect(routerPlace(fa.t, { enabled: true, state: 'attention' })).toEqual({ id: 'router', name: 'این روتر', unreachable: true, installing: false })
+      expect(routerPlace(en.t, { enabled: true, state: 'starting' })?.unreachable).toBe(true)
+      for (const off of [{ enabled: false, state: 'off' } as const, null, undefined]) expect(routerPlace(en.t, off)).toBeNull()
+      expect(places.map((p) => p.id)).toEqual(['router', 1, 2, 3])
+      expect(placesOf(null, infos)).toBe(infos)
+      // a new subscription starts on it when it works, as on a node that works
+      expect(defaultNodeIds(places)).toEqual(['router', 1])
+      expect(defaultNodeIds(placesOf({ ...router, unreachable: true }, infos))).toEqual([1])
+      expect(readyNodes(places).map((p) => p.id)).toEqual(['router', 1, 2])
+    })
+
+    it('knows where a subscription is switched on and where it is connected', () => {
+      const s = sub({ nodes: [on(1, { online: true }), on(2, { enabled: false })], local: here({ online: true }) })
+      expect(places.map((p) => enabledAt(s, p.id))).toEqual([true, true, false, false])
+      expect(places.map((p) => onlineAt(s, p.id))).toEqual([true, true, false, false])
+      // off on the router, and on a router whose entry is switched off
+      expect(enabledAt(sub({ local: here({ enabled: false }) }), 'router')).toBe(false)
+      expect(enabledAt(sub({ local: null }), 'router')).toBe(false)
+      expect(onlineAt(sub({ local: here({ online: null }) }), 'router')).toBe(false)
+    })
+
+    it('is online on the router, alone or beside a node', () => {
+      expect(at2(sub({ online: true, nodes: [on(1)], local: here({ online: true }) }))).toEqual(['online', 'on This router'])
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true })], local: here({ online: true }) }))).toEqual(['online', 'on This router and Node 1'])
+      // three of them are places, and not nodes
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }))).toEqual(['online', 'on 3 places'])
+      expect(at2(sub({ online: true, nodes: [on(1, { online: true }), on(2, { online: true })], local: here({ online: true }) }), fa)).toEqual(['online', 'روی ۳ جا'])
+    })
+
+    it('is on while only the router has it, and off when nothing has', () => {
+      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here() }))).toEqual(['active', 'never connected'])
+      expect(at2(sub({ nodes: [on(1, { enabled: false })], local: here({ enabled: false }) }))).toEqual(['off', 'off everywhere'])
+      expect(at2(sub({ nodes: [], local: here({ enabled: false }) }), fa)).toEqual(['off', 'همه‌جا خاموش است'])
+    })
+  })
 })
 
 describe('a subscription on one node', () => {
@@ -228,6 +282,16 @@ describe('a subscription on one node', () => {
     expect(status(row({ online: null, lastSeenAt: at(-HOUR) }))).toEqual(['unknown', 'Unknown', 'node unreachable'])
     expect(status(row({ online: null }))).toEqual(['unknown', 'Unknown', 'never connected'])
   })
+
+  it("words the router's own list for the router, and not for a node", () => {
+    const here = (s: NodeSubscription, c = en) => plain(nodeSubscriptionStatus(s, c.t, c.fmt, NOW, true).sub)
+    expect(here(row({ enabled: false, online: null }))).toBe('off on this router')
+    expect(here(row({ enabled: false, online: null }), fa)).toBe('روی این روتر خاموش است')
+    expect(here(row({ online: null, lastSeenAt: at(-HOUR) }))).toBe('this router is not working')
+    // what doesn't name the place reads the same
+    expect(here(row({ online: true, connections: 2 }))).toBe('2 connections')
+    expect(here(row({ online: null }))).toBe('never connected')
+  })
 })
 
 describe('what a toast says after a switch', () => {
@@ -243,6 +307,13 @@ describe('what a toast says after a switch', () => {
     expect(switchedText(en.t, false, true, 'Ali', 'Node 2')).toBe('Ali switched off on Node 2. It takes effect when the node is back.')
     expect(switchedText(fa.t, true, true, 'Ali', 'Node 2')).toBe('Ali روی Node 2 روشن شد. وقتی نود برگردد اعمال می‌شود.')
     expect(switchedText(fa.t, false, true, 'Ali', 'Node 2')).toBe('Ali روی Node 2 خاموش شد. وقتی نود برگردد اعمال می‌شود.')
+  })
+
+  it("says the same of the router's own entry in its own words: it is not a node, and doesn't come back", () => {
+    expect(switchedText(en.t, true, false, 'Ali', 'This router', true)).toBe('Ali switched on for This router')
+    expect(switchedText(en.t, true, true, 'Ali', 'This router', true)).toBe('Ali switched on for This router. It takes effect when it is working again.')
+    expect(switchedText(en.t, false, true, 'Ali', 'This router', true)).toBe('Ali switched off on This router. It takes effect when it is working again.')
+    expect(switchedText(fa.t, true, true, 'Ali', 'این روتر', true)).toBe('Ali روی این روتر روشن شد. وقتی دوباره کار کند اعمال می‌شود.')
   })
 })
 

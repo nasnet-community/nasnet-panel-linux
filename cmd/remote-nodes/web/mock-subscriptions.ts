@@ -45,6 +45,8 @@ export interface SubscriptionCall<S extends Sub, N extends HostNode> {
   make: (name: string, o: { createdAt: number; on: Set<number>; limit?: number; used?: number; endsAt?: number | null }) => S
   view: (s: S) => Subscription
   nodeView: (n: N) => Node
+  /** the router's own entry is switched on, so a new subscription may be on it (place 0 in `on`) */
+  localOn: boolean
 }
 
 const SARA_ON_NODE_1 = '3f0c9a52-7d1e-4b8a-9c44-0e5b2a1d6f73'
@@ -107,6 +109,9 @@ export function subscriptionRoutes<S extends Sub, N extends HostNode>(c: Subscri
     if (badName()) return true
     const want: unknown = body.nodeIds
     if (!Array.isArray(want) || !want.every((x) => Number.isInteger(x))) return refuse(400, 'bad_request', 'nodeIds must be a list of node ids')
+    if (body.local !== undefined && typeof body.local !== 'boolean') return refuse(400, 'bad_request', 'local must be true or false')
+    // refused before anything is made, as on the hub
+    if (body.local === true && !c.localOn) return refuse(409, 'local_off', 'This router is switched off.')
     if (subs.length >= c.max) return refuse(409, 'subscription_limit', `this router holds at most ${c.max} subscriptions`)
     if (taken(name)) return refuse(409, 'name_taken', `a subscription named ${name} already exists`)
     for (const id of want as number[]) {
@@ -116,7 +121,7 @@ export function subscriptionRoutes<S extends Sub, N extends HostNode>(c: Subscri
     }
     const limits = readLimits(body, true)
     if (typeof limits === 'string') return refuse(400, 'bad_request', limits)
-    const created = c.make(name, { createdAt: Date.now(), on: new Set(want as number[]), used: 0, limit: limits.limit ?? 0, endsAt: limits.endsAt ?? null })
+    const created = c.make(name, { createdAt: Date.now(), on: new Set([...(want as number[]), ...(body.local === true ? [0] : [])]), used: 0, limit: limits.limit ?? 0, endsAt: limits.endsAt ?? null })
     subs.push(created)
     return reply(201, c.view(created))
   }

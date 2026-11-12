@@ -1,18 +1,37 @@
 import type { Lang, MsgKey, T } from '../i18n'
 import { LANGS } from '../i18n/lang'
-import type { Node, NodeSubscription, Subscription } from './api'
+import type { LocalState, Node, NodeSubscription, PlaceId, Subscription } from './api'
 import { DAY, type Format } from './format'
 import { unreachable } from './health'
 
-/** A node as the subscription screens need it: its name, and whether a switch on it can take effect now. */
-export interface NodeInfo {
-  id: number
+/** A place a subscription can be on, as the subscription screens need it: its name, and whether a switch on it can take effect now. */
+export interface Place {
+  /** a node's id, or 'router' for the router's own entry */
+  id: PlaceId
   name: string
-  /** the router can't reach it */
+  /** the router can't reach it; for the router's own entry, it isn't working right now */
   unreachable: boolean
   /** its install is still running */
   installing: boolean
 }
+
+/** A node as a place. */
+export type NodeInfo = Place & { id: number }
+
+/** The router's own entry as a place, while it is switched on. Off, it is no place: null. */
+export const routerPlace = (t: T, local: { enabled: boolean; state: LocalState } | null | undefined): Place | null =>
+  local?.enabled ? { id: 'router', name: t('router.name'), unreachable: local.state !== 'working', installing: false } : null
+
+/** Every place a subscription can be on: the router's own entry first, then the nodes. */
+export const placesOf = (router: Place | null, nodes: NodeInfo[]): Place[] => (router ? [router, ...nodes] : nodes)
+
+/** Whether a subscription is switched on for a place. */
+export const enabledAt = (s: Pick<Subscription, 'nodes' | 'local'>, place: PlaceId): boolean =>
+  place === 'router' ? s.local?.enabled === true : s.nodes.find((n) => n.nodeId === place)?.enabled === true
+
+/** Whether a subscription has a connection on a place right now, as far as the hub knows. */
+export const onlineAt = (s: Pick<Subscription, 'nodes' | 'local'>, place: PlaceId): boolean =>
+  place === 'router' ? s.local?.online === true : s.nodes.find((n) => n.nodeId === place)?.online === true
 
 /** The nodes a subscription can be on, or soon can: installed ones and those being installed. A dead install is left out. */
 export const nodeInfos = (nodes: Node[]): NodeInfo[] =>
@@ -20,11 +39,11 @@ export const nodeInfos = (nodes: Node[]): NodeInfo[] =>
     .filter((n) => n.registered || n.installing)
     .map((n) => ({ id: n.id, name: n.name, unreachable: unreachable(n), installing: !!n.installing }))
 
-/** The nodes with a column of switches: those whose install is done. */
-export const readyNodes = (nodes: NodeInfo[]) => nodes.filter((n) => !n.installing)
+/** The places with a column of switches: those whose install is done. */
+export const readyNodes = <P extends Place>(nodes: P[]) => nodes.filter((n) => !n.installing)
 
-/** The nodes a new subscription starts on: every one that works now. */
-export const defaultNodeIds = (nodes: NodeInfo[]) => nodes.filter((n) => !n.installing && !n.unreachable).map((n) => n.id)
+/** The places a new subscription starts on: every one that works now. */
+export const defaultNodeIds = <P extends Place>(nodes: P[]): P['id'][] => nodes.filter((n) => !n.installing && !n.unreachable).map((n) => n.id)
 
 const collators = new Map<Lang, Intl.Collator>()
 
@@ -38,9 +57,9 @@ export function sortByName<Item extends { name: string }>(list: Item[], lang: La
 /** "Node 1", "Node 1 and Node 2": names joined the way the language does it. */
 export const nameList = (lang: Lang, names: string[]) => new Intl.ListFormat(LANGS[lang].intl, { style: 'long', type: 'conjunction' }).format(names)
 
-/** "on Node 1", "on Node 1 and Node 2", "on 3 nodes". */
-export function onNodes(t: T, lang: Lang, names: string[]): string {
-  return t('subs.onNodes', { nodes: names.length <= 2 ? nameList(lang, names) : t('subs.nodeCount', { n: names.length }) })
+/** "on Node 1", "on Node 1 and Node 2", "on 3 nodes"; `places`: "on 3 places", when the router's own entry is one of them. */
+export function onNodes(t: T, lang: Lang, names: string[], places = false): string {
+  return t('subs.onNodes', { nodes: names.length <= 2 ? nameList(lang, names) : t(places ? 'subs.placeCount' : 'subs.nodeCount', { n: names.length }) })
 }
 
 /** "last seen 3 hours ago", "last seen yesterday" (where a plain "1 day ago" reads stiffly), or "never connected". */
@@ -72,38 +91,44 @@ const WORD: Record<StatusKey, MsgKey> = {
 }
 
 /**
- * Where a subscription stands across all nodes: online (and where), active (switched on,
- * nobody connected), off everywhere, or unknown while its nodes can't be reached.
+ * Where a subscription stands across all places: online (and where), active (switched on,
+ * nobody connected), off everywhere, or unknown while its places can't be reached.
  */
-export function subscriptionStatus(s: Subscription, nodes: NodeInfo[], t: T, fmt: Format, lang: Lang, now = Date.now()): Status {
+export function subscriptionStatus(s: Subscription, places: Place[], t: T, fmt: Format, lang: Lang, now = Date.now()): Status {
   const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
+  // the router's own entry is among the places while it is switched on
+  const router = s.local !== null
   // stopped by the hub: it says more than "off", and the switches are still as they were
   if (s.stopped === 'limit') return status('limit', t('subs.sub.limitUsed', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }))
   if (s.stopped === 'expired') return status('expired', s.expiresAt ? t('subs.sub.expiredOn', { date: fmt.date(s.expiresAt) }) : '')
-  if (!s.nodes.some((n) => n.enabled)) return status('off', t('subs.sub.offEvery'))
+  if (!s.nodes.some((n) => n.enabled) && !s.local?.enabled) return status('off', t(router ? 'subs.sub.offEverywhere' : 'subs.sub.offEvery'))
   if (s.online === true) {
-    const where = s.nodes
-      .filter((n) => n.online === true)
-      .map((n) => nodes.find((x) => x.id === n.nodeId)?.name)
-      .filter((name): name is string => !!name)
-    return status('online', where.length ? onNodes(t, lang, where) : '')
+    const where = places.filter((p) => onlineAt(s, p.id)).map((p) => p.name)
+    return status('online', where.length ? onNodes(t, lang, where, router) : '')
   }
   if (s.online === false) return status('active', lastSeen(t, fmt, s.lastSeenAt, now))
   return status('unknown', s.lastSeenAt ? t('subs.sub.nodeDown') : t('subs.sub.never'))
 }
 
-/** The same for one node's list: off here, online (with its connections), active, or unknown while the node is down. */
-export function nodeSubscriptionStatus(s: NodeSubscription, t: T, fmt: Format, now = Date.now()): Status {
+/**
+ * The same for one place's list: off here, online (with its connections), active, or unknown while the
+ * place isn't answering. `router`: the list is the router's own entry's, and not a node's.
+ */
+export function nodeSubscriptionStatus(s: NodeSubscription, t: T, fmt: Format, now = Date.now(), router = false): Status {
   const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
-  if (!s.enabled) return status('off', t('subs.sub.offHere'))
+  if (!s.enabled) return status('off', t(router ? 'subs.sub.offRouter' : 'subs.sub.offHere'))
   if (s.stopped === 'limit' || s.stopped === 'expired') return status(s.stopped, '')
   if (s.online === true) return status('online', t('subs.sub.connections', { n: s.connections ?? 0 }))
   if (s.online === false) return status('active', lastSeen(t, fmt, s.lastSeenAt, now))
-  return status('unknown', s.lastSeenAt ? t('subs.sub.nodeDown') : t('subs.sub.never'))
+  return status('unknown', s.lastSeenAt ? t(router ? 'subs.sub.routerDown' : 'subs.sub.nodeDown') : t('subs.sub.never'))
 }
 
-/** What a toast says after a switch. A node that can't be reached takes the change when it is back, and the toast says so. */
-export function switchedText(t: T, on: boolean, down: boolean, name: string, node: string): string {
+/**
+ * What a toast says after a switch. A place that isn't answering takes the change when it is back, and
+ * the toast says so, in the words for a node or (`router`) for the router's own entry.
+ */
+export function switchedText(t: T, on: boolean, down: boolean, name: string, node: string, router = false): string {
+  if (down && router) return t(on ? 'subs.toast.onLaterRouter' : 'subs.toast.offLaterRouter', { name })
   const key = on ? (down ? 'subs.toast.onLater' : 'subs.toast.on') : down ? 'subs.toast.offLater' : 'subs.toast.off'
   return t(key, { name, node })
 }

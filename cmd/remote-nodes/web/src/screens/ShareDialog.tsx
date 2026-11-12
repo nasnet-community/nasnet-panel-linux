@@ -2,25 +2,33 @@ import { useEffect, useState } from 'react'
 import { RefreshCw } from '../components/icons'
 import { Button, Confirm, CopyButton, Dialog, ErrorBox, Notice, QrCode, Spinner, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
-import { subscriptions, type Link } from '../lib/api'
+import { subscriptions, type Link, type PlaceId } from '../lib/api'
 import { portableLink } from '../lib/subscriptions'
 
-/** What the dialog needs of a subscription: its name and the nodes it has a link on. */
+/** A place a subscription has a link on: a node, or the router's own entry. */
+export interface SharePlace {
+  id: PlaceId
+  name: string
+  /** links for it don't work right now */
+  unreachable: boolean
+}
+
+/** What the dialog needs of a subscription: its name and the places it has a link on. */
 export interface ShareTarget {
   id: number
   name: string
-  /** the nodes it is switched on for */
-  nodes: { id: number; name: string; unreachable: boolean }[]
-  /** the node to show first; the first of `nodes` when left out */
-  nodeId?: number
+  /** the places it is switched on for */
+  places: SharePlace[]
+  /** the place to show first; the first of `places` when left out */
+  placeId?: PlaceId
 }
 
-/** One of the nodes, side by side. The unreachable ones carry a red dot and say so to screen readers. */
-function NodePicker({ nodes, value, onChange }: { nodes: ShareTarget['nodes']; value: number; onChange: (id: number) => void }) {
+/** One of the places, side by side. The unreachable ones carry a red dot and say so to screen readers. */
+function PlacePicker({ places, value, onChange }: { places: SharePlace[]; value: PlaceId; onChange: (id: PlaceId) => void }) {
   const { t } = useLang()
   return (
     <div role="group" aria-label={t('subs.share.node')} className="flex w-full rounded-md border border-border bg-card2 p-0.5">
-      {nodes.map((n) => (
+      {places.map((n) => (
         <button
           key={n.id}
           type="button"
@@ -47,49 +55,49 @@ function NodePicker({ nodes, value, onChange }: { nodes: ShareTarget['nodes']; v
   )
 }
 
-/** The QR code and link of a subscription on one node, ready to send, and a way to replace the link. */
+/** The QR code and link of a subscription on one place, ready to send, and a way to replace the link. */
 export function ShareDialog({ target, onClose }: { target: ShareTarget; onClose: () => void }) {
   const { t } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
-  const [nodeId, setNodeId] = useState(target.nodeId ?? target.nodes[0]?.id)
-  // a link once fetched is kept, so going back to a node needs no call, and a replaced one stays replaced
-  const [links, setLinks] = useState<Record<number, Link>>({})
+  const [placeId, setPlaceId] = useState(target.placeId ?? target.places[0]?.id)
+  // a link once fetched is kept, so going back to a place needs no call, and a replaced one stays replaced
+  const [links, setLinks] = useState<Record<string, Link>>({})
   const [error, setError] = useState<string | null>(null)
   const [replacing, setReplacing] = useState(false)
-  const node = target.nodes.find((n) => n.id === nodeId)
-  const link = nodeId === undefined ? undefined : links[nodeId]
+  const place = target.places.find((n) => n.id === placeId)
+  const link = placeId === undefined ? undefined : links[placeId]
 
   useEffect(() => {
-    if (nodeId === undefined || links[nodeId]) return
-    // a late answer for a node that is no longer shown is dropped
+    if (placeId === undefined || links[placeId]) return
+    // a late answer for a place that is no longer shown is dropped
     let stale = false
     setError(null)
     subscriptions
-      .link(target.id, nodeId)
-      .then((l) => !stale && setLinks((all) => ({ ...all, [nodeId]: l })))
+      .linkAt(target.id, placeId)
+      .then((l) => !stale && setLinks((all) => ({ ...all, [placeId]: l })))
       .catch((e) => !stale && setError(errorText(e)))
     return () => {
       stale = true
     }
-  }, [nodeId, target.id])
+  }, [placeId, target.id])
 
   const text = link ? portableLink(link.vless) : ''
 
   return (
     <Dialog onClose={onClose} title={t('subs.share.title', { name: target.name })} description={t('subs.share.desc')}>
-      {!node || nodeId === undefined ? (
+      {!place || placeId === undefined ? (
         <Notice>{t('subs.menu.shareOff')}</Notice>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <NodePicker nodes={target.nodes} value={nodeId} onChange={setNodeId} />
+          <PlacePicker places={target.places} value={placeId} onChange={setPlaceId} />
           {error && (
             <div className="w-full">
               <ErrorBox>{error}</ErrorBox>
             </div>
           )}
           {link ? (
-            <QrCode text={text} size={220} label={t('subs.share.qr', { name: target.name, node: node.name })} />
+            <QrCode text={text} size={220} label={t('subs.share.qr', { name: target.name, node: place.name })} />
           ) : (
             !error && (
               <div className="flex h-[220px] w-[220px] items-center justify-center rounded-md bg-card2">
@@ -122,15 +130,15 @@ export function ShareDialog({ target, onClose }: { target: ShareTarget; onClose:
         </div>
       )}
 
-      {replacing && node && nodeId !== undefined && (
+      {replacing && place && placeId !== undefined && (
         <Confirm
           title={t('subs.replace.title', { name: target.name })}
           action={t('subs.replace.action')}
           onClose={() => setReplacing(false)}
           onConfirm={async () => {
             try {
-              const next = await subscriptions.replaceLink(target.id, nodeId)
-              setLinks((all) => ({ ...all, [nodeId]: next }))
+              const next = await subscriptions.replaceLinkAt(target.id, placeId)
+              setLinks((all) => ({ ...all, [placeId]: next }))
               toast(t('subs.toast.newLink', { name: target.name }))
             } catch (e) {
               // Confirm shows what is thrown, in the server's English unless it is worded here
@@ -139,7 +147,7 @@ export function ShareDialog({ target, onClose }: { target: ShareTarget; onClose:
           }}
         >
           <p>{t('subs.replace.text')}</p>
-          {target.nodes.length > 1 && <p>{t('subs.replace.only', { node: node.name })}</p>}
+          {target.places.length > 1 && <p>{t('subs.replace.only', { node: place.name })}</p>}
         </Confirm>
       )}
     </Dialog>

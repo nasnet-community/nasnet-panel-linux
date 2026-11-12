@@ -7,12 +7,14 @@ import { usePoll } from '../hooks/usePoll'
 import { navigate } from '../hooks/useRoute'
 import { useConfig } from '../hooks/useConfig'
 import { useErrorText, useLang } from '../i18n'
-import { api, type AppConfig, type InstallForm, type Node } from '../lib/api'
+import { api, local as localApi, type AppConfig, type InstallForm, type Node } from '../lib/api'
 import { health } from '../lib/health'
 import { isUnfinished } from '../lib/install'
 import { jobStep, stepLabel, stepPercent } from '../lib/jobs'
 import { onRetry, takeRetry } from '../lib/retry'
 import { AddNodeDialog } from './AddNodeDialog'
+import { RouterCard } from './RouterCard'
+import { TurnOnDialog } from './RouterDialogs'
 import { UnfinishedDialogs, UnfinishedList, type UnfinishedModal } from './Unfinished'
 
 /** How far an install has got, from the job when the tray has it (in the page's words), else from the node. */
@@ -111,6 +113,11 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
   const pace = useRef(10000)
   const { data: all, error, loading, reload } = usePoll(api.nodes, pace.current)
   pace.current = all?.some((n) => n.installing) ? 2000 : 10000
+  // the router's own entry: its start is watched more closely, as the router's script runs every minute
+  const routerPace = useRef(10000)
+  const router = usePoll(localApi.get, routerPace.current)
+  routerPace.current = router.data?.state === 'starting' ? 2000 : 10000
+  const [turningOn, setTurningOn] = useState(false)
   const nodes = all?.filter((n) => !isUnfinished(n)) ?? null
   const unfinished = all?.filter(isUnfinished) ?? []
   const [adding, setAdding] = useState(false)
@@ -178,6 +185,12 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
       {error != null && <ErrorBox>{errorText(error)}</ErrorBox>}
       {loading && !nodes && <Spinner />}
 
+      {nodes && nodes.length === 0 && router.data && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <RouterCard local={router.data} entry={config?.entry ?? null} alone onTurnOn={() => setTurningOn(true)} />
+        </div>
+      )}
+
       {nodes && nodes.length === 0 && (
         <Card className="flex flex-col items-center gap-3 px-6 py-14 text-center">
           <RemoteNodesLogo size={48} />
@@ -191,6 +204,7 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
 
       {nodes && nodes.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {router.data && <RouterCard local={router.data} entry={config?.entry ?? null} alone={false} onTurnOn={() => setTurningOn(true)} />}
           {nodes.map((n) => (
             <NodeCard key={n.id} node={n} />
           ))}
@@ -206,6 +220,17 @@ export function NodesScreen({ config, onChanged }: { config: AppConfig | null; o
           onChanged()
         }}
       />
+
+      {turningOn && (
+        <TurnOnDialog
+          onClose={() => setTurningOn(false)}
+          onChanged={(fresh) => {
+            router.setData(fresh)
+            void router.reload()
+            onChanged()
+          }}
+        />
+      )}
 
       <AddNodeDialog
         key={opened}

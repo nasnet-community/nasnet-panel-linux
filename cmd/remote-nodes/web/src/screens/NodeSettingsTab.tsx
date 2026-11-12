@@ -8,7 +8,7 @@ import { unreachable } from '../lib/health'
 import { renewLeadDays, validServerName } from '../lib/node'
 
 /** A key shown in full, with a button to copy it. */
-function CopyField({ label, value, copyLabel }: { label: string; value: string; copyLabel: string }) {
+export function CopyField({ label, value, copyLabel }: { label: string; value: string; copyLabel: string }) {
   const { t } = useLang()
   const [copied, setCopied] = useState(false)
   return (
@@ -38,7 +38,7 @@ function CopyField({ label, value, copyLabel }: { label: string; value: string; 
 }
 
 /** The server name the handshake uses: the target's own, or one of its own. Saving it asks first. */
-function ServerName({ node, locked, onSave }: { node: Node; locked: boolean; onSave: (sni: string) => void }) {
+export function ServerName({ node, locked, onSave }: { node: Pick<Node, 'sni' | 'sniCustom' | 'handshakeTarget'>; locked: boolean; onSave: (sni: string) => void }) {
   const { t } = useLang()
   const [same, setSame] = useState(!node.sniCustom)
   const [name, setName] = useState(node.sniCustom ? node.sni : '')

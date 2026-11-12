@@ -67,7 +67,7 @@ describe('dictionaries', () => {
   })
 
   it('translate every message, apart from names that stay Latin', () => {
-    const same = new Set(['vpn.l2tp', 'vpn.openvpn'])
+    const same = new Set(['vpn.l2tp', 'vpn.openvpn', 'router.source.cloudShort'])
     for (const key of keys) {
       if (!same.has(key)) expect(text(fa[key]).join(), key).not.toBe(text(en[key]).join())
       for (const s of text(fa[key])) expect(s.trim(), key).not.toBe('')

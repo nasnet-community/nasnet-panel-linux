@@ -3,7 +3,7 @@ import { Ellipsis, Info, Pencil, Plus, QrCode as QrIcon, RotateCcw, Trash2, User
 import { Badge, Button, Card, Menu, btn, cx, type Tone } from '../components/ui'
 import { useNow } from '../hooks/usePoll'
 import { useLang } from '../i18n'
-import { expiryParts, expiryText, quotaTone, usedPercent, type Editable, type NodeInfo, type Status, type StatusKey } from '../lib/subscriptions'
+import { expiryParts, expiryText, quotaTone, usedPercent, type Editable, type Place, type Status, type StatusKey } from '../lib/subscriptions'
 
 /** One number of the row above a list, with what it is and a small line under it. */
 export function Tile({ label, value, unit, sub }: { label: string; value: ReactNode; unit?: string; sub: string }) {
@@ -52,14 +52,14 @@ export const Name = ({ children, className }: { children: string; className?: st
   </span>
 )
 
-/** A node's name over a column of switches, with a dot for how it is doing. */
-export function NodeHead({ node }: { node: NodeInfo }) {
+/** A place's name over a column of switches, with a dot for how it is doing. */
+export function NodeHead({ node }: { node: Place }) {
   const { t } = useLang()
   return (
     <span className="inline-flex items-center gap-1.5">
       <span dir="auto">{node.name}</span>
       <span aria-hidden="true" className={cx('h-1.5 w-1.5 rounded-full', node.unreachable ? 'bg-bad' : 'bg-ok')} />
-      {node.unreachable && <span className="text-xs font-medium text-bad-text">{t('subs.unreachable')}</span>}
+      {node.unreachable && <span className="text-xs font-medium text-bad-text">{t(node.id === 'router' ? 'subs.notWorking' : 'subs.unreachable')}</span>}
     </span>
   )
 }
@@ -149,7 +149,7 @@ export function AddButton({ count, max, onAdd, showCount = true }: { count: numb
   )
 }
 
-/** What a list shows before the first subscription. `noNodes`: there is nothing for one to be switched on for yet. */
+/** What a list shows before the first subscription. `noNodes`: there is nothing for one to be switched on for yet, no node and not the router. */
 export function EmptyState({ noNodes, onAdd }: { noNodes: boolean; onAdd: () => void }) {
   const { t } = useLang()
   return (

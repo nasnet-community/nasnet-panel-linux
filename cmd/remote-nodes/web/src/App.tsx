@@ -8,6 +8,7 @@ import { useRoute } from './hooks/useRoute'
 import { LANGS, useErrorText, useLang } from './i18n'
 import { NodeScreen } from './screens/NodeScreen'
 import { RootScreen } from './screens/RootScreen'
+import { RouterScreen } from './screens/RouterScreen'
 
 function ThemeToggle() {
   const { t } = useLang()
@@ -48,7 +49,7 @@ export function App() {
   const config = useConfigState()
 
   // a new page starts at the top, a new tab on the same page doesn't
-  const page = route.page === 'node' ? `node-${route.id}` : 'root'
+  const page = route.page === 'node' ? `node-${route.id}` : route.page
   useEffect(() => window.scrollTo(0, 0), [page])
 
   return (
@@ -74,7 +75,13 @@ export function App() {
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">
         {config.error != null && !config.data && <ErrorBox>{errorText(config.error)}</ErrorBox>}
-        {route.page === 'root' ? <RootScreen tab={route.tab} config={config.data} onConfigChanged={config.reload} /> : <NodeScreen key={route.id} id={route.id} tab={route.tab} />}
+        {route.page === 'root' ? (
+          <RootScreen tab={route.tab} config={config.data} onConfigChanged={config.reload} />
+        ) : route.page === 'router' ? (
+          <RouterScreen tab={route.tab} />
+        ) : (
+          <NodeScreen key={route.id} id={route.id} tab={route.tab} />
+        )}
       </main>
     </div>
   )

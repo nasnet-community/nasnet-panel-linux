@@ -96,6 +96,13 @@ const EVENT_KEYS = [
   'connections_cut',
   'keys_rotated',
   'xray_restarted',
+  // the router's own entry
+  'local_on',
+  'local_off',
+  'port_opened',
+  'port_requested',
+  'target_changed',
+  'host_changed',
 ]
 
 /** An event's kind ("cert_renewed") as the words for it; a kind the page doesn't know shows as itself, spaced out. */

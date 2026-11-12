@@ -123,7 +123,8 @@ test('the name, the limit and the date go in one save', async ({ page }) => {
   expect(body).toMatchObject({ name: 'Minoo', trafficLimit: 25_000_000_000 })
   await expect(toast(page, 'Minoo saved')).toBeVisible()
   await expect(row(page, 'Minoo')).toContainText('9.4 GB of 25.0 GB')
-  await expect(row(page, 'Minoo')).toContainText(/in (9|10) days/)
+  // it ends with its day, so before noon that is nearer 11 days off than 10
+  await expect(row(page, 'Minoo')).toContainText(/in (10|11) days/)
 })
 
 test('the limit field takes a comma, and refuses what is not a number above zero without asking the hub', async ({ page }) => {
