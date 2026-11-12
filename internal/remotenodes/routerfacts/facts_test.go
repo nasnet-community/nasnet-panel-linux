@@ -292,3 +292,72 @@ func TestTheAddressDoesNotChangeWhatTheEntrySays(t *testing.T) {
 		t.Errorf("entry with the address %+v, without %+v", a, b)
 	}
 }
+
+// What the router says of its own entry: the port it forwards, whether the
+// forward is in place, its IP Cloud name and the address the cloud sees.
+func TestTheEntrysFactsAreRead(t *testing.T) {
+	report := goodReport() + "local_port=41873\nlocal_rules=1\ncloud_name=A1B2C3D4E5F6.sn.MyNetName.net\npublic_addr=198.51.100.24\n"
+	f := mustParse(t, report)
+	if f.LocalPort != 41873 || !f.LocalRules || f.CloudName != "a1b2c3d4e5f6.sn.mynetname.net" ||
+		f.PublicAddr != netip.MustParseAddr("198.51.100.24") || f.BadLines != 0 {
+		t.Fatalf("got %+v", f)
+	}
+	// a report from a script that knows nothing of the entry says nothing of it
+	old := mustParse(t, goodReport())
+	if old.LocalPort != 0 || old.LocalRules || old.CloudName != "" || old.PublicAddr.IsValid() || old.BadLines != 0 {
+		t.Fatalf("an older report: %+v", old)
+	}
+}
+
+func TestTheEntrysPortIsAPortOrNone(t *testing.T) {
+	for v, want := range map[string]uint16{"": 0, "0": 0, "1": 1, "443": 443, "65535": 65535} {
+		f := mustParse(t, "local_port="+v+"\n")
+		if f.LocalPort != want || f.BadLines != 0 {
+			t.Errorf("local_port=%q: port %d, %d bad lines", v, f.LocalPort, f.BadLines)
+		}
+	}
+	for _, v := range []string{"65536", "-1", "443.0", "0443", "port", "44 3", "0x1bb"} {
+		// a bad value after a good one must not leave the good one standing
+		f := mustParse(t, "local_port=41873\nlocal_port="+v+"\n")
+		if f.LocalPort != 0 || f.BadLines != 1 {
+			t.Errorf("local_port=%q: port %d, %d bad lines", v, f.LocalPort, f.BadLines)
+		}
+	}
+}
+
+func TestTheCloudNameIsAHostNameOrNone(t *testing.T) {
+	for v, want := range map[string]string{
+		"":                             "",
+		"abc.sn.mynetname.net":         "abc.sn.mynetname.net",
+		"ABC.SN.mynetname.net.":        "abc.sn.mynetname.net",
+		"my-router.example.com":        "my-router.example.com",
+		"4c5e0c123456.sn.mynetname.ir": "4c5e0c123456.sn.mynetname.ir",
+	} {
+		f := mustParse(t, "cloud_name="+v+"\n")
+		if f.CloudName != want || f.BadLines != 0 {
+			t.Errorf("cloud_name=%q: %q, %d bad lines", v, f.CloudName, f.BadLines)
+		}
+	}
+	for _, v := range []string{
+		"router", "198.51.100.24", "a b.example.com", "-a.example.com", "a-.example.com", "a..example.com",
+		"under_score.example.com", "exa\tmple.com", "http://abc.sn.mynetname.net", "abc.sn.mynetname.net:443",
+		strings.Repeat("a", 64) + ".example.com", strings.Repeat("a.", 127) + "com",
+	} {
+		f := mustParse(t, "cloud_name=abc.sn.mynetname.net\ncloud_name="+v+"\n")
+		if f.CloudName != "" || f.BadLines != 1 {
+			t.Errorf("cloud_name=%q: %q, %d bad lines", v, f.CloudName, f.BadLines)
+		}
+	}
+}
+
+func TestThePublicAddressIsAnIPv4AddressOrNothing(t *testing.T) {
+	if f := mustParse(t, "public_addr=198.51.100.24\npublic_addr=\n"); f.PublicAddr.IsValid() || f.BadLines != 0 {
+		t.Errorf("an empty value: %v, %d bad lines", f.PublicAddr, f.BadLines)
+	}
+	for _, v := range []string{"198.51.100.24/24", "2001:db8::1", "0.0.0.0", "127.0.0.1", "cloud"} {
+		f := mustParse(t, "public_addr=198.51.100.24\npublic_addr="+v+"\n")
+		if f.PublicAddr.IsValid() || f.BadLines != 1 {
+			t.Errorf("public_addr=%q: %v, %d bad lines", v, f.PublicAddr, f.BadLines)
+		}
+	}
+}

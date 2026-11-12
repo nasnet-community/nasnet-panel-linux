@@ -18,6 +18,13 @@
 //	route_foreign=1       the routing table behind 192.168.50.16 exists
 //	route_vpn=1           ... behind 192.168.50.17
 //	route_domestic=1      ... behind 192.168.50.18
+//	local_port=41873      the port on the Domestic link the router forwards
+//	                      to its own entry; empty or 0 when it has picked none
+//	local_rules=1         that forward is in place (the entry is switched on)
+//	cloud_name=abc.sn.mynetname.net
+//	                      the router's IP Cloud name; empty when it has none
+//	public_addr=198.51.100.24
+//	                      the router's address as IP Cloud sees it
 //	ros=7.24.5            the RouterOS version
 //	free_mem=412000000    bytes
 //	free_disk=9000000     bytes
@@ -30,4 +37,8 @@
 // to go by, which is never a change of address. The script rewrites the file
 // in place, so a reader can arrive halfway through: Reader only takes a copy
 // of the file that holds still.
+//
+// The other way, the hub leaves the script what it wants of the router in
+// small files beside the report (see Asks): whether to forward a port to the
+// router's own entry, and when to pick another.
 package routerfacts
