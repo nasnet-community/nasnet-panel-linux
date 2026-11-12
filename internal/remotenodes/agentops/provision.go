@@ -167,7 +167,7 @@ func (e *Env) chooseTarget(ctx context.Context, c *agent.Client, in ProvisionInp
 		if err != nil {
 			return "", HandshakeCheck{}, err
 		}
-		check, err := checkTarget(ctx, c, host, port)
+		check, err := checkTarget(ctx, agentProber(c), host, port)
 		if err != nil {
 			return "", HandshakeCheck{}, err
 		}
