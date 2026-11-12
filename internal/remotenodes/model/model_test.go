@@ -3,6 +3,8 @@
 package model
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -18,6 +20,34 @@ const (
 	uuidB = "0b9a8f7e-6d5c-4b3a-9281-706f5e4d3c2b"
 	uuidC = "11111111-2222-4333-8444-555555555555"
 )
+
+const uuidD = "22222222-3333-4444-8555-666666666666"
+
+// A REALITY key pair's two halves and a short id, in the forms the state keeps.
+var (
+	localPrivate = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	localPublic  = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+)
+
+// withLocal is small with the router's own entry switched on and both
+// subscriptions on it, one of them switched off there.
+func withLocal(t *testing.T) State {
+	t.Helper()
+	s := small(t)
+	s.Local = Local{
+		Enabled: true, Host: "router.example.com",
+		RealityTarget: "www.example.com:443", RealitySNI: "example.com",
+		RealityPublicKey: localPublic, RealityShortID: "0123456789abcdef", RealityPrivateKey: localPrivate,
+	}
+	s.LocalClients = []LocalClient{
+		{SubscriptionID: 1, ClientUUID: uuidD, Enabled: true},
+		{SubscriptionID: 2, ClientUUID: "22222222-3333-4444-8555-777777777777", Enabled: false},
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
 
 func goodNode(name, host string) Node {
 	return Node{Name: name, Host: host, SSHPort: 22, AgentPort: 9090, EntryPort: 443, State: NodeRegistered, CreatedAt: t0}
@@ -160,6 +190,20 @@ func TestRemoveDropsTheClientsToo(t *testing.T) {
 	if err := s.Validate(); err != nil {
 		t.Fatalf("removals left a broken state: %v", err)
 	}
+	// the router's entry is one more place a subscription has a client
+	l := withLocal(t)
+	if err := l.RemoveNode(1); err != nil || len(l.LocalClients) != 2 {
+		t.Fatalf("removing a node touched the router's clients: %+v, %v", l.LocalClients, err)
+	}
+	if err := l.RemoveSubscription(1); err != nil {
+		t.Fatal(err)
+	}
+	if len(l.LocalClients) != 1 || l.LocalClients[0].SubscriptionID != 2 {
+		t.Fatalf("the router's clients after removing subscription 1: %+v", l.LocalClients)
+	}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("removals left a broken state: %v", err)
+	}
 	if err := s.RemoveNode(9); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("an unknown node: %v", err)
 	}
@@ -186,9 +230,28 @@ func TestFind(t *testing.T) {
 	if s.FindSubscription(2).Name != "sara" {
 		t.Fatal("wrong subscription")
 	}
+	if s.FindLocalClient(1) != nil {
+		t.Fatal("found a client on the router's entry in a state with none")
+	}
+	l := withLocal(t)
+	if c := l.FindLocalClient(2); c == nil || c.Enabled {
+		t.Fatalf("subscription 2 on the router: %+v", c)
+	}
+	l.FindLocalClient(2).Enabled = true
+	if !l.LocalClients[1].Enabled || l.FindLocalClient(9) != nil {
+		t.Fatal("FindLocalClient did not point into the state, or found one that isn't there")
+	}
 }
 
 func TestCloneIsIndependent(t *testing.T) {
+	l := withLocal(t)
+	lc := l.Clone()
+	lc.LocalClients[0].Enabled = false
+	lc.Local.Enabled = false
+	if !l.LocalClients[0].Enabled || !l.Local.Enabled {
+		t.Fatal("a clone shares the router's entry with its original")
+	}
+
 	s := small(t)
 	c := s.Clone()
 	c.Nodes[0].Name = "changed"
@@ -203,7 +266,7 @@ func TestCloneIsIndependent(t *testing.T) {
 // Clone copies slices shallowly: that is only a deep copy while the records
 // have nothing inside them to share.
 func TestRecordsHoldOnlyValues(t *testing.T) {
-	for _, v := range []any{Node{}, Subscription{}, Enablement{}, Settings{}} {
+	for _, v := range []any{Node{}, Subscription{}, Enablement{}, Settings{}, Local{}, LocalClient{}} {
 		typ := reflect.TypeOf(v)
 		for i := 0; i < typ.NumField(); i++ {
 			switch k := typ.Field(i).Type.Kind(); k {
@@ -324,6 +387,65 @@ func TestCheckEditKeepsTheCountersMovingForward(t *testing.T) {
 	edit.NextSubscriptionID = 2
 	if err := edit.CheckEdit(before); err == nil {
 		t.Fatal("a subscription counter turned back and nothing said so")
+	}
+}
+
+func TestTheRoutersEntryIsChecked(t *testing.T) {
+	cases := map[string]func(*State){
+		"on without keys":              func(s *State) { s.Local = Local{Enabled: true} },
+		"a private key alone":          func(s *State) { s.Local.RealityPublicKey, s.Local.RealityShortID = "", "" },
+		"no short id":                  func(s *State) { s.Local.RealityShortID = "" },
+		"a private key that is no key": func(s *State) { s.Local.RealityPrivateKey = "not-a-key" },
+		"a public key in standard base64": func(s *State) {
+			s.Local.RealityPublicKey = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xff}, 32))
+		},
+		"a short id in capitals":         func(s *State) { s.Local.RealityShortID = "ABCDEF" },
+		"a short id of odd length":       func(s *State) { s.Local.RealityShortID = "abc" },
+		"a short id too long":            func(s *State) { s.Local.RealityShortID = "0123456789abcdef01" },
+		"a target without a port":        func(s *State) { s.Local.RealityTarget = "www.example.com" },
+		"an address as the SNI":          func(s *State) { s.Local.RealitySNI = "203.0.113.1" },
+		"a host that is none":            func(s *State) { s.Local.Host = "not a host" },
+		"a host not in its clean form":   func(s *State) { s.Local.Host = "Router.Example.COM" },
+		"a client of a missing sub":      func(s *State) { s.LocalClients[0].SubscriptionID = 9 },
+		"a client with no subscription":  func(s *State) { s.LocalClients[0].SubscriptionID = 0 },
+		"a subscription here twice":      func(s *State) { s.LocalClients[1].SubscriptionID = 1 },
+		"a client without an id":         func(s *State) { s.LocalClients[0].ClientUUID = "" },
+		"an id in capitals":              func(s *State) { s.LocalClients[0].ClientUUID = "AAAAAAAA-3333-4444-8555-666666666666" },
+		"an id shared with a node's":     func(s *State) { s.LocalClients[0].ClientUUID = uuidA },
+		"an id shared with a bridge's":   func(s *State) { s.Nodes[0].BridgeUUID = uuidD },
+		"an id shared with another here": func(s *State) { s.LocalClients[1].ClientUUID = uuidD },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := withLocal(t)
+			mutate(&s)
+			err := s.Validate()
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if strings.Contains(err.Error(), localPrivate) || strings.Contains(err.Error(), "not-a-key") {
+				t.Fatalf("the error quotes a key: %v", err)
+			}
+		})
+	}
+
+	fine := map[string]func(*State){
+		"off, never set up":             func(s *State) { s.Local, s.LocalClients = Local{}, nil },
+		"off, with everything kept":     func(s *State) { s.Local.Enabled = false },
+		"on, its target not chosen yet": func(s *State) { s.Local.RealityTarget, s.Local.RealitySNI = "", "" },
+		"no name of its own":            func(s *State) { s.Local.Host = "" },
+		"an address for a name":         func(s *State) { s.Local.Host = "203.0.113.50" },
+		"a one-byte short id":           func(s *State) { s.Local.RealityShortID = "ab" },
+		"nobody on it":                  func(s *State) { s.LocalClients = nil },
+	}
+	for name, mutate := range fine {
+		t.Run(name, func(t *testing.T) {
+			s := withLocal(t)
+			mutate(&s)
+			if err := s.Validate(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

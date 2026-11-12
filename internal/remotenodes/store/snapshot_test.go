@@ -246,7 +246,7 @@ func TestRestoreRefusesWhatItCannotUse(t *testing.T) {
 		"not json":               {"hello", "unreadable", nil},
 		"cut off":                {good[:len(good)/2], "unreadable", nil},
 		"no version":             {`{"nodes": []}`, "no version", nil},
-		"a newer release's":      {`{"version": 2, "nodes": {"shape": "from the future"}}`, "newer", model.ErrNewer},
+		"a newer release's":      {`{"version": 99, "nodes": {"shape": "from the future"}}`, "newer", model.ErrNewer},
 		"a port that can't be":   {edit(`"ssh_port": 22`, `"ssh_port": 0`), "ssh port", nil},
 		"a client with no node":  {edit(`"node_id": 2`, `"node_id": 7`), "doesn't exist", nil},
 		"a client id that isn't": {edit(uuidA, "not-a-uuid"), "UUID", nil},

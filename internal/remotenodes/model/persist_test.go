@@ -105,7 +105,7 @@ func TestEncodeWritesEmptyListsNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"nodes": []`, `"subscriptions": []`, `"enablements": []`} {
+	for _, key := range []string{`"nodes": []`, `"subscriptions": []`, `"enablements": []`, `"local_clients": []`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("missing %s in\n%s", key, b)
 		}
@@ -116,6 +116,65 @@ func TestEncodeWritesEmptyListsNotNull(t *testing.T) {
 	back, err := Decode(b)
 	if err != nil || back.Version != SchemaVersion || back.NextNodeID != 1 {
 		t.Fatalf("an empty state: %+v, %v", back, err)
+	}
+}
+
+// A file written before the router had an entry of its own is version 1 and
+// says nothing of one. It loads with the entry off, and is version 2 from the
+// next write on.
+func TestAnOlderFileLoadsWithTheEntryOff(t *testing.T) {
+	want := small(t)
+	b, err := Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["version"] = 1
+	delete(doc, "local")
+	delete(doc, "local_clients")
+	old, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Decode(old)
+	if err != nil {
+		t.Fatalf("a version 1 file: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("a version 1 file came back as\n%+v\nwant\n%+v", got, want)
+	}
+	if got.Version != SchemaVersion || got.Local != (Local{}) || got.LocalClients != nil {
+		t.Fatalf("version %d, entry %+v, clients %v", got.Version, got.Local, got.LocalClients)
+	}
+	again, err := Encode(got)
+	if err != nil || !bytes.Equal(again, b) {
+		t.Fatalf("written again it is not this version's file: %v", err)
+	}
+}
+
+// The router's entry and its clients go through the file like the rest, the
+// private key included: the file is the only copy.
+func TestTheRoutersEntrySurvivesTheFile(t *testing.T) {
+	s := withLocal(t)
+	b, err := Encode(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{localPrivate, uuidD} {
+		if !bytes.Contains(b, []byte(want)) {
+			t.Errorf("the file does not hold %q", want)
+		}
+	}
+	back, err := Decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(s, back) {
+		t.Fatalf("round trip changed the state:\n got %+v\nwant %+v", back, s)
 	}
 }
 
@@ -137,8 +196,8 @@ func TestDecodeAnswersWhatItCannotUse(t *testing.T) {
 		{"nodes of the wrong type", `{"version": 1, "nodes": {"a": 1}}`, false},
 		{"counters missing", `{"version": 1}`, false},
 		{"valid json, broken contents", strings.Replace(string(good), `"ssh_port": 22`, `"ssh_port": 0`, 1), false},
-		{"a newer version", `{"version": 2}`, true},
-		{"a newer shape", `{"version": 2, "nodes": {"a": 1}}`, true},
+		{"a newer version", `{"version": 3}`, true},
+		{"a newer shape", `{"version": 3, "nodes": {"a": 1}}`, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
