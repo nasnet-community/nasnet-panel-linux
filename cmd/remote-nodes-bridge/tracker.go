@@ -40,10 +40,15 @@ const (
 // A socket to a portal, from the dial address, is a tunnel's connection. A
 // TCP socket opened for a flow that came in on a node's reverse tag is one of
 // that node's connections. Everything else goes through untouched, and so do
-// UDP sockets: the core's packet code needs the dialer's own type.
+// a tunnel's UDP sockets: the core's packet code needs the dialer's own type.
+//
+// What a client of the router's own entry opens is followed too, TCP and UDP
+// (see localFlows), so that it can be counted for the client and closed with it.
 type tracker struct {
 	now  func() time.Time
 	dial netip.Addr
+	// local follows the entry's clients; nil without an entry.
+	local *localFlows
 
 	// Built once and never changed, so the dial path reads them lock-free.
 	nodes    []*tunnel
@@ -67,6 +72,9 @@ func newTracker(s *bridgespec.Spec, now func() time.Time) *tracker {
 		dial:     netip.MustParseAddr(s.DialAddr).Unmap(),
 		byPortal: make(map[netip.AddrPort]*tunnel, len(s.Nodes)),
 		byTag:    make(map[string]*tunnel, len(s.Nodes)),
+	}
+	if s.Local != nil {
+		t.local = newLocalFlows(now)
 	}
 	for _, n := range s.Nodes {
 		tn := &tunnel{links: map[*linkConn]struct{}{}, since: now()}
@@ -123,6 +131,10 @@ func (tn *tunnel) snapshot() (up bool, since time.Time, flows int) {
 // wrap hands back conn as the core should see it: counted if it belongs to a
 // tunnel, as it came otherwise.
 func (t *tracker) wrap(ctx context.Context, src xnet.Address, dest xnet.Destination, conn net.Conn) net.Conn {
+	in := session.InboundFromContext(ctx)
+	if t.local != nil && in != nil && in.Tag == bridgespec.LocalTag && in.User != nil {
+		return t.wrapLocal(in, conn)
+	}
 	tc, ok := conn.(*net.TCPConn)
 	if !ok || dest.Network != xnet.Network_TCP {
 		return conn
@@ -130,12 +142,39 @@ func (t *tracker) wrap(ctx context.Context, src xnet.Address, dest xnet.Destinat
 	if tn := t.tunnelOf(src, dest); tn != nil {
 		return tn.newLink(t, tc)
 	}
-	if in := session.InboundFromContext(ctx); in != nil {
+	if in != nil {
 		if tn := t.byTag[in.Tag]; tn != nil {
 			tn.flows.Add(1)
 			return &flowConn{TCPConn: tc, tn: tn}
 		}
 	}
+	return conn
+}
+
+// wrapLocal follows a flow one of the entry's clients opened, until it is
+// closed. A UDP flow keeps the dialer's own wrapper, which the core's packet
+// code looks for, around a socket that says when it closes. A flow of a client
+// that is no longer on the entry gets its socket back closed: the client's
+// connection was closed with it, and the flow has nowhere to go.
+func (t *tracker) wrapLocal(in *session.Inbound, conn net.Conn) net.Conn {
+	switch c := conn.(type) {
+	case *net.TCPConn:
+		done := t.local.open(in)
+		if done == nil {
+			break
+		}
+		return &localTCP{TCPConn: c, done: done}
+	case *xnet.PacketConnWrapper:
+		done := t.local.open(in)
+		if done == nil {
+			break
+		}
+		return &xnet.PacketConnWrapper{PacketConn: &localPacket{PacketConn: c.PacketConn, done: done}, Dest: c.Dest}
+	default:
+		// a kind of socket whose end can't be seen from here: left uncounted
+		return conn
+	}
+	conn.Close()
 	return conn
 }
 
