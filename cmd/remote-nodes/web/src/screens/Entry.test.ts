@@ -22,19 +22,19 @@ const titles = (e: Entry, lang: Lang = 'en') => entryAttention(e, t(lang)).map((
 
 describe('the entry chips', () => {
   it('show what entry rests on when it works', () => {
-    expect(chips(entry())).toEqual(['Domestic link: online (online)', 'VPN: WireGuard (online)', 'Bridge: running (online)'])
+    expect(chips(entry())).toEqual(['Domestic link: online (online)', 'VPN: WireGuard (online)', "Router's Xray: running (online)"])
   })
 
   it('tell a missing part from one that is down, and a bridge that waits from one that runs', () => {
     expect(chips(entry({ on: false, domestic: 'missing', vpn: { state: 'missing', kind: '', label: '' }, bridge: 'stopped' }))).toEqual([
       'Domestic link: missing (warn)',
       'VPN: missing (warn)',
-      'Bridge: stopped (idle)',
+      "Router's Xray: stopped (idle)",
     ])
     expect(chips(entry({ on: false, domestic: 'offline', vpn: { state: 'offline', kind: 'wireguard', label: 'WireGuard' }, bridge: 'waiting' }))).toEqual([
       'Domestic link: offline (danger)',
       'VPN: offline (danger)',
-      'Bridge: waiting (idle)',
+      "Router's Xray: waiting (idle)",
     ])
   })
 
@@ -46,7 +46,7 @@ describe('the entry chips', () => {
   })
 
   it('are in Persian too', () => {
-    expect(chips(entry(), 'fa')).toEqual(['آپ‌لینک داخلی: آنلاین (online)', 'وی پی ان: وایرگارد (online)', 'بریج: در حال اجرا (online)'])
+    expect(chips(entry(), 'fa')).toEqual(['آپ‌لینک داخلی: آنلاین (online)', 'وی پی ان: وایرگارد (online)', 'Xray روتر: در حال اجرا (online)'])
   })
 })
 

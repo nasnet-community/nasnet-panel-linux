@@ -25,7 +25,7 @@ test.describe('the router\'s entry facts and routes', () => {
     const entry = panel(page, 'Entry')
     await expect(row(entry, 'Domestic link')).toContainText('online')
     await expect(row(entry, 'VPN')).toContainText('WireGuard · online')
-    await expect(row(entry, 'Bridge')).toContainText('running')
+    await expect(row(entry, "Router's Xray")).toContainText('running')
     await expect(row(entry, 'RouterOS')).toContainText('7.24.5')
     await expect(row(entry, 'RouterOS')).toContainText('Needs 7.20 or newer.')
     await expect(row(entry, 'Checked')).toContainText('2 min ago')
@@ -58,7 +58,7 @@ test.describe('the router\'s entry facts and routes', () => {
         const entry = panel(page, 'Entry')
         await expect(row(entry, 'Domestic link')).toContainText('missing')
         await expect(row(entry, 'VPN')).toContainText('missing')
-        await expect(row(entry, 'Bridge')).toContainText('stopped')
+        await expect(row(entry, "Router's Xray")).toContainText('stopped')
         // the address with no route says so; the one for downloads does not need one of these
         const routes = panel(page, 'Router routes')
         // the table and the phone's list are both in the page; one of them is shown
@@ -79,7 +79,7 @@ test.describe('the router\'s entry facts and routes', () => {
       'vpn-offline',
       async (page) => {
         await expect(row(panel(page, 'Entry'), 'VPN')).toContainText('WireGuard · offline')
-        await expect(row(panel(page, 'Entry'), 'Bridge')).toContainText('waiting')
+        await expect(row(panel(page, 'Entry'), "Router's Xray")).toContainText('waiting')
       },
     ],
     [

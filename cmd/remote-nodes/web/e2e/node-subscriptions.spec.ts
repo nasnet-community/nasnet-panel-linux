@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { PAGE, dialog, expect, test, toast } from './fixtures'
-import { addViaApi, fillToLimit, flipper, openNodeSubscriptions, pick, row } from './subs'
+import { addButton, addViaApi, fillToLimit, flipper, isTable, openNodeSubscriptions, pick, row } from './subs'
 
 const tile = (page: Page, label: string) => page.locator('main .grid > div').filter({ hasText: label })
 const add = (page: Page) => page.getByRole('button', { name: 'Add subscription' })
@@ -21,36 +21,36 @@ test("a working node's tab shows how many subscriptions are on it, who is online
   await expect(page.getByText(/\d+ of \d+ subscriptions/)).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'All subscriptions' })).toHaveAttribute('href', '#/subscriptions')
 
-  const rows: [name: string, status: string, sub: string, today: string, month: string][] = [
-    ['Ali', 'Online', '2 connections', '640 MB', '21.0 GB in 30 days'],
-    ['Dana', 'Active', 'last seen 2 days ago', '0 B', '600 MB in 30 days'],
-    ['Kian', 'Off', 'off on this node', '0 B', '5.2 GB in 30 days'],
-    ['Mina', 'Active', 'last seen 3 hours ago', '310 MB', '9.4 GB in 30 days'],
-    ['Parsa', 'Active', 'last seen yesterday', '0 B', '1.1 GB in 30 days'],
-    ['Reza', 'Online', '4 connections', '1.9 GB', '52.0 GB in 30 days'],
-    ['Sara', 'Online', '3 connections', '1.2 GB', '38.0 GB in 30 days'],
+  // the line under each name says how it is doing on this node
+  const rows: [name: string, status: string | RegExp, today: string, month: string][] = [
+    ['Ali', 'Online · 2 connections', '640 MB', '21.0 GB in 30 days'],
+    ['Dana', 'Offline · last seen 2 days ago', '0 B', '600 MB in 30 days'],
+    ['Kian', /Off(?! ·)/, '0 B', '5.2 GB in 30 days'],
+    ['Mina', 'Offline · last seen 3 hours ago', '310 MB', '9.4 GB in 30 days'],
+    ['Parsa', 'Offline · last seen yesterday', '0 B', '1.1 GB in 30 days'],
+    ['Reza', 'Online · 4 connections', '1.9 GB', '52.0 GB in 30 days'],
+    ['Sara', 'Online · 3 connections', '1.2 GB', '38.0 GB in 30 days'],
   ]
-  for (const [name, status, sub, today, month] of rows) {
+  for (const [name, status, today, month] of rows) {
     const r = row(page, name)
     await expect(r, name).toBeVisible()
-    await expect(r).toContainText(status)
-    await expect(r).toContainText(sub)
+    await expect(r.locator('[data-status]')).toHaveText(status)
     await expect(r).toContainText(`${today} today`)
     await expect(r).toContainText(month)
     await expect(flipper(page, name, 'Node 1')).toHaveAttribute('aria-checked', String(name !== 'Kian'))
-    await expect(page.getByRole('button', { name: `Actions for ${name}`, exact: true })).toBeVisible()
+    await expect(r.getByRole('button', { name: `Edit ${name}`, exact: true })).toBeVisible()
   }
   await expect(page.getByText('Showing 7 of 7 · sorted by name')).toBeVisible()
+  if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'On this node', 'Traffic', 'Limits', 'Actions'])
+  // a green dot beside the switch of one that is connected here
+  await expect(row(page, 'Sara').getByText('connected here')).toHaveCount(1)
+  await expect(row(page, 'Dana').getByText('connected here')).toHaveCount(0)
 
-  // one that is off here is muted, and has no link to share
+  // one that is off here is muted, and has no link to share: Edit is its only button
   await expect(row(page, 'Kian')).toHaveClass(/text-muted/)
-  await expect(row(page, 'Kian').getByRole('button', { name: 'Share', exact: true })).toHaveCount(0)
+  await expect(row(page, 'Kian').getByRole('button')).toHaveCount(1)
   await expect(row(page, 'Sara')).not.toHaveClass(/text-muted/)
   await expect(row(page, 'Sara').getByRole('button', { name: 'Share', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Actions for Kian' }).click()
-  const item = page.getByRole('menuitem', { name: /Share link/ })
-  await expect(item).toHaveAttribute('aria-disabled', 'true')
-  await expect(item).toContainText('Switch it on for this node first')
 })
 
 test("the unreachable node's tab says what it can't know", async ({ page }) => {
@@ -59,11 +59,14 @@ test("the unreachable node's tab says what it can't know", async ({ page }) => {
   await expect(tile(page, 'Online now')).toHaveText('Online now – unknown while unreachable', { useInnerText: true })
   for (const name of ['Sara', 'Reza', 'Dana', 'Kian']) {
     await expect(flipper(page, name, 'Node 2')).toHaveAttribute('aria-checked', 'true')
-    await expect(row(page, name)).toContainText('Unknown')
-    await expect(row(page, name)).toContainText('node unreachable')
-    await expect(row(page, name)).not.toContainText('Online')
+    await expect(row(page, name).locator('[data-status]')).toHaveText('Unknown · node unreachable')
+    // the switch is on for a node that isn't answering, and says when it counts
+    await expect(row(page, name)).toContainText('when it is back')
   }
-  for (const name of ['Ali', 'Mina', 'Parsa']) await expect(row(page, name)).toContainText('off on this node')
+  for (const name of ['Ali', 'Mina', 'Parsa']) {
+    await expect(row(page, name).locator('[data-status]')).toHaveText('Off')
+    await expect(row(page, name)).not.toContainText('when it is back')
+  }
   // a switch is accepted, and the toast says when it takes effect
   await flipper(page, 'Ali', 'Node 2').click()
   await expect(toast(page, 'Ali switched on for Node 2. It takes effect when the node is back.')).toBeVisible()
@@ -79,8 +82,7 @@ test('a switch turns a subscription off for this node only, with an Undo; the ti
   await expect(note).toBeVisible()
   await expect(tile(page, 'On this node')).toContainText('5 of 7')
   await expect(tile(page, 'On this node')).toContainText('2 are off')
-  await expect(row(page, 'Sara')).toContainText('Off')
-  await expect(row(page, 'Sara')).toContainText('off on this node')
+  await expect(row(page, 'Sara').locator('[data-status]')).toHaveText('Off')
   await expect(row(page, 'Sara')).toHaveClass(/text-muted/)
   await expect(row(page, 'Sara').getByRole('button', { name: 'Share', exact: true })).toHaveCount(0)
   await expect(tile(page, 'Online now')).toContainText('2')
@@ -114,7 +116,7 @@ test('adds a subscription from the node, which then shows in the list and the co
   await expect(d.getByRole('checkbox', { name: 'Node 2 unreachable' })).not.toBeChecked()
   await expect(d.getByRole('checkbox', { name: 'Node 3 installing' })).toBeDisabled()
   await d.getByLabel('Name').fill('Nika')
-  await d.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(d).click()
   await expect(toast(page, 'Nika added')).toBeVisible()
   const share = dialog(page, "Share Nika's link")
   await expect(share.locator('[data-link]')).toHaveText(/@203\.0\.113\.24:443\?.*#Nika$/)
@@ -135,7 +137,7 @@ test('edits and deletes from the node, and the tiles follow', async ({ page }) =
   await dialog(page, 'Edit Reza').getByLabel('Name').fill('Rezvan')
   await page.keyboard.press('Enter')
   await expect(toast(page, 'Renamed to Rezvan')).toBeVisible()
-  await expect(row(page, 'Rezvan')).toContainText('4 connections')
+  await expect(row(page, 'Rezvan')).toContainText('Online · 4 connections')
   await expect(row(page, 'Reza')).toHaveCount(0)
 
   await pick(page, 'Rezvan', 'Delete subscription')
@@ -170,7 +172,7 @@ test('with no subscriptions at all, the tab offers the first one', async ({ page
   for (let id = 1; id <= 7; id += 1) expect((await request.delete(`/api/subscriptions/${id}`, { headers: PAGE })).ok()).toBe(true)
   await page.goto('/#/nodes/1')
   await expect(page.getByRole('heading', { name: 'No subscriptions yet' })).toBeVisible()
-  await expect(page.getByText('Add a node first')).toHaveCount(0)
+  await expect(page.getByText('add a node first')).toHaveCount(0)
   await expect(tile(page, 'On this node')).toContainText('0 of 0')
   await expect(page.getByText(/^Showing/)).toHaveCount(0)
   await page.getByRole('button', { name: 'Add your first subscription' }).click()

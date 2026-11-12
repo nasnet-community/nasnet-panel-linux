@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { dialog, expect, test, toast } from './fixtures'
-import { fillToLimit, flipper, openNodeSubscriptions, openSubscriptions, row } from './subs'
+import { addButton, fillToLimit, flipper, openNodeSubscriptions, openSubscriptions, row } from './subs'
 
 // These only mean something at phone width; the other specs run there too, as the same flows.
 test.beforeEach(({ isMobile }) => {
@@ -17,8 +17,8 @@ const pastEdge = (page: Page) =>
   })
 
 const WORDS = {
-  en: { add: 'Add subscription', addTitle: 'Add a subscription', share: 'Share', node: 'Node', replace: 'Replace this link…', actions: 'Actions for Sara', edit: 'Edit', delete: 'Delete subscription' },
-  fa: { add: 'افزودن اشتراک', addTitle: 'افزودن اشتراک', share: 'اشتراک‌گذاری', node: 'نود', replace: 'جایگزینی این لینک…', actions: 'اقدام‌ها برای Sara', edit: 'ویرایش', delete: 'حذف اشتراک' },
+  en: { add: 'Add subscription', addTitle: 'Add a subscription', share: 'Share', show: 'Show', replace: 'Replace this link…', edit: 'Edit Sara', remove: 'Delete subscription…' },
+  fa: { add: 'افزودن اشتراک', addTitle: 'افزودن اشتراک', share: 'اشتراک‌گذاری', show: 'نمایش', replace: 'جایگزینی این لینک…', edit: 'ویرایش Sara', remove: 'حذف اشتراک…' },
 }
 
 for (const lang of ['en', 'fa'] as const) {
@@ -40,17 +40,21 @@ for (const lang of ['en', 'fa'] as const) {
       await row(page, 'Sara').getByRole('button', { name: w.share, exact: true }).click()
       await expect(page.locator('[data-link]')).toBeVisible()
       expect(await overflow(page)).toBeLessThanOrEqual(0)
+      // the whole link, which is long
+      await page.getByRole('button', { name: w.show, exact: true }).click()
+      expect(await overflow(page)).toBeLessThanOrEqual(0)
       await page.getByRole('button', { name: w.replace }).click()
       await expect(page.getByRole('alertdialog')).toBeVisible()
       expect(await overflow(page)).toBeLessThanOrEqual(0)
       await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
 
-      // the menu, and the edit dialog it opens
-      await page.getByRole('button', { name: w.actions, exact: true }).click()
-      expect(await overflow(page)).toBeLessThanOrEqual(0)
-      await page.getByRole('menuitem', { name: w.edit }).click()
+      // the edit dialog, and the question its delete button asks
+      await page.getByRole('button', { name: w.edit, exact: true }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
+      expect(await overflow(page)).toBeLessThanOrEqual(0)
+      await page.getByRole('button', { name: w.remove }).click()
+      await expect(page.getByRole('alertdialog')).toBeVisible()
       expect(await overflow(page)).toBeLessThanOrEqual(0)
       await page.keyboard.press('Escape')
     }
@@ -64,11 +68,10 @@ test('the controls are big enough to tap', async ({ page }) => {
     ['the unreachable one', flipper(page, 'Sara', 'Node 2')],
     ['Share', row(page, 'Sara').getByRole('button', { name: 'Share', exact: true })],
     ['Edit', row(page, 'Sara').getByRole('button', { name: 'Edit Sara', exact: true })],
-    ['the menu', page.getByRole('button', { name: 'Actions for Sara' })],
     ['Add subscription', page.getByRole('button', { name: 'Add subscription' })],
   ]
   for (const [what, c] of controls) expect(await height(c), what).toBeGreaterThanOrEqual(44)
-  // every row of switches is as tall as a finger
+  // every switch sits in a cell as tall as a finger, two to a row
   for (const li of await row(page, 'Sara').locator('ul > li').all()) expect(await height(li)).toBeGreaterThanOrEqual(44)
 
   await page.getByRole('button', { name: 'Add subscription' }).click()
@@ -83,7 +86,7 @@ test('the controls are big enough to tap', async ({ page }) => {
     ['a node to tick', add.locator('label').filter({ hasText: 'Node 1' })],
     ['a node that is down', add.locator('label').filter({ hasText: 'Node 2' })],
     ['Cancel', add.getByRole('button', { name: 'Cancel' })],
-    ['the add button', add.getByRole('button', { name: 'Add subscription' })],
+    ['the add button', addButton(add)],
     ['close', add.getByRole('button', { name: 'Close', exact: true })],
   ] as [string, Locator][])
     expect(await height(c), what).toBeGreaterThanOrEqual(44)
@@ -93,9 +96,23 @@ test('the controls are big enough to tap', async ({ page }) => {
   const share = dialog(page, "Share Sara's link")
   await expect(share.locator('[data-link]')).toBeVisible()
   for (const [what, c] of [
-    ['the node picker', share.getByRole('group', { name: 'Node' })],
+    ['the tabs', share.getByRole('tablist', { name: 'Place' })],
+    ['Show', share.getByRole('button', { name: 'Show', exact: true })],
     ['Copy link', share.getByRole('button', { name: 'Copy link' })],
+    ['Save QR image', share.getByRole('button', { name: 'Save QR image' })],
+    ['Copy all links', share.getByRole('button', { name: 'Copy all 2 links' })],
     ['Replace this link', share.getByRole('button', { name: 'Replace this link…' })],
+  ] as [string, Locator][])
+    expect(await height(c), what).toBeGreaterThanOrEqual(44)
+  await page.keyboard.press('Escape')
+
+  // the edit dialog holds what the row's menu did
+  await row(page, 'Sara').getByRole('button', { name: 'Edit Sara', exact: true }).click()
+  const edit = dialog(page, 'Edit Sara')
+  for (const [what, c] of [
+    ['Reset usage', edit.getByRole('button', { name: 'Reset usage…' })],
+    ['Delete subscription', edit.getByRole('button', { name: 'Delete subscription…' })],
+    ['Save', edit.getByRole('button', { name: 'Save' })],
   ] as [string, Locator][])
     expect(await height(c), what).toBeGreaterThanOrEqual(44)
 })
@@ -105,19 +122,30 @@ test("a node's tab has its controls big enough too", async ({ page }) => {
   const controls: [string, Locator][] = [
     ['a switch', flipper(page, 'Sara', 'Node 1')],
     ['Share', row(page, 'Sara').getByRole('button', { name: 'Share', exact: true })],
-    ['the menu', page.getByRole('button', { name: 'Actions for Sara' })],
+    ['Edit', row(page, 'Sara').getByRole('button', { name: 'Edit Sara', exact: true })],
     ['All subscriptions', page.getByRole('link', { name: 'All subscriptions' })],
     ['Add subscription', page.getByRole('button', { name: 'Add subscription' })],
   ]
   for (const [what, c] of controls) expect(await height(c), what).toBeGreaterThanOrEqual(44)
 })
 
-test('cards stack in one column, the switches of each in a list, the tiles two by two', async ({ page }) => {
+test('cards stack in one column, the switches of each two to a row, the tiles two by two', async ({ page }) => {
   await openSubscriptions(page)
   const boxes = await Promise.all(['Ali', 'Dana', 'Kian'].map((n) => row(page, n).boundingBox()))
   expect(new Set(boxes.map((b) => Math.round(b!.x))).size).toBe(1)
   expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.y + boxes[0]!.height - 1)
   expect(boxes[2]!.y).toBeGreaterThan(boxes[1]!.y + boxes[1]!.height - 1)
+  // the places of a card: Node 1 and Node 2 side by side, each with its switch, and the status line above them
+  const cells = await Promise.all((await row(page, 'Sara').locator('ul > li').all()).map((li) => li.boundingBox()))
+  expect(cells).toHaveLength(2)
+  expect(Math.round(cells[0]!.y)).toBe(Math.round(cells[1]!.y))
+  expect(cells[1]!.x).toBeGreaterThan(cells[0]!.x + cells[0]!.width - 1)
+  await expect(row(page, 'Sara').locator('[data-status]')).toHaveText('Online on Node 1 · 3 connections')
+  // the node that is down says so to a screen reader, and under its name when a switch waits for it
+  await expect(row(page, 'Sara').locator('ul > li').nth(1)).toContainText(/Node 2\s*unreachable\s*when it is back/)
+  await expect(row(page, 'Ali').locator('ul > li').nth(1)).not.toContainText('when it is back')
+  // one Share button and one Edit button to a card
+  await expect(row(page, 'Sara').getByRole('button')).toHaveCount(2)
   const tiles = await page.locator('main .grid > div').all()
   expect(tiles).toHaveLength(4)
   const t = await Promise.all(tiles.map((x) => x.boundingBox()))
@@ -137,10 +165,13 @@ test('the share sheet fits the screen, and everything in it can be reached', asy
   const box = (await d.boundingBox())!
   expect(box.height).toBeLessThanOrEqual(view.height * 0.92 + 2)
   expect(box.y).toBeGreaterThanOrEqual(0)
-  // the long link wraps inside the sheet
-  const link = (await d.locator('[data-link]').boundingBox())!
-  expect(link.x).toBeGreaterThanOrEqual(box.x)
-  expect(link.x + link.width).toBeLessThanOrEqual(box.x + box.width)
+  // the long link stays inside the sheet, on one line and shown whole
+  for (const show of [false, true]) {
+    if (show) await d.getByRole('button', { name: 'Show', exact: true }).click()
+    const link = (await d.locator('[data-link]').boundingBox())!
+    expect(link.x).toBeGreaterThanOrEqual(box.x)
+    expect(link.x + link.width).toBeLessThanOrEqual(box.x + box.width)
+  }
   // Replace is at the foot: scroll to it, and it is on the screen
   const replace = d.getByRole('button', { name: 'Replace this link…' })
   await replace.scrollIntoViewIfNeeded()
@@ -165,7 +196,7 @@ test('a toast moves up while a sheet is open, clear of its buttons, and sits at 
   await page.getByRole('button', { name: 'Add subscription' }).click()
   const add = dialog(page, 'Add a subscription')
   await add.getByLabel('Name').fill('Nika')
-  await add.getByRole('button', { name: 'Add subscription' }).click()
+  await addButton(add).click()
   const note = toast(page, 'Nika added')
   await expect(note).toBeVisible()
   const share = dialog(page, "Share Nika's link")

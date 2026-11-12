@@ -75,11 +75,16 @@ export type StatusKey = 'online' | 'active' | 'off' | 'unknown' | 'limit' | 'exp
 
 export interface Status {
   key: StatusKey
-  /** the badge's word */
+  /** the word for it: Online, Offline, Off, Stopped, Unknown */
   label: string
-  /** the line under it */
+  /** where, when the word needs it: "on This router", "everywhere"; else '' */
+  where: string
+  /** what there is to add: its connections, when it was last seen, why it stopped; else '' */
   sub: string
 }
+
+/** A status in one line, as it reads under a subscription's name: "Online on This router · 2 connections". */
+export const statusText = (s: Status) => [[s.label, s.where].filter(Boolean).join(' '), s.sub].filter(Boolean).join(' · ')
 
 const WORD: Record<StatusKey, MsgKey> = {
   online: 'subs.status.online',
@@ -90,34 +95,40 @@ const WORD: Record<StatusKey, MsgKey> = {
   expired: 'subs.status.expired',
 }
 
+/** Why the hub stopped a subscription, in a few words. */
+const stoppedWhy = (s: Pick<Subscription, 'stopped' | 'expiresAt'>, t: T, fmt: Format) =>
+  s.stopped === 'limit' ? t('subs.sub.limitReached') : s.expiresAt ? t('subs.sub.expiredOn', { date: fmt.date(s.expiresAt) }) : t('subs.sub.expired')
+
 /**
- * Where a subscription stands across all places: online (and where), active (switched on,
- * nobody connected), off everywhere, or unknown while its places can't be reached.
+ * Where a subscription stands across all places: online (where, and on how many connections), offline
+ * (switched on, nobody connected), off everywhere, stopped by the hub (and why), or unknown while its
+ * places can't be reached.
  */
 export function subscriptionStatus(s: Subscription, places: Place[], t: T, fmt: Format, lang: Lang, now = Date.now()): Status {
-  const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
+  const status = (key: StatusKey, sub: string, where = ''): Status => ({ key, label: t(WORD[key]), where, sub })
   // the router's own entry is among the places while it is switched on
   const router = s.local !== null
   // stopped by the hub: it says more than "off", and the switches are still as they were
-  if (s.stopped === 'limit') return status('limit', t('subs.sub.limitUsed', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }))
-  if (s.stopped === 'expired') return status('expired', s.expiresAt ? t('subs.sub.expiredOn', { date: fmt.date(s.expiresAt) }) : '')
-  if (!s.nodes.some((n) => n.enabled) && !s.local?.enabled) return status('off', t(router ? 'subs.sub.offEverywhere' : 'subs.sub.offEvery'))
+  if (s.stopped) return status(s.stopped, stoppedWhy(s, t, fmt))
+  if (!s.nodes.some((n) => n.enabled) && !s.local?.enabled) return status('off', '', t(router ? 'subs.where.everywhere' : 'subs.where.everyNode'))
   if (s.online === true) {
     const where = places.filter((p) => onlineAt(s, p.id)).map((p) => p.name)
-    return status('online', where.length ? onNodes(t, lang, where, router) : '')
+    const connections = (s.local?.online ? (s.local.connections ?? 0) : 0) + s.nodes.reduce((n, x) => n + (x.online ? (x.connections ?? 0) : 0), 0)
+    return status('online', connections > 0 ? t('subs.sub.connections', { n: connections }) : '', where.length ? onNodes(t, lang, where, router) : '')
   }
   if (s.online === false) return status('active', lastSeen(t, fmt, s.lastSeenAt, now))
   return status('unknown', s.lastSeenAt ? t('subs.sub.nodeDown') : t('subs.sub.never'))
 }
 
 /**
- * The same for one place's list: off here, online (with its connections), active, or unknown while the
- * place isn't answering. `router`: the list is the router's own entry's, and not a node's.
+ * The same for one place's list: off (the switch beside it says where), online (with its connections),
+ * offline, stopped, or unknown while the place isn't answering. `router`: the list is the router's own
+ * entry's, and not a node's.
  */
 export function nodeSubscriptionStatus(s: NodeSubscription, t: T, fmt: Format, now = Date.now(), router = false): Status {
-  const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), sub })
-  if (!s.enabled) return status('off', t(router ? 'subs.sub.offRouter' : 'subs.sub.offHere'))
-  if (s.stopped === 'limit' || s.stopped === 'expired') return status(s.stopped, '')
+  const status = (key: StatusKey, sub: string): Status => ({ key, label: t(WORD[key]), where: '', sub })
+  if (!s.enabled) return status('off', '')
+  if (s.stopped) return status(s.stopped, stoppedWhy(s, t, fmt))
   if (s.online === true) return status('online', t('subs.sub.connections', { n: s.connections ?? 0 }))
   if (s.online === false) return status('active', lastSeen(t, fmt, s.lastSeenAt, now))
   return status('unknown', s.lastSeenAt ? t(router ? 'subs.sub.routerDown' : 'subs.sub.nodeDown') : t('subs.sub.never'))
@@ -238,11 +249,36 @@ export function expiryParts(t: T, fmt: Format, iso: string, now = Date.now()): {
   return { date: fmt.date(iso), when: fmt.relative(iso, now), tone: left <= 7 * DAY ? 'warn' : 'muted' }
 }
 
-/** "Expires 5 Dec 2026 · in 12 days", or "Expired 5 Dec 2026"; empty with no end date. */
-export function expiryText(t: T, fmt: Format, iso: string | null, now = Date.now()): string {
-  if (!iso) return ''
-  if (Date.parse(iso) <= now) return t('subs.quota.expiredOn', { date: fmt.date(iso) })
-  return t('subs.quota.expiresIn', { date: fmt.date(iso), when: fmt.relative(iso, now) })
+/** What the Limits column says of a subscription: its headline, how full its bar is, and the small line under it. */
+export interface Limits {
+  /** "62.0 GB of 100 GB", "Ends 14 Nov 2026", "Ended 14 Nov 2026", or "None" */
+  head: string
+  /** how full the traffic limit is, 0 to 100; null with no traffic limit */
+  pct: number | null
+  /** "38.0 GB left · ends 22 Dec 2026, in 40 days", "in 2 days", "used up"; '' when there is nothing to add */
+  foot: string
+  /** the small line's colour: calm, a warning in an end date's last week, red once something has run out */
+  tone: 'muted' | 'warn' | 'bad'
+}
+
+type Limited = Pick<Subscription, 'trafficLimit' | 'trafficUsed' | 'expiresAt'>
+
+/** A traffic limit and an end date as one cell: the limit leads when there is one, else the date. */
+export function limitsOf(s: Limited, t: T, fmt: Format, now = Date.now()): Limits {
+  const limited = s.trafficLimit > 0
+  const left = s.trafficLimit - s.trafficUsed
+  const date = s.expiresAt ? expiryParts(t, fmt, s.expiresAt, now) : null
+  const ended = date?.tone === 'bad'
+  if (!limited && !date) return { head: t('subs.limits.none'), pct: null, foot: '', tone: 'muted' }
+  if (!limited && date) return { head: t(ended ? 'subs.limits.ended' : 'subs.limits.ends', { date: date.date }), pct: null, foot: fmt.relative(s.expiresAt!, now), tone: date.tone }
+  const room = left > 0 ? t('subs.quota.left', { size: fmt.bytes(left) }) : t('subs.quota.usedUp')
+  const end = date ? t(ended ? 'subs.limits.endedOn' : 'subs.limits.endsOn', { date: date.date, when: fmt.relative(s.expiresAt!, now) }) : ''
+  return {
+    head: t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }),
+    pct: usedPercent(s.trafficUsed, s.trafficLimit),
+    foot: [room, end].filter(Boolean).join(' · '),
+    tone: left <= 0 || ended ? 'bad' : (date?.tone ?? 'muted'),
+  }
 }
 
 /** What the two limit fields hold. `limit` is bytes and `expiresAt` an instant; null is "none". A bad field is flagged and read as none. */

@@ -11,15 +11,13 @@ import { nodeSubscriptionStatus, sortByName, switchedText, trafficText, upDown }
 import { useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
-  EditButton,
   EmptyState,
-  ExpiryCell,
-  LimitCell,
+  LimitsCell,
   Name,
+  PlaceSwitch,
   QuotaSummary,
-  RowMenu,
-  ShareButton,
-  StatusBadge,
+  RowButtons,
+  StatusLine,
   Tile,
   Tiles,
   Updated,
@@ -91,23 +89,16 @@ export function PlaceSubscriptions({ place: node }: { place: ListPlace }) {
     const actions: RowActions = {
       share: () => dialogs.share({ id: s.id, name: s.name, places: [{ id: node.id, name: node.name, unreachable: down }] }),
       edit: () => dialogs.edit(s),
-      reset: () => dialogs.reset(s),
-      remove: () => dialogs.remove(s),
     }
     return {
       s,
       status: nodeSubscriptionStatus(s, t, fmt, Date.now(), router),
       traffic: trafficText(t, fmt, s.todayUp + s.todayDown, s.monthUp + s.monthDown),
       actions,
-      // a link exists only while it is switched on here
-      shareOff: s.enabled ? null : t(router ? 'subs.menu.shareOffRouter' : 'subs.menu.shareOffHere'),
       switch: (
-        <Switch
-          checked={s.enabled}
-          disabled={pending.has(s.id)}
-          onChange={(on) => void flip(s, on)}
-          label={t('subs.switch', { name: s.name, node: node.name })}
-        />
+        <PlaceSwitch online={s.enabled && !s.stopped && s.online === true} later={s.enabled && down && !s.stopped}>
+          <Switch checked={s.enabled} disabled={pending.has(s.id)} onChange={(on) => void flip(s, on)} label={t('subs.switch', { name: s.name, node: node.name })} />
+        </PlaceSwitch>
       ),
     }
   })
@@ -173,35 +164,27 @@ export function PlaceSubscriptions({ place: node }: { place: ListPlace }) {
                       {t('subs.col.subscription')}
                     </th>
                     <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.status')}
+                      {t(router ? 'subs.col.onRouter' : 'subs.col.onNode')}
                     </th>
                     <th scope="col" className="px-3 py-2.5 text-start font-medium">
                       {t('subs.col.traffic')}
                     </th>
                     <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.limit')}
+                      {t('subs.col.limits')}
                     </th>
-                    <th scope="col" className="px-3 py-2.5 text-start font-medium">
-                      {t('subs.col.expires')}
+                    <th scope="col" className="px-3 py-2.5">
+                      <span className="sr-only">{t('subs.col.actions')}</span>
                     </th>
-                    <th scope="col" className="px-3 py-2.5" />
                   </tr>
                 </thead>
                 <tbody>
-                  {view.map(({ s, status, traffic, actions, shareOff, switch: toggle }) => (
+                  {view.map(({ s, status, traffic, actions, switch: toggle }) => (
                     <tr key={s.id} className={cx('border-b border-border last:border-0', !s.enabled && 'text-muted')}>
                       <th scope="row" className="py-3 pe-3 ps-4 text-start font-medium">
-                        <Name className="max-w-[240px]">{s.name}</Name>
+                        <Name className="max-w-[260px]">{s.name}</Name>
+                        <StatusLine status={status} className="mt-0.5" />
                       </th>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2.5">
-                          {toggle}
-                          <div className="flex min-w-0 flex-col gap-0.5">
-                            <StatusBadge status={status} />
-                            <span className="text-xs text-faint">{status.sub}</span>
-                          </div>
-                        </div>
-                      </td>
+                      <td className="px-3 py-3 align-top">{toggle}</td>
                       <td className="tabular whitespace-nowrap px-3 py-3">
                         <div>
                           {traffic.today} <span className="text-xs text-faint">{t('time.today')}</span>
@@ -209,17 +192,11 @@ export function PlaceSubscriptions({ place: node }: { place: ListPlace }) {
                         <div className="text-xs text-faint">{traffic.month}</div>
                       </td>
                       <td className="px-3 py-3">
-                        <LimitCell s={s} />
+                        <LimitsCell s={s} />
                       </td>
                       <td className="px-3 py-3">
-                        <ExpiryCell s={s} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex justify-end gap-1">
-                          {s.enabled && <ShareButton onClick={actions.share} />}
-                          <EditButton name={s.name} onClick={actions.edit} />
-                          <RowMenu name={s.name} shareOff={shareOff} actions={actions} />
-                        </div>
+                        {/* a link exists only while it is switched on here */}
+                        <RowButtons name={s.name} shareable={s.enabled} actions={actions} />
                       </td>
                     </tr>
                   ))}
@@ -230,24 +207,21 @@ export function PlaceSubscriptions({ place: node }: { place: ListPlace }) {
 
           {/* cards on phones */}
           <ul aria-label={t('tabs.subscriptions')} className="flex flex-col gap-3 md:hidden">
-            {view.map(({ s, status, traffic, actions, shareOff, switch: toggle }) => (
+            {view.map(({ s, status, traffic, actions, switch: toggle }) => (
               <li key={s.id} className={cx('flex flex-col gap-2.5 rounded-lg border border-border bg-card p-4', !s.enabled && 'text-muted')}>
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      <Name>{s.name}</Name>
+                    </div>
+                    <StatusLine status={status} className="mt-0.5" />
+                  </div>
                   {toggle}
-                  <div className="min-w-0 flex-1 font-medium">
-                    <Name>{s.name}</Name>
-                  </div>
-                  <StatusBadge status={status} />
-                  <div className="-my-2 -me-2">
-                    <RowMenu name={s.name} shareOff={shareOff} actions={actions} />
-                  </div>
                 </div>
-                <div className="text-xs text-faint">{status.sub}</div>
                 <QuotaSummary s={s} />
                 <div className="flex items-end gap-2">
                   <div className="tabular min-w-0 flex-1 text-xs text-muted">{traffic.line}</div>
-                  {s.enabled && <ShareButton className="-my-1" onClick={actions.share} />}
-                  <EditButton name={s.name} className="-my-1" onClick={actions.edit} />
+                  <RowButtons name={s.name} shareable={s.enabled} actions={actions} className="-my-1" />
                 </div>
               </li>
             ))}

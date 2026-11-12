@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { dialog, expect, test, toast } from './fixtures'
-import { contrast, flipper, openNodeSubscriptions, openSubscriptions, row } from './subs'
+import { addButton, contrast, flipper, isTable, openNodeSubscriptions, openSubscriptions, row } from './subs'
 
 const tile = (page: Page, label: string) => page.locator('main .grid > div').filter({ hasText: label })
 
@@ -36,9 +36,14 @@ for (const theme of ['dark', 'light'] as const) {
       const mina = row(page, 'Mina')
       await check(page, theme, {
         'a name': sara.getByText('Sara', { exact: true }),
-        'a status line': sara.getByText('on Node 1'),
-        'an online badge': sara.getByText('Online', { exact: true }),
-        'an active badge': mina.getByText('Active', { exact: true }),
+        'an online line': sara.locator('[data-status]'),
+        'an offline line': mina.locator('[data-status]'),
+        'a switch that waits': sara.getByText('when it is back'),
+        'a limit': sara.getByText('62.0 GB of 100 GB'),
+        'what is left of it': sara.getByText(/38\.0 GB left/),
+        // a card leaves out what a table's columns have to say
+        ...(isTable(page) && { 'no limits': mina.getByText('None', { exact: true }), 'the group of switches': page.getByRole('columnheader', { name: 'Switched on for' }) }),
+        'the footer': page.getByText('A green dot beside a switch'),
         'a traffic line': mina.getByText('9.4 GB in 30 days'),
         'a share button': sara.getByRole('button', { name: 'Share', exact: true }),
         'a node that is down': page.getByText('unreachable').first(),
@@ -57,18 +62,17 @@ for (const theme of ['dark', 'light'] as const) {
       const kian = row(page, 'Kian')
       await check(page, theme, {
         'a name': row(page, 'Sara').getByText('Sara', { exact: true }),
-        'a connection count': row(page, 'Sara').getByText('3 connections'),
+        'an online line': row(page, 'Sara').locator('[data-status]'),
         'an off name': kian.getByText('Kian', { exact: true }),
-        'an off badge': kian.getByText('Off', { exact: true }),
-        'an off line': kian.getByText('off on this node'),
+        'an off line': kian.locator('[data-status]'),
         'an off traffic line': kian.getByText('5.2 GB in 30 days'),
         'the link to all': page.getByRole('link', { name: 'All subscriptions' }),
         'the footer': page.getByText(/^Showing/),
       })
       await openNodeSubscriptions(page, 2)
       await check(page, theme, {
-        'an unknown badge': row(page, 'Sara').getByText('Unknown', { exact: true }),
-        'an unknown line': row(page, 'Sara').getByText('node unreachable'),
+        'an unknown line': row(page, 'Sara').locator('[data-status]'),
+        'a switch that waits': row(page, 'Sara').getByText('when it is back'),
         'a tile that cannot say': tile(page, 'Online now').getByText('unknown while unreachable'),
       })
     })
@@ -77,7 +81,7 @@ for (const theme of ['dark', 'light'] as const) {
       await openSubscriptions(page)
       await page.getByRole('button', { name: 'Add subscription' }).click()
       const add = dialog(page, 'Add a subscription')
-      await add.getByRole('button', { name: 'Add subscription' }).click()
+      await addButton(add).click()
       await expect(add).toContainText('Give the subscription a name.')
       await check(page, theme, {
         'the description': add.getByText(/places left/),
@@ -86,20 +90,24 @@ for (const theme of ['dark', 'light'] as const) {
         'a node that is down': add.getByText('unreachable'),
         'a node being installed': add.getByText('installing'),
         'a hint': add.getByText('Each node gives it its own link.'),
-        'the dialog button': add.getByRole('button', { name: 'Add subscription' }),
+        'the dialog button': addButton(add),
       })
       await page.keyboard.press('Escape')
 
       await row(page, 'Sara').getByRole('button', { name: 'Share', exact: true }).click()
-      const share = dialog(page, "Share Sara's link")
+      const share = dialog(page, "Share Sara's links")
       await expect(share.locator('[data-link]')).toBeVisible()
       await check(page, theme, {
         'the title': share.getByRole('heading'),
-        'the description': share.getByText('Anyone with this link can use this subscription.'),
-        'the chosen node': share.getByRole('button', { name: 'Node 1', exact: true }),
-        'the other node': share.getByRole('button', { name: 'Node 2 unreachable' }),
+        'the description': share.getByText('One link per place. Anyone with a link can use this subscription.'),
+        'the chosen node': share.getByRole('tab', { name: 'Node 1', exact: true }),
+        'the other node': share.getByRole('tab', { name: 'Node 2 unreachable' }),
         'the link': share.locator('[data-link]'),
+        'the show button': share.getByRole('button', { name: 'Show', exact: true }),
         'the copy button': share.getByRole('button', { name: 'Copy link' }),
+        'the image button': share.getByRole('button', { name: 'Save QR image' }),
+        'the note on all links': share.getByText('One paste adds every link, so the app can use another place.'),
+        'the button for all links': share.getByRole('button', { name: 'Copy all 2 links' }),
         'the note': share.getByText('Any app that opens vless:// links can use it.'),
         'the replace note': share.getByText('The old link stops working once it is replaced.'),
         'the replace button': share.getByRole('button', { name: 'Replace this link…' }),

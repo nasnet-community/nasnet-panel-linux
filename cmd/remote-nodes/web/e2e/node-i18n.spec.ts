@@ -107,7 +107,7 @@ test.describe('the Status tab in Persian', () => {
     await expect(page.getByText(/^آخرین گزارش [۰-۹]+ ثانیه پیش$/)).toBeVisible()
     await expect(verdictChip(page, 'پورتال', 'در حال گوش دادن')).toBeVisible()
     await expect(verdictChip(page, 'تونل', /[۰-۹]+ روز و [۰-۹]+ ساعت برقرار/)).toBeVisible()
-    await expect(verdictChip(page, 'بریج', 'در حال اجرا')).toBeVisible()
+    await expect(verdictChip(page, 'Xray روتر', 'در حال اجرا')).toBeVisible()
     await expect(verdictChip(page, 'وی پی ان', 'وایرگارد')).toBeVisible()
     // none of the verdict's words has a Latin digit
     expect(await text(page, 'main section')).not.toMatch(LATIN_DIGITS)
@@ -176,7 +176,7 @@ test.describe('the Status tab in Persian', () => {
     await openNode(page, 2, 'status')
     await expect(page.getByRole('heading', { level: 2, name: 'روتر به این نود نمی‌رسد' })).toBeVisible()
     await expect(page.getByText('آخرین گزارش ۲۲ دقیقه پیش. روتر به این نود نمی‌رسد، پس این عددها قدیمی‌اند.')).toBeVisible()
-    for (const label of ['پورتال', 'تونل', 'بریج', 'وی پی ان']) await expect(verdictChip(page, label, '–')).toBeVisible()
+    for (const label of ['پورتال', 'تونل', 'Xray روتر', 'وی پی ان']) await expect(verdictChip(page, label, '–')).toBeVisible()
     await expect(page.getByText('در ۱۵ دقیقهٔ اخیر داده‌ای ثبت نشده است.')).toBeVisible()
   })
 })

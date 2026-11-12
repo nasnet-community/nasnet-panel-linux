@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { DatePicker } from '../components/DatePicker'
-import { RotateCcw } from '../components/icons'
+import { RotateCcw, Trash2 } from '../components/icons'
 import { Button, Confirm, Dialog, ErrorBox, Field, Input, Notice, cx, useToast } from '../components/ui'
 import { useErrorText, useLang } from '../i18n'
 import { ApiError, MAX_NAME_LENGTH, subscriptions, type PlaceId, type Subscription, type SubscriptionPatch } from '../lib/api'
@@ -212,7 +212,8 @@ function AddSubscription({
         <>
           <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form="add-subscription" busy={busy}>
-            {t('subs.add')}
+            {/* with a place ticked its link is ready at once, and sharing it is the next thing */}
+            {(nodes ?? []).some((n) => ticked.has(n.id) && !n.installing) ? t('subs.add.andShare') : t('subs.add')}
           </Button>
         </>
       }
@@ -260,9 +261,10 @@ function AddSubscription({
 /**
  * Edit: the name, the traffic limit and the end date in one go. Only what changed is sent, so an
  * unchanged form asks the hub nothing, and a subscription whose date has passed can be renamed
- * without that date being refused. A stopped one says why, and what starts it again.
+ * without that date being refused. A stopped one says why, and what starts it again. Resetting its
+ * usage and deleting it start here too, each with its own confirmation.
  */
-function EditSubscription({ sub, onClose, onSaved, onReset }: { sub: Editable; onClose: () => void; onSaved: () => void; onReset: () => void }) {
+function EditSubscription({ sub, onClose, onSaved, onReset, onDelete }: { sub: Editable; onClose: () => void; onSaved: () => void; onReset: () => void; onDelete: () => void }) {
   const { t, fmt } = useLang()
   const toast = useToast()
   const initialDay = sub.expiresAt ? localDay(sub.expiresAt) : ''
@@ -330,6 +332,11 @@ function EditSubscription({ sub, onClose, onSaved, onReset }: { sub: Editable; o
             <RotateCcw className="h-4 w-4" /> {t('subs.edit.reset')}
           </Button>
         </div>
+        <div className="flex justify-start border-t border-border pt-3">
+          <Button size="sm" variant="ghost" className="text-bad-text" onClick={onDelete}>
+            <Trash2 className="h-4 w-4" /> {t('subs.edit.delete')}
+          </Button>
+        </div>
         {errors.error && <ErrorBox>{errors.error}</ErrorBox>}
       </NameForm>
     </Dialog>
@@ -337,7 +344,8 @@ function EditSubscription({ sub, onClose, onSaved, onReset }: { sub: Editable; o
 }
 
 /**
- * The dialogs of the subscription screens, and how to open each: add, share, edit, reset usage, delete.
+ * The dialogs of the subscription screens, and how to open each: add, share and edit. Reset usage and
+ * delete are reached from the Edit dialog.
  * `nodes` are the places to choose from when adding (the nodes, and the router's own entry while it is
  * on) and the names a created subscription's share dialog shows; `onChanged` runs after anything was
  * added, edited, reset or deleted, to reload the list.
@@ -373,8 +381,9 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
             onChanged()
             close()
           }}
-          // the confirm takes the dialog's place, and the list shows the new count after it
+          // a confirm takes the dialog's place, and the list shows what came of it
           onReset={() => setModal({ kind: 'reset', sub: modal.sub })}
+          onDelete={() => setModal({ kind: 'delete', sub: modal.sub })}
         />
       )}
       {modal.kind === 'reset' && (
@@ -399,7 +408,7 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
         <Confirm
           danger
           title={t('subs.delete.title', { name: modal.sub.name })}
-          action={t('subs.menu.delete')}
+          action={t('subs.delete.action')}
           onClose={close}
           onConfirm={async () => {
             try {
@@ -423,7 +432,5 @@ export function useSubscriptionDialogs({ nodes, count, max, onChanged }: { nodes
     add: () => setModal({ kind: 'add' }),
     share: (target: ShareTarget) => setModal({ kind: 'share', target }),
     edit: (sub: Editable) => setModal({ kind: 'edit', sub }),
-    reset: (sub: Named) => setModal({ kind: 'reset', sub }),
-    remove: (sub: Named) => setModal({ kind: 'delete', sub }),
   }
 }

@@ -211,16 +211,16 @@ describe('the notes on the node page', () => {
     expect(only(bad('already ends in a stop.')).detail).toBe('Already ends in a stop.')
   })
 
-  it("say the router's bridge is not running, and that it comes back by itself", () => {
+  it("say the router's Xray is not running, and that it comes back by itself", () => {
     const n = only(node({ tunnel: tunnel({ state: 'off', reason: 'bridge_down' }) }))
     expect(n).toEqual({
       id: 'bridgeDown',
       tone: 'warn',
-      title: "The router's bridge is not running",
-      detail: 'The bridge on this router carries the tunnel to this node. The plugin starts it again by itself.',
+      title: "The router's Xray is not running",
+      detail: "The router's Xray carries the tunnel to this node. The plugin starts it again by itself.",
       acts: [],
     })
-    expect(badge(node({ tunnel: tunnel({ state: 'off', reason: 'bridge_down' }) }))).toEqual({ tone: 'warn', label: 'Needs attention', reason: "The router's bridge is not running" })
+    expect(badge(node({ tunnel: tunnel({ state: 'off', reason: 'bridge_down' }) }))).toEqual({ tone: 'warn', label: 'Needs attention', reason: "The router's Xray is not running" })
   })
 
   it('say the tunnel is down, or that the first report is awaited', () => {

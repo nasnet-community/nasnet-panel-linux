@@ -5,18 +5,21 @@ import { local as localApi, type HandshakeCheck, type Local } from '../lib/api'
 import { normalizeTarget, validServerName } from '../lib/node'
 import { Impact, LinksNotice } from './NodeDialogs'
 
+/** Where a changed entry goes. `links`: the change made every link of the entry new. */
+type Changed = (fresh: Local, links?: boolean) => void
+
 /** What every dialog here gets: the entry as it is, a way out, and where the changed entry goes. */
 interface Props {
   local: Local
   onClose: () => void
-  onChanged: (fresh: Local) => void
+  onChanged: Changed
 }
 
 /** A confirmation's call: the changed entry goes to the page with a toast, a refusal stays in the dialog in the page's words. */
-function useApply(onChanged: (fresh: Local) => void) {
+function useApply(onChanged: Changed) {
   const errorText = useErrorText()
   const toast = useToast()
-  return (call: () => Promise<Local>, done: string) => async () => {
+  return (call: () => Promise<Local>, done: string, links = false) => async () => {
     let fresh: Local
     try {
       fresh = await call()
@@ -25,7 +28,7 @@ function useApply(onChanged: (fresh: Local) => void) {
       throw new Error(errorText(e))
     }
     toast(done)
-    onChanged(fresh)
+    onChanged(fresh, links)
   }
 }
 
@@ -62,7 +65,7 @@ export function NewPortDialog({ local, onClose, onChanged }: Props) {
   const { t } = useLang()
   const apply = useApply(onChanged)
   return (
-    <Confirm title={t('router.port.title')} action={t('router.port.action')} onClose={onClose} onConfirm={apply(localApi.newPort, t('router.toast.port'))}>
+    <Confirm title={t('router.port.title')} action={t('router.port.action')} onClose={onClose} onConfirm={apply(localApi.newPort, t('router.toast.port'), true)}>
       <LinksImpact n={local.subscriptionCount} />
       <p>{t('router.port.note')}</p>
     </Confirm>
@@ -73,7 +76,7 @@ export function RotateKeysDialog({ local, onClose, onChanged }: Props) {
   const { t } = useLang()
   const apply = useApply(onChanged)
   return (
-    <Confirm danger title={t('router.rotate.title')} action={t('rotate.action')} onClose={onClose} onConfirm={apply(localApi.rotateKeys, t('router.toast.keys'))}>
+    <Confirm danger title={t('router.rotate.title')} action={t('rotate.action')} onClose={onClose} onConfirm={apply(localApi.rotateKeys, t('router.toast.keys'), true)}>
       <LinksImpact n={local.subscriptionCount} />
       <p>{t('router.rotate.note')}</p>
     </Confirm>
@@ -85,7 +88,7 @@ export function RouterServerNameDialog({ local, sni, onClose, onChanged }: Props
   const { t } = useLang()
   const apply = useApply(onChanged)
   return (
-    <Confirm title={t('router.sni.title')} action={t('sni.action')} onClose={onClose} onConfirm={apply(() => localApi.settings({ sni }), t('router.toast.sni'))}>
+    <Confirm title={t('router.sni.title')} action={t('sni.action')} onClose={onClose} onConfirm={apply(() => localApi.settings({ sni }), t('router.toast.sni'), true)}>
       <p>{sni ? t('sni.now', { sni }) : t('sni.same', { target: local.handshakeTarget.split(':')[0] })}</p>
       <LinksImpact n={local.subscriptionCount} />
     </Confirm>
@@ -110,7 +113,7 @@ export function OwnNameDialog({ local, onClose, onChanged }: Props) {
     try {
       const fresh = await localApi.settings({ host })
       toast(host ? t('router.toast.name', { name: host }) : t('router.toast.cloudName'))
-      onChanged(fresh)
+      onChanged(fresh, true)
       onClose()
     } catch (e) {
       setError(errorText(e))
@@ -191,7 +194,7 @@ export function RouterTargetDialog({ local, onClose, onChanged }: Props) {
     try {
       const fresh = await localApi.settings({ handshakeTarget })
       toast(handshakeTarget ? t('router.toast.target', { target: handshakeTarget }) : t('router.toast.choosing'))
-      onChanged(fresh)
+      onChanged(fresh, true)
       onClose()
     } catch (e) {
       setError(errorText(e))

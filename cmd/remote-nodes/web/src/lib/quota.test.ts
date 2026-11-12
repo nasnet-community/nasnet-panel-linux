@@ -7,7 +7,8 @@ import {
   MAX_LIMIT_GB,
   endOfDay,
   expiryParts,
-  expiryText,
+  limitsOf,
+  statusText,
   extendDay,
   limitText,
   localDay,
@@ -107,18 +108,52 @@ describe('how full a limit is', () => {
   })
 })
 
-describe('the end date as words', () => {
+describe('the Limits column', () => {
   const iso = (days: number) => new Date(NOW + days * DAYMS).toISOString()
+  const of = (o: { limit?: number; used?: number; days?: number }, c = en) => {
+    const l = limitsOf({ trafficLimit: o.limit ?? 0, trafficUsed: o.used ?? 0, expiresAt: o.days === undefined ? null : iso(o.days) }, c.t, c.fmt, NOW)
+    return { ...l, head: plain(l.head), foot: plain(l.foot) }
+  }
 
-  it('says when it ends and how long that is, or when it ended', () => {
-    expect(plain(expiryText(en.t, en.fmt, iso(12), NOW))).toMatch(/^Expires .+ · in 12 days$/)
-    expect(plain(expiryText(en.t, en.fmt, iso(-3), NOW))).toMatch(/^Expired /)
-    expect(expiryText(en.t, en.fmt, null, NOW)).toBe('')
+  it('says None for a subscription with no limit and no end date', () => {
+    expect(of({})).toEqual({ head: 'None', pct: null, foot: '', tone: 'muted' })
+    // what it has used is no limit
+    expect(of({ used: 5e9 }).head).toBe('None')
+  })
+
+  it('leads with the traffic limit, with what is left under its bar', () => {
+    expect(of({ limit: 100e9, used: 62e9 })).toEqual({ head: '62.0 GB of 100 GB', pct: 62, foot: '38.0 GB left', tone: 'muted' })
+    expect(of({ limit: 50e9, used: 50e9 })).toEqual({ head: '50.0 GB of 50.0 GB', pct: 100, foot: 'used up', tone: 'bad' })
+    expect(of({ limit: 50e9, used: 60e9 })).toMatchObject({ pct: 100, foot: 'used up', tone: 'bad' })
+  })
+
+  it('puts the end date beside what is left, and warns in its last week', () => {
+    expect(of({ limit: 100e9, used: 62e9, days: 40 })).toMatchObject({ pct: 62, tone: 'muted' })
+    expect(of({ limit: 100e9, used: 62e9, days: 40 }).foot).toMatch(/^38\.0 GB left · ends .+, in 40 days$/)
+    expect(of({ limit: 100e9, used: 62e9, days: 3 })).toMatchObject({ tone: 'warn' })
+    // a limit that is used up is red whatever the date
+    expect(of({ limit: 10e9, used: 10e9, days: 3 }).tone).toBe('bad')
+    expect(of({ limit: 10e9, used: 10e9, days: 3 }).foot).toMatch(/^used up · ends .+, in 3 days$/)
+    // and so is a date that has passed, whatever is left
+    expect(of({ limit: 100e9, used: 1e9, days: -2 }).tone).toBe('bad')
+    expect(of({ limit: 100e9, used: 1e9, days: -2 }).foot).toMatch(/^99\.0 GB left · ended .+, 2 days ago$/)
+  })
+
+  it('leads with the date when that is the only limit', () => {
+    const soon = of({ days: 2 })
+    expect(soon.head).toMatch(/^Ends \d{1,2} \w{3} 20\d\d$/)
+    expect(soon).toMatchObject({ pct: null, foot: 'in 2 days', tone: 'warn' })
+    expect(of({ days: 41 })).toMatchObject({ foot: 'in 41 days', tone: 'muted' })
+    const past = of({ days: -3 })
+    expect(past.head).toMatch(/^Ended /)
+    expect(past).toMatchObject({ pct: null, foot: '3 days ago', tone: 'bad' })
   })
 
   it('reads in Persian too', () => {
-    expect(plain(expiryText(fa.t, fa.fmt, iso(12), NOW))).toContain('پایان:')
-    expect(plain(expiryText(fa.t, fa.fmt, iso(-3), NOW))).toContain('پایان یافته:')
+    expect(of({}, fa).head).toBe('ندارد')
+    expect(of({ days: 12 }, fa).head).toContain('پایان:')
+    expect(of({ days: -3 }, fa).head).toContain('پایان یافته:')
+    expect(of({ limit: 100e9, used: 62e9, days: 40 }, fa).foot).toContain('۴۰ روز')
   })
 })
 
@@ -143,22 +178,24 @@ describe('a stopped subscription', () => {
     ...o,
   })
   const status = (s: Subscription, c = en) => {
-    const { key, label, sub: line } = subscriptionStatus(s, infos, c.t, c.fmt, c.lang, NOW)
-    return [key, label, plain(line)]
+    const st = subscriptionStatus(s, infos, c.t, c.fmt, c.lang, NOW)
+    return [st.key, plain(statusText(st))]
   }
 
-  it('says why: its limit, or its date', () => {
-    expect(status(sub({ stopped: 'limit', trafficLimit: 50e9, trafficUsed: 50e9 }))).toEqual(['limit', 'Limit reached', '50.0 GB of 50.0 GB used'])
+  it('says that it is stopped, and why: its limit, or its date', () => {
+    expect(status(sub({ stopped: 'limit', trafficLimit: 50e9, trafficUsed: 50e9 }))).toEqual(['limit', 'Stopped · limit reached'])
     const gone = status(sub({ stopped: 'expired', expiresAt: new Date(NOW - DAYMS).toISOString() }))
-    expect(gone.slice(0, 2)).toEqual(['expired', 'Expired'])
-    expect(gone[2]).toMatch(/^expired /)
+    expect(gone[0]).toBe('expired')
+    expect(gone[1]).toMatch(/^Stopped · expired \d{1,2} \w{3} 20\d\d$/)
+    // a date the hub no longer holds leaves the word
+    expect(status(sub({ stopped: 'expired' }))).toEqual(['expired', 'Stopped · expired'])
   })
 
   it('shows before "off", since it says more, and in Persian', () => {
     const off = sub({ stopped: 'limit', trafficLimit: 1e9, trafficUsed: 1e9, nodes: [] })
     expect(status(off)[0]).toBe('limit')
-    expect(status(sub({ stopped: 'limit', trafficLimit: 1e9, trafficUsed: 1e9 }), fa)[1]).toBe('سقف پر شد')
-    expect(status(sub({ stopped: 'expired', expiresAt: new Date(NOW - DAYMS).toISOString() }), fa)[1]).toBe('منقضی شد')
+    expect(status(sub({ stopped: 'limit', trafficLimit: 1e9, trafficUsed: 1e9 }), fa)[1]).toBe('متوقف · سقف ترافیک پر شد')
+    expect(status(sub({ stopped: 'expired', expiresAt: new Date(NOW - DAYMS).toISOString() }), fa)[1]).toMatch(/^متوقف · منقضی شده در /)
   })
 
   it('has no word of its own when it is running', () => {
@@ -169,8 +206,8 @@ describe('a stopped subscription', () => {
     const row = (o: Partial<NodeSubscription>): NodeSubscription => ({
       id: 1, name: 'Sara', enabled: true, stopped: '', trafficLimit: 0, trafficUsed: 0, expiresAt: null, online: false, connections: 0, lastSeenAt: null, todayUp: 0, todayDown: 0, monthUp: 0, monthDown: 0, ...o,
     })
-    expect(nodeSubscriptionStatus(row({ stopped: 'limit' }), en.t, en.fmt, NOW).key).toBe('limit')
-    expect(nodeSubscriptionStatus(row({ stopped: 'expired' }), en.t, en.fmt, NOW).label).toBe('Expired')
+    expect(statusText(nodeSubscriptionStatus(row({ stopped: 'limit' }), en.t, en.fmt, NOW))).toBe('Stopped · limit reached')
+    expect(nodeSubscriptionStatus(row({ stopped: 'expired' }), en.t, en.fmt, NOW)).toMatchObject({ key: 'expired', label: 'Stopped', sub: 'expired' })
     // switched off there is still just off
     expect(nodeSubscriptionStatus(row({ stopped: 'limit', enabled: false }), en.t, en.fmt, NOW).key).toBe('off')
   })

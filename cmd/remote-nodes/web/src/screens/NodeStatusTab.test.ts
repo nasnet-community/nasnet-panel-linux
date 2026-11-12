@@ -71,7 +71,7 @@ describe('the status verdict of a node', () => {
     expect(chips(v)).toEqual([
       ['Portal', 'online', 'listening'],
       ['Tunnel', 'online', 'up 6d 4h'],
-      ['Bridge', 'online', 'running'],
+      ["Router's Xray", 'online', 'running'],
       ['VPN', 'online', 'WireGuard'],
     ])
   })
@@ -82,7 +82,7 @@ describe('the status verdict of a node', () => {
     expect(chips(v)).toEqual([
       ['Portal', 'online', 'listening'],
       ['Tunnel', 'warn', 'off'],
-      ['Bridge', 'idle', 'waiting'],
+      ["Router's Xray", 'idle', 'waiting'],
       ['VPN', 'online', 'WireGuard'],
     ])
   })
@@ -94,7 +94,7 @@ describe('the status verdict of a node', () => {
     expect(chips(v)).toEqual([
       ['Portal', 'idle', '–'],
       ['Tunnel', 'idle', '–'],
-      ['Bridge', 'idle', '–'],
+      ["Router's Xray", 'idle', '–'],
       ['VPN', 'idle', '–'],
     ])
   })
@@ -113,7 +113,7 @@ describe('the status verdict of a node', () => {
     expect(chips(v)).toEqual([
       ['Portal', 'online', 'listening'],
       ['Tunnel', 'idle', 'off'],
-      ['Bridge', 'idle', 'stopped'],
+      ["Router's Xray", 'idle', 'stopped'],
       ['VPN', 'warn', 'missing'],
     ])
   })
@@ -131,18 +131,18 @@ describe('the status verdict of a node', () => {
     const v = verdict(node({ tunnel: tunnel({ state: 'off', since: null, reason: 'bridge_down' }) }))
     expect(v.title).toBe("Subscriptions can't connect right now")
     expect(chips(v)[1]).toEqual(['Tunnel', 'warn', 'off'])
-    expect(chips(v)[2]).toEqual(['Bridge', 'warn', 'stopped'])
+    expect(chips(v)[2]).toEqual(["Router's Xray", 'warn', 'stopped'])
   })
 
   it("follows the bridge by the node's tunnel first, and by the router's when the tunnel has no word on it", () => {
     // tunnel down but the router's bridge is up: it is dialling
-    expect(chips(verdict(node({ tunnel: tunnel({ state: 'down' }) })))[2]).toEqual(['Bridge', 'online', 'running'])
-    expect(chips(verdict(node({ tunnel: tunnel({ state: 'down' }) }), entry({ bridge: 'waiting' })))[2]).toEqual(['Bridge', 'idle', 'waiting'])
+    expect(chips(verdict(node({ tunnel: tunnel({ state: 'down' }) })))[2]).toEqual(["Router's Xray", 'online', 'running'])
+    expect(chips(verdict(node({ tunnel: tunnel({ state: 'down' }) }), entry({ bridge: 'waiting' })))[2]).toEqual(["Router's Xray", 'idle', 'waiting'])
     // a bridge that is down says so
-    expect(chips(verdict(node({ tunnel: tunnel({ state: 'off', reason: 'bridge_down' }) })))[2]).toEqual(['Bridge', 'warn', 'stopped'])
+    expect(chips(verdict(node({ tunnel: tunnel({ state: 'off', reason: 'bridge_down' }) })))[2]).toEqual(["Router's Xray", 'warn', 'stopped'])
     // before the config has loaded there is nothing to read the router's from
     const bare = chips(verdict(node({ tunnel: tunnel({ state: 'down' }) }), null))
-    expect(bare[2]).toEqual(['Bridge', 'idle', '–'])
+    expect(bare[2]).toEqual(["Router's Xray", 'idle', '–'])
     expect(bare[3]).toEqual(['VPN', 'idle', '–'])
   })
 

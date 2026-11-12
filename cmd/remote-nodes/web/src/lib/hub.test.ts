@@ -9,7 +9,7 @@ import * as hub from './hub-fixtures'
 import { failedAtLink, jobLine, jobStep, jobTitle, stepLabel } from './jobs'
 import { agentMemory, agentUptime, plot, renewLeadDays, roundTrip, settingsState } from './node'
 import { hasLinks, routerHealth, routerNotes, routerVerdict } from './router'
-import { nodeInfos, nodeSubscriptionStatus, subscriptionStatus } from './subscriptions'
+import { nodeInfos, nodeSubscriptionStatus, statusText, subscriptionStatus } from './subscriptions'
 
 // What the hub sends, as hub-fixtures.ts holds it (written by a Go test in internal/remotenodes/api
 // from the hub's own setup), run through the page's own code. The file is typed with the page's types,
@@ -197,13 +197,10 @@ describe("the router's own entry", () => {
   })
 
   it('has its list of subscriptions in the words for the router', () => {
-    const subs = hub.localSubscriptions.map((s) => {
-      const st = nodeSubscriptionStatus(s, en.t, en.fmt, NOW, true)
-      return [s.name, st.key, st.sub]
-    })
+    const subs = hub.localSubscriptions.map((s) => [s.name, statusText(nodeSubscriptionStatus(s, en.t, en.fmt, NOW, true))])
     expect(subs).toEqual([
-      ['علی', 'online', '2 connections'],
-      ['sara', 'off', 'off on this router'],
+      ['علی', 'Online · 2 connections'],
+      ['sara', 'Off'],
     ])
   })
 
