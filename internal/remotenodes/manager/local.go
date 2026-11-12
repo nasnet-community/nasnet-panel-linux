@@ -54,17 +54,6 @@ const (
 	localTargetWait = 90 * time.Second
 )
 
-// The kinds of event on the entry's list, beside those it shares with a node
-// (a subscription switched, stopped or resumed, keys rotated).
-const (
-	EventLocalOn       = "local_on"
-	EventLocalOff      = "local_off"
-	EventPortOpened    = "port_opened"    // the detail is the port
-	EventPortRequested = "port_requested" // a new one was asked of the router
-	EventTargetChanged = "target_changed" // the detail is the target
-	EventHostChanged   = "host_changed"   // the detail is the name, "" for the router's own
-)
-
 // localLive is what the manager keeps of the entry in memory, under Manager.mu
 // unless it says otherwise.
 type localLive struct {

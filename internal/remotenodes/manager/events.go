@@ -41,6 +41,18 @@ const (
 	// router's address on the Domestic link changed. Its detail is "old to
 	// new", the two addresses.
 	EventXrayRestarted = "xray_restarted"
+
+	// The router's own entry has events of its own, on its own list (see
+	// local.go): switched on and off, the port the router opened for it (the
+	// detail is the port) and a new one asked of the router, a new Reality
+	// target (the detail), and a new name for its links (the detail, "" for
+	// the router's own).
+	EventLocalOn       = "local_on"
+	EventLocalOff      = "local_off"
+	EventPortOpened    = "port_opened"
+	EventPortRequested = "port_requested"
+	EventTargetChanged = "target_changed"
+	EventHostChanged   = "host_changed"
 )
 
 const (
