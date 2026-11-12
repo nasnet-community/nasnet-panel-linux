@@ -37,6 +37,8 @@ const (
 	CodeLoginRefused        = "login_refused"         // the server did not accept the SSH login
 	CodeNeedsRoot           = "needs_root"            // the login can't act as root: no sudo, or sudo refused the password
 	CodeRealityTargetFailed = "reality_target_failed" // the node can't use the Reality target it was given, or none of its candidates works
+	CodeLocalOff            = "local_off"             // the router's own entry is switched off, or not ready to hand out a link
+	CodeNoAddress           = "no_address"            // the router's own entry has no name or port to put in a link yet
 	CodeBusy                = "busy"
 	CodeBackupBadPassphrase = "backup_bad_passphrase"
 	CodeBackupBadFile       = "backup_bad_file"
@@ -64,6 +66,8 @@ var statuses = map[string]int{
 	CodeLoginRefused:        http.StatusConflict,
 	CodeNeedsRoot:           http.StatusConflict,
 	CodeRealityTargetFailed: http.StatusConflict,
+	CodeLocalOff:            http.StatusConflict,
+	CodeNoAddress:           http.StatusConflict,
 	CodeBusy:                http.StatusConflict,
 	CodeBackupBadPassphrase: http.StatusBadRequest,
 	CodeBackupBadFile:       http.StatusBadRequest,
@@ -76,6 +80,10 @@ func statusFor(code string) int {
 	}
 	return http.StatusInternalServerError
 }
+
+// ErrLocalOff is the answer to anything that needs the router's own entry
+// while it is switched off.
+var ErrLocalOff = &Error{CodeLocalOff, "This router's own entry is switched off."}
 
 // Error is a failure with one of the codes above.
 type Error struct {

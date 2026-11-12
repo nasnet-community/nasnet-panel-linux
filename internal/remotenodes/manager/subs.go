@@ -276,6 +276,10 @@ func (m *Manager) DeleteSubscription(ctx context.Context, id uint) error {
 			m.Event(e.NodeID, EventSubscriptionOff, name)
 		}
 	}
+	if c := st.FindLocalClient(id); c != nil && c.Enabled && st.Local.Enabled {
+		m.localEvent(EventSubscriptionOff, name)
+	}
+	m.kickBridge() // the router's own entry drops its client too
 	m.cfg.Usage.ForgetSubscription(id)
 	m.log.Info("subscription removed", "subscription", id, "name", name)
 	return nil

@@ -145,6 +145,19 @@ func (c *Collector) SubscriptionTotal(subID uint) SubUsage {
 	return u
 }
 
+// Through is the timestamp of the newest bucket that was counted for a node,
+// zero when none was. A source that makes its own buckets (the router's own
+// entry) dates them after it: one dated at or before it would be taken for
+// counted already, which a clock that went back over a restart would do.
+func (c *Collector) Through(nodeID uint) int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if n := c.nodes[nodeID]; n != nil {
+		return n.hist.through
+	}
+	return 0
+}
+
 // SubscriptionLifetime is everything a subscription has moved, both ways, on
 // every node since it was first counted, nodes since removed included. The
 // bucket that is still growing is part of it, so a limit sees what has been

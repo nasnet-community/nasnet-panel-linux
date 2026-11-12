@@ -41,7 +41,12 @@ var hubBans = []ban{
 	{"sing-box", fragment("sagernet"), false},
 	{"gvisor", fragment("gvisor"), true},
 	{"gorm", fragment("gorm"), false},
-	{"pkg/xray, the panel's Xray layer", under(module + "/pkg/xray"), false},
+	// realitydest is the one part of it the hub may link: the check of a
+	// Reality target, run here for the router's own entry. It needs the
+	// standard library and the agent's messages, which the hub links already.
+	{"pkg/xray, the panel's Xray layer", func(p string) bool {
+		return under(module+"/pkg/xray")(p) && p != module+"/pkg/xray/realitydest"
+	}, false},
 	{"pkg/geoip, which embeds the geoip data", under(module + "/pkg/geoip"), false},
 	{"internal/node/domain, which brings in gorm", under(module + "/internal/node/domain"), false},
 }

@@ -25,6 +25,8 @@ type fakeLive struct {
 	total   map[uint]SubscriptionUsage
 	life    map[uint]uint64
 	traffic map[uint]Traffic
+	local   LocalLive
+	localEv []NodeEvent
 }
 
 func (f *fakeLive) Entry() Entry                                    { return f.entry }
@@ -35,6 +37,8 @@ func (f *fakeLive) SubscriptionOn(sub, node uint) SubscriptionUsage { return f.o
 func (f *fakeLive) SubscriptionTotal(sub uint) SubscriptionUsage    { return f.total[sub] }
 func (f *fakeLive) SubscriptionLifetime(sub uint) uint64            { return f.life[sub] }
 func (f *fakeLive) Traffic(node uint) Traffic                       { return f.traffic[node] }
+func (f *fakeLive) Local() LocalLive                                { return f.local }
+func (f *fakeLive) LocalEvents() []NodeEvent                        { return f.localEv }
 
 func newFakeLive() *fakeLive {
 	return &fakeLive{

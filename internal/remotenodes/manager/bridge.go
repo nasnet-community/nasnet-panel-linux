@@ -24,6 +24,7 @@ type bridgeView struct {
 	xray    map[uint]xrayState // and how its Xray stands against the pin
 	ready   int                // how many nodes are ready
 	applied map[uint]string    // the nodes in the spec the supervisor holds, by id, with their tags
+	local   bool               // and whether that spec has the router's own entry
 	status  bridgectl.Status   // the supervisor's last status
 }
 
@@ -74,6 +75,7 @@ func (m *Manager) refreshBridge(ctx context.Context) {
 	}
 	m.applyBridge(p)
 	m.readBridge()
+	m.syncLocalClients()
 }
 
 // knownXray is the Xray version known for a node: what its agent said on this
@@ -104,6 +106,7 @@ func (m *Manager) planBridge(ctx context.Context) plan {
 			return m.addrOf(ctx, n, dial.IP)
 		},
 		dial: dial.IP, exit: exit.IP, dns: m.cfg.DNS, statusAddr: m.cfg.StatusAddr,
+		local: m.localBlock(st),
 	})
 	p := plan{gaps: gaps, xray: map[uint]xrayState{}}
 	for _, n := range st.Nodes {
@@ -120,7 +123,7 @@ func (m *Manager) planBridge(ctx context.Context) plan {
 	case m.cfg.Bridge == nil:
 		p.why = "there is no bridge program set up"
 	case spec == nil:
-		p.why = "no node is ready for it"
+		p.why = "no node is ready for it, and the router's own entry is off or not ready"
 	case !m.entryOn():
 		p.why = "the router's entry is off"
 	case !exit.Local:
@@ -168,18 +171,20 @@ func (m *Manager) applyBridge(p plan) {
 			tags[id] = n.Tag
 		}
 		m.mu.Lock()
-		m.bv.applied = tags
+		m.bv.applied, m.bv.local = tags, p.spec.Local != nil
 		m.mu.Unlock()
+		// another bridge than the one the entry's clients were sent to
+		m.local.pushed = ""
 	} else {
 		m.appliedHash, m.failedHash, m.retryAt = "", h, m.now().Add(startRetry)
 		m.mu.Lock()
-		m.bv.applied = nil
+		m.bv.applied, m.bv.local = nil, false
 		m.mu.Unlock()
 	}
 	switch {
 	case err == nil:
 		m.startSaid = ""
-		m.log.Info("the bridge has its spec", "portals", len(p.spec.Nodes))
+		m.log.Info("the bridge has its spec", "portals", len(p.spec.Nodes), "own_entry", p.spec.Local != nil)
 	case err.Error() != m.startSaid:
 		m.startSaid = err.Error()
 		m.log.Error("the bridge could not be started", "portals", len(p.spec.Nodes), "err", err, "supervisor_retries", held)
@@ -192,7 +197,7 @@ func (m *Manager) stopBridge(why string) {
 		m.cfg.Bridge.Stop()
 		m.appliedHash, m.failedHash, m.startSaid = "", "", ""
 		m.mu.Lock()
-		m.bv.applied = nil
+		m.bv.applied, m.bv.local = nil, false
 		m.mu.Unlock()
 		m.log.Info("the bridge is stopped", "why", why)
 		m.whySaid = why
@@ -250,7 +255,7 @@ func (m *Manager) bridgeWordLocked() string {
 	switch {
 	case m.cfg.Bridge == nil:
 		return "stopped"
-	case m.bv.status.State == bridgectl.StateRunning && len(m.bv.applied) > 0:
+	case m.bv.status.State == bridgectl.StateRunning && (len(m.bv.applied) > 0 || m.bv.local):
 		return "running"
 	case m.entry.On && m.bv.ready == 0:
 		return "waiting"

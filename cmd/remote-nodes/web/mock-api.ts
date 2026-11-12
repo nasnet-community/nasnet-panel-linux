@@ -487,6 +487,8 @@ function subView(s: MockSub): Subscription {
     monthUp: m.up,
     monthDown: m.down,
     nodes: registered.map((n) => ({ ...nodeSubView(s, n), nodeId: n.id })).map(({ id: _id, name: _name, stopped: _s, trafficLimit: _l, trafficUsed: _u, expiresAt: _e, ...rest }) => rest),
+    // the router's own entry is off in the sample data until its screens are mocked
+    local: null,
   }
 }
 
@@ -527,6 +529,7 @@ export function configView(): AppConfig {
     entry: entryView(),
     backup: { lastExportAt: null },
     xray: XRAY,
+    local: { enabled: false, state: 'off' },
   }
 }
 

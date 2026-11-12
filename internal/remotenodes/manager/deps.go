@@ -45,6 +45,8 @@ type Usage interface {
 	Subscription(subID, nodeID uint) usage.SubUsage
 	SubscriptionTotal(subID uint) usage.SubUsage
 	SubscriptionLifetime(subID uint) usage.Totals
+	// Through is the newest bucket counted for a node, by its timestamp.
+	Through(nodeID uint) int64
 	Traffic(nodeID uint) []usage.Point
 	Forget(nodeID uint)
 	ForgetSubscription(subID uint)
@@ -56,6 +58,18 @@ type Bridge interface {
 	Update(spec *bridgespec.Spec) error
 	Stop()
 	Status() bridgectl.Status
+	// SetClients makes the clients of the router's own entry the given set on
+	// the bridge that is running, without a restart.
+	SetClients(clients []bridgespec.Client) (bridgespec.ClientsResult, error)
+}
+
+// Asks leaves the router's script what the router's own entry needs of it:
+// whether to forward a port to it, the name set by hand, and a request for
+// another port. *routerfacts.Asks is one.
+type Asks interface {
+	SetLocal(on bool) error
+	SetHost(host string) error
+	NewPort() error
 }
 
 // Facts reads the router's report. *routerfacts.Reader is one.

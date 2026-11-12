@@ -35,6 +35,8 @@ type AppConfig struct {
 	Entry             Entry  `json:"entry"`
 	Backup            Backup `json:"backup"`
 	Xray              string `json:"xray"` // the one Xray version this plugin installs
+	// Local is the router's own entry, in brief.
+	Local LocalBrief `json:"local"`
 }
 
 type Backup struct {
@@ -214,6 +216,9 @@ type Subscription struct {
 	MonthUp    uint64             `json:"monthUp"`
 	MonthDown  uint64             `json:"monthDown"`
 	Nodes      []SubscriptionNode `json:"nodes"` // one per registered node
+	// Local is the subscription on the router's own entry, null while that
+	// entry is switched off.
+	Local *SubscriptionLocal `json:"local"`
 }
 
 type SubscriptionNode struct {
@@ -247,6 +252,7 @@ func configView(cfg Config, st model.State) AppConfig {
 		}
 		v.Xray = cfg.Live.Xray()
 	}
+	v.Local = localBrief(st, cfg.Live)
 	return v
 }
 
@@ -382,6 +388,11 @@ func subscriptionView(st model.State, sub model.Subscription, live Live) Subscri
 			}
 		}
 		v.Nodes = append(v.Nodes, row)
+	}
+	if st.Local.Enabled {
+		row, on, unsure := subscriptionLocalView(st, sub, live)
+		v.Local = &row
+		connected, unknown = connected || on, unknown || unsure
 	}
 	if live != nil {
 		v.TrafficUsed = TrafficUsed(sub, live.SubscriptionLifetime(sub.ID))

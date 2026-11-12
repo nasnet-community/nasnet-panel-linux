@@ -63,7 +63,7 @@ func pemBody(b []byte) string {
 // key, the pinned host key, the clients' ids, the bridge's, and the CA.
 func secrets() []string {
 	return []string{
-		privateKey, hostKeyPin, uuidA, uuidB, bridgeUUID,
+		privateKey, hostKeyPin, uuidA, uuidB, bridgeUUID, localPrivateKey, localUUID,
 		"BEGIN EC PRIVATE KEY", "BEGIN CERTIFICATE",
 		pemBody(testCA.KeyPEM()), pemBody(testCA.CertPEM()),
 		// the same text a line at a time, which is how a PEM would be copied out of a log
@@ -287,7 +287,8 @@ func TestTheShapesAreTheContracts(t *testing.T) {
 	r.populate()
 
 	cfg := decode[map[string]any](t, r.get("/api/config"))
-	wantKeys(t, "config", cfg, "version commit maxNodes nodeCount maxSubscriptions subscriptionCount entry backup xray")
+	wantKeys(t, "config", cfg, "version commit maxNodes nodeCount maxSubscriptions subscriptionCount entry backup xray local")
+	wantKeys(t, "config.local", cfg["local"].(map[string]any), "enabled state")
 	entry := cfg["entry"].(map[string]any)
 	wantKeys(t, "entry", entry, "on domestic vpn bridge routerOS routes checkedAt stale")
 	wantKeys(t, "entry.vpn", entry["vpn"].(map[string]any), "state kind label")
@@ -311,10 +312,21 @@ func TestTheShapesAreTheContracts(t *testing.T) {
 		t.Fatalf("%d subscriptions", len(subs))
 	}
 	for _, s := range subs {
-		wantKeys(t, "subscription", s, "id name createdAt trafficLimit trafficUsed expiresAt stopped online lastSeenAt todayUp todayDown monthUp monthDown nodes")
+		wantKeys(t, "subscription", s, "id name createdAt trafficLimit trafficUsed expiresAt stopped online lastSeenAt todayUp todayDown monthUp monthDown nodes local")
 		for _, n := range s["nodes"].([]any) {
 			wantKeys(t, "subscription.nodes[]", n.(map[string]any), "nodeId enabled online connections lastSeenAt todayUp todayDown monthUp monthDown")
 		}
+		if s["local"] != nil {
+			t.Errorf("a subscription has a place on an entry that is off: %v", s["local"])
+		}
+	}
+
+	// the router's own entry, off and then on
+	wantKeys(t, "local", decode[map[string]any](t, r.get("/api/local")),
+		"enabled state reason detail host hostSource ownHost cloudName publicAddr domesticAddr behindNat port handshakeTarget sni sniCustom publicKey shortId subscriptionCount usage xrayVersion uptimeSec events")
+	r.switchOnLocal()
+	for _, s := range decode[[]map[string]any](t, r.get("/api/subscriptions")) {
+		wantKeys(t, "subscription.local", s["local"].(map[string]any), "enabled online connections lastSeenAt todayUp todayDown monthUp monthDown")
 	}
 }
 
@@ -447,7 +459,7 @@ func jsonNames(typ reflect.Type, path string, into map[string]string) {
 // particular response happens to fill it.
 func TestNoViewTypeHasASecretField(t *testing.T) {
 	names := map[string]string{}
-	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, NodeSubscription{}, Traffic{}, jobs.Job{}, errorBody{}} {
+	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, NodeSubscription{}, Traffic{}, jobs.Job{}, errorBody{}, Local{}} {
 		jsonNames(reflect.TypeOf(v), reflect.TypeOf(v).Name(), names)
 	}
 	if len(names) < 50 {
@@ -464,12 +476,14 @@ func TestNoViewTypeHasASecretField(t *testing.T) {
 // or under the base path, for a hub that holds secrets of every kind.
 func TestNoSecretReachesABrowser(t *testing.T) {
 	for _, b := range []string{"", base} {
-		fake, bk := &fakeSubs{}, newFakeBackup()
-		r := newRigWith(t, b, withOps(withSubs(fake), withBackup(bk)))
+		fake, bk, entry := &fakeSubs{}, newFakeBackup(), &fakeLocal{}
+		r := newRigWith(t, b, withOps(withSubs(fake), withBackup(bk), withLocalOps(entry)))
 		r.populate()
+		r.switchOnLocal()
 		held := r.st.Read()
 		if held.Nodes[0].RealityPrivateKey != privateKey || held.Nodes[0].SSHHostKey != hostKeyPin || held.Enablements[0].ClientUUID != uuidA ||
-			held.Nodes[0].BridgeUUID != bridgeUUID || held.CACert == "" || held.CAKey == "" {
+			held.Nodes[0].BridgeUUID != bridgeUUID || held.CACert == "" || held.CAKey == "" ||
+			held.Local.RealityPrivateKey != localPrivateKey || held.LocalClients[0].ClientUUID != localUUID {
 			t.Fatal("the test hub does not hold the secrets it is meant to hide")
 		}
 
@@ -477,8 +491,16 @@ func TestNoSecretReachesABrowser(t *testing.T) {
 		for _, p := range []string{
 			"/api/config", "/api/nodes", "/api/subscriptions",
 			"/api/nodes/1", "/api/nodes/2", "/api/nodes/1/subscriptions", "/api/nodes/1/traffic", "/api/jobs",
+			"/api/local", "/api/local/subscriptions", "/api/local/traffic",
 		} {
 			bodies[b+p] = r.get(b + p)
+		}
+		// the calls that change the router's own entry answer with views too
+		for _, c := range localRoutes() {
+			if strings.HasSuffix(c.path, "/link") || strings.HasSuffix(c.path, "/replace-link") {
+				continue // a link is meant to carry its client's id
+			}
+			_, _, bodies[c.method+" "+b+c.path] = r.do(c.method, b+c.path, c.body)
 		}
 		_, _, bodies[b+"/health"] = r.call("GET", b+"/health", nil)
 		_, _, bodies[b+"/api/nothing"] = r.call("GET", b+"/api/nothing", map[string]string{UIHeader: "1"})

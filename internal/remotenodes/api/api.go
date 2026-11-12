@@ -48,6 +48,9 @@ type Config struct {
 	Backup BackupOps
 	// NodeOps adds, changes and removes nodes, with the same rule for nil.
 	NodeOps NodeOps
+	// Local runs the router's own entry, with the same rule for nil: without
+	// it the entry can be read and not changed.
+	Local LocalOps
 }
 
 type API struct{ cfg Config }
@@ -93,6 +96,7 @@ func New(cfg Config) http.Handler {
 	route("GET /api/nodes/{id}/traffic", a.nodeTraffic)
 	route("GET /api/subscriptions", a.subscriptions)
 	a.subscriptionRoutes(route)
+	a.localRoutes(route)
 	a.backupRoutes(route)
 	a.nodeOpRoutes(route)
 	mux.HandleFunc("/", a.noRoute)

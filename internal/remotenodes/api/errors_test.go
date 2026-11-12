@@ -20,7 +20,7 @@ import (
 func TestTheCodesAreTheContractsCodes(t *testing.T) {
 	contract := strings.Fields(`bad_request forbidden not_found node_limit subscription_limit name_taken entry_off
 		node_unreachable needs_login version_mismatch agent_too_old host_key_changed server_has_xray server_has_agent server_is_node
-		xray_not_stopped port_in_use login_refused needs_root reality_target_failed busy backup_bad_passphrase backup_bad_file internal`)
+		xray_not_stopped port_in_use login_refused needs_root reality_target_failed local_off no_address busy backup_bad_passphrase backup_bad_file internal`)
 	var have []string
 	for code, status := range statuses {
 		have = append(have, code)
@@ -37,6 +37,7 @@ func TestTheCodesAreTheContractsCodes(t *testing.T) {
 		CodeBadRequest: 400, CodeForbidden: 403, CodeNotFound: 404, CodeNodeLimit: 409, CodeSubscriptionLimit: 409,
 		CodeNameTaken: 409, CodeBusy: 409, CodeServerHasXray: 409, CodeServerHasAgent: 409, CodeServerIsNode: 409, CodeInternal: 500,
 		CodeXrayNotStopped: 409, CodePortInUse: 409, CodeLoginRefused: 409, CodeNeedsRoot: 409, CodeRealityTargetFailed: 409,
+		CodeLocalOff: 409, CodeNoAddress: 409,
 	} {
 		if statusFor(code) != want {
 			t.Errorf("%s answers %d, want %d", code, statusFor(code), want)

@@ -139,6 +139,7 @@ describe('a stopped subscription', () => {
     monthUp: 0,
     monthDown: 0,
     nodes: [{ nodeId: 1, enabled: true, online: false, connections: 0, lastSeenAt: null, todayUp: 0, todayDown: 0, monthUp: 0, monthDown: 0 }],
+    local: null,
     ...o,
   })
   const status = (s: Subscription, c = en) => {

@@ -38,8 +38,9 @@ type Asks struct {
 	mu  sync.Mutex
 }
 
-// NewAsks leaves its files beside the report of the same data folder.
-func NewAsks(dataDir string) *Asks { return &Asks{dir: filepath.Dir(Path(dataDir))} }
+// NewAsks leaves its files beside the router's report, whose path it is given:
+// the script looks for them in the folder it writes the report to.
+func NewAsks(reportPath string) *Asks { return &Asks{dir: filepath.Dir(reportPath)} }
 
 // SetLocal says whether the router should forward a port to its own entry.
 func (a *Asks) SetLocal(on bool) error {
