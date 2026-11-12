@@ -108,11 +108,13 @@ type specInput struct {
 	dial, exit netip.Addr
 	dns        []string
 	statusAddr string
+	// local is the router's own entry, nil while it is off or not ready.
+	local *bridgespec.Local
 }
 
-// buildSpec makes the bridge's spec from the nodes that are ready, and says
-// what keeps each of the others out. It returns no spec when no node is
-// ready. An error means the spec as a whole is wrong (the exit is the dial
+// buildSpec makes the bridge's spec from the nodes that are ready and the
+// router's own entry, and says what keeps each of the other nodes out. It
+// returns no spec when no node is ready and there is no entry. An error means the spec as a whole is wrong (the exit is the dial
 // address, say), which no node can be blamed for; every node is then left out
 // of it, and the gaps hold what each one lacks on its own.
 func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
@@ -123,6 +125,7 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 		Exit:       bridgespec.Exit{Addr: in.exit.String()},
 		DNS:        bridgespec.DNS{Servers: slices.Clone(in.dns)},
 		StatusAddr: in.statusAddr,
+		Local:      in.local,
 	}
 
 	nodes := slices.Clone(in.nodes)
@@ -144,7 +147,7 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 			portals = append(portals, p)
 		}
 	}
-	if len(portals) == 0 {
+	if len(portals) == 0 && in.local == nil {
 		return nil, gaps, nil
 	}
 
@@ -164,7 +167,7 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 		}
 		kept = append(kept, p)
 	}
-	if len(kept) == 0 {
+	if len(kept) == 0 && in.local == nil {
 		return nil, gaps, nil
 	}
 	spec := base
@@ -249,8 +252,16 @@ func globalFault(base bridgespec.Spec, dial netip.Addr) error {
 }
 
 // specHash tells one spec from another: two with the same hash start the same
-// bridge, so the second is not worth a restart.
+// bridge, so the second is not worth a restart. The clients of the router's
+// own entry are left out of it: the bridge takes a change of those while it
+// runs (see syncLocalClients).
 func specHash(s *bridgespec.Spec) string {
+	if s.Local != nil {
+		cp, l := *s, *s.Local
+		l.Clients = nil
+		cp.Local = &l
+		s = &cp
+	}
 	b, err := json.Marshal(s)
 	if err != nil {
 		panic(fmt.Sprintf("manager: a bridge spec can't be encoded: %v", err)) // it holds only strings and numbers

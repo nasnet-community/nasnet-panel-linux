@@ -189,6 +189,10 @@ func (m *Manager) stop(ctx context.Context, subID uint, reason string) {
 // reconcile when it is back, which reads the same state.
 func (m *Manager) syncClients(ctx context.Context, subID uint) {
 	st := m.cfg.Store.Read()
+	// The router's own entry takes its clients from the state, so a look by
+	// the bridge's loop is all it needs.
+	m.localLimitEvent(st, subID)
+	m.kickBridge()
 	var nodes []uint
 	for _, e := range st.Enablements {
 		if e.SubscriptionID == subID && e.Enabled {

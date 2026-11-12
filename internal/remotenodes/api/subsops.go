@@ -22,7 +22,9 @@ import (
 type Link struct {
 	NodeID   uint   `json:"nodeId"`
 	NodeName string `json:"nodeName"`
-	Vless    string `json:"vless"`
+	// Local marks the link of the router's own entry, which has no node.
+	Local bool   `json:"local,omitempty"`
+	Vless string `json:"vless"`
 }
 
 // SubscriptionOps is what the API asks of the code that changes subscriptions
@@ -160,6 +162,7 @@ func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name         string     `json:"name"`
 		NodeIDs      *[]uint    `json:"nodeIds"`
+		Local        bool       `json:"local"` // switched on for the router's own entry too
 		TrafficLimit *uint64    `json:"trafficLimit"`
 		ExpiresAt    *time.Time `json:"expiresAt"`
 	}
@@ -169,6 +172,12 @@ func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NodeIDs == nil {
 		a.fail(w, &Error{CodeBadRequest, "nodeIds must be a list of node ids."})
+		return
+	}
+	// before anything is made: a subscription that can't go where it was
+	// asked to should not be left behind half done
+	if req.Local && (a.cfg.Local == nil || !a.cfg.Store.Read().Local.Enabled) {
+		a.fail(w, ErrLocalOff)
 		return
 	}
 	var limits SubscriptionLimits
@@ -182,6 +191,12 @@ func (a *API) createSubscription(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.failOp(w, r, err)
 		return
+	}
+	if req.Local {
+		if v, err = a.cfg.Local.SetLocalSubscription(r.Context(), v.ID, true); err != nil {
+			a.failOp(w, r, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusCreated, v)
 }

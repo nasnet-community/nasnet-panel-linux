@@ -2,10 +2,10 @@
 //
 // What the hub sends for the page's GET calls, as the page's types. A hub with everything
 // known (config, nodes, node, installingNode, stoppedNode, subscriptions, nodeSubscriptions,
-// traffic, jobs) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
+// traffic, local, localSubscriptions, jobs) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
 // as null where a type says otherwise, stops this file compiling, and so the build.
 
-import type { AppConfig, Job, Node, NodeSubscription, Subscription, Traffic } from './api'
+import type { AppConfig, Job, Local, Node, NodeSubscription, Subscription, Traffic } from './api'
 
 export const config: AppConfig = {
   "version": "1.2.3",
@@ -54,7 +54,11 @@ export const config: AppConfig = {
   "backup": {
     "lastExportAt": null
   },
-  "xray": "26.10.21"
+  "xray": "26.10.21",
+  "local": {
+    "enabled": true,
+    "state": "working"
+  }
 }
 
 export const bareConfig: AppConfig = {
@@ -85,7 +89,11 @@ export const bareConfig: AppConfig = {
   "backup": {
     "lastExportAt": null
   },
-  "xray": ""
+  "xray": "",
+  "local": {
+    "enabled": false,
+    "state": "off"
+  }
 }
 
 export const nodes: Node[] = [
@@ -639,7 +647,17 @@ export const subscriptions: Subscription[] = [
         "monthUp": 7,
         "monthDown": 8
       }
-    ]
+    ],
+    "local": {
+      "enabled": true,
+      "online": true,
+      "connections": 2,
+      "lastSeenAt": "2026-10-30T11:59:00Z",
+      "todayUp": 5,
+      "todayDown": 6,
+      "monthUp": 7,
+      "monthDown": 8
+    }
   },
   {
     "id": 2,
@@ -667,7 +685,17 @@ export const subscriptions: Subscription[] = [
         "monthUp": 1,
         "monthDown": 2
       }
-    ]
+    ],
+    "local": {
+      "enabled": false,
+      "online": null,
+      "connections": null,
+      "lastSeenAt": null,
+      "todayUp": 0,
+      "todayDown": 0,
+      "monthUp": 0,
+      "monthDown": 0
+    }
   }
 ]
 
@@ -698,7 +726,8 @@ export const bareSubscriptions: Subscription[] = [
         "monthUp": 0,
         "monthDown": 0
       }
-    ]
+    ],
+    "local": null
   },
   {
     "id": 2,
@@ -726,7 +755,8 @@ export const bareSubscriptions: Subscription[] = [
         "monthUp": 0,
         "monthDown": 0
       }
-    ]
+    ],
+    "local": null
   }
 ]
 
@@ -780,6 +810,129 @@ export const traffic: Traffic = {
     }
   ]
 }
+
+export const local: Local = {
+  "enabled": true,
+  "state": "working",
+  "reason": "",
+  "detail": "",
+  "host": "a1b2c3d4e5f6.sn.mynetname.net",
+  "hostSource": "cloud",
+  "ownHost": "",
+  "cloudName": "a1b2c3d4e5f6.sn.mynetname.net",
+  "publicAddr": "198.51.100.24",
+  "domesticAddr": "198.51.100.24",
+  "behindNat": false,
+  "port": 41873,
+  "handshakeTarget": "www.example.org:443",
+  "sni": "",
+  "sniCustom": false,
+  "publicKey": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo",
+  "shortId": "89abcdef01234567",
+  "subscriptionCount": 1,
+  "usage": {
+    "live": true,
+    "online": 1,
+    "connections": 2,
+    "rateUp": 3,
+    "rateDown": 4,
+    "todayUp": 5,
+    "todayDown": 6,
+    "monthUp": 7,
+    "monthDown": 8,
+    "updatedAt": "2026-10-30T11:59:00Z"
+  },
+  "xrayVersion": "26.10.21",
+  "uptimeSec": 3600,
+  "events": [
+    {
+      "at": "2026-10-30T11:58:00Z",
+      "kind": "subscription_on",
+      "detail": "علی"
+    },
+    {
+      "at": "2026-10-30T10:30:00Z",
+      "kind": "port_opened",
+      "detail": "41873"
+    },
+    {
+      "at": "2026-10-30T10:29:00Z",
+      "kind": "local_on",
+      "detail": ""
+    }
+  ]
+}
+
+export const bareLocal: Local = {
+  "enabled": false,
+  "state": "off",
+  "reason": "",
+  "detail": "",
+  "host": "",
+  "hostSource": "",
+  "ownHost": "",
+  "cloudName": "",
+  "publicAddr": "",
+  "domesticAddr": "",
+  "behindNat": false,
+  "port": null,
+  "handshakeTarget": "",
+  "sni": "",
+  "sniCustom": false,
+  "publicKey": "",
+  "shortId": "",
+  "subscriptionCount": 0,
+  "usage": {
+    "live": false,
+    "online": 0,
+    "connections": 0,
+    "rateUp": 0,
+    "rateDown": 0,
+    "todayUp": 0,
+    "todayDown": 0,
+    "monthUp": 0,
+    "monthDown": 0,
+    "updatedAt": null
+  },
+  "xrayVersion": "",
+  "uptimeSec": 0,
+  "events": []
+}
+
+export const localSubscriptions: NodeSubscription[] = [
+  {
+    "id": 1,
+    "name": "علی",
+    "enabled": true,
+    "stopped": "",
+    "trafficLimit": 53687091200,
+    "trafficUsed": 0,
+    "expiresAt": "2026-11-29T12:00:00Z",
+    "online": true,
+    "connections": 2,
+    "lastSeenAt": "2026-10-30T11:59:00Z",
+    "todayUp": 5,
+    "todayDown": 6,
+    "monthUp": 7,
+    "monthDown": 8
+  },
+  {
+    "id": 2,
+    "name": "sara",
+    "enabled": false,
+    "stopped": "",
+    "trafficLimit": 0,
+    "trafficUsed": 0,
+    "expiresAt": null,
+    "online": null,
+    "connections": null,
+    "lastSeenAt": null,
+    "todayUp": 0,
+    "todayDown": 0,
+    "monthUp": 0,
+    "monthDown": 0
+  }
+]
 
 export const jobs: Job[] = [
   {

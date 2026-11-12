@@ -34,6 +34,74 @@ type fakeBridge struct {
 	failState  bridgectl.State                  // and leaves the supervisor in this state, "" meaning stopped
 	pageDown   bool                             // the bridge's own page doesn't answer
 	nodes      map[string]bridgespec.NodeStatus // what the page says, by tag
+
+	// The router's own entry, when the spec has one.
+	started     time.Time                          // when this bridge started; the epoch unless a test says
+	clients     []bridgespec.Client                // the entry's clients as the bridge holds them
+	sets        [][]bridgespec.Client              // every set SetClients took, in order
+	failClients error                              // SetClients fails with it
+	local       map[string]bridgespec.ClientStatus // what the page says of a client, by email
+}
+
+// SetClients takes the entry's clients, as the real bridge does: the whole
+// set, and only while it runs a spec that has the entry.
+func (b *fakeBridge) SetClients(clients []bridgespec.Client) (bridgespec.ClientsResult, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	res := bridgespec.ClientsResult{Added: []string{}, Removed: []string{}, Replaced: []string{}}
+	if b.state != bridgectl.StateRunning || b.spec == nil || b.spec.Local == nil {
+		return res, bridgectl.ErrNoEntry
+	}
+	if b.failClients != nil {
+		return res, b.failClients
+	}
+	had := map[string]string{}
+	for _, c := range b.clients {
+		had[c.Email] = c.UUID
+	}
+	for _, c := range clients {
+		switch id, was := had[c.Email]; {
+		case !was:
+			res.Added = append(res.Added, c.Email)
+		case id != c.UUID:
+			res.Replaced = append(res.Replaced, c.Email)
+		}
+		delete(had, c.Email)
+	}
+	for email := range had {
+		res.Removed = append(res.Removed, email)
+	}
+	slices.Sort(res.Removed)
+	b.clients = slices.Clone(clients)
+	b.sets = append(b.sets, slices.Clone(clients))
+	return res, nil
+}
+
+// emails is who the bridge holds on the entry, in the order it was given.
+func (b *fakeBridge) emails() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := []string{}
+	for _, c := range b.clients {
+		out = append(out, c.Email)
+	}
+	return out
+}
+
+func (b *fakeBridge) setCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.sets)
+}
+
+// client says what the bridge's page says of one of the entry's clients.
+func (b *fakeBridge) client(cs bridgespec.ClientStatus) {
+	b.set(func(b *fakeBridge) {
+		if b.local == nil {
+			b.local = map[string]bridgespec.ClientStatus{}
+		}
+		b.local[cs.Email] = cs
+	})
 }
 
 func (b *fakeBridge) Update(spec *bridgespec.Spec) error {
@@ -42,6 +110,11 @@ func (b *fakeBridge) Update(spec *bridgespec.Spec) error {
 	b.updates++
 	cp := *spec
 	cp.Nodes = slices.Clone(spec.Nodes)
+	if spec.Local != nil {
+		l := *spec.Local
+		l.Clients = slices.Clone(spec.Local.Clients)
+		cp.Local = &l
+	}
 	if b.failUpdate != nil {
 		if b.failState != "" {
 			b.state, b.spec = b.failState, &cp
@@ -50,6 +123,11 @@ func (b *fakeBridge) Update(spec *bridgespec.Spec) error {
 	}
 	b.specs = append(b.specs, &cp)
 	b.spec, b.state = &cp, bridgectl.StateRunning
+	// a bridge that starts holds the clients its spec came with
+	b.clients = nil
+	if cp.Local != nil {
+		b.clients = slices.Clone(cp.Local.Clients)
+	}
 	return nil
 }
 
@@ -69,10 +147,29 @@ func (b *fakeBridge) Status() bridgectl.Status {
 	}
 	if st.State == bridgectl.StateRunning && !b.pageDown {
 		page := &bridgespec.Status{Running: true, Started: epoch, Xray: pin.Version}
+		if !b.started.IsZero() {
+			page.Started = b.started
+		}
 		for _, n := range b.spec.Nodes {
 			ns := b.nodes[n.Tag]
 			ns.Tag = n.Tag
 			page.Nodes = append(page.Nodes, ns)
+		}
+		if b.spec.Local != nil {
+			page.Local = &bridgespec.LocalStatus{Clients: []bridgespec.ClientStatus{}}
+			on := map[string]bool{}
+			for _, c := range b.clients {
+				on[c.Email] = true
+				cs := b.local[c.Email]
+				cs.Email, cs.On = c.Email, true
+				page.Local.Clients = append(page.Local.Clients, cs)
+			}
+			for email, cs := range b.local {
+				if !on[email] {
+					cs.Email, cs.On = email, false
+					page.Local.Clients = append(page.Local.Clients, cs)
+				}
+			}
 		}
 		st.Bridge = page
 	}

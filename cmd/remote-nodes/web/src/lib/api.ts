@@ -77,6 +77,68 @@ export interface AppConfig {
   backup: { lastExportAt: string | null }
   /** the one Xray version this plugin installs, such as "26.10.21" */
   xray: string
+  /** the router's own entry, in brief */
+  local: { enabled: boolean; state: LocalState }
+}
+
+export type LocalState = 'off' | 'starting' | 'working' | 'attention'
+
+export type LocalReason =
+  | ''
+  | 'choosing_target'
+  | 'waiting_router'
+  | 'entry_off'
+  | 'no_port'
+  | 'no_address'
+  | 'bridge_down'
+  | 'target_failed'
+
+/** The router's own entry, "This router" on the page: subscriptions connect to it straight, with no node. */
+export interface Local {
+  enabled: boolean
+  state: LocalState
+  /** why it is starting or needs attention, '' otherwise */
+  reason: LocalReason
+  /** a sentence with more, when there is more to say */
+  detail: string
+  /** the name its links carry: the one set by hand, else the router's IP Cloud name, else '' */
+  host: string
+  hostSource: 'own' | 'cloud' | ''
+  /** the name set by hand, '' when none */
+  ownHost: string
+  cloudName: string
+  /** the router as IP Cloud sees it */
+  publicAddr: string
+  /** the router's own address on the Domestic link */
+  domesticAddr: string
+  /** those two differ: another router sits in front and has to forward the port too */
+  behindNat: boolean
+  /** on the Domestic link; null while the router has opened none */
+  port: number | null
+  handshakeTarget: string
+  sni: string
+  sniCustom: boolean
+  publicKey: string
+  shortId: string
+  /** switched on for it */
+  subscriptionCount: number
+  usage: NodeUsage
+  xrayVersion: string
+  uptimeSec: number
+  events?: NodeEvent[]
+}
+
+/** A subscription on the router's own entry: what a SubscriptionNode is for a node. */
+export interface SubscriptionLocal {
+  enabled: boolean
+  /** null: the entry isn't answering, so unknown */
+  online: boolean | null
+  connections: number | null
+  lastSeenAt: string | null
+  todayUp: number
+  todayDown: number
+  monthUp: number
+  monthDown: number
 }
 
 export interface ProbeRequest {
@@ -340,6 +402,8 @@ export interface Subscription {
   monthDown: number
   /** one per registered node */
   nodes: SubscriptionNode[]
+  /** on the router's own entry; null while that entry is switched off */
+  local: SubscriptionLocal | null
 }
 
 /** A subscription as one node's list shows it. */
@@ -382,6 +446,8 @@ export interface SubscriptionPatch {
 export interface Link {
   nodeId: number
   nodeName: string
+  /** the link of the router's own entry, which has no node */
+  local?: boolean
   vless: string
 }
 

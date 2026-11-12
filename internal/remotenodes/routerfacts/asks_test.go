@@ -25,7 +25,7 @@ func readAsk(t *testing.T, dataDir, name string) (string, bool) {
 // there is nothing to ask.
 func TestAsksLeaveTheScriptOneLineFiles(t *testing.T) {
 	dir := t.TempDir() // no router folder yet: the first ask makes it
-	a := NewAsks(dir)
+	a := NewAsks(Path(dir))
 	if filepath.Dir(Path(dir)) != filepath.Join(dir, "router") {
 		t.Fatalf("the report is at %s", Path(dir))
 	}
@@ -82,7 +82,7 @@ func TestAsksLeaveTheScriptOneLineFiles(t *testing.T) {
 // Saying the same again writes nothing: the folder is on the router's flash.
 func TestAsksWriteOnlyWhatChanged(t *testing.T) {
 	dir := t.TempDir()
-	a := NewAsks(dir)
+	a := NewAsks(Path(dir))
 	if err := a.SetLocal(true); err != nil {
 		t.Fatal(err)
 	}

@@ -158,6 +158,7 @@ describe('a subscription across the nodes', () => {
     monthUp: 0,
     monthDown: 0,
     nodes: [on(1)],
+    local: null,
     ...o,
   })
   const status = (s: Subscription, c = en) => {

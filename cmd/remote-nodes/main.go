@@ -53,12 +53,15 @@ import (
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/jobs"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/manager"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netbind"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netroles"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/routerfacts"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/store"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/ui"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/usage"
+	pb "github.com/nasnet-community/nasnet-panel-linux/pkg/agent/pb"
+	"github.com/nasnet-community/nasnet-panel-linux/pkg/xray/realitydest"
 )
 
 // version and commit are set at build time with
@@ -216,6 +219,22 @@ func boundTo(a netroles.Addr) netip.Addr {
 	return netip.Addr{}
 }
 
+// localProbe checks a Reality target from this machine, for the router's own
+// entry: the same check a node's agent runs, dialled from the address the
+// entry reaches its target from, name lookup included.
+func localProbe(from netip.Addr) agentops.LocalProbe {
+	dial := netbind.Dialer(from).DialContext
+	return func(ctx context.Context, req *pb.RealityDestProbeRequest) (*pb.RealityDestProbeResponse, error) {
+		r := realitydest.FromProtoRequest(req)
+		r.Dial = dial
+		report, err := realitydest.Probe(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		return realitydest.ReportToProto(report), nil
+	}
+}
+
 // opsFor makes the node operations for a CA. Everything bound for a node leaves
 // from the nodes' address, and the agent and Xray builds come from the holder of
 // the downloads, which fetches them over the foreign link. The manager asks for
@@ -308,6 +327,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	var mgr *manager.Manager
 	mgr, err = manager.New(manager.Config{
 		Store: st, Usage: coll, Jobs: engine, Bridge: sup, Facts: routerfacts.NewReader(s.factsPath),
+		Asks: routerfacts.NewAsks(s.factsPath), LocalProbe: localProbe(boundTo(addrs.Nodes)),
 		Connector: connectorOf(func() (manager.Ops, error) { return mgr.Ops() }),
 		NewOps:    opsFor(boundTo(addrs.Nodes), downloads, log, st),
 		Downloads: downloads,
@@ -320,7 +340,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	}
 	handler := api.New(api.Config{
 		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
-		Subs: mgr, Backup: mgr, NodeOps: mgr,
+		Subs: mgr, Backup: mgr, NodeOps: mgr, Local: mgr,
 		BasePath: s.basePath, Index: index, Log: log,
 		Licenses: os.DirFS(s.licensesDir),
 	})

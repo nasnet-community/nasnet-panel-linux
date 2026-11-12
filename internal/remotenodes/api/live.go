@@ -32,6 +32,11 @@ type Live interface {
 	SubscriptionLifetime(subID uint) uint64
 	// Traffic is the node's chart for the last few minutes. Never nil samples.
 	Traffic(nodeID uint) Traffic
+	// Local is what is known of the router's own entry right now. Its usage
+	// and chart are asked for like a node's, with RouterID for the id.
+	Local() LocalLive
+	// LocalEvents is the entry's recent events, newest first. Never nil.
+	LocalEvents() []NodeEvent
 }
 
 // NodeLive is the live part of a node's view. The zero value is a node that

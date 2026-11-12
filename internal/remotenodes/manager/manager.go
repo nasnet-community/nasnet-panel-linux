@@ -11,9 +11,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/agentops"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/api"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/netroles"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/pki"
+	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/usage"
 )
 
 // Defaults for the fields of Config left at zero.
@@ -60,6 +62,16 @@ type Config struct {
 	Bridge Bridge
 	// Facts, if nil, means the router never reports, which keeps the entry off.
 	Facts Facts
+	// Asks, if nil, means the router is never asked for anything, so its own
+	// entry never gets a port.
+	Asks Asks
+	// LocalProbe checks a Reality target from the router, for its own entry.
+	// Nil means none can be checked: one that is given is taken as it is, and
+	// none is chosen.
+	LocalProbe agentops.LocalProbe
+	// LocalPort is the port the router's own entry listens on inside the
+	// container. Zero means DefaultLocalPort.
+	LocalPort int
 	// Resolver turns a node's host name into an address for the bridge's
 	// spec. Nil means net.DefaultResolver; the hub gives it one that asks
 	// from the nodes' source address, since a lookup from another would
@@ -137,6 +149,9 @@ type Manager struct {
 	// one said it, kept in memory only. See domestic.go.
 	domAddr netip.Addr
 
+	// The router's own entry. See local.go.
+	local localLive
+
 	// What the bridge's loop keeps to itself, under bridgeMu: one look at a
 	// time, so that two can't start the bridge twice.
 	bridgeMu    sync.Mutex
@@ -195,6 +210,9 @@ func New(cfg Config) (*Manager, error) {
 	if cfg.StatusAddr == "" {
 		cfg.StatusAddr = DefaultStatusAddr
 	}
+	if cfg.LocalPort <= 0 || cfg.LocalPort > 65535 {
+		cfg.LocalPort = DefaultLocalPort
+	}
 	for _, d := range []struct {
 		v   *time.Duration
 		def time.Duration
@@ -213,6 +231,12 @@ func New(cfg Config) (*Manager, error) {
 		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{},
 		rel: releases{byArch: map[string]*latest{}, gate: make(chan struct{}, 1)}, updateGate: make(chan struct{}, 1),
 		cutSeen: map[[2]uint]uint64{}, cutAt: map[uint]time.Time{},
+	}
+	m.local.token = newLocalToken()
+	m.local.src = newLocalSource(cfg.Now, m.localStatus, cfg.Usage.Through(usage.RouterID))
+	if cfg.Store.Read().Local.Enabled {
+		// found on: the router gets the same time to answer as when it is switched on
+		m.local.since, m.local.everOn = cfg.Now(), true
 	}
 	m.checkCA()
 	m.evalEntry(context.Background())
@@ -237,6 +261,7 @@ func (m *Manager) Run(ctx context.Context) {
 	m.spawn(m.watchLimits)
 	m.spawn(m.watchEntry)
 	m.spawn(m.watchBridge)
+	m.spawn(m.watchLocal)
 	m.spawn(m.watchReleases)
 	m.spawn(m.watchCerts)
 	<-run.Done()
