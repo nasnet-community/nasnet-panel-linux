@@ -384,21 +384,34 @@ func (s *Spec) validateLocal(exit netip.Addr, status netip.AddrPort) error {
 	return s.validateClients()
 }
 
-// validateClients holds every client's email apart from the others and from
-// the nodes' tags: a tunnel counts its bytes under its tag, as if the tag were
-// an email, so a client by that name would be counted into the tunnel.
+// validateClients checks the spec's own clients, against its nodes' tags.
 func (s *Spec) validateClients() error {
-	clients := s.Local.Clients
+	tags := make([]string, len(s.Nodes))
+	for i, n := range s.Nodes {
+		tags[i] = n.Tag
+	}
+	if err := CheckClients(s.Local.Clients, tags); err != nil {
+		return fmt.Errorf("local.%w", err)
+	}
+	return nil
+}
+
+// CheckClients says what is wrong with a set of clients for the entry, the
+// first thing it finds. Every email is held apart from the others and from the
+// tunnels' tags: a tunnel counts its bytes under its tag, as if the tag were an
+// email, so a client by that name would be counted into the tunnel. The bridge
+// runs it again on every set the hub sends while it runs.
+func CheckClients(clients []Client, tunnelTags []string) error {
 	if len(clients) > MaxLocalClients {
-		return fmt.Errorf("local.clients: %d is more than %d", len(clients), MaxLocalClients)
+		return fmt.Errorf("clients: %d is more than %d", len(clients), MaxLocalClients)
 	}
 	emails := map[string]string{}
-	for i, n := range s.Nodes {
-		emails[n.Tag] = fmt.Sprintf("nodes[%d].tag", i)
+	for _, tag := range tunnelTags {
+		emails[tag] = "a tunnel's tag"
 	}
 	ids := map[string]string{}
 	for i, c := range clients {
-		at := func(field string) string { return fmt.Sprintf("local.clients[%d].%s", i, field) }
+		at := func(field string) string { return fmt.Sprintf("clients[%d].%s", i, field) }
 		if !emailRe.MatchString(c.Email) {
 			return fmt.Errorf("%s: %q must be 1-64 letters, digits, '.', '_', '@' or '-'", at("email"), c.Email)
 		}

@@ -25,6 +25,7 @@ type bridge struct {
 	stats   featstats.Manager
 	tracker *tracker
 	target  *targetForwarder // nil without a local entry
+	entry   *entry           // the local entry's clients; nil without one
 	started time.Time
 
 	stopping  atomic.Bool
@@ -53,11 +54,22 @@ func newBridge(spec *bridgespec.Spec) (*bridge, error) {
 		return nil, err
 	}
 	b.tracker = newTracker(spec, time.Now)
+	if spec.Local != nil {
+		b.entry = newEntry(spec, b.tracker.local)
+	}
 	useTracker(b.tracker)
 	if b.xray, err = core.New(cfg); err != nil {
 		useTracker(nil)
 		b.closeTarget()
 		return nil, fmt.Errorf("xray: %w", err)
+	}
+	if b.entry != nil {
+		if err := b.entry.attach(b.xray); err != nil {
+			b.xray.Close()
+			useTracker(nil)
+			b.closeTarget()
+			return nil, fmt.Errorf("local: %w", err)
+		}
 	}
 	b.stats, _ = b.xray.GetFeature(featstats.ManagerType()).(featstats.Manager)
 	return b, nil
@@ -117,6 +129,9 @@ func (b *bridge) status() bridgespec.Status {
 		Xray:    core.Version(),
 		Nodes:   make([]bridgespec.NodeStatus, len(b.spec.Nodes)),
 	}
+	if b.entry != nil {
+		st.Local = b.entry.status(b.counter)
+	}
 	for i, n := range b.spec.Nodes {
 		up, since, flows := b.tracker.nodes[i].snapshot()
 		st.Nodes[i] = bridgespec.NodeStatus{
@@ -144,9 +159,13 @@ func (b *bridge) counter(name string) uint64 {
 	return uint64(c.Value())
 }
 
-// handler is the status page.
+// handler is the status page and, with a local entry, the hub's way to change
+// its clients.
 func (b *bridge) handler() http.Handler {
 	mux := http.NewServeMux()
+	if b.entry != nil {
+		mux.HandleFunc("PUT "+bridgespec.ClientsPath, b.entry.serveClients)
+	}
 	mux.HandleFunc("GET "+bridgespec.StatusPath, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

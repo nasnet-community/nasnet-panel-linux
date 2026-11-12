@@ -283,12 +283,12 @@ func TestValidateLocal(t *testing.T) {
 		{"too many clients", func(s *Spec) { s.Local.Clients = make([]Client, MaxLocalClients+1) }, "local.clients"},
 		{"a client without an email", func(s *Spec) { s.Local.Clients[0].Email = "" }, "local.clients[0].email"},
 		{"a client's email with a space", func(s *Spec) { s.Local.Clients[1].Email = "sub 2" }, "local.clients[1].email"},
-		{"two clients with one email", func(s *Spec) { s.Local.Clients[1].Email = s.Local.Clients[0].Email }, "already used by local.clients[0].email"},
-		{"a client named like a tunnel", func(s *Spec) { s.Local.Clients[0].Email = s.Nodes[0].Tag }, "already used by nodes[0].tag"},
+		{"two clients with one email", func(s *Spec) { s.Local.Clients[1].Email = s.Local.Clients[0].Email }, "already used by clients[0].email"},
+		{"a client named like a tunnel", func(s *Spec) { s.Local.Clients[0].Email = s.Nodes[0].Tag }, "already used by a tunnel's tag"},
 		{"a client's id that is no UUID", func(s *Spec) { s.Local.Clients[0].UUID = "not-a-uuid" }, "local.clients[0].uuid"},
 		{"two clients with one id", func(s *Spec) {
 			s.Local.Clients[1].UUID = strings.ToUpper(s.Local.Clients[0].UUID)
-		}, "the same id as local.clients[0].uuid"},
+		}, "the same id as clients[0].uuid"},
 		{"a node tagged like the entry", func(s *Spec) { s.Nodes[0].Tag = LocalTag }, "already used by the local entry"},
 	}
 	for _, tt := range tests {
@@ -348,6 +348,29 @@ func TestNoNodesNeedsTheLocalEntry(t *testing.T) {
 	s.Nodes = nil
 	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "nodes: none") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// The bridge runs the same check on every set the hub sends it later, with
+// the tunnels' tags it was started with.
+func TestCheckClients(t *testing.T) {
+	good := validLocal().Clients
+	if err := CheckClients(good, []string{"n1", "n2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckClients(nil, nil); err != nil {
+		t.Fatalf("no clients at all: %v", err)
+	}
+	named := []Client{{Email: "n2", UUID: good[0].UUID}}
+	if err := CheckClients(named, []string{"n1", "n2"}); err == nil || !strings.Contains(err.Error(), "a tunnel's tag") {
+		t.Fatalf("a client named like a tunnel: %v", err)
+	}
+	if err := CheckClients(named, nil); err != nil {
+		t.Fatalf("the same name with no such tunnel: %v", err)
+	}
+	bad := []Client{{Email: good[0].Email, UUID: "7f8b1a9e-not-a-uuid"}}
+	if err := CheckClients(bad, nil); err == nil || strings.Contains(err.Error(), "7f8b1a9e-not") {
+		t.Fatalf("a bad id must be refused without being quoted whole: %v", err)
 	}
 }
 
