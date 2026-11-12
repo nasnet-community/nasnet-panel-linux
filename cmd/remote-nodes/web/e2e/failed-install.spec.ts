@@ -82,7 +82,7 @@ test('a refusal is titled so in the tray and on the failed install\'s page, and 
   // the node page of the install that was never kept
   await page.goto('/#/nodes/3')
   await expect(page.getByRole('heading', { level: 1, name: "This server can't be used" })).toBeVisible({ timeout: 15000 })
-  await expect(page.locator('p').filter({ hasText: 'This server already runs a nasnet-agent that Remote Nodes did not install' })).toBeVisible()
+  await expect(page.locator('p').filter({ hasText: 'This server already runs a nasnet-agent that this plugin did not install' })).toBeVisible()
   await expect(page.getByRole('main').getByRole('button', { name: 'Try again' })).toHaveCount(0)
   await page.getByRole('main').getByRole('button', { name: 'Change details' }).click()
   await expect(dialog(page, 'Add a node').getByLabel('Server address')).toHaveValue('hasagent.example.com')

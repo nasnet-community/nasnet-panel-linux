@@ -163,7 +163,7 @@ func TestWithoutTheOptionAServersXrayIsRefusedAndItsBuildIsSaid(t *testing.T) {
 			if he.Version != c.version || he.SameBuild != c.same || !slices.Equal(he.Found(), c.found) {
 				t.Errorf("it says %+v, want version %q, same build %v, found %v", he, c.version, c.same, c.found)
 			}
-			for _, s := range append([]string{"Remote Nodes did not install", "Use a server without one, or take it over."}, c.say...) {
+			for _, s := range append([]string{"this plugin did not install", "Use a server without one, or take it over."}, c.say...) {
 				if !strings.Contains(err.Error(), s) {
 					t.Errorf("%q should say %q", err, s)
 				}

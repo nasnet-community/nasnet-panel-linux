@@ -17,7 +17,7 @@ test.describe('a refused server', () => {
     // titled for what it is, with the reason on the line under it, once, in the page's words
     const failed = dialog(page, "This server can't be used")
     await expect(failed).toBeVisible({ timeout: 20000 })
-    await expect(failed).toContainText('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')
+    await expect(failed).toContainText('This server already runs an Xray that this plugin did not install. Use a server without one, or take it over.')
     // what was found, said by the page from what the hub sent
     await expect(failed).toContainText('its service, xray.service')
     await expect(failed).toContainText("It is Xray 26.9.1, not the same build as this plugin's")
@@ -37,7 +37,7 @@ test.describe('a refused server', () => {
     const failed = dialog(page, "This server can't be used")
     await expect(failed).toBeVisible({ timeout: 20000 })
     await expect(failed).toContainText(
-      "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
+      "This server already runs a nasnet-agent that this plugin did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
     )
     await expect(failed).toContainText('Nothing was changed on the server, and nothing was kept.')
   })

@@ -42,7 +42,7 @@ test.describe('a server with an Xray of its own', () => {
     await expect(d).toBeVisible({ timeout: 20000 })
     // what was found, and what becomes of it, said before anything is asked
     // the reason is said once: under the title, not again in a box
-    await expect(d.getByText('This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.')).toHaveCount(1)
+    await expect(d.getByText('This server already runs an Xray that this plugin did not install. Use a server without one, or take it over.')).toHaveCount(1)
     await expect(d.getByRole('alert')).toHaveCount(0)
     await expect(d).toContainText('Found on the server:')
     await expect(d).toContainText('its program, /usr/local/bin/xray')

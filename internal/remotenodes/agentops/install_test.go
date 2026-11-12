@@ -389,7 +389,7 @@ func TestAnInstallStopsBeforeChangingAServerThatCannotTakeIt(t *testing.T) {
 		// the server's own Xray, found any of the ways it shows
 		{"an Xray binary at the standard path", func(r *installRig) {
 			r.sb.put("/usr/local/bin/xray", "#!/bin/sh\necho theirs\n", 0o755)
-		}, ErrServerHasXray, []string{"already runs an Xray", "Remote Nodes did not install", "/usr/local/bin/xray", "without one"}},
+		}, ErrServerHasXray, []string{"already runs an Xray", "this plugin did not install", "/usr/local/bin/xray", "without one"}},
 		{"an xray.service where the install writes its own", func(r *installRig) {
 			r.sb.put("/etc/systemd/system/xray.service", "[Service]\nExecStart=/their/xray\n", 0o644)
 		}, ErrServerHasXray, []string{"xray.service unit"}},

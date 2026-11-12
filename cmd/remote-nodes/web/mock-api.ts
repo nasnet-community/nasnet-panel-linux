@@ -703,8 +703,8 @@ const CLEANED = 'The server was cleaned up and nothing was kept.'
 const KEPT = 'Cleaning up the server failed too, so the install is kept as unfinished: clean it up or forget it on the Nodes tab.'
 const TOOK_OVER = "The server's own Xray was stopped and removed, as you asked, and is not restored."
 const xrayHere = (version: string, same: boolean) =>
-  `This server already runs an Xray that Remote Nodes did not install (/usr/local/bin/xray, an xray.service unit). It is Xray ${version}, ${same ? 'the same build as' : 'not the same build as'} this plugin's. Use a server without one, or take it over.`
-const AGENT_HERE = "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one."
+  `This server already runs an Xray that this plugin did not install (/usr/local/bin/xray, an xray.service unit). It is Xray ${version}, ${same ? 'the same build as' : 'not the same build as'} this plugin's. Use a server without one, or take it over.`
+const AGENT_HERE = "This server already runs a nasnet-agent that this plugin did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one."
 /** How many sites the node looks at when it chooses a Reality target itself (agentops.DefaultTargets). */
 const SITES_TRIED = 8
 const STILL_RUNNING = 'An Xray is still running on this server after its service was stopped, for example in a container. Stop it there, or use another server. Its service was started again.'

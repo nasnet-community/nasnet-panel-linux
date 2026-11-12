@@ -571,7 +571,7 @@ describe('the text', () => {
   it('is a preface, each package in the order given, then the font', () => {
     expect(format([bare, full], FONT)).toBe(
       [
-        'The licences of the software built into the Remote Nodes web page: the',
+        'The licences of the software built into the web page of the V2ray/Xray plugin: the',
         'libraries it bundles and the font it embeds. The page itself is free',
         'software under the GNU Affero General Public License, version 3 or',
         'later: see LICENSE.',
@@ -660,7 +660,7 @@ describe('the text', () => {
     const out = format([full], FONT, [tailwind, normalize])
     expect(out.startsWith(
       [
-        'The licences of the software built into the Remote Nodes web page: the',
+        'The licences of the software built into the web page of the V2ray/Xray plugin: the',
         'libraries it bundles, the base styles its CSS gets from Tailwind CSS, and',
         'the font it embeds. The page itself is free software under the GNU Affero',
         'General Public License, version 3 or later: see LICENSE.',

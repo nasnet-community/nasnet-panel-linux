@@ -65,7 +65,7 @@ func utc(t time.Time) *time.Time {
 func (a *API) allowed(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case r.Header.Get(UIHeader) != "1":
-		a.fail(w, &Error{CodeForbidden, "This request did not come from the Remote Nodes page."})
+		a.fail(w, &Error{CodeForbidden, "This request did not come from the plugin's page."})
 	case r.Method != http.MethodGet && r.Method != http.MethodHead && !fromThisSite(r):
 		a.fail(w, &Error{CodeForbidden, "Requests from other sites are refused."})
 	default:

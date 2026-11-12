@@ -72,7 +72,7 @@ export const en = {
   'attn.vpnDown.title': 'The VPN is offline',
   'attn.vpnDown.detail': 'Traffic from subscriptions has no exit until it is back. Check the VPN in NasNet Panel.',
   'attn.routerOS.title': 'RouterOS {version} is too old',
-  'attn.routerOS.detail': 'Remote Nodes needs RouterOS {min} or newer. Update RouterOS, then reload this page.',
+  'attn.routerOS.detail': 'V2ray/Xray needs RouterOS {min} or newer. Update RouterOS, then reload this page.',
 
   // jobs and their steps
   'job.step': 'Step {n} of {m}',
@@ -227,7 +227,7 @@ export const en = {
   'error.host_key_changed': "The node's SSH key changed. Check it before you go on.",
   'error.busy': 'Another job is already running on this node.',
   'error.backup_bad_passphrase': "That passphrase doesn't open this backup.",
-  'error.backup_bad_file': "This file isn't a Remote Nodes backup.",
+  'error.backup_bad_file': "This file isn't a V2ray/Xray backup.",
 
   // subscriptions
   'subs.name': 'Name',
@@ -627,7 +627,7 @@ export const en = {
   'job.openUnfinished': 'Clean up or forget',
   'job.tryAgain': 'Try again',
   'job.gone': 'This install failed, and no node was kept.',
-  'error.server_has_xray': 'This server already runs an Xray that Remote Nodes did not install. Use a server without one, or take it over.',
+  'error.server_has_xray': 'This server already runs an Xray that this plugin did not install. Use a server without one, or take it over.',
   'error.xray_not_stopped':
     'An Xray is still running on this server after its service was stopped, for example in a container. Stop it there, or use another server.',
   'error.port_in_use': 'A port this node needs is already in use on the server. Free it, or use another port.',
@@ -635,7 +635,7 @@ export const en = {
   'error.reality_target_failed': "The node can't use that Reality target. Give another, or let the node choose one.",
   'error.needs_root': "This login can't act as root: the server has no sudo, or sudo didn't accept the password. Use root, or a user that can use sudo.",
   'error.server_has_agent':
-    "This server already runs a nasnet-agent that Remote Nodes did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
+    "This server already runs a nasnet-agent that this plugin did not install, such as a Linux panel's node. A node belongs to one hub: use a server without one.",
   'error.server_is_node': 'This server is already one of your nodes, under another address. Change that node instead of adding the server again.',
 
   // a failed install: said once, with what to do about it

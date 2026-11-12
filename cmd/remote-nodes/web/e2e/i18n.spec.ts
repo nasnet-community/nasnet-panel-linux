@@ -53,7 +53,7 @@ test('the language button switches the whole page to Persian: right to left, Per
   const tabs = await Promise.all(['نودها', 'اشتراک‌ها', 'تنظیمات'].map((name) => page.getByRole('tab', { name }).boundingBox()))
   expect(tabs[0]!.x).toBeGreaterThan(tabs[1]!.x)
   expect(tabs[1]!.x).toBeGreaterThan(tabs[2]!.x)
-  const brand = (await page.getByRole('link', { name: /Remote Nodes/ }).boundingBox())!
+  const brand = (await page.getByRole('link', { name: /V2ray\/Xray/ }).boundingBox())!
   expect(brand.x).toBeGreaterThan(page.viewportSize()!.width / 2)
   // Persian text uses the Persian font when the device has it, else the system's
   expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^Vazirmatn/)

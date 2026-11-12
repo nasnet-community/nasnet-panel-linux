@@ -128,7 +128,7 @@ function AboutSection({ config }: { config: AppConfig }) {
       }
     >
       <Item label={t('about.version')}>
-        <span dir="ltr">Remote Nodes {config.version}</span>
+        <span dir="ltr">V2ray/Xray {config.version}</span>
       </Item>
       <Item label={t('about.commit')}>
         <span dir="ltr" className="font-mono">

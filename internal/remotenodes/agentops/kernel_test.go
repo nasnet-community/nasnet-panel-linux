@@ -63,7 +63,7 @@ func TestTheInstallMakesTheKernelSettingLiveAndKeepsItForTheNextBoot(t *testing.
 	if !slices.Equal(settings, []string{"net.ipv4.tcp_retries2 = 5"}) {
 		t.Errorf("the file holds %q:\n%s", settings, text)
 	}
-	if !strings.HasPrefix(text, "# Written by the Remote Nodes plugin") {
+	if !strings.HasPrefix(text, "# Written by the V2ray/Xray plugin") {
 		t.Errorf("the file doesn't say whose it is:\n%s", text)
 	}
 	if mk := r.markerOnServer(); mk.TCPRetries2Was != "15" {

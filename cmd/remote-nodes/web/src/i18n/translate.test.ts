@@ -114,7 +114,7 @@ describe('dictionaries', () => {
   it('write Persian digits, never ASCII ones, apart from product names', () => {
     for (const key of keys) {
       for (const s of text(fa[key])) {
-        const prose = s.replace(/L2TP|OpenVPN|RouterOS|Remote Nodes|\{\w+\}/g, '')
+        const prose = s.replace(/L2TP|OpenVPN|RouterOS|V2ray\/Xray|\{\w+\}/g, '')
         expect(prose, key).not.toMatch(/[0-9]/)
       }
     }

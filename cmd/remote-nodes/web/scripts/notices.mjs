@@ -436,13 +436,13 @@ function fontBlock(f) {
 export function format(packages, font, css = []) {
   const preface = css.length
     ? [
-        'The licences of the software built into the Remote Nodes web page: the',
+        'The licences of the software built into the web page of the V2ray/Xray plugin: the',
         'libraries it bundles, the base styles its CSS gets from Tailwind CSS, and',
         'the font it embeds. The page itself is free software under the GNU Affero',
         'General Public License, version 3 or later: see LICENSE.',
       ]
     : [
-        'The licences of the software built into the Remote Nodes web page: the',
+        'The licences of the software built into the web page of the V2ray/Xray plugin: the',
         'libraries it bundles and the font it embeds. The page itself is free',
         'software under the GNU Affero General Public License, version 3 or',
         'later: see LICENSE.',
