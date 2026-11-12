@@ -21,7 +21,10 @@ import (
 const (
 	// SchemaVersion is the state file's format. Bump it whenever a change
 	// would make an older build misread the file.
-	SchemaVersion = 1
+	//
+	// 2 added Local and LocalClients, the entry on the router itself. A file
+	// of version 1 is read as one with that entry off.
+	SchemaVersion = 2
 
 	// The caps stay hard-coded until the plugin has been measured on a real
 	// router.
@@ -220,6 +223,39 @@ type Enablement struct {
 	Enabled        bool   `json:"enabled"`
 }
 
+// Local is the entry on the router itself, "This router" on the page: an Xray
+// inbound in the bridge that subscriptions connect to straight, with no node
+// in between. It is not a node: nothing is installed for it and it has no
+// agent, so it has a record of its own.
+type Local struct {
+	// Enabled is its switch. Off leaves the rest as it was, so switching it
+	// on again gives every subscription the link it had.
+	Enabled bool `json:"enabled"`
+	// Host is the name or address its links carry when one was set by hand,
+	// in the form CleanHost returns. Empty means the router's own name.
+	Host string `json:"host,omitempty"`
+
+	// The REALITY side, as on a node. The keys are made the first time it is
+	// switched on; the target may come a little later, once one is chosen.
+	RealityTarget     string `json:"reality_target,omitempty"` // host:port the handshake is forwarded to
+	RealitySNI        string `json:"reality_sni,omitempty"`
+	RealityPublicKey  string `json:"reality_public_key,omitempty"`
+	RealityShortID    string `json:"reality_short_id,omitempty"`
+	RealityPrivateKey string `json:"reality_private_key,omitempty"` // hub only
+}
+
+// HasKeys says whether the entry's REALITY keys have been made.
+func (l Local) HasKeys() bool { return l.RealityPrivateKey != "" }
+
+// LocalClient is a subscription's client on the router's own entry, what an
+// Enablement is on a node. Switching it off keeps the record, so switching it
+// on again hands out the same UUID and the link doesn't change.
+type LocalClient struct {
+	SubscriptionID uint   `json:"subscription_id"`
+	ClientUUID     string `json:"client_uuid"` // the VLESS credential. Hub only
+	Enabled        bool   `json:"enabled"`
+}
+
 // Settings are the defaults a new node starts from.
 type Settings struct {
 	AgentPort int `json:"agent_port"`
@@ -249,6 +285,10 @@ type State struct {
 	Nodes         []Node         `json:"nodes"`
 	Subscriptions []Subscription `json:"subscriptions"`
 	Enablements   []Enablement   `json:"enablements"`
+
+	// The entry on the router itself, and the subscriptions' clients on it.
+	Local        Local         `json:"local"`
+	LocalClients []LocalClient `json:"local_clients"`
 }
 
 // NewState is what a fresh install starts with.
@@ -262,6 +302,7 @@ func (s State) Clone() State {
 	s.Nodes = slices.Clone(s.Nodes)
 	s.Subscriptions = slices.Clone(s.Subscriptions)
 	s.Enablements = slices.Clone(s.Enablements)
+	s.LocalClients = slices.Clone(s.LocalClients)
 	return s
 }
 
@@ -276,6 +317,14 @@ func (s *State) FindNode(id uint) *Node {
 func (s *State) FindSubscription(id uint) *Subscription {
 	if i := slices.IndexFunc(s.Subscriptions, func(x Subscription) bool { return x.ID == id }); i >= 0 {
 		return &s.Subscriptions[i]
+	}
+	return nil
+}
+
+// FindLocalClient is the subscription's client on the router's own entry.
+func (s *State) FindLocalClient(subscriptionID uint) *LocalClient {
+	if i := slices.IndexFunc(s.LocalClients, func(c LocalClient) bool { return c.SubscriptionID == subscriptionID }); i >= 0 {
+		return &s.LocalClients[i]
 	}
 	return nil
 }
@@ -344,6 +393,7 @@ func (s *State) RemoveSubscription(id uint) error {
 	}
 	s.Subscriptions = slices.Delete(s.Subscriptions, i, i+1)
 	s.Enablements = slices.DeleteFunc(s.Enablements, func(e Enablement) bool { return e.SubscriptionID == id })
+	s.LocalClients = slices.DeleteFunc(s.LocalClients, func(c LocalClient) bool { return c.SubscriptionID == id })
 	return nil
 }
 

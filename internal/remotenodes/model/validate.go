@@ -3,6 +3,7 @@
 package model
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/netip"
@@ -299,6 +300,86 @@ func (e Enablement) Validate() error {
 	return nil
 }
 
+// validKey takes a REALITY key the way Xray reads one: 32 bytes of base64url
+// without padding. The message never quotes it.
+func validKey(what, s string) error {
+	if raw, err := base64.RawURLEncoding.DecodeString(s); err != nil || len(raw) != 32 {
+		return invalid("%s is not a 32-byte base64url key", what)
+	}
+	return nil
+}
+
+// validShortID takes 1 to 8 bytes of lower-case hex, the form a link carries.
+func validShortID(s string) bool {
+	if len(s) < 2 || len(s) > 16 || len(s)%2 != 0 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// Validate checks the router's own entry. Its keys come as a whole or not at
+// all, and it can't be on without them: they are what its links are made of.
+func (l Local) Validate() error {
+	if l.Host != "" {
+		host, err := CleanHost(l.Host)
+		if err != nil {
+			return err
+		}
+		if host != l.Host {
+			return invalid("the host must be written %q", host)
+		}
+	}
+	if l.RealityTarget != "" {
+		if err := validTarget(l.RealityTarget); err != nil {
+			return fmt.Errorf("Reality target: %w", err)
+		}
+	}
+	if l.RealitySNI != "" {
+		if err := validSNI(l.RealitySNI); err != nil {
+			return fmt.Errorf("sni: %w", err)
+		}
+	}
+	set := 0
+	for _, v := range []string{l.RealityPrivateKey, l.RealityPublicKey, l.RealityShortID} {
+		if v != "" {
+			set++
+		}
+	}
+	switch {
+	case set == 0 && l.Enabled:
+		return invalid("the entry can't be on without its REALITY keys")
+	case set == 0:
+		return nil
+	case set != 3:
+		return invalid("the entry needs its REALITY private key, public key and short id together")
+	}
+	if err := validKey("the REALITY private key", l.RealityPrivateKey); err != nil {
+		return err
+	}
+	if err := validKey("the REALITY public key", l.RealityPublicKey); err != nil {
+		return err
+	}
+	if !validShortID(l.RealityShortID) {
+		return invalid("the REALITY short id must be 2 to 16 lower-case hex digits, in pairs")
+	}
+	return nil
+}
+
+func (c LocalClient) Validate() error {
+	if c.SubscriptionID == 0 {
+		return invalid("a client on this router needs a subscription")
+	}
+	if !validUUID(c.ClientUUID) {
+		return invalid("the client id is not a lower-case UUID")
+	}
+	return nil
+}
+
 // validCA takes both halves of the CA or neither, and a pair that pki can
 // load. The message says what is wrong and never quotes the key.
 func validCA(cert, key string) error {
@@ -400,6 +481,27 @@ func (s State) Validate() error {
 			return invalid("subscription %d on node %d shares its client id with another login", e.SubscriptionID, e.NodeID)
 		}
 		pairs[pair], uuids[e.ClientUUID] = true, true
+	}
+
+	if err := s.Local.Validate(); err != nil {
+		return fmt.Errorf("this router: %w", err)
+	}
+	// The router's entry is one more place to log in, so its client ids are
+	// held apart from every node's.
+	here := map[uint]bool{}
+	for _, c := range s.LocalClients {
+		if err := c.Validate(); err != nil {
+			return fmt.Errorf("subscription %d on this router: %w", c.SubscriptionID, err)
+		}
+		switch {
+		case !subs[c.SubscriptionID]:
+			return invalid("subscription %d on this router points at one that doesn't exist", c.SubscriptionID)
+		case here[c.SubscriptionID]:
+			return invalid("subscription %d is on this router twice", c.SubscriptionID)
+		case uuids[c.ClientUUID]:
+			return invalid("subscription %d on this router shares its client id with another login", c.SubscriptionID)
+		}
+		here[c.SubscriptionID], uuids[c.ClientUUID] = true, true
 	}
 	return nil
 }

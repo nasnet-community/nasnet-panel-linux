@@ -404,7 +404,7 @@ func TestFilesThatCannotBeUsedAreCorrupt(t *testing.T) {
 func TestAFileFromANewerReleaseIsLeftAlone(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, FileName)
-	newer := `{"version": 2, "nodes": {"shape": "from the future"}}`
+	newer := `{"version": 99, "nodes": {"shape": "from the future"}}`
 	must(t, os.WriteFile(path, []byte(newer), 0o600))
 
 	_, err := Open(dir)
