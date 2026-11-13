@@ -48,10 +48,10 @@ test('the tab shows the sample data: the tiles, the toolbar, and every subscript
   else {
     // the nodes sit under one heading, with the other columns beside it
     const heads = page.getByRole('columnheader')
-    await expect(heads).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Limits', 'Actions', 'Node 1', /^Node 2\s*unreachable$/])
+    await expect(heads).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Traffic limit', 'Days left', 'Actions', 'Node 1', /^Node 2\s*unreachable$/])
     // a dot for how each node is doing
-    await expect(heads.nth(5).locator('[aria-hidden]')).toHaveClass(/bg-ok/)
-    await expect(heads.nth(6).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
+    await expect(heads.nth(6).locator('[aria-hidden]')).toHaveClass(/bg-ok/)
+    await expect(heads.nth(7).locator('[aria-hidden]')).toHaveClass(/bg-bad/)
   }
   // where a switch is on for the node that is down, it says when it takes effect
   await expect(row(page, 'Sara')).toContainText('when it is back')

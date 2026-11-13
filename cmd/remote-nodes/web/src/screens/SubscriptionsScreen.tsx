@@ -21,6 +21,7 @@ import {
 import { shareTarget, useSubscriptionDialogs } from './SubscriptionDialogs'
 import {
   AddButton,
+  DaysCell,
   EmptyState,
   LimitsCell,
   Name,
@@ -153,7 +154,8 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
         <>
           {/* a table on wide screens */}
           <Card className="hidden overflow-hidden md:block">
-            <div className="overflow-x-auto">
+            {/* relative, so the hidden text of a cell scrolls with the table instead of widening the page */}
+            <div className="relative overflow-x-auto">
               <table aria-label={t('tabs.subscriptions')} className="w-full text-[13px]">
                 <thead className="border-b border-border text-xs text-muted">
                   <tr>
@@ -171,6 +173,9 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                     </th>
                     <th scope="col" rowSpan={2} className="px-3 py-2.5 text-start align-bottom font-medium">
                       {t('subs.col.limits')}
+                    </th>
+                    <th scope="col" rowSpan={2} className="px-3 py-2.5 text-start align-bottom font-medium">
+                      {t('subs.col.days')}
                     </th>
                     <th scope="col" rowSpan={2} className="px-3 py-2.5">
                       <span className="sr-only">{t('subs.col.actions')}</span>
@@ -204,6 +209,9 @@ export function SubscriptionsScreen({ config, onChanged }: { config: AppConfig |
                       </td>
                       <td className="px-3 py-3">
                         <LimitsCell s={s} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <DaysCell s={s} />
                       </td>
                       <td className="px-3 py-3">
                         <RowButtons name={s.name} shareable={shareable} actions={actions} />

@@ -242,43 +242,46 @@ export function extendDay(day: string, by: { days?: number; years?: number }, no
   return dayOf(d)
 }
 
-/** An end date as a table cell shows it: the day, and how far off it is, coloured as it nears. */
-export function expiryParts(t: T, fmt: Format, iso: string, now = Date.now()): { date: string; when: string; tone: 'muted' | 'warn' | 'bad' } {
-  const left = Date.parse(iso) - now
-  if (left <= 0) return { date: fmt.date(iso), when: t('subs.quota.ended', { when: fmt.relative(iso, now) }), tone: 'bad' }
-  return { date: fmt.date(iso), when: fmt.relative(iso, now), tone: left <= 7 * DAY ? 'warn' : 'muted' }
-}
-
-/** What the Limits column says of a subscription: its headline, how full its bar is, and the small line under it. */
+/** What the Traffic limit column says of a subscription: how much of its limit is used, and how full its bar is. */
 export interface Limits {
-  /** "62.0 GB of 100 GB", "Ends 14 Nov 2026", "Ended 14 Nov 2026", or "None" */
+  /** "62.0 GB of 100 GB", or "No limit" */
   head: string
   /** how full the traffic limit is, 0 to 100; null with no traffic limit */
   pct: number | null
-  /** "38.0 GB left · ends 22 Dec 2026, in 40 days", "in 2 days", "used up"; '' when there is nothing to add */
-  foot: string
-  /** the small line's colour: calm, a warning in an end date's last week, red once something has run out */
+}
+
+export function limitsOf(s: Pick<Subscription, 'trafficLimit' | 'trafficUsed'>, t: T, fmt: Format): Limits {
+  if (s.trafficLimit <= 0) return { head: t('subs.quota.none'), pct: null }
+  return { head: t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }), pct: usedPercent(s.trafficUsed, s.trafficLimit) }
+}
+
+/** What the Days left column says of an end date. */
+export interface DaysLeft {
+  /** "23 days", "Ends today", "Ended", or "No end date" */
+  head: string
+  /** the same on a phone's card, where there is no column heading: "23 days left", "Ended 6 Nov 2026"; '' with no end date */
+  long: string
+  /** "22 Dec 2026"; '' with no end date */
+  date: string
+  /** calm, a warning in the last week, red once it has ended */
   tone: 'muted' | 'warn' | 'bad'
 }
 
-type Limited = Pick<Subscription, 'trafficLimit' | 'trafficUsed' | 'expiresAt'>
+const startOfDay = (ms: number) => {
+  const d = new Date(ms)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
 
-/** A traffic limit and an end date as one cell: the limit leads when there is one, else the date. */
-export function limitsOf(s: Limited, t: T, fmt: Format, now = Date.now()): Limits {
-  const limited = s.trafficLimit > 0
-  const left = s.trafficLimit - s.trafficUsed
-  const date = s.expiresAt ? expiryParts(t, fmt, s.expiresAt, now) : null
-  const ended = date?.tone === 'bad'
-  if (!limited && !date) return { head: t('subs.limits.none'), pct: null, foot: '', tone: 'muted' }
-  if (!limited && date) return { head: t(ended ? 'subs.limits.ended' : 'subs.limits.ends', { date: date.date }), pct: null, foot: fmt.relative(s.expiresAt!, now), tone: date.tone }
-  const room = left > 0 ? t('subs.quota.left', { size: fmt.bytes(left) }) : t('subs.quota.usedUp')
-  const end = date ? t(ended ? 'subs.limits.endedOn' : 'subs.limits.endsOn', { date: date.date, when: fmt.relative(s.expiresAt!, now) }) : ''
-  return {
-    head: t('subs.quota.usedOf', { used: fmt.bytes(s.trafficUsed), limit: fmt.bytes(s.trafficLimit) }),
-    pct: usedPercent(s.trafficUsed, s.trafficLimit),
-    foot: [room, end].filter(Boolean).join(' · '),
-    tone: left <= 0 || ended ? 'bad' : (date?.tone ?? 'muted'),
-  }
+/** Days left to an end date, counted in calendar days: an end date of today is "Ends today", not "0 days". */
+export function daysLeftOf(expiresAt: string | null, t: T, fmt: Format, now = Date.now()): DaysLeft {
+  if (!expiresAt) return { head: t('subs.quota.noEnd'), long: '', date: '', tone: 'muted' }
+  const at = Date.parse(expiresAt)
+  const date = fmt.date(expiresAt)
+  if (at <= now) return { head: t('subs.days.ended'), long: t('subs.days.endedOn', { date }), date, tone: 'bad' }
+  // rounded, as a day the clocks change on is 23 or 25 hours long
+  const n = Math.round((startOfDay(at) - startOfDay(now)) / DAY)
+  if (n <= 0) return { head: t('subs.days.today'), long: t('subs.days.today'), date, tone: 'warn' }
+  return { head: t('subs.days.left', { n }), long: t('subs.days.leftLong', { n }), date, tone: n <= 7 ? 'warn' : 'muted' }
 }
 
 /** What the two limit fields hold. `limit` is bytes and `expiresAt` an instant; null is "none". A bad field is flagged and read as none. */

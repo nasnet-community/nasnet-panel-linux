@@ -3,7 +3,7 @@ import { Info, Pencil, Plus, QrCode as QrIcon, Users } from '../components/icons
 import { Badge, Button, Card, btn, cx } from '../components/ui'
 import { useNow } from '../hooks/usePoll'
 import { useLang } from '../i18n'
-import { limitsOf, quotaTone, statusText, type Editable, type Place, type Status, type StatusKey } from '../lib/subscriptions'
+import { daysLeftOf, limitsOf, quotaTone, statusText, type Editable, type Place, type Status, type StatusKey } from '../lib/subscriptions'
 
 /** One number of the row above a list, with what it is and a small line under it. */
 export function Tile({ label, value, unit, sub }: { label: string; value: ReactNode; unit?: string; sub: string }) {
@@ -213,35 +213,48 @@ type Quota = Pick<Editable, 'trafficLimit' | 'trafficUsed' | 'expiresAt' | 'stop
 
 const WHEN: Record<'muted' | 'warn' | 'bad', string> = { muted: 'text-faint', warn: 'text-warn-text', bad: 'text-bad-text' }
 
-/** The Limits column: the traffic limit with its bar and what is left, and the end date beside it; the date alone when there is no limit. */
+/** The Traffic limit column: how much of the limit is used, with its bar. */
 export function LimitsCell({ s }: { s: Quota }) {
   const { t, fmt } = useLang()
-  const now = useNow(60000)
-  const l = limitsOf(s, t, fmt, now)
-  if (l.pct === null && !l.foot) return <span className="text-xs text-faint">{l.head}</span>
+  const l = limitsOf(s, t, fmt)
+  if (l.pct === null) return <span className="text-xs text-faint">{l.head}</span>
   return (
-    <div className="flex min-w-[9rem] max-w-[15rem] flex-col gap-1">
+    <div className="flex min-w-[8rem] max-w-[15rem] flex-col gap-1.5">
       <span className="tabular whitespace-nowrap text-[13px]">{l.head}</span>
-      {l.pct !== null && <Meter pct={l.pct} label={t('subs.quota.traffic')} />}
-      <span className={cx('tabular text-xs', WHEN[l.tone])}>{l.foot}</span>
+      <Meter pct={l.pct} label={t('subs.quota.traffic')} />
+    </div>
+  )
+}
+
+/** The Days left column: the days to the end date, coloured as it nears, with the date under them. */
+export function DaysCell({ s }: { s: Quota }) {
+  const { t, fmt } = useLang()
+  const now = useNow(60000)
+  const d = daysLeftOf(s.expiresAt, t, fmt, now)
+  if (!d.date) return <span className="text-xs text-faint">{d.head}</span>
+  return (
+    <div className="flex flex-col gap-0.5 whitespace-nowrap">
+      <span className={cx('tabular text-[13px]', d.tone !== 'muted' && WHEN[d.tone])}>{d.head}</span>
+      <span className="tabular text-xs text-faint">{d.date}</span>
     </div>
   )
 }
 
 /**
- * The same on a phone's card, in a small box. A card has no column to keep in line, so the box is left
- * out when there is no limit and no date.
+ * Both on a phone's card, in a small box. A card has no column to keep in line, so the box is left
+ * out when there is no limit and no end date.
  */
 export function QuotaSummary({ s }: { s: Quota }) {
   const { t, fmt } = useLang()
   const now = useNow(60000)
-  const l = limitsOf(s, t, fmt, now)
-  if (l.pct === null && !l.foot) return null
+  const l = limitsOf(s, t, fmt)
+  const d = daysLeftOf(s.expiresAt, t, fmt, now)
+  if (l.pct === null && !d.date) return null
   return (
     <div className="flex flex-col gap-1 rounded-md border border-border px-3 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
         <span className="tabular text-[13px]">{l.head}</span>
-        <span className={cx('tabular text-xs', WHEN[l.tone])}>{l.foot}</span>
+        {d.long && <span className={cx('tabular text-xs', WHEN[d.tone])}>{d.long}</span>}
       </div>
       {l.pct !== null && <Meter pct={l.pct} label={t('subs.quota.traffic')} />}
     </div>

@@ -5,8 +5,8 @@ import type { NodeSubscription, Subscription } from './api'
 import { makeFormat } from './format'
 import {
   MAX_LIMIT_GB,
+  daysLeftOf,
   endOfDay,
-  expiryParts,
   limitsOf,
   statusText,
   extendDay,
@@ -108,52 +108,68 @@ describe('how full a limit is', () => {
   })
 })
 
-describe('the Limits column', () => {
-  const iso = (days: number) => new Date(NOW + days * DAYMS).toISOString()
-  const of = (o: { limit?: number; used?: number; days?: number }, c = en) => {
-    const l = limitsOf({ trafficLimit: o.limit ?? 0, trafficUsed: o.used ?? 0, expiresAt: o.days === undefined ? null : iso(o.days) }, c.t, c.fmt, NOW)
-    return { ...l, head: plain(l.head), foot: plain(l.foot) }
+describe('the Traffic limit column', () => {
+  const of = (o: { limit?: number; used?: number }, c = en) => {
+    const l = limitsOf({ trafficLimit: o.limit ?? 0, trafficUsed: o.used ?? 0 }, c.t, c.fmt)
+    return { ...l, head: plain(l.head) }
   }
 
-  it('says None for a subscription with no limit and no end date', () => {
-    expect(of({})).toEqual({ head: 'None', pct: null, foot: '', tone: 'muted' })
-    // what it has used is no limit
-    expect(of({ used: 5e9 }).head).toBe('None')
+  it('says No limit for a subscription without one, whatever it has used', () => {
+    expect(of({})).toEqual({ head: 'No limit', pct: null })
+    expect(of({ used: 5e9 }).head).toBe('No limit')
   })
 
-  it('leads with the traffic limit, with what is left under its bar', () => {
-    expect(of({ limit: 100e9, used: 62e9 })).toEqual({ head: '62.0 GB of 100 GB', pct: 62, foot: '38.0 GB left', tone: 'muted' })
-    expect(of({ limit: 50e9, used: 50e9 })).toEqual({ head: '50.0 GB of 50.0 GB', pct: 100, foot: 'used up', tone: 'bad' })
-    expect(of({ limit: 50e9, used: 60e9 })).toMatchObject({ pct: 100, foot: 'used up', tone: 'bad' })
-  })
-
-  it('puts the end date beside what is left, and warns in its last week', () => {
-    expect(of({ limit: 100e9, used: 62e9, days: 40 })).toMatchObject({ pct: 62, tone: 'muted' })
-    expect(of({ limit: 100e9, used: 62e9, days: 40 }).foot).toMatch(/^38\.0 GB left · ends .+, in 40 days$/)
-    expect(of({ limit: 100e9, used: 62e9, days: 3 })).toMatchObject({ tone: 'warn' })
-    // a limit that is used up is red whatever the date
-    expect(of({ limit: 10e9, used: 10e9, days: 3 }).tone).toBe('bad')
-    expect(of({ limit: 10e9, used: 10e9, days: 3 }).foot).toMatch(/^used up · ends .+, in 3 days$/)
-    // and so is a date that has passed, whatever is left
-    expect(of({ limit: 100e9, used: 1e9, days: -2 }).tone).toBe('bad')
-    expect(of({ limit: 100e9, used: 1e9, days: -2 }).foot).toMatch(/^99\.0 GB left · ended .+, 2 days ago$/)
-  })
-
-  it('leads with the date when that is the only limit', () => {
-    const soon = of({ days: 2 })
-    expect(soon.head).toMatch(/^Ends \d{1,2} \w{3} 20\d\d$/)
-    expect(soon).toMatchObject({ pct: null, foot: 'in 2 days', tone: 'warn' })
-    expect(of({ days: 41 })).toMatchObject({ foot: 'in 41 days', tone: 'muted' })
-    const past = of({ days: -3 })
-    expect(past.head).toMatch(/^Ended /)
-    expect(past).toMatchObject({ pct: null, foot: '3 days ago', tone: 'bad' })
+  it('says how much of the limit is used, with how full its bar is', () => {
+    expect(of({ limit: 100e9, used: 62e9 })).toEqual({ head: '62.0 GB of 100 GB', pct: 62 })
+    expect(of({ limit: 50e9, used: 50e9 })).toEqual({ head: '50.0 GB of 50.0 GB', pct: 100 })
+    expect(of({ limit: 50e9, used: 60e9 }).pct).toBe(100)
   })
 
   it('reads in Persian too', () => {
-    expect(of({}, fa).head).toBe('ندارد')
-    expect(of({ days: 12 }, fa).head).toContain('پایان:')
-    expect(of({ days: -3 }, fa).head).toContain('پایان یافته:')
-    expect(of({ limit: 100e9, used: 62e9, days: 40 }, fa).foot).toContain('۴۰ روز')
+    expect(of({}, fa).head).toBe('بدون سقف')
+    expect(of({ limit: 100e9, used: 62e9 }, fa).head).toContain('۱۰۰')
+  })
+})
+
+describe('the Days left column', () => {
+  const iso = (days: number) => new Date(NOW + days * DAYMS).toISOString()
+  const of = (days: number | null, c = en) => {
+    const d = daysLeftOf(days === null ? null : iso(days), c.t, c.fmt, NOW)
+    return { ...d, head: plain(d.head), long: plain(d.long) }
+  }
+
+  it('says No end date, and nothing on a card, for a subscription without one', () => {
+    expect(of(null)).toEqual({ head: 'No end date', long: '', date: '', tone: 'muted' })
+  })
+
+  it('counts calendar days, calm far off and warm in the last week', () => {
+    expect(of(40)).toEqual({ head: '40 days', long: '40 days left', date: en.fmt.date(iso(40)), tone: 'muted' })
+    expect(of(8).tone).toBe('muted')
+    expect(of(7)).toMatchObject({ head: '7 days', tone: 'warn' })
+    expect(of(1)).toMatchObject({ head: '1 day', long: '1 day left', tone: 'warn' })
+    // an end later today is today, not "0 days", and so is one a few minutes off
+    expect(of(0.25)).toMatchObject({ head: 'Ends today', long: 'Ends today', tone: 'warn' })
+    expect(of(0.001).head).toBe('Ends today')
+  })
+
+  it('counts a day as a day on the night it ends, not as hours left', () => {
+    // 11 pm today to the end of tomorrow is one day, though it is only 25 hours
+    const late = new Date('2026-10-03T23:00:00').getTime()
+    const end = new Date('2026-10-04T23:59:59').toISOString()
+    expect(plain(daysLeftOf(end, en.t, en.fmt, late).head)).toBe('1 day')
+  })
+
+  it('is red once the end date has passed, with the date it ended', () => {
+    const past = of(-2)
+    expect(past).toMatchObject({ head: 'Ended', tone: 'bad', date: en.fmt.date(iso(-2)) })
+    expect(past.long).toBe(`Ended ${plain(en.fmt.date(iso(-2)))}`)
+  })
+
+  it('reads in Persian', () => {
+    expect(of(null, fa).head).toBe('بدون تاریخ پایان')
+    expect(of(12, fa).head).toBe('۱۲ روز')
+    expect(of(12, fa).long).toBe('۱۲ روز مانده')
+    expect(of(-2, fa).head).toBe('پایان یافته')
   })
 })
 
@@ -233,22 +249,5 @@ describe('the end date presets', () => {
   it('add a year as the same day a year on, and the 28th for a 29th of February', () => {
     expect(extendDay('', { years: 1 }, at('2026-10-03T12:00:00'))).toBe('2027-10-03')
     expect(extendDay('2028-02-29', { years: 1 }, at('2028-01-01T12:00:00'))).toBe('2029-02-28')
-  })
-})
-
-describe('the Expires cell', () => {
-  const iso = (days: number) => new Date(NOW + days * DAYMS).toISOString()
-
-  it('is calm far off, warm in the last week, and red once past', () => {
-    expect(expiryParts(en.t, en.fmt, iso(41), NOW)).toMatchObject({ tone: 'muted', when: 'in 41 days' })
-    expect(expiryParts(en.t, en.fmt, iso(3), NOW)).toMatchObject({ tone: 'warn', when: 'in 3 days' })
-    const past = expiryParts(en.t, en.fmt, iso(-2), NOW)
-    expect(past.tone).toBe('bad')
-    expect(past.when).toBe('ended 2 days ago')
-    expect(past.date).toBe(en.fmt.date(iso(-2)))
-  })
-
-  it('reads in Persian', () => {
-    expect(plain(expiryParts(fa.t, fa.fmt, iso(-2), NOW).when)).toContain('پایان یافته')
   })
 })

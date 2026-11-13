@@ -41,7 +41,7 @@ test("a working node's tab shows how many subscriptions are on it, who is online
     await expect(r.getByRole('button', { name: `Edit ${name}`, exact: true })).toBeVisible()
   }
   await expect(page.getByText('Showing 7 of 7 · sorted by name')).toBeVisible()
-  if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'On this node', 'Traffic', 'Limits', 'Actions'])
+  if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'On this node', 'Traffic', 'Traffic limit', 'Days left', 'Actions'])
   // a green dot beside the switch of one that is connected here
   await expect(row(page, 'Sara').getByText('connected here')).toHaveCount(1)
   await expect(row(page, 'Dana').getByText('connected here')).toHaveCount(0)
