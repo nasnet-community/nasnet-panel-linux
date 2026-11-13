@@ -130,7 +130,7 @@ test.describe("the router's page", () => {
     await expect(row(page, 'Mina')).toContainText('Online')
     await expect(row(page, 'Mina')).toContainText('2 connections')
     await expect(row(page, 'Kian').locator('[data-status]')).toHaveText('Off')
-    if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'On this router', 'Traffic', 'Limits', 'Actions'])
+    if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'On this router', 'Traffic', 'Traffic limit', 'Days left', 'Actions'])
 
     await flipper(page, 'Kian', 'This router').click()
     await expect(toast(page, 'Kian switched on for This router')).toBeVisible()
@@ -421,7 +421,7 @@ test.describe('the Subscriptions tab', () => {
     await expect(flipper(page, 'Sara', 'This router')).toHaveAttribute('aria-checked', 'true')
     await expect(flipper(page, 'Kian', 'This router')).toHaveAttribute('aria-checked', 'false')
     // under the one heading for the places, the router comes first
-    if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Limits', 'Actions', 'This router', 'Node 1', /^Node 2/])
+    if (isTable(page)) await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Traffic limit', 'Days left', 'Actions', 'This router', 'Node 1', /^Node 2/])
     await expect(page.locator('main')).toContainText('on This router and Node 1')
     await expect(row(page, 'Mina')).toContainText('on This router')
 
@@ -456,7 +456,7 @@ test.describe('the Subscriptions tab', () => {
     // one green dot each, beside the switch of the place it is connected at
     for (const name of ['Mina', 'Sara']) await expect(row(page, name).getByText('connected here')).toHaveCount(1)
     if (isTable(page)) {
-      await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Limits', 'Actions', 'This router', 'Node 1', /^Node 2/])
+      await expect(page.getByRole('columnheader')).toHaveText(['Subscription', 'Switched on for', 'Traffic', 'Traffic limit', 'Days left', 'Actions', 'This router', 'Node 1', /^Node 2/])
       const cells = row(page, 'Mina').getByRole('cell')
       await expect(cells.nth(0).getByText('connected here')).toHaveCount(1)
       await expect(cells.nth(1).getByText('connected here')).toHaveCount(0)

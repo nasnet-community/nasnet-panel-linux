@@ -40,9 +40,14 @@ for (const theme of ['dark', 'light'] as const) {
         'an offline line': mina.locator('[data-status]'),
         'a switch that waits': sara.getByText('when it is back'),
         'a limit': sara.getByText('62.0 GB of 100 GB'),
-        'what is left of it': sara.getByText(/38\.0 GB left/),
+        'the days left': sara.getByText(/^41 days/),
         // a card leaves out what a table's columns have to say
-        ...(isTable(page) && { 'no limits': mina.getByText('None', { exact: true }), 'the group of switches': page.getByRole('columnheader', { name: 'Switched on for' }) }),
+        ...(isTable(page) && {
+          'no limit': mina.getByText('No limit', { exact: true }),
+          'no end date': mina.getByText('No end date', { exact: true }),
+          'an end date': sara.getByText(/^\d{1,2} \w{3} 20\d\d$/),
+          'the group of switches': page.getByRole('columnheader', { name: 'Switched on for' }),
+        }),
         'the footer': page.getByText('A green dot beside a switch'),
         'a traffic line': mina.getByText('9.4 GB in 30 days'),
         'a share button': sara.getByRole('button', { name: 'Share', exact: true }),

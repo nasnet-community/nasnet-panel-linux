@@ -37,38 +37,53 @@ function monthsOn(day: string, n: number): string {
   return t.toISOString().slice(0, 10)
 }
 
-/** A subscription with no limit and no date: the table's Limits column says None, and a card says nothing. */
+/** A subscription with no limit and no date: the table's two columns say so, and a card says nothing. */
 async function expectNoLimits(page: Page, name: string) {
   const r = row(page, name)
   await expect(r.getByRole('progressbar')).toHaveCount(0)
-  if (isTable(page)) await expect(r.getByText('None', { exact: true })).toBeVisible()
-  else await expect(r).not.toContainText(/None|No limit|No end date|ends|Ends/)
+  if (isTable(page)) {
+    await expect(r.getByText('No limit', { exact: true })).toBeVisible()
+    await expect(r.getByText('No end date', { exact: true })).toBeVisible()
+  } else await expect(r).not.toContainText(/No limit|No end date|days? left|Ended|Ends today/)
 }
 
-test('the list has one Limits column for the traffic limit and the end date, and a card sums both up', async ({ page }) => {
+test('the list has a Traffic limit column and a Days left column, and a card sums both up', async ({ page }) => {
   await openSubscriptions(page)
   const sara = row(page, 'Sara')
   await expect(sara).toContainText('62.0 GB of 100 GB')
   await expect(sara.getByRole('progressbar', { name: 'Traffic limit' })).toHaveAttribute('aria-valuenow', '62')
-  // what is left and when it ends read as one line under the bar
-  await expect(sara).toContainText(/38\.0 GB left · ends \d{1,2} \w{3} 20\d\d, in 41 days/)
+  // nothing more under the bar: what is left and the end date are not repeated there
+  await expect(sara).not.toContainText(/GB left|ends |ended /)
   if (isTable(page)) {
-    await expect(page.getByRole('columnheader', { name: 'Limits', exact: true })).toBeVisible()
-    for (const gone of ['Traffic limit', 'Expires', 'Status']) await expect(page.getByRole('columnheader', { name: gone, exact: true })).toHaveCount(0)
-  }
+    await expect(page.getByRole('columnheader', { name: 'Traffic limit', exact: true })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Days left', exact: true })).toBeVisible()
+    for (const gone of ['Limits', 'Expires', 'Status']) await expect(page.getByRole('columnheader', { name: gone, exact: true })).toHaveCount(0)
+    await expect(sara.getByText('41 days', { exact: true })).toBeVisible()
+    await expect(sara.getByText(/^\d{1,2} \w{3} 20\d\d$/)).toBeVisible()
+  } else await expect(sara.getByText('41 days left', { exact: true })).toBeVisible()
   await expectNoLimits(page, 'Ali')
 })
 
-test('an end date alone leads the Limits column, and warns in its last week', async ({ page, request }) => {
+test('the days left warn in the last week, and an end date that passed says Ended', async ({ page, request }) => {
   const at = (days: number) => new Date(Date.now() + days * 86400e3).toISOString()
   expect((await request.patch('/api/subscriptions/2', { headers: PAGE, data: { expiresAt: at(3) } })).ok()).toBe(true)
   expect((await request.patch('/api/subscriptions/4', { headers: PAGE, data: { expiresAt: at(60) } })).ok()).toBe(true)
   await openSubscriptions(page)
+  const table = isTable(page)
   const soon = row(page, 'Ali')
-  await expect(soon).toContainText(/Ends \d{1,2} \w{3} 20\d\d/)
-  await expect(soon.getByText('in 3 days', { exact: true })).toHaveClass(/text-warn-text/)
+  await expect(soon.getByText(table ? '3 days' : '3 days left', { exact: true })).toHaveClass(/text-warn-text/)
+  // an end date alone has no bar
   await expect(soon.getByRole('progressbar')).toHaveCount(0)
-  await expect(row(page, 'Mina').getByText('in 60 days', { exact: true })).toHaveClass(/text-faint/)
+  if (table) await expect(soon.getByText('No limit', { exact: true })).toBeVisible()
+  await expect(row(page, 'Mina').getByText(table ? '60 days' : '60 days left', { exact: true })).not.toHaveClass(/text-warn-text|text-bad-text/)
+
+  // a day that has passed: the hub refuses to set one, so the list is told of one that ran out
+  await page.route('**/api/subscriptions', async (route) => {
+    const subs = (await (await route.fetch()).json()) as { id: number }[]
+    await route.fulfill({ json: subs.map((x) => (x.id === 2 ? { ...x, expiresAt: at(-2), stopped: 'expired' } : x)) })
+  })
+  await page.reload()
+  await expect(row(page, 'Ali').getByText(table ? 'Ended' : /^Ended \d{1,2} \w{3} 20\d\d$/)).toHaveClass(/text-bad-text/)
 })
 
 test('each row has an Edit button that opens the dialog with what is set', async ({ page }) => {
@@ -106,7 +121,6 @@ test('a limit below what was used stops the subscription, and a higher one start
   // a stopped subscription is connected nowhere
   await expect(row(page, 'Ali').getByText('connected here')).toHaveCount(0)
   await expect(row(page, 'Ali')).toContainText('21.0 GB of 20.0 GB')
-  await expect(row(page, 'Ali')).toContainText('used up')
   await expect(row(page, 'Ali').getByRole('progressbar', { name: 'Traffic limit' })).toHaveAttribute('aria-valuenow', '100')
 
   // the dialog says why it stopped and what starts it again
@@ -132,8 +146,8 @@ test('the name, the limit and the date go in one save', async ({ page }) => {
   expect(body).toMatchObject({ name: 'Minoo', trafficLimit: 25_000_000_000 })
   await expect(toast(page, 'Minoo saved')).toBeVisible()
   await expect(row(page, 'Minoo')).toContainText('9.4 GB of 25.0 GB')
-  // it ends with its day, so before noon that is nearer 11 days off than 10
-  await expect(row(page, 'Minoo')).toContainText(/in (10|11) days/)
+  // it ends with its day, ten days on
+  await expect(row(page, 'Minoo').getByText(/^10 days( left)?$/)).toBeVisible()
 })
 
 test('the limit field takes a comma, and refuses what is not a number above zero without asking the hub', async ({ page }) => {
@@ -247,7 +261,7 @@ test('an expired subscription is renewed from today, and says why it stopped', a
   await page.waitForTimeout(2500)
   await openSubscriptions(page)
   await expect(row(page, 'Dana').locator('[data-status]')).toHaveText(/^Stopped · expired \d{1,2} \w{3} 20\d\d$/)
-  await expect(row(page, 'Dana')).toContainText(/Ended \d{1,2} \w{3} 20\d\d/)
+  await expect(row(page, 'Dana').getByText(/^Ended( \d{1,2} \w{3} 20\d\d)?$/)).toBeVisible()
   await pick(page, 'Dana', 'Edit')
   const d = edit(page, 'Dana')
   await expect(d).toContainText(/Dana ended on .+, so it is stopped\. Pick a later date to start it again\./)
@@ -256,7 +270,7 @@ test('an expired subscription is renewed from today, and says why it stopped', a
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(toast(page, 'Dana saved')).toBeVisible()
   await expect(row(page, 'Dana').locator('[data-status]')).not.toContainText('Stopped')
-  await expect(row(page, 'Dana')).toContainText(/Ends \d{1,2} \w{3} 20\d\d/)
+  await expect(row(page, 'Dana').getByText(/^30 days( left)?$/)).toBeVisible()
 })
 
 test('emptying a field takes the limit or the date away', async ({ page }) => {
@@ -340,13 +354,13 @@ test('a plain add sends no limits', async ({ page }) => {
   expect(Object.keys(body).sort()).toEqual(['name', 'nodeIds'])
 })
 
-test('a node\'s own list shows the Limits column, a stopped subscription, and edits it the same way', async ({ page, request }) => {
+test('a node\'s own list shows the limit columns, a stopped subscription, and edits it the same way', async ({ page, request }) => {
   expect((await request.patch('/api/subscriptions/2', { headers: PAGE, data: { trafficLimit: 20_000_000_000 } })).ok()).toBe(true)
   await openNodeSubscriptions(page, 1)
   await expect(row(page, 'Ali').locator('[data-status]')).toHaveText('Stopped · limit reached')
   await expect(row(page, 'Ali')).toContainText('21.0 GB of 20.0 GB')
   await expect(page.getByRole('switch', { name: 'Ali on Node 1', exact: true })).toHaveAttribute('aria-checked', 'true')
-  if (isTable(page)) await expect(page.getByRole('columnheader', { name: 'Limits', exact: true })).toBeVisible()
+  if (isTable(page)) await expect(page.getByRole('columnheader', { name: 'Traffic limit', exact: true })).toBeVisible()
   await row(page, 'Ali').getByRole('button', { name: 'Edit Ali', exact: true }).click()
   const d = edit(page, 'Ali')
   await expect(d.getByLabel('Traffic limit')).toHaveValue('20')

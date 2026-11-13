@@ -57,12 +57,12 @@ test('the table lays out from the right, with the unreachable node marked in Per
   test.skip(isMobile, 'the table is for wide screens')
   await openSubscriptions(page)
   const heads = page.getByRole('columnheader')
-  await expect(heads).toHaveText(['اشتراک', 'روشن برای', 'ترافیک', 'محدودیت‌ها', 'کارها', 'Node 1', /^Node 2\s*در دسترس نیست$/])
+  await expect(heads).toHaveText(['اشتراک', 'روشن برای', 'ترافیک', 'سقف ترافیک', 'روزهای مانده', 'کارها', 'Node 1', /^Node 2\s*در دسترس نیست$/])
   const x = await Promise.all([0, 1, 2, 3].map(async (i) => (await heads.nth(i).boundingBox())!.x))
   // the first column is the right-most, and each next one is further left
   for (let i = 1; i < x.length; i += 1) expect(x[i]).toBeLessThan(x[i - 1])
   // the nodes under their heading run the same way
-  expect((await heads.nth(6).boundingBox())!.x).toBeLessThan((await heads.nth(5).boundingBox())!.x)
+  expect((await heads.nth(7).boundingBox())!.x).toBeLessThan((await heads.nth(6).boundingBox())!.x)
   // the action buttons sit at the left end, the name at the right end
   const table = (await page.getByRole('table').boundingBox())!
   const name = (await row(page, 'Sara').getByRole('rowheader').boundingBox())!
