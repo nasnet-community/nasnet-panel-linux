@@ -7,9 +7,8 @@ import { usePoll } from '../hooks/usePoll'
 import { navigate, type NodeTab } from '../hooks/useRoute'
 import { useErrorText, useLang, type MsgKey } from '../i18n'
 import { local as localApi, type Local } from '../lib/api'
-import { hasLinks, routerDown, routerHealth, routerNotes, type RouterAct } from '../lib/router'
+import { routerDown, routerHealth, routerNotes, type RouterAct } from '../lib/router'
 import { AttentionList, type AttentionItem } from './Attention'
-import { useHandout } from './Handout'
 import { PlaceSubscriptions } from './NodeSubscriptionsTab'
 import { NewPortDialog, OwnNameDialog, RotateKeysDialog, RouterServerNameDialog, RouterTargetDialog, TurnOffDialog, TurnOnDialog } from './RouterDialogs'
 import { RouterSettingsTab } from './RouterSettingsTab'
@@ -57,22 +56,11 @@ export function RouterScreen({ tab }: { tab: NodeTab }) {
   const local = detail.data
   pace.current = local?.state === 'starting' ? 2000 : 5000
 
-  // new links can be made once it has a name and a port again, and the port is the new one
-  const ready = !!local && hasLinks(local) && local.state !== 'starting'
-  const handout = useHandout({ id: 'router', name: t('router.name') }, ready ? null : t('handout.wait.router'))
-
   // a change answers with the entry as it is afterwards; a poll already on its way may be older, so it is asked for again
-  const take = (fresh: Local, links = false) => {
+  const take = (fresh: Local) => {
     detail.setData(fresh)
     void detail.reload()
     config.reload()
-    if (!links) return
-    // every link of the entry is new: the ones who had the old one are listed, to hand the new ones out from.
-    // A new port isn't open yet, so that list waits behind its note until the router has it.
-    localApi
-      .subscriptions()
-      .then((subs) => handout.start(subs.filter((s) => s.enabled), fresh.state !== 'starting'))
-      .catch(() => {})
   }
   const close = () => setModal(null)
 
@@ -155,7 +143,7 @@ export function RouterScreen({ tab }: { tab: NodeTab }) {
         </Card>
       ) : (
         <>
-          <AttentionList list={handout.note ? [...notes, handout.note] : notes} />
+          <AttentionList list={notes} />
 
           <Tabs label={t('router.tabs')} idBase="router" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'router', tab: next })} />
 
@@ -184,7 +172,6 @@ export function RouterScreen({ tab }: { tab: NodeTab }) {
       {modal?.kind === 'name' && <OwnNameDialog local={local} onClose={close} onChanged={take} />}
       {modal?.kind === 'target' && <RouterTargetDialog local={local} onClose={close} onChanged={take} />}
       {modal?.kind === 'sni' && <RouterServerNameDialog local={local} sni={modal.sni} onClose={close} onChanged={take} />}
-      {handout.dialog}
     </div>
   )
 }

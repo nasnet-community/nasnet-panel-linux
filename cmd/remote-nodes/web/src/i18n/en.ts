@@ -849,23 +849,6 @@ export const en = {
   'subs.share.allNote': 'One paste adds every link, so the app can use another place.',
   'subs.share.copyAll': { one: 'Copy {n} link', other: 'Copy all {n} links' },
   'subs.share.copiedAll': { one: '{n} link copied', other: '{n} links copied' },
-  'handout.title': 'Hand out the new links',
-  'handout.desc': 'The links for {place} changed. Send each subscription its new link.',
-  'handout.progress': '{done} of {total} sent',
-  'handout.sent': 'sent',
-  'handout.copyOf': 'Copy the new link of {name}',
-  'handout.qrOf': 'QR code of the new link of {name}',
-  'handout.kept': 'This list is kept in this browser until every link is sent.',
-  'handout.forget': 'Forget this list',
-  'handout.done': 'Done',
-  'handout.toast.allSent': 'Every new link is sent',
-  'handout.wait.router': 'The new links are ready once This router is working again.',
-  'handout.note.title': 'New links to hand out',
-  'handout.note.detail': {
-    one: '{n} subscription on {place} still needs its new link.',
-    other: '{n} subscriptions on {place} still need their new link.',
-  },
-  'handout.note.open': 'Open the list',
 } satisfies Record<string, Message>
 
 export type MsgKey = keyof typeof en

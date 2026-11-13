@@ -19,15 +19,6 @@ async function openRouter(page: Page, tab: Tab = 'subscriptions') {
   await expect(page.getByRole('heading', { level: 1, name: 'This router' })).toBeVisible()
 }
 
-/** The list of new links to hand out, which opens after a change that made every link of a place new. */
-const handout = (page: Page) => dialog(page, 'Hand out the new links')
-
-/** Closes that list for good, for a test that is about something else. */
-async function forgetHandout(page: Page) {
-  await handout(page).getByRole('button', { name: 'Forget this list' }).click()
-  await expect(handout(page)).toHaveCount(0)
-}
-
 /** The port in the page's header, once there is one. */
 async function headerPort(page: Page): Promise<string> {
   const port = page.getByText(/^port \d+$/)
@@ -232,9 +223,6 @@ test.describe("the router's page", () => {
     await save.click()
     await expect(toast(page, 'Links now carry home.example.com')).toBeVisible()
     await expect(d).toBeHidden()
-    // every link changed, so the ones who had the old one are listed
-    await expect(handout(page)).toContainText('The links for This router changed.')
-    await forgetHandout(page)
     const address = panel(page, 'Address')
     await expect(address).toContainText('home.example.com')
     await expect(address).toContainText('your own name')
@@ -251,11 +239,10 @@ test.describe("the router's page", () => {
     await expect(d).toContainText(`Or go back to the router's IP Cloud name, ${CLOUD}.`)
     await d.getByRole('button', { name: 'Use the IP Cloud name' }).click()
     await expect(toast(page, "Links now carry the router's IP Cloud name")).toBeVisible()
-    await forgetHandout(page)
     await expect(panel(page, 'Address')).toContainText('from IP Cloud')
   })
 
-  test('asks the router for a new port, which every link then carries', async ({ page, context }) => {
+  test('asks the router for a new port, which every link then carries', async ({ page }) => {
     await openRouter(page, 'settings')
     await panel(page, 'Port').getByRole('button', { name: 'New port…' }).click()
     const d = confirmDialog(page, 'Ask the router for a new port?')
@@ -265,37 +252,15 @@ test.describe("the router's page", () => {
     await d.getByRole('button', { name: 'New port' }).click()
     await expect(toast(page, 'The router is opening a new port')).toBeVisible()
     await expect(attention(page)).toContainText('This router is starting')
-    // the list of new links waits behind its note: the port isn't open yet, so no link can be handed out
-    await expect(handout(page)).toHaveCount(0)
-    await expect(attention(page)).toContainText('New links to hand out')
-    await expect(attention(page)).not.toContainText('This router is starting', { timeout: 15000 })
+    await expect(page.getByText('This router is starting')).toHaveCount(0, { timeout: 15000 })
     const port = await headerPort(page)
     expect(port).not.toBe('41873')
     await expect(panel(page, 'Port')).toContainText(`Port ${port}`)
-    // now the list gives out links with the new port
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await attention(page).getByRole('button', { name: 'Open the list' }).click()
-    await handout(page).getByRole('button', { name: 'Copy the new link of Sara' }).click()
-    await expect(handout(page)).toContainText('1 of 5 sent')
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`@${CLOUD}:${port}?`)
-  })
-
-  test('while the new port is not open, the list says so and gives out nothing', async ({ page, request }) => {
-    await openRouter(page, 'settings')
-    // the router never opens it: the list can be looked at, and waits
-    await panel(page, 'Port').getByRole('button', { name: 'New port…' }).click()
-    await page.route('**/api/local', async (route) => {
-      if (route.request().method() !== 'GET') return route.fallback()
-      const local = await (await route.fetch()).json()
-      await route.fulfill({ json: { ...local, state: 'starting', reason: 'waiting_router' } })
-    })
-    await confirmDialog(page, 'Ask the router for a new port?').getByRole('button', { name: 'New port' }).click()
-    await attention(page).getByRole('button', { name: 'Open the list' }).click()
-    const d = handout(page)
-    await expect(d).toContainText('The new links are ready once This router is working again.')
-    await expect(d.getByRole('button', { name: 'Copy the new link of Sara' })).toBeDisabled()
-    await expect(d.getByRole('button', { name: 'QR code of the new link of Sara' })).toBeDisabled()
-    expect((await request.get('/api/local', { headers: PAGE })).ok()).toBe(true)
+    // a link carries the new port
+    await page.getByRole('tab', { name: 'Subscriptions' }).click()
+    await row(page, 'Sara').getByRole('button', { name: 'Share' }).click()
+    await expect(page.locator('[data-link]')).toBeVisible()
+    expect(await linkText(page)).toContain(`@${CLOUD}:${port}?`)
   })
 
   test('changes the Reality target once the router has checked it, or leaves the choice to the router', async ({ page }) => {
@@ -318,7 +283,6 @@ test.describe("the router's page", () => {
     await expect(d.getByRole('status')).toContainText('checked from this router')
     await apply.click()
     await expect(toast(page, 'Reality target changed to www.example.net:443')).toBeVisible()
-    await forgetHandout(page)
     await expect(panel(page, 'Reality target')).toContainText('www.example.net:443')
 
     await open()
@@ -335,7 +299,6 @@ test.describe("the router's page", () => {
     await expect(d).toContainText('subscriptions get new links.')
     await d.getByRole('button', { name: 'Rotate keys' }).click()
     await expect(toast(page, 'Keys rotated on This router')).toBeVisible()
-    await forgetHandout(page)
     await expect(panel(page, 'Keys').getByText(KEY, { exact: true })).toHaveCount(0)
   })
 
@@ -349,7 +312,6 @@ test.describe("the router's page", () => {
     await expect(d).toContainText('The server name becomes cdn.example.com.')
     await d.getByRole('button', { name: 'Change server name' }).click()
     await expect(toast(page, 'Server name changed on This router')).toBeVisible()
-    await forgetHandout(page)
     // the form starts again from what the entry has now
     await expect(page.getByLabel('Same as the Reality target')).not.toBeChecked()
     await expect(page.getByLabel('Server name', { exact: true })).toHaveValue('cdn.example.com')
@@ -390,7 +352,6 @@ test.describe('what is in the way', () => {
     const d = dialog(page, 'Name in links')
     await d.getByLabel('Name', { exact: true }).fill('home.example.com')
     await d.getByRole('button', { name: 'Save and apply' }).click()
-    await forgetHandout(page)
     await expect(attention(page)).toHaveCount(0)
     await expect(page.locator('main')).toContainText('home.example.com')
   })
@@ -408,7 +369,6 @@ test.describe('what is in the way', () => {
     await d.getByLabel('Reality target').fill('www.example.net:443')
     await d.getByRole('button', { name: 'Check', exact: true }).click()
     await d.getByRole('button', { name: 'Save and apply' }).click()
-    await forgetHandout(page)
     await expect(attention(page)).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'Everything is working' })).toBeVisible()
   })
@@ -558,137 +518,6 @@ test.describe('the Subscriptions tab', () => {
     const d = dialog(page, 'Add a subscription')
     await expect(d.getByRole('group', { name: 'On these nodes' })).toBeVisible()
     await expect(d).not.toContainText('This router')
-  })
-})
-
-test.describe('the list of new links to hand out', () => {
-  test.beforeEach(async ({ request, context }) => {
-    await reset(request, { local: 'on' })
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  })
-
-  const rotate = async (page: Page) => {
-    await openRouter(page, 'settings')
-    await panel(page, 'Keys').getByRole('button', { name: 'Rotate keys…' }).click()
-    await confirmDialog(page, 'Rotate the keys on This router?').getByRole('button', { name: 'Rotate keys' }).click()
-    await expect(handout(page)).toBeVisible()
-  }
-
-  test('opens after the keys are rotated, with everyone who is on the router, and ticks who got a link', async ({ page }) => {
-    await rotate(page)
-    const d = handout(page)
-    await expect(d).toContainText('The links for This router changed. Send each subscription its new link.')
-    await expect(d.getByRole('status')).toHaveText('0 of 5 sent')
-    await expect(d.getByRole('listitem')).toHaveText([/^Ali/, /^Dana/, /^Mina/, /^Parsa/, /^Sara/])
-    await expect(d).toContainText('This list is kept in this browser until every link is sent.')
-
-    // copying a link sends the new one, and ticks its row
-    await d.getByRole('button', { name: 'Copy the new link of Sara' }).click()
-    await expect(d.getByRole('status')).toHaveText('1 of 5 sent')
-    await expect(d.getByRole('listitem').filter({ hasText: 'Sara' })).toContainText('sent')
-    const copied = await page.evaluate(() => navigator.clipboard.readText())
-    expect(copied).toMatch(new RegExp(`^vless://[0-9a-f-]{36}@${CLOUD}:41873\\?.*#Sara$`))
-    expect(copied).not.toContain(KEY)
-
-    // the QR code of one opens its share dialog, and using it ticks the row too
-    await d.getByRole('button', { name: 'QR code of the new link of Mina' }).click()
-    const share = dialog(page, "Share Mina's link")
-    await expect(share.locator('[data-link]')).toBeVisible()
-    expect(await linkText(page)).not.toContain(KEY)
-    await share.getByRole('button', { name: 'Copy link' }).click()
-    await share.getByRole('button', { name: 'Close', exact: true }).click()
-    await expect(d.getByRole('status')).toHaveText('2 of 5 sent')
-    // only looking at a code ticks nothing
-    await d.getByRole('button', { name: 'QR code of the new link of Ali' }).click()
-    await dialog(page, "Share Ali's link").getByRole('button', { name: 'Close', exact: true }).click()
-    await expect(d.getByRole('status')).toHaveText('2 of 5 sent')
-  })
-
-  test('is found again from a note until every link is sent, in this browser', async ({ page }) => {
-    await rotate(page)
-    await handout(page).getByRole('button', { name: 'Copy the new link of Ali' }).click()
-    await handout(page).getByRole('button', { name: 'Done' }).click()
-    await expect(handout(page)).toHaveCount(0)
-    const note = attention(page)
-    await expect(note).toContainText('New links to hand out')
-    await expect(note).toContainText('4 subscriptions on This router still need their new link.')
-
-    // it is still there after a reload, on any of the router's tabs
-    await page.reload()
-    await page.getByRole('tab', { name: 'Status' }).click()
-    await attention(page).getByRole('button', { name: 'Open the list' }).click()
-    const d = handout(page)
-    await expect(d.getByRole('status')).toHaveText('1 of 5 sent')
-    for (const name of ['Dana', 'Mina', 'Parsa']) await d.getByRole('button', { name: `Copy the new link of ${name}` }).click()
-    await expect(d.getByRole('status')).toHaveText('4 of 5 sent')
-    await d.getByRole('button', { name: 'Close', exact: true }).click()
-    await expect(attention(page)).toContainText('1 subscription on This router still needs its new link.')
-
-    // the last one sent, and Done: the note is gone, and stays gone
-    await attention(page).getByRole('button', { name: 'Open the list' }).click()
-    await handout(page).getByRole('button', { name: 'Copy the new link of Sara' }).click()
-    await expect(handout(page).getByRole('status')).toHaveText('5 of 5 sent')
-    await handout(page).getByRole('button', { name: 'Done' }).click()
-    await expect(toast(page, 'Every new link is sent')).toBeVisible()
-    await expect(attention(page)).toHaveCount(0)
-    await page.reload()
-    await expect(page.getByRole('heading', { level: 1, name: 'This router' })).toBeVisible()
-    await expect(attention(page)).toHaveCount(0)
-    expect(await page.evaluate(() => localStorage.getItem('remote-nodes.handout'))).toBeNull()
-  })
-
-  test('can be forgotten, and is not started when nobody is on the router', async ({ page, request }) => {
-    await rotate(page)
-    await forgetHandout(page)
-    await expect(attention(page)).toHaveCount(0)
-    expect(await page.evaluate(() => localStorage.getItem('remote-nodes.handout'))).toBeNull()
-
-    // with every subscription switched off for it there is no link to hand out
-    for (const id of [1, 2, 4, 5, 6]) expect((await request.put(`/api/subscriptions/${id}/local`, { headers: PAGE, data: { enabled: false } })).ok()).toBe(true)
-    await page.reload()
-    await panel(page, 'Keys').getByRole('button', { name: 'Rotate keys…' }).click()
-    const ask = confirmDialog(page, 'Rotate the keys on This router?')
-    await expect(ask).toContainText('No subscription is on This router, so no link changes.')
-    await ask.getByRole('button', { name: 'Rotate keys' }).click()
-    await expect(toast(page, 'Keys rotated on This router')).toBeVisible()
-    await expect(handout(page)).toHaveCount(0)
-    await expect(attention(page)).toHaveCount(0)
-  })
-
-  test('says what went wrong for one row, and leaves the others as they were', async ({ page, request }) => {
-    await rotate(page)
-    // Dana is deleted behind the page's back: her link is gone
-    expect((await request.delete('/api/subscriptions/6', { headers: PAGE })).ok()).toBe(true)
-    const d = handout(page)
-    await d.getByRole('button', { name: 'Copy the new link of Dana' }).click()
-    await expect(d.getByRole('listitem').filter({ hasText: 'Dana' }).getByRole('alert')).toHaveText('It no longer exists. Reload the page.')
-    await expect(d.getByRole('status')).toHaveText('0 of 5 sent')
-    await d.getByRole('button', { name: 'Copy the new link of Ali' }).click()
-    await expect(d.getByRole('status')).toHaveText('1 of 5 sent')
-  })
-
-  test("follows a node's link-changing job too: the note is on the node's page once the job is done", async ({ page }) => {
-    await page.goto('/#/nodes/1/settings')
-    await expect(page.getByRole('heading', { level: 1, name: 'Node 1' })).toBeVisible()
-    await panel(page, 'Keys').getByRole('button', { name: 'Rotate keys…' }).click()
-    await confirmDialog(page, 'Rotate the keys on Node 1?').getByRole('button', { name: 'Rotate keys' }).click()
-    const job = dialog(page, /Keys rotated|Rotating keys/)
-    await expect(job.getByRole('button', { name: 'Done' })).toBeVisible({ timeout: 20000 })
-    await job.getByRole('button', { name: 'Done' }).click()
-    // the job's own dialog was in the way, so the list waits behind its note
-    await expect(handout(page)).toHaveCount(0)
-    const note = attention(page)
-    await expect(note).toContainText('6 subscriptions on Node 1 still need their new link.')
-    await note.getByRole('button', { name: 'Open the list' }).click()
-    const d = handout(page)
-    await expect(d).toContainText('The links for Node 1 changed.')
-    await d.getByRole('button', { name: 'Copy the new link of Reza' }).click()
-    await expect(d.getByRole('status')).toHaveText('1 of 6 sent')
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('@203.0.113.24:443?')
-    // the router's own list is another one
-    await d.getByRole('button', { name: 'Done' }).click()
-    await openRouter(page)
-    await expect(attention(page)).toHaveCount(0)
   })
 })
 

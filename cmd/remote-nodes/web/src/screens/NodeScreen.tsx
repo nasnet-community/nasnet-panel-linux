@@ -13,7 +13,6 @@ import { isUnfinished } from '../lib/install'
 import { jobTitle } from '../lib/jobs'
 import { agentUptime } from '../lib/node'
 import { AttentionList, type AttentionItem } from './Attention'
-import { useHandout } from './Handout'
 import { HandshakeDialog, PortDialog, RemoveDialog, RenameDialog, RenewDialog, RotateDialog, ServerNameDialog, UpdateDialog, type StartJob } from './NodeDialogs'
 import { NodeSettingsTab } from './NodeSettingsTab'
 import { NodeStatusTab } from './NodeStatusTab'
@@ -72,21 +71,10 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
   const tRef = useRef(t)
   tRef.current = t
 
-  // a node's links are made from what the router holds, so the new ones are ready as soon as the job is done
-  const handout = useHandout({ id: nid, name: node?.name ?? '' }, null)
-
   const jobDone = (j: Job) => {
     const name = last.current?.name ?? ''
     toast(jobTitle(tRef.current, j, name), j.state === 'ok' ? 'ok' : 'error')
     config.reload()
-    // a new port, Reality target, server name or key pair made every link of the node new: the ones who
-    // had the old one are listed. The job's own dialog is still open, so the list waits behind its note.
-    if (j.state === 'ok' && (j.kind === 'change-settings' || j.kind === 'rotate-keys')) {
-      api
-        .nodeSubscriptions(nid)
-        .then((subs) => handout.start(subs.filter((s) => s.enabled), false))
-        .catch(() => {})
-    }
     if (j.kind === 'remove' && j.state === 'ok') {
       const here = parseRoute(window.location.hash)
       if (here.page === 'node' && here.id === id) navigate({ page: 'root', tab: 'nodes' })
@@ -279,7 +267,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       </Card>
 
       {detail.error != null && <ErrorBox>{errorText(detail.error)}</ErrorBox>}
-      <AttentionList list={handout.note ? [...notes, handout.note] : notes} />
+      <AttentionList list={notes} />
 
       <Tabs label={t('tabs.node')} idBase="node" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'node', id, tab: next })} />
 
@@ -309,7 +297,6 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       {modal?.kind === 'port' && <PortDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'target' && <HandshakeDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'sni' && <ServerNameDialog node={node} sni={modal.sni} start={start} onClose={close} />}
-      {handout.dialog}
     </div>
   )
 }

@@ -61,7 +61,7 @@ function PlaceTabs({ places, value, onChange }: { places: SharePlace[]; value: P
  * The QR code and link of a subscription on one place, ready to send: as text, as an image of the code,
  * or every place's link in one paste. And a way to replace the link.
  */
-export function ShareDialog({ target, onClose, onShared }: { target: ShareTarget; onClose: () => void; /** a link was copied or its code saved */ onShared?: () => void }) {
+export function ShareDialog({ target, onClose }: { target: ShareTarget; onClose: () => void }) {
   const { t } = useLang()
   const errorText = useErrorText()
   const toast = useToast()
@@ -98,7 +98,6 @@ export function ShareDialog({ target, onClose, onShared }: { target: ShareTarget
     setBusy('image')
     try {
       saveBlob(await qrPng(text), qrFileName(target.name, place.name))
-      onShared?.()
     } catch {
       toast(t('subs.share.imageFailed'), 'error')
     } finally {
@@ -116,7 +115,6 @@ export function ShareDialog({ target, onClose, onShared }: { target: ShareTarget
       setLinks(all)
       await copyText(target.places.map((p) => portableLink(all[p.id].vless)).join('\n'))
       toast(t('subs.share.copiedAll', { n: target.places.length }))
-      onShared?.()
     } catch (e) {
       setError(errorText(e))
     } finally {
@@ -158,7 +156,7 @@ export function ShareDialog({ target, onClose, onShared }: { target: ShareTarget
           )}
           <div className="grid w-full gap-2 sm:grid-cols-2">
             {link ? (
-              <CopyButton text={text} label={t('subs.share.copy')} variant="primary" size="md" className="w-full" onCopied={onShared} />
+              <CopyButton text={text} label={t('subs.share.copy')} variant="primary" size="md" className="w-full" />
             ) : (
               <Button variant="primary" disabled>
                 {t('subs.share.copy')}

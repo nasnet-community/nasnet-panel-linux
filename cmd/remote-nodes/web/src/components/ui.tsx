@@ -657,7 +657,6 @@ export function CopyButton({
   variant,
   size = 'sm',
   className,
-  onCopied,
 }: {
   text: string
   label?: string
@@ -666,8 +665,6 @@ export function CopyButton({
   variant?: Variant
   size?: keyof typeof SIZES
   className?: string
-  /** runs once the text is on the clipboard */
-  onCopied?: () => void
 }) {
   const { t } = useLang()
   const [copied, setCopied] = useState(false)
@@ -681,7 +678,6 @@ export function CopyButton({
         await copyText(text)
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)
-        onCopied?.()
       }}
     >
       {copied ? <Check className="h-4 w-4 text-ok-text" /> : <Copy className="h-4 w-4" />}
