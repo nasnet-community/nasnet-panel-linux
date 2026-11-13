@@ -8,7 +8,7 @@ import { health, issues, nodeNotes } from './health'
 import * as hub from './hub-fixtures'
 import { failedAtLink, jobLine, jobStep, jobTitle, stepLabel } from './jobs'
 import { agentMemory, agentUptime, plot, renewLeadDays, roundTrip, settingsState } from './node'
-import { hasLinks, routerHealth, routerNotes, routerVerdict } from './router'
+import { routerHealth, routerNotes, routerVerdict } from './router'
 import { nodeInfos, nodeSubscriptionStatus, statusText, subscriptionStatus } from './subscriptions'
 
 // What the hub sends, as hub-fixtures.ts holds it (written by a Go test in internal/remotenodes/api
@@ -179,11 +179,11 @@ describe("the router's own entry", () => {
   it('reads as working, with a name and a port for its links, and as off on a router that never switched it on', () => {
     expect(routerHealth(hub.local, hub.config.entry, en.t)).toEqual({ tone: 'online', label: 'Working', reason: '' })
     expect(routerNotes(hub.local, hub.config.entry, en.t)).toEqual([])
-    expect(hasLinks(hub.local)).toBe(true)
+    expect(hub.local.host).not.toBe('')
+    expect(hub.local.port).not.toBeNull()
     expect(hub.config.local).toEqual({ enabled: true, state: 'working' })
 
     expect(routerHealth(hub.bareLocal, hub.bareConfig.entry, en.t).label).toBe('Off')
-    expect(hasLinks(hub.bareLocal)).toBe(false)
     expect(hub.bareLocal.port).toBeNull()
     expect(hub.bareConfig.local).toEqual({ enabled: false, state: 'off' })
   })

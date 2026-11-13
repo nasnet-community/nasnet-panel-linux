@@ -3,8 +3,6 @@ import type { Entry, Local } from './api'
 import type { Format } from './format'
 import type { HealthTone } from './health'
 
-/** The router's own entry is switched on and has a name and a port: its links can be made. */
-export const hasLinks = (l: Pick<Local, 'enabled' | 'host' | 'port'>) => l.enabled && l.host !== '' && l.port !== null
 
 /** Switches for it are kept and take effect later: it is on, and not working at the moment. */
 export const routerDown = (l: Pick<Local, 'state'>) => l.state !== 'working'

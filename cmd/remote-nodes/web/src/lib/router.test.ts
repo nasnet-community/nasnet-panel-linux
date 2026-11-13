@@ -3,7 +3,7 @@ import type { Lang } from '../i18n/lang'
 import { translate, type MsgKey, type Params } from '../i18n/translate'
 import type { Entry, Local, LocalReason, LocalState } from './api'
 import { makeFormat } from './format'
-import { hasLinks, routerDown, routerHealth, routerNotes, routerVerdict } from './router'
+import { routerDown, routerHealth, routerNotes, routerVerdict } from './router'
 
 const speak = (lang: Lang) => ({ t: (key: MsgKey, params?: Params) => translate(lang, key, params), fmt: makeFormat(lang) })
 const { t, fmt } = speak('en')
@@ -158,13 +158,6 @@ describe('routerVerdict', () => {
 })
 
 describe('what a subscription can count on', () => {
-  it('has links once it is on with a name and a port', () => {
-    expect(hasLinks(local())).toBe(true)
-    expect(hasLinks(local({ enabled: false }))).toBe(false)
-    expect(hasLinks(local({ host: '' }))).toBe(false)
-    expect(hasLinks(local({ port: null }))).toBe(false)
-  })
-
   it('takes a switch later unless it is working', () => {
     expect(routerDown(local())).toBe(false)
     for (const state of ['starting', 'attention'] as const) expect(routerDown(local({ state }))).toBe(true)
