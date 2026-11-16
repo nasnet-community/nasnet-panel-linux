@@ -61,9 +61,10 @@ function OutboundDetails({ outbound, route, details }: { outbound: Outbound; rou
         ].filter(Boolean).join(" · ")
         : "Never"
     const domainStrategy = outbound.freedom_settings?.domainStrategy || outbound.wireguard_settings?.domainStrategy
-    const mux = outbound.mux_settings?.enabled
-        ? `On · ${outbound.mux_settings.concurrency ?? 8} streams`
-        : "Off"
+    const muxStreams = outbound.mux_settings?.concurrency ?? 0
+    const mux = !outbound.mux_settings?.enabled
+        ? "Off"
+        : muxStreams < 0 ? "On · TCP off" : `On · ${Math.max(muxStreams, 128)} streams`
 
     const rows: { label: string; value: string; copy?: boolean }[] = [
         { label: "Protocol", value: outbound.protocol.toUpperCase() },

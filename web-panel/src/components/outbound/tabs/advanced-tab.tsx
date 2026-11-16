@@ -59,11 +59,11 @@ export function AdvancedTab({ form, allOutbounds = [], currentTag }: AdvancedTab
                                 <Label>Concurrency</Label>
                                 <Input
                                     type="number"
-                                    placeholder="8"
+                                    placeholder="128"
                                     value={mux.concurrency ?? ""}
                                     onChange={(e) => updateMux({ concurrency: parseInt(e.target.value) || 0 })}
                                 />
-                                <p className="text-xs text-muted-foreground">-1 to 1024</p>
+                                <p className="text-xs text-muted-foreground">-1 to 1024. Xray 26.11.9+ uses at least 128.</p>
                             </div>
                             <div className="space-y-2">
                                 <Label>XUDP Concurrency</Label>
