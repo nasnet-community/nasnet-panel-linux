@@ -8,7 +8,7 @@ COPY web-panel/ ./
 RUN pnpm build
 
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS builder
 
 WORKDIR /app
 
