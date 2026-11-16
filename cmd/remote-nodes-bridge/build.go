@@ -94,12 +94,14 @@ func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
 		App: []*serial.TypedMessage{
 			serial.ToTypedMessage(logConfig(s.LogLevelOrDefault())),
 			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
 			serial.ToTypedMessage(&stats.Config{}),
 			serial.ToTypedMessage(&router.Config{Rule: rules}),
 			serial.ToTypedMessage(dnsApp),
 			serial.ToTypedMessage(countersPolicy()),
+			// Last, as the loader has it since 26.10.29: inbounds start
+			// taking connections only once everything they hand them to is up.
+			serial.ToTypedMessage(&proxyman.InboundConfig{}),
 		},
 	}, nil
 }
@@ -145,7 +147,9 @@ func countersPolicy() *policy.Config {
 // address, refusing the blocked ranges. Xray blocks all a reverse tunnel
 // carries unless a final rule allows it, hence the allow at the end.
 func exitOutbound(addr netip.Addr, blocked []netip.Prefix) *core.OutboundHandlerConfig {
-	block := &freedom.FinalRuleConfig{Action: freedom.RuleAction_Block}
+	// Since 26.11.9 the loader writes a block rule's log level out. Info is
+	// also what a rule without one logs at.
+	block := &freedom.FinalRuleConfig{Action: freedom.RuleAction_Block, LogLevel: clog.Severity_Info.Enum()}
 	for _, p := range blocked {
 		block.Ip = append(block.Ip, &geodata.IPRule{Value: &geodata.IPRule_Custom{
 			Custom: &geodata.CIDRRule{Cidr: &geodata.CIDR{Ip: p.Addr().AsSlice(), Prefix: uint32(p.Bits())}},

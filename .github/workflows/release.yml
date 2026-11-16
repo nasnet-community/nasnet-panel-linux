@@ -116,13 +116,13 @@ jobs:
         id: xray_dl
         run: |
           # the release pinned in internal/xray/pin; bump both together
-          XRAY_VERSION="26.10.21"
+          XRAY_VERSION="26.11.9"
           echo "xray_version=${XRAY_VERSION}" >> "$GITHUB_OUTPUT"
           XRAY_BASE="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}"
           curl -fSL -o xray-64.zip "${XRAY_BASE}/Xray-linux-64.zip"
           curl -fSL -o xray-arm64.zip "${XRAY_BASE}/Xray-linux-arm64-v8a.zip"
-          echo "0eec3ed4163c273d8c8bf821f7d219e257921cf584aa3fb970715e458e631978  xray-64.zip" | sha256sum -c -
-          echo "d1304946c486d98e6b886e9b931eaaaebb23835b30e217638037b7f2721d4e9c  xray-arm64.zip" | sha256sum -c -
+          echo "b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82  xray-64.zip" | sha256sum -c -
+          echo "64ed6858982a7f5eb85d88b811089063bd4f17561f4c8f44e0f1dc8e6f6430be  xray-arm64.zip" | sha256sum -c -
           mkdir -p xray-64 xray-arm64
           unzip -o xray-64.zip xray -d xray-64
           unzip -o xray-arm64.zip xray -d xray-arm64
