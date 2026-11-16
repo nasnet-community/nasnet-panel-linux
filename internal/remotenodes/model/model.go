@@ -24,7 +24,10 @@ const (
 	//
 	// 2 added Local and LocalClients, the entry on the router itself. A file
 	// of version 1 is read as one with that entry off.
-	SchemaVersion = 2
+	//
+	// 3 added Outbounds and the routes that name them. A file of version 2 is
+	// read as one with no outbounds, everything leaving through the VPN.
+	SchemaVersion = 3
 
 	// The caps stay hard-coded until the plugin has been measured on a real
 	// router.
@@ -45,6 +48,8 @@ var (
 	ErrSubscriptionLimit = errors.New("subscription limit reached")
 	ErrNameTaken         = errors.New("name already in use")
 	ErrNotFound          = errors.New("not found")
+	ErrOutboundLimit     = errors.New("outbound limit reached")
+	ErrOutboundInUse     = errors.New("outbound in use")
 
 	// ErrNewer means the file was written by a newer release. Reading it
 	// would drop whatever that release added, so nothing is loaded.
@@ -128,6 +133,10 @@ type Node struct {
 	// which makes it an unfinished install and not a node. A value, so that
 	// a copy of the state shares nothing.
 	Failure InstallFailure `json:"install_failure,omitzero"`
+
+	// OutboundID is the outbound the node's traffic leaves through. Zero is
+	// the router's VPN.
+	OutboundID uint `json:"outbound_id,omitempty"`
 }
 
 // Unfinished says whether the record is an install that stopped before it
@@ -242,6 +251,9 @@ type Local struct {
 	RealityPublicKey  string `json:"reality_public_key,omitempty"`
 	RealityShortID    string `json:"reality_short_id,omitempty"`
 	RealityPrivateKey string `json:"reality_private_key,omitempty"` // hub only
+
+	// OutboundID is the outbound its traffic leaves through, as a node's.
+	OutboundID uint `json:"outbound_id,omitempty"`
 }
 
 // HasKeys says whether the entry's REALITY keys have been made.
@@ -273,6 +285,7 @@ type State struct {
 	Version            int       `json:"version"`
 	NextNodeID         uint      `json:"next_node_id"`
 	NextSubscriptionID uint      `json:"next_subscription_id"`
+	NextOutboundID     uint      `json:"next_outbound_id"`
 	Settings           Settings  `json:"settings"`
 	LastBackupAt       time.Time `json:"last_backup_at,omitzero"` // when a backup was last exported
 
@@ -289,20 +302,31 @@ type State struct {
 	// The entry on the router itself, and the subscriptions' clients on it.
 	Local        Local         `json:"local"`
 	LocalClients []LocalClient `json:"local_clients"`
+
+	// Outbounds are the servers a node or the router's own entry can leave
+	// through instead of the VPN. ProbeURL is what the bridge asks through
+	// each one to see that it answers; empty means bridgespec's default.
+	Outbounds []Outbound `json:"outbounds"`
+	ProbeURL  string     `json:"probe_url,omitempty"`
 }
 
 // NewState is what a fresh install starts with.
 func NewState() State {
-	return State{Version: SchemaVersion, NextNodeID: 1, NextSubscriptionID: 1, Settings: DefaultSettings()}
+	return State{Version: SchemaVersion, NextNodeID: 1, NextSubscriptionID: 1, NextOutboundID: 1, Settings: DefaultSettings()}
 }
 
-// Clone copies the slices. The records hold only values, so that is a deep
-// copy (a test keeps it that way).
+// Clone copies the slices. The records hold only values, apart from an
+// outbound's ALPN, which is copied too, so that is a deep copy (a test keeps
+// it that way).
 func (s State) Clone() State {
 	s.Nodes = slices.Clone(s.Nodes)
 	s.Subscriptions = slices.Clone(s.Subscriptions)
 	s.Enablements = slices.Clone(s.Enablements)
 	s.LocalClients = slices.Clone(s.LocalClients)
+	s.Outbounds = slices.Clone(s.Outbounds)
+	for i := range s.Outbounds {
+		s.Outbounds[i].Settings.ALPN = slices.Clone(s.Outbounds[i].Settings.ALPN)
+	}
 	return s
 }
 
@@ -422,7 +446,10 @@ func (s State) CheckEdit(before State) error {
 	if len(s.Subscriptions) > MaxSubscriptions && len(s.Subscriptions) > len(before.Subscriptions) {
 		return fmt.Errorf("%w: at most %d", ErrSubscriptionLimit, MaxSubscriptions)
 	}
-	if s.NextNodeID < before.NextNodeID || s.NextSubscriptionID < before.NextSubscriptionID {
+	if len(s.Outbounds) > MaxOutbounds && len(s.Outbounds) > len(before.Outbounds) {
+		return fmt.Errorf("%w: at most %d", ErrOutboundLimit, MaxOutbounds)
+	}
+	if s.NextNodeID < before.NextNodeID || s.NextSubscriptionID < before.NextSubscriptionID || s.NextOutboundID < before.NextOutboundID {
 		return invalid("an id counter went backwards, which would reuse an id")
 	}
 	// another CA can take its place (a backup import does), but none at all

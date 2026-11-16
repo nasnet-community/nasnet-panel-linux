@@ -30,10 +30,11 @@ type fakeBridge struct {
 	updates int                // every call to Update, failed ones too
 	stops   int
 
-	failUpdate error                            // Update fails with it
-	failState  bridgectl.State                  // and leaves the supervisor in this state, "" meaning stopped
-	pageDown   bool                             // the bridge's own page doesn't answer
-	nodes      map[string]bridgespec.NodeStatus // what the page says, by tag
+	failUpdate error                                // Update fails with it
+	failState  bridgectl.State                      // and leaves the supervisor in this state, "" meaning stopped
+	pageDown   bool                                 // the bridge's own page doesn't answer
+	nodes      map[string]bridgespec.NodeStatus     // what the page says, by tag
+	outs       map[string]bridgespec.OutboundStatus // what the page says of an outbound, by tag
 
 	// The router's own entry, when the spec has one.
 	started     time.Time                          // when this bridge started; the epoch unless a test says
@@ -155,6 +156,11 @@ func (b *fakeBridge) Status() bridgectl.Status {
 			ns.Tag = n.Tag
 			page.Nodes = append(page.Nodes, ns)
 		}
+		for _, o := range b.spec.Outbounds {
+			out := b.outs[o.Tag]
+			out.Tag = o.Tag
+			page.Outbounds = append(page.Outbounds, out)
+		}
 		if b.spec.Local != nil {
 			page.Local = &bridgespec.LocalStatus{Clients: []bridgespec.ClientStatus{}}
 			on := map[string]bool{}
@@ -189,6 +195,16 @@ func (b *fakeBridge) tunnel(tag string, ns bridgespec.NodeStatus) {
 			b.nodes = map[string]bridgespec.NodeStatus{}
 		}
 		b.nodes[tag] = ns
+	})
+}
+
+// outbound says what the bridge's page says of an outbound's check.
+func (b *fakeBridge) outbound(tag string, out bridgespec.OutboundStatus) {
+	b.set(func(b *fakeBridge) {
+		if b.outs == nil {
+			b.outs = map[string]bridgespec.OutboundStatus{}
+		}
+		b.outs[tag] = out
 	})
 }
 
@@ -278,7 +294,7 @@ func newBridgeRig(t *testing.T, mods ...func(*Config)) *bridgeRig {
 	t.Helper()
 	b, rs, f := &fakeBridge{}, &fakeResolver{}, newFacts(ok(healthy(epoch)))
 	setup := func(c *Config) {
-		c.Bridge, c.Resolver, c.Facts, c.Addrs = b, rs, f, heldAddrs()
+		c.Bridge, c.Resolver, c.OutboundResolver, c.Facts, c.Addrs = b, rs, rs, f, heldAddrs()
 	}
 	return &bridgeRig{rig: newRig(t, append([]func(*Config){setup}, mods...)...), bridge: b, dns: rs, facts: f}
 }

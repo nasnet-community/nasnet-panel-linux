@@ -332,7 +332,10 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 		NewOps:    opsFor(boundTo(addrs.Nodes), downloads, log, st),
 		Downloads: downloads,
 		Resolver:  addrs.Nodes.Resolver(),
-		Addrs:     addrs, DNS: s.bridgeDNS,
+		// the outbounds are reached from the Foreign link, and their names looked up from it
+		OutboundResolver: addrs.Downloads.Resolver(),
+		Prober:           sup,
+		Addrs:            addrs, DNS: s.bridgeDNS,
 		Log: log,
 	})
 	if err != nil {
@@ -340,7 +343,7 @@ func run(ctx context.Context, log *slog.Logger, s settings, listening func(net.A
 	}
 	handler := api.New(api.Config{
 		Store: counted{st, coll}, Jobs: engine, Live: mgr, Version: version, Commit: commit,
-		Subs: mgr, Backup: mgr, NodeOps: mgr, Local: mgr,
+		Subs: mgr, Backup: mgr, NodeOps: mgr, Local: mgr, Outbounds: mgr,
 		BasePath: s.basePath, Index: index, Log: log,
 		Licenses: os.DirFS(s.licensesDir),
 	})

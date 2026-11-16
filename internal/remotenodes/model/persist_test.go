@@ -105,7 +105,7 @@ func TestEncodeWritesEmptyListsNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"nodes": []`, `"subscriptions": []`, `"enablements": []`, `"local_clients": []`} {
+	for _, key := range []string{`"nodes": []`, `"subscriptions": []`, `"enablements": []`, `"local_clients": []`, `"outbounds": []`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("missing %s in\n%s", key, b)
 		}
@@ -196,8 +196,8 @@ func TestDecodeAnswersWhatItCannotUse(t *testing.T) {
 		{"nodes of the wrong type", `{"version": 1, "nodes": {"a": 1}}`, false},
 		{"counters missing", `{"version": 1}`, false},
 		{"valid json, broken contents", strings.Replace(string(good), `"ssh_port": 22`, `"ssh_port": 0`, 1), false},
-		{"a newer version", `{"version": 3}`, true},
-		{"a newer shape", `{"version": 3, "nodes": {"a": 1}}`, true},
+		{"a newer version", `{"version": 4}`, true},
+		{"a newer shape", `{"version": 4, "nodes": {"a": 1}}`, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

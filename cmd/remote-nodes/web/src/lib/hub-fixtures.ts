@@ -2,10 +2,10 @@
 //
 // What the hub sends for the page's GET calls, as the page's types. A hub with everything
 // known (config, nodes, node, installingNode, stoppedNode, subscriptions, nodeSubscriptions,
-// traffic, local, localSubscriptions, jobs) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
+// traffic, local, localSubscriptions, jobs, outbounds) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
 // as null where a type says otherwise, stops this file compiling, and so the build.
 
-import type { AppConfig, Job, Local, Node, NodeSubscription, Subscription, Traffic } from './api'
+import type { AppConfig, Job, Local, Node, NodeSubscription, OutboundList, Subscription, Traffic } from './api'
 
 export const config: AppConfig = {
   "version": "1.2.3",
@@ -165,7 +165,8 @@ export const nodes: Node[] = [
       "monthUp": 3,
       "monthDown": 4,
       "updatedAt": "2026-10-30T11:59:00Z"
-    }
+    },
+    "outboundId": 1
   },
   {
     "id": 2,
@@ -228,7 +229,8 @@ export const nodes: Node[] = [
       "key": "upload_agent",
       "label": "Upload the agent",
       "percent": 38
-    }
+    },
+    "outboundId": 0
   },
   {
     "id": 3,
@@ -290,7 +292,8 @@ export const nodes: Node[] = [
       "error": "Couldn't upload the agent: the connection broke.",
       "cleanup": "Can't reach SSH on 203.0.113.3 port 22.",
       "at": "2026-10-30T11:58:30Z"
-    }
+    },
+    "outboundId": 0
   }
 ]
 
@@ -374,7 +377,8 @@ export const node: Node = {
       "kind": "agent_updated",
       "detail": "1.2.0 to 1.3.0"
     }
-  ]
+  ],
+  "outboundId": 1
 }
 
 export const installingNode: Node = {
@@ -439,7 +443,8 @@ export const installingNode: Node = {
     "key": "upload_agent",
     "label": "Upload the agent",
     "percent": 38
-  }
+  },
+  "outboundId": 0
 }
 
 export const bareNode: Node = {
@@ -496,7 +501,8 @@ export const bareNode: Node = {
     "monthDown": 0,
     "updatedAt": null
   },
-  "events": []
+  "events": [],
+  "outboundId": 1
 }
 
 export const unfinishedNode: Node = {
@@ -553,7 +559,8 @@ export const unfinishedNode: Node = {
     "monthDown": 0,
     "updatedAt": null
   },
-  "events": []
+  "events": [],
+  "outboundId": 0
 }
 
 export const stoppedNode: Node = {
@@ -617,7 +624,8 @@ export const stoppedNode: Node = {
     "error": "Couldn't upload the agent: the connection broke.",
     "cleanup": "Can't reach SSH on 203.0.113.3 port 22.",
     "at": "2026-10-30T11:58:30Z"
-  }
+  },
+  "outboundId": 0
 }
 
 export const subscriptions: Subscription[] = [
@@ -860,7 +868,8 @@ export const local: Local = {
       "kind": "local_on",
       "detail": ""
     }
-  ]
+  ],
+  "outboundId": 0
 }
 
 export const bareLocal: Local = {
@@ -896,7 +905,8 @@ export const bareLocal: Local = {
   },
   "xrayVersion": "",
   "uptimeSec": 0,
-  "events": []
+  "events": [],
+  "outboundId": 0
 }
 
 export const localSubscriptions: NodeSubscription[] = [
@@ -1109,3 +1119,187 @@ export const jobs: Job[] = [
     "finishedAt": "2026-10-30T12:00:00Z"
   }
 ]
+
+export const outbounds: OutboundList = {
+  "outbounds": [
+    {
+      "id": 1,
+      "name": "Frankfurt",
+      "fallback": false,
+      "createdAt": "2026-10-30T12:00:00Z",
+      "protocol": "vless",
+      "host": "de.example.com",
+      "port": 443,
+      "username": "",
+      "method": "",
+      "flow": "xtls-rprx-vision",
+      "network": "tcp",
+      "path": "",
+      "hostHeader": "",
+      "mode": "",
+      "security": "reality",
+      "serverName": "www.example.com",
+      "fingerprint": "chrome",
+      "alpn": [],
+      "publicKey": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+      "shortId": "ab12",
+      "spiderX": "",
+      "secretHint": "7f8b…4e5f",
+      "usedBy": {
+        "nodes": [
+          1
+        ],
+        "router": false
+      },
+      "state": {
+        "status": "up",
+        "delayMs": 180,
+        "error": "",
+        "onFallback": false,
+        "lastTryAt": "2026-10-30T11:55:00Z",
+        "lastSeenAt": "2026-10-30T11:55:00Z",
+        "bytesUp": 1200,
+        "bytesDown": 3400
+      }
+    },
+    {
+      "id": 2,
+      "name": "Paris",
+      "fallback": true,
+      "createdAt": "2026-10-30T12:00:00Z",
+      "protocol": "trojan",
+      "host": "198.51.100.9",
+      "port": 8443,
+      "username": "",
+      "method": "",
+      "flow": "",
+      "network": "ws",
+      "path": "/ws",
+      "hostHeader": "",
+      "mode": "",
+      "security": "tls",
+      "serverName": "cdn.example.com",
+      "fingerprint": "",
+      "alpn": [
+        "h2",
+        "http/1.1"
+      ],
+      "publicKey": "",
+      "shortId": "",
+      "spiderX": "",
+      "secretHint": "",
+      "usedBy": {
+        "nodes": [],
+        "router": false
+      },
+      "state": {
+        "status": "idle",
+        "delayMs": 0,
+        "error": "",
+        "onFallback": false,
+        "lastTryAt": null,
+        "lastSeenAt": null,
+        "bytesUp": 0,
+        "bytesDown": 0
+      }
+    }
+  ],
+  "limit": 16,
+  "check": {
+    "url": "",
+    "seconds": 30,
+    "defaultUrl": "https://www.google.com/generate_204"
+  }
+}
+
+export const bareOutbounds: OutboundList = {
+  "outbounds": [
+    {
+      "id": 1,
+      "name": "Frankfurt",
+      "fallback": false,
+      "createdAt": "2026-10-30T12:00:00Z",
+      "protocol": "vless",
+      "host": "de.example.com",
+      "port": 443,
+      "username": "",
+      "method": "",
+      "flow": "xtls-rprx-vision",
+      "network": "tcp",
+      "path": "",
+      "hostHeader": "",
+      "mode": "",
+      "security": "reality",
+      "serverName": "www.example.com",
+      "fingerprint": "chrome",
+      "alpn": [],
+      "publicKey": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+      "shortId": "ab12",
+      "spiderX": "",
+      "secretHint": "7f8b…4e5f",
+      "usedBy": {
+        "nodes": [
+          1
+        ],
+        "router": false
+      },
+      "state": {
+        "status": "unknown",
+        "delayMs": 0,
+        "error": "",
+        "onFallback": false,
+        "lastTryAt": null,
+        "lastSeenAt": null,
+        "bytesUp": 0,
+        "bytesDown": 0
+      }
+    },
+    {
+      "id": 2,
+      "name": "Paris",
+      "fallback": true,
+      "createdAt": "2026-10-30T12:00:00Z",
+      "protocol": "trojan",
+      "host": "198.51.100.9",
+      "port": 8443,
+      "username": "",
+      "method": "",
+      "flow": "",
+      "network": "ws",
+      "path": "/ws",
+      "hostHeader": "",
+      "mode": "",
+      "security": "tls",
+      "serverName": "cdn.example.com",
+      "fingerprint": "",
+      "alpn": [
+        "h2",
+        "http/1.1"
+      ],
+      "publicKey": "",
+      "shortId": "",
+      "spiderX": "",
+      "secretHint": "",
+      "usedBy": {
+        "nodes": [],
+        "router": false
+      },
+      "state": {
+        "status": "idle",
+        "delayMs": 0,
+        "error": "",
+        "onFallback": false,
+        "lastTryAt": null,
+        "lastSeenAt": null,
+        "bytesUp": 0,
+        "bytesDown": 0
+      }
+    }
+  ],
+  "limit": 16,
+  "check": {
+    "url": "",
+    "seconds": 30,
+    "defaultUrl": "https://www.google.com/generate_204"
+  }
+}

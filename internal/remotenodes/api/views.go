@@ -104,6 +104,9 @@ type Node struct {
 	// Unfinished is present for an install that stopped and was not cleaned
 	// up: it is no node, and only a cleanup or forgetting it works.
 	Unfinished *Unfinished `json:"unfinished,omitempty"`
+	// OutboundID is the outbound its traffic leaves through, 0 for the
+	// router's VPN.
+	OutboundID uint `json:"outboundId"`
 }
 
 // Unfinished is why an install stopped: the step, by the key the page words
@@ -297,6 +300,7 @@ func nodeView(n model.Node, enabled int, now time.Time, live Live) Node {
 		SubscriptionCount: enabled,
 		Tunnel:            TunnelState{State: tunnelOff},
 		Cert:              certView(n, now),
+		OutboundID:        n.OutboundID,
 	}
 	if live != nil {
 		l := live.NodeLive(n.ID)

@@ -51,6 +51,9 @@ type Config struct {
 	// Local runs the router's own entry, with the same rule for nil: without
 	// it the entry can be read and not changed.
 	Local LocalOps
+	// Outbounds keeps the outbounds and the routes through them, with the same
+	// rule: without it they can be read and not changed.
+	Outbounds OutboundOps
 }
 
 type API struct{ cfg Config }
@@ -97,6 +100,7 @@ func New(cfg Config) http.Handler {
 	route("GET /api/subscriptions", a.subscriptions)
 	a.subscriptionRoutes(route)
 	a.localRoutes(route)
+	a.outboundRoutes(route)
 	a.backupRoutes(route)
 	a.nodeOpRoutes(route)
 	mux.HandleFunc("/", a.noRoute)

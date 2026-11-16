@@ -297,6 +297,9 @@ func (m *Manager) localStateLocked(st model.State) (state, reason, detail string
 		return api.LocalStarting, api.LocalWaitingRouter, ""
 	case l.Host == "" && f.CloudName == "":
 		return api.LocalAttention, api.LocalNoAddress, ""
+	case m.bv.localGap != "":
+		// left out of the bridge, which may well be running for the nodes
+		return api.LocalAttention, api.LocalBridgeDown, sentence("the outbound it leaves through can't be used: " + m.bv.localGap)
 	case !(m.bv.local && m.bv.up()):
 		if young {
 			return api.LocalStarting, "", ""
