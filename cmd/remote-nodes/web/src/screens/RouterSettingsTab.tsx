@@ -3,6 +3,7 @@ import { Head } from '../components/section'
 import { Button, Card, Disclosure } from '../components/ui'
 import { useLang } from '../i18n'
 import type { Local } from '../lib/api'
+import { LeavesThroughCard } from './LeavesThrough'
 import { CopyField, ServerName } from './NodeSettingsTab'
 
 interface Props {
@@ -14,10 +15,12 @@ interface Props {
   /** a server name to confirm; empty is the Reality target's own */
   onChangeSni: (sni: string) => void
   onTurnOff: () => void
+  /** a new "Leaves through" to confirm: an outbound, or 0 for the router's VPN */
+  onRoute: (outboundId: number, target: string) => void
 }
 
 /** What can be changed on the router's own entry. Each change is a button that opens its own dialog; none saves from the page. */
-export function RouterSettingsTab({ local, onChangeName, onNewPort, onChangeTarget, onRotate, onChangeSni, onTurnOff }: Props) {
+export function RouterSettingsTab({ local, onChangeName, onNewPort, onChangeTarget, onRotate, onChangeSni, onTurnOff, onRoute }: Props) {
   const { t } = useLang()
   const source = local.hostSource === 'own' ? t('router.source.own') : local.hostSource === 'cloud' ? t('router.source.cloud') : ''
 
@@ -60,6 +63,8 @@ export function RouterSettingsTab({ local, onChangeName, onNewPort, onChangeTarg
         </div>
         <p className="text-xs text-faint">{t('router.set.port.note')}</p>
       </Card>
+
+      <LeavesThroughCard outboundId={local.outboundId ?? 0} where="router" onSave={onRoute} />
 
       <Card className="flex flex-col gap-2 p-4">
         <Head title={t('set.target')} hint={t('router.set.target.hint')}>

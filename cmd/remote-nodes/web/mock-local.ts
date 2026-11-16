@@ -21,6 +21,7 @@
 import { randomUUID } from 'node:crypto'
 import type { HandshakeCheck, Link, Local, LocalReason, LocalState, NodeEvent, NodeSubscription, SubscriptionLocal, Traffic } from './src/lib/api'
 import { entryIsOn, stepPace, stoppedOf, subs, XRAY_VERSION, type MockSub } from './mock-api'
+import { localRouteOf } from './mock-outbounds'
 
 const DAY = 86400e3
 const H = 3600e3
@@ -213,6 +214,7 @@ export function localView(): Local {
     xrayVersion: XRAY_VERSION,
     uptimeSec: live && s.startedAt ? Math.floor((Date.now() - s.startedAt) / 1000) : 0,
     events: s.events.slice(0, 50),
+    outboundId: localRouteOf(),
   }
 }
 

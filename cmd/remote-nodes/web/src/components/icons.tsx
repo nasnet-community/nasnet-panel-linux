@@ -3,6 +3,7 @@
 import { useId } from 'react'
 import type { LucideIcon, LucideProps } from 'lucide-react'
 import {
+  Activity as LActivity,
   CalendarDays as LCalendarDays,
   Check as LCheck,
   ChevronDown as LChevronDown,
@@ -30,6 +31,7 @@ import {
   TriangleAlert as LTriangleAlert,
   Upload as LUpload,
   Users as LUsers,
+  Waypoints as LWaypoints,
   X as LX,
 } from 'lucide-react'
 
@@ -39,6 +41,7 @@ const panel = (Icon: LucideIcon) => {
   return Styled
 }
 
+export const Activity = panel(LActivity)
 export const CalendarDays = panel(LCalendarDays)
 export const Check = panel(LCheck)
 export const ChevronDown = panel(LChevronDown)
@@ -66,6 +69,7 @@ export const Trash2 = panel(LTrash2)
 export const TriangleAlert = panel(LTriangleAlert)
 export const Upload = panel(LUpload)
 export const Users = panel(LUsers)
+export const Waypoints = panel(LWaypoints)
 export const X = panel(LX)
 
 /** The page's logo: a hub with three spokes, in the purple the panel's plugin list uses. */

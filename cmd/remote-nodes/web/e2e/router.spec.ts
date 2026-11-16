@@ -180,7 +180,8 @@ test.describe("the router's page", () => {
     const xray = panel(page, 'Xray')
     await expect(statusRow(xray, 'State')).toContainText('running')
     await expect(statusRow(xray, 'Version')).toContainText('26.10.21')
-    await expect(statusRow(xray, 'Leaves through')).toContainText("the router's VPN")
+    // the sample has it leaving through the outbound Paris; leaves-through.spec.ts has the router's VPN
+    await expect(statusRow(xray, 'Leaves through')).toContainText('Paris')
 
     const use = panel(page, 'In use')
     await expect(statusRow(use, 'Online now')).toContainText('2 of 5')
@@ -541,7 +542,8 @@ test.describe('the rest of the page', () => {
     await expect(page.locator('main')).toContainText('از IP Cloud')
     await page.getByRole('tab', { name: 'وضعیت' }).click()
     await expect(page.getByRole('heading', { name: 'همه‌چیز کار می‌کند' })).toBeVisible()
-    await expect(page.locator('main')).toContainText('وی پی ان روتر')
+    // the sample leaves through the outbound Paris; leaves-through.spec.ts has the router's VPN
+    await expect(page.locator('dt').filter({ hasText: /^خروج از$/ }).locator('xpath=..')).toContainText('Paris')
   })
 
   test('fits the window on every tab', async ({ page }) => {

@@ -6,6 +6,7 @@ describe('parseRoute', () => {
     expect(parseRoute('')).toEqual({ page: 'root', tab: 'nodes' })
     expect(parseRoute('#/')).toEqual({ page: 'root', tab: 'nodes' })
     expect(parseRoute('#/subscriptions')).toEqual({ page: 'root', tab: 'subscriptions' })
+    expect(parseRoute('#/outbounds')).toEqual({ page: 'root', tab: 'outbounds' })
     expect(parseRoute('#/settings')).toEqual({ page: 'root', tab: 'settings' })
     expect(parseRoute('#/nodes/3')).toEqual({ page: 'node', id: '3', tab: 'subscriptions' })
     expect(parseRoute('#/nodes/3/status')).toEqual({ page: 'node', id: '3', tab: 'status' })
@@ -38,7 +39,7 @@ describe('routeHash', () => {
     expect(routeHash({ page: 'router' })).toBe('#/router')
     expect(routeHash({ page: 'router', tab: 'subscriptions' })).toBe('#/router')
     expect(routeHash({ page: 'router', tab: 'settings' })).toBe('#/router/settings')
-    for (const hash of ['#/', '#/subscriptions', '#/settings', '#/nodes/7', '#/nodes/7/status', '#/nodes/7/settings', '#/router', '#/router/status', '#/router/settings']) {
+    for (const hash of ['#/', '#/subscriptions', '#/outbounds', '#/settings', '#/nodes/7', '#/nodes/7/status', '#/nodes/7/settings', '#/router', '#/router/status', '#/router/settings']) {
       const r = parseRoute(hash)
       expect(routeHash(r)).toBe(hash)
     }
