@@ -175,19 +175,20 @@ jobs:
             grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
           done
 
-      # These only run on Linux, which this is: three bind 127.0.0.17 and
-      # 127.0.0.18 (a tunnel's, the router's own entry's, and the forwarder to
-      # its Reality target), the other checks no_new_privs. A skip would hide a
+      # These only run on Linux, which this is: four bind addresses of
+      # 127.0.0.0/8 (a tunnel's, the router's own entry's, the forwarder to its
+      # Reality target's, and the outbounds', which must leave from the
+      # Foreign link's), the other checks no_new_privs. A skip would hide a
       # bridge that doesn't do what the hub relies on, so a skip fails the step.
       - name: Linux-only bridge tests
         run: |
           set -euo pipefail
-          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestE2ELocalEntrySourceAddresses|TestForwarderDialsFromItsAddress|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestE2ELocalEntrySourceAddresses|TestForwarderDialsFromItsAddress|TestE2EOutboundSourceAddress|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
           skipped=$(grep -c -- '--- SKIP' <<<"$out" || true)
           echo "skipped: $skipped"
           [ "$skipped" = 0 ] || { echo "::error::$skipped of the Linux-only bridge tests were skipped"; exit 1; }
-          for t in TestE2ESourceAddresses TestE2ELocalEntrySourceAddresses TestForwarderDialsFromItsAddress TestNoNewPrivs; do
+          for t in TestE2ESourceAddresses TestE2ELocalEntrySourceAddresses TestForwarderDialsFromItsAddress TestE2EOutboundSourceAddress TestNoNewPrivs; do
             grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
           done
 
