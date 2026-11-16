@@ -40,6 +40,9 @@ type InitialConfig struct {
 	ProxyPassword   string
 }
 
+// withdrawnXrayVersions are Xray-core releases upstream pulled, downloads included.
+var withdrawnXrayVersions = map[string]bool{"26.9.8": true, "26.10.10": true, "26.10.17": true, "26.10.29": true}
+
 type settingUsecase struct {
 	repo                  domain.SettingRepository
 	initialCfg            *InitialConfig
@@ -599,6 +602,21 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 				if err := u.repo.Update(ctx, existing); err != nil {
 					return err
 				}
+			}
+		}
+	}
+
+	// Upstream withdrew these Xray releases and their downloads now 404; a
+	// built-in node picked onto one goes back to following the panel.
+	if existing, err := u.repo.GetByKey(ctx, domain.BuiltinXrayKey); err == nil && existing != nil {
+		old := existing.Value
+		if withdrawnXrayVersions[strings.TrimPrefix(strings.TrimSpace(old), "v")] {
+			existing.Value = ""
+			if err := u.repo.Update(ctx, existing); err != nil {
+				logger.GetLogger().WithError(err).Warn("Failed to move the built-in node's Xray off a withdrawn release")
+			} else {
+				logger.GetLogger().WithField("from", old).
+					Info("The built-in node's Xray was a withdrawn release; it follows the panel's version again")
 			}
 		}
 	}

@@ -73,21 +73,23 @@ func ManagedOutbound(raw string) (*conf.OutboundDetourConfig, string, string, st
 	if err != nil {
 		return nil, "", "", "", fmt.Errorf("cannot build outbound")
 	}
-	if _, err = out.Build(); err != nil {
-		return nil, "", "", "", fmt.Errorf("outbound rejected by Xray")
-	}
+	// Ahead of Build, which refuses the same outbound with a vaguer error.
 	if err = RequireTransportSecurity(out); err != nil {
 		return nil, "", "", "", err
+	}
+	if _, err = out.Build(); err != nil {
+		return nil, "", "", "", fmt.Errorf("outbound rejected by Xray")
 	}
 	info := p.ConvertToGeneralConfig()
 	return out, info.Protocol, info.Address, info.Remark, nil
 }
 
-// RequireTransportSecurity applies the rule Xray 26.9 enforces when it loads a
+// RequireTransportSecurity applies the rule Xray enforces when it loads a
 // config: VLESS without TLS, REALITY or VLESS encryption, and Trojan without
-// TLS, may only reach private addresses. The vendored core checks the flat
-// settings form only, so a vnext/servers outbound passes Build here and then
-// fails the node's whole config.
+// TLS, may only reach private addresses. Pool members come from agents that
+// may run an older core, so the outbound is checked here without Build. As in
+// Xray, a flat address replaces vnext/servers. A missing address is left to
+// Build, which rejects it with its own error.
 func RequireTransportSecurity(out *conf.OutboundDetourConfig) error {
 	if out.StreamSetting != nil {
 		if s := strings.ToLower(out.StreamSetting.Security); s != "" && s != "none" {
@@ -104,10 +106,16 @@ func RequireTransportSecurity(out *conf.OutboundDetourConfig) error {
 			return nil
 		}
 		plain := func(encryption string) bool { return encryption == "" || encryption == "none" }
-		if plain(s.Encryption) && isPublic(s.Address) {
-			return fmt.Errorf("VLESS without TLS to a public server is rejected by Xray")
+		if s.Address != nil {
+			if plain(s.Encryption) && isPublic(s.Address) {
+				return fmt.Errorf("VLESS without TLS to a public server is rejected by Xray")
+			}
+			return nil
 		}
 		for _, v := range s.Vnext {
+			if v == nil || v.Address == nil {
+				continue
+			}
 			for _, raw := range v.Users {
 				var user struct {
 					Encryption string `json:"encryption"`
@@ -123,9 +131,15 @@ func RequireTransportSecurity(out *conf.OutboundDetourConfig) error {
 		if json.Unmarshal(*out.Settings, &s) != nil {
 			return nil
 		}
-		addresses := []*conf.Address{s.Address}
-		for _, server := range s.Servers {
-			addresses = append(addresses, server.Address)
+		var addresses []*conf.Address
+		if s.Address != nil {
+			addresses = append(addresses, s.Address)
+		} else {
+			for _, server := range s.Servers {
+				if server != nil && server.Address != nil {
+					addresses = append(addresses, server.Address)
+				}
+			}
 		}
 		for _, address := range addresses {
 			if isPublic(address) {
@@ -141,15 +155,21 @@ func IsPublicAddress(host string) bool {
 	return isPublic(&conf.Address{Address: xnet.ParseAddress(host)})
 }
 
+// isPublic mirrors requiresTransportSecurity in Xray 26.11.9+ infra/conf/xray.go.
+// Only 10/8, 172.16/12, 192.168/16, fc00::/7, loopback and link-local count as
+// private: CGNAT (100.64/10), 198.18/15 and the like need TLS too.
 func isPublic(address *conf.Address) bool {
 	if address == nil || address.Address == nil {
-		return false
+		return true
 	}
 	if address.Family().IsIP() {
-		return !geodata.GetPrivateIPMatcher().Match(address.IP())
+		ip := address.IP()
+		return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast()
 	}
-	return !geodata.GetPrivateDomainMatcher().MatchAny(strings.TrimSuffix(strings.ToLower(address.Domain()), "."))
+	domain := strings.TrimSuffix(strings.ToLower(address.Domain()), ".")
+	return !geodata.GetPrivateDomainMatcher().MatchAny(domain)
 }
+
 func hasWord(words, key string) bool {
 	for _, word := range strings.Fields(words) {
 		if word == key {

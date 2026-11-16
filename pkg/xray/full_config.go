@@ -1518,7 +1518,8 @@ func (b *FullConfigBuilder) buildFreedomSettings(out *nodeDomain.Outbound) map[s
 
 // buildFreedomFinalRules renders the Freedom outbound's allow/block gates.
 // Entries with an action other than allow/block are dropped: xray-core fails the
-// whole config on "unknown action: ".
+// whole config on "unknown action: ". A delay goes on block rules only, which
+// 26.11.9+ enforces, and under the old blockDelay key that older cores read.
 func buildFreedomFinalRules(rules []nodeDomain.FreedomFinalRule) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(rules))
 	for _, r := range rules {
@@ -1536,7 +1537,7 @@ func buildFreedomFinalRules(rules []nodeDomain.FreedomFinalRule) []map[string]in
 		if len(r.IP) > 0 {
 			entry["ip"] = r.IP
 		}
-		if r.BlockDelay != nil {
+		if r.BlockDelay != nil && action == "block" {
 			entry["blockDelay"] = xrayRange(r.BlockDelay)
 		}
 		out = append(out, entry)

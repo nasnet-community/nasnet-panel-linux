@@ -860,7 +860,7 @@ type FreedomFinalRule struct {
 	Port    []string `json:"port,omitempty"`    // ports / ranges, e.g. "25", "6881-6889"
 	IP      []string `json:"ip,omitempty"`      // CIDRs or geoip:CC, "!" negates
 
-	// BlockDelay stalls a blocked dial for this many milliseconds instead of
+	// BlockDelay stalls a blocked dial for this many seconds instead of
 	// failing immediately, which looks less like a filter to the client.
 	BlockDelay *RangeConfig `json:"blockDelay,omitempty"`
 }

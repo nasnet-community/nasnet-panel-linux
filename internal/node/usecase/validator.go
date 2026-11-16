@@ -190,6 +190,7 @@ func ValidateOutbound(out *domain.Outbound) error {
 
 	// Since 26.9.9 xray-core refuses the whole config for VLESS without TLS,
 	// REALITY or VLESS encryption, or Trojan without TLS, to a public address.
+	// 26.11.9 counts CGNAT (100.64/10) and other special ranges as public too.
 	if protocol == "vless" || protocol == "trojan" {
 		enc := strings.TrimSpace(out.GetVLESSSettingsOrDefault().Encryption)
 		encrypted := protocol == "vless" && enc != "" && enc != "none"
@@ -246,7 +247,8 @@ func outboundStreamSecure(out *domain.Outbound) bool {
 	return false
 }
 
-// validateFreedomOutbound checks freedom's fragment (needs length+interval) and noise (type+packet).
+// validateFreedomOutbound checks freedom's fragment (needs length+interval) and
+// noise (type+packet), and that only a block final rule carries a delay.
 func validateFreedomOutbound(out *domain.Outbound) error {
 	if out.SockoptSettings != nil && out.SockoptSettings.AddressPortStrategy != "" {
 		return errors.New("freedom outbounds can't use sockopt addressPortStrategy (Xray 26.9.8+ refuses the config)")
@@ -271,6 +273,11 @@ func validateFreedomOutbound(out *domain.Outbound) error {
 		}
 		if strings.TrimSpace(n.Packet) == "" {
 			return fmt.Errorf("freedom noise[%d] requires a non-empty packet", i)
+		}
+	}
+	for i, r := range fs.FinalRules {
+		if r.BlockDelay != nil && strings.EqualFold(strings.TrimSpace(r.Action), "allow") {
+			return fmt.Errorf("freedom final rule %d: block delay only applies to Block rules (Xray 26.11.9+ refuses the config)", i+1)
 		}
 	}
 	return nil
