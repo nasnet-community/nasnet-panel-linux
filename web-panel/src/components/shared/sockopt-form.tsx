@@ -160,6 +160,9 @@ export function SockoptForm({ data, onChange, hideDialerProxy = false }: Sockopt
                     <Label htmlFor="acceptProxyProtocol">Accept Proxy Protocol</Label>
                 </div>
             </div>
+            <p className={data.tcpMptcp ? "text-xs text-status-warning" : "text-xs text-muted-foreground"}>
+                MPTCP is off by default since Xray 26.10.31: a Linux kernel bug (CVE-2026-98432) allows remote root. Only enable it on a patched kernel.
+            </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">

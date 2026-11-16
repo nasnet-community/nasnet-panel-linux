@@ -96,6 +96,10 @@ export function FreedomForm({ settings, onChange }: FreedomFormProps) {
                 </div>
             </div>
 
+            <p className="text-xs text-muted-foreground">
+                Fragment and Noise here are deprecated in current Xray. Use Packet masking (FinalMask) in the Advanced tab instead (tcp fragment, udp noise).
+            </p>
+
             {/* Fragment Settings */}
             <div className="space-y-3 border rounded-md p-4 bg-muted/20">
                 <div className="flex items-center justify-between">
