@@ -836,12 +836,15 @@ export function Tabs<T extends string>({
   value,
   onChange,
   idBase,
+  tight = false,
 }: {
   label: string
   tabs: [T, string][]
   value: T
   onChange: (t: T) => void
   idBase: string
+  /** narrower padding below 400 px, so four tabs fit a 320 px phone without scrolling */
+  tight?: boolean
 }) {
   const list = useRef<HTMLDivElement>(null)
   const onKey = (e: ReactKeyboardEvent) => {
@@ -863,7 +866,13 @@ export function Tabs<T extends string>({
     all[next]?.focus()
   }
   return (
-    <div ref={list} role="tablist" aria-label={label} onKeyDown={onKey} className="no-scrollbar flex gap-1 overflow-x-auto border-b border-border">
+    <div
+      ref={list}
+      role="tablist"
+      aria-label={label}
+      onKeyDown={onKey}
+      className={cx('no-scrollbar flex overflow-x-auto border-b border-border', tight ? 'gap-0.5 min-[400px]:gap-1' : 'gap-1')}
+    >
       {tabs.map(([t, text]) => (
         <button
           key={t}
@@ -875,7 +884,8 @@ export function Tabs<T extends string>({
           tabIndex={t === value ? 0 : -1}
           onClick={() => onChange(t)}
           className={cx(
-            '-mb-px h-11 shrink-0 border-b-2 px-3 text-[13px] font-medium sm:h-auto sm:py-2',
+            '-mb-px h-11 shrink-0 border-b-2 text-[13px] font-medium sm:h-auto sm:py-2',
+            tight ? 'px-1 min-[400px]:px-3' : 'px-3',
             'focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
             t === value ? 'border-accent text-foreground' : 'border-transparent text-muted hover:text-foreground',
           )}

@@ -13,6 +13,7 @@ import { isUnfinished } from '../lib/install'
 import { jobTitle } from '../lib/jobs'
 import { agentUptime } from '../lib/node'
 import { AttentionList, type AttentionItem } from './Attention'
+import { RouteDialog } from './LeavesThrough'
 import { HandshakeDialog, PortDialog, RemoveDialog, RenameDialog, RenewDialog, RotateDialog, ServerNameDialog, UpdateDialog, type StartJob } from './NodeDialogs'
 import { NodeSettingsTab } from './NodeSettingsTab'
 import { NodeStatusTab } from './NodeStatusTab'
@@ -23,6 +24,7 @@ type Modal =
   | { kind: 'rename' | 'remove' | 'rotate' | 'renew' | 'port' | 'target' }
   | { kind: 'update'; what: 'agent' | 'xray' }
   | { kind: 'sni'; sni: string }
+  | { kind: 'route'; outboundId: number; target: string }
 
 /** A chip that says an update is waiting and opens its confirmation. Small to look at, a 44 px target for a thumb. */
 function UpdateButton({ children, disabled, title, onClick }: { children: ReactNode; disabled: boolean; title?: string; onClick: () => void }) {
@@ -285,6 +287,7 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
               onRotate={() => setModal({ kind: 'rotate' })}
               onRenew={() => setModal({ kind: 'renew' })}
               onChangeName={(sni) => setModal({ kind: 'sni', sni })}
+              onRoute={(outboundId, target) => setModal({ kind: 'route', outboundId, target })}
             />
           ))}
       </div>
@@ -297,6 +300,15 @@ export function NodeScreen({ id, tab }: { id: string; tab: NodeTab }) {
       {modal?.kind === 'port' && <PortDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'target' && <HandshakeDialog node={node} start={start} onClose={close} />}
       {modal?.kind === 'sni' && <ServerNameDialog node={node} sni={modal.sni} start={start} onClose={close} />}
+      {modal?.kind === 'route' && (
+        <RouteDialog
+          title={t('via.title.node', { name: node.name })}
+          place={node.name}
+          target={modal.target}
+          call={async () => take(await api.route(node.id, modal.outboundId))}
+          onClose={close}
+        />
+      )}
     </div>
   )
 }

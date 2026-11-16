@@ -6,6 +6,7 @@ import { useLang } from '../i18n'
 import type { Node } from '../lib/api'
 import { unreachable } from '../lib/health'
 import { renewLeadDays, validServerName } from '../lib/node'
+import { LeavesThroughCard } from './LeavesThrough'
 
 /** A key shown in full, with a button to copy it. */
 export function CopyField({ label, value, copyLabel }: { label: string; value: string; copyLabel: string }) {
@@ -91,10 +92,12 @@ interface Props {
   onRenew: () => void
   /** a server name to confirm; empty is the Reality target's own */
   onChangeName: (sni: string) => void
+  /** a new "Leaves through" to confirm: an outbound, or 0 for the router's VPN */
+  onRoute: (outboundId: number, target: string) => void
 }
 
 /** What can be changed on a node. Each change is a button that opens its own dialog; none saves from the page. */
-export function NodeSettingsTab({ node, onChangePort, onChangeTarget, onRotate, onRenew, onChangeName }: Props) {
+export function NodeSettingsTab({ node, onChangePort, onChangeTarget, onRotate, onRenew, onChangeName, onRoute }: Props) {
   const { t, fmt } = useLang()
   // the agent applies every change, so none can be made while the router can't reach it
   const down = unreachable(node)
@@ -118,6 +121,9 @@ export function NodeSettingsTab({ node, onChangePort, onChangeTarget, onRotate, 
           </b>
         </div>
       </Card>
+
+      {/* where traffic goes out is the router's business, so it can change while the node can't be reached */}
+      <LeavesThroughCard outboundId={node.outboundId ?? 0} where="node" onSave={onRoute} />
 
       <Card className="flex flex-col gap-2 p-4">
         <Head title={t('set.target')} hint={t('set.target.hint')}>

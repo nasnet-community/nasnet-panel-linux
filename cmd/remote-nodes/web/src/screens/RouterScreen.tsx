@@ -10,11 +10,12 @@ import { local as localApi, type Local } from '../lib/api'
 import { routerDown, routerHealth, routerNotes, type RouterAct } from '../lib/router'
 import { AttentionList, type AttentionItem } from './Attention'
 import { PlaceSubscriptions } from './NodeSubscriptionsTab'
+import { RouteDialog } from './LeavesThrough'
 import { NewPortDialog, OwnNameDialog, RotateKeysDialog, RouterServerNameDialog, RouterTargetDialog, TurnOffDialog, TurnOnDialog } from './RouterDialogs'
 import { RouterSettingsTab } from './RouterSettingsTab'
 import { RouterStatusTab } from './RouterStatusTab'
 
-type Modal = { kind: 'on' | 'off' | 'port' | 'rotate' | 'name' | 'target' } | { kind: 'sni'; sni: string }
+type Modal = { kind: 'on' | 'off' | 'port' | 'rotate' | 'name' | 'target' } | { kind: 'sni'; sni: string } | { kind: 'route'; outboundId: number; target: string }
 
 /** What This router is, for a router that has it switched off, with the way to switch it on. */
 export function RouterIntro({ onTurnOn, steps = false }: { onTurnOn: () => void; steps?: boolean }) {
@@ -159,6 +160,7 @@ export function RouterScreen({ tab }: { tab: NodeTab }) {
                 onRotate={() => setModal({ kind: 'rotate' })}
                 onChangeSni={(sni) => setModal({ kind: 'sni', sni })}
                 onTurnOff={() => setModal({ kind: 'off' })}
+                onRoute={(outboundId, target) => setModal({ kind: 'route', outboundId, target })}
               />
             )}
           </div>
@@ -172,6 +174,9 @@ export function RouterScreen({ tab }: { tab: NodeTab }) {
       {modal?.kind === 'name' && <OwnNameDialog local={local} onClose={close} onChanged={take} />}
       {modal?.kind === 'target' && <RouterTargetDialog local={local} onClose={close} onChanged={take} />}
       {modal?.kind === 'sni' && <RouterServerNameDialog local={local} sni={modal.sni} onClose={close} onChanged={take} />}
+      {modal?.kind === 'route' && (
+        <RouteDialog title={t('via.title.router')} place={t('router.name')} target={modal.target} call={async () => take(await localApi.route(modal.outboundId))} onClose={close} />
+      )}
     </div>
   )
 }
