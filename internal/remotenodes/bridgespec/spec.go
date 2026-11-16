@@ -19,12 +19,14 @@ import (
 // Version is the spec revision this package reads and writes. Hub and bridge
 // ship in one image, so there is no negotiation: a different number is an error.
 //
-// 2 added Local, the entry on the router itself.
-const Version = 2
+// 2 added Local, the entry on the router itself. 3 added Outbounds, the
+// servers a node can leave through instead of the exit.
+const Version = 3
 
 // Limits that keep a bad spec from costing memory or time.
 const (
 	MaxNodes        = 16
+	MaxOutbounds    = 16
 	MaxBlocked      = 256
 	MaxDNSServers   = 8
 	MaxLocalClients = 64
@@ -55,6 +57,14 @@ type Spec struct {
 	DialAddr string `json:"dial_addr"`
 	Exit     Exit   `json:"exit"`
 	DNS      DNS    `json:"dns"`
+	// Outbounds are the servers a node, or the local entry, can leave through
+	// instead of the exit: the one it names in Via.
+	Outbounds []Outbound `json:"outbounds,omitempty"`
+	// OutboundAddr is the source address of the connections to those servers:
+	// the router's Foreign link. Needed as soon as there is an outbound.
+	OutboundAddr string `json:"outbound_addr,omitempty"`
+	// Probe is how the outbounds are checked.
+	Probe Probe `json:"probe,omitzero"`
 	// StatusAddr is where the status page listens: a loopback address and port.
 	StatusAddr string `json:"status_addr"`
 	// LogLevel is debug, info, warning (the default), error or none.
@@ -62,7 +72,8 @@ type Spec struct {
 }
 
 // Node is one portal the bridge dials. Its subscriptions' traffic arrives
-// through the tunnel under ReverseTag and leaves through the shared exit.
+// through the tunnel under ReverseTag and leaves through the shared exit, or
+// through the outbound Via names.
 type Node struct {
 	// Tag names the tunnel and its counters. Unique within the spec.
 	Tag string `json:"tag"`
@@ -82,6 +93,9 @@ type Node struct {
 	Flow string `json:"flow,omitempty"`
 	// ReverseTag is the reverse tag the portal registers for this client.
 	ReverseTag string `json:"reverse_tag"`
+	// Via is the tag of the outbound the node's traffic leaves through. Empty
+	// means the shared exit.
+	Via string `json:"via,omitempty"`
 }
 
 // Local is the entry on the router itself: a VLESS + REALITY inbound, as a
@@ -110,6 +124,9 @@ type Local struct {
 	// Token is what the hub sends with every change of clients. The control
 	// path listens on loopback, and this keeps it the hub's alone.
 	Token string `json:"token"`
+	// Via is the tag of the outbound the entry's traffic leaves through, as a
+	// node's is.
+	Via string `json:"via,omitempty"`
 }
 
 // Client is one subscription's login on the router's entry.
@@ -190,8 +207,8 @@ func (s *Spec) String() string {
 	if s.Local != nil {
 		local = s.Local.String()
 	}
-	return fmt.Sprintf("bridge spec v%d (nodes %s, local %s, dial %s, exit %s, status %s)",
-		s.Version, strings.Join(tags, ","), local, s.DialAddr, s.Exit.Addr, s.StatusAddr)
+	return fmt.Sprintf("bridge spec v%d (nodes %s, local %s, %d outbound(s), dial %s, exit %s, status %s)",
+		s.Version, strings.Join(tags, ","), local, len(s.Outbounds), s.DialAddr, s.Exit.Addr, s.StatusAddr)
 }
 
 // String leaves the key, the ids and the token out, like Spec.
@@ -258,13 +275,88 @@ func (s *Spec) Validate() error {
 		return fmt.Errorf("status_addr: %s must be a loopback address with a port", s.StatusAddr)
 	}
 
-	if err := s.validateNodes(dial); err != nil {
+	outbounds, err := s.validateOutbounds(dial)
+	if err != nil {
 		return err
 	}
-	return s.validateLocal(exit, status)
+	if err := s.validateNodes(dial, outbounds); err != nil {
+		return err
+	}
+	if err := s.validateSelectors(); err != nil {
+		return err
+	}
+	return s.validateLocal(exit, status, outbounds)
 }
 
-func (s *Spec) validateNodes(dial netip.Addr) error {
+// validateSelectors keeps an outbound's tag from being the start of another
+// tag. Xray picks the members of a group, and what its check watches, by the
+// start of a tag, so "out-1" would bring "out-10" along.
+func (s *Spec) validateSelectors() error {
+	others := []string{ExitTag}
+	for _, n := range s.Nodes {
+		others = append(others, n.Tag)
+	}
+	for _, o := range s.Outbounds {
+		others = append(others, o.Tag)
+	}
+	for i, o := range s.Outbounds {
+		for _, tag := range others {
+			if tag != o.Tag && strings.HasPrefix(tag, o.Tag) {
+				return fmt.Errorf("outbounds[%d].tag: %q is the start of %q, which would be taken for it", i, o.Tag, tag)
+			}
+		}
+	}
+	return nil
+}
+
+// validateOutbounds checks the outbounds and hands back their tags, for the
+// nodes and the entry to name.
+func (s *Spec) validateOutbounds(dial netip.Addr) (map[string]bool, error) {
+	if err := s.Probe.validate(); err != nil {
+		return nil, err
+	}
+	if len(s.Outbounds) == 0 {
+		return nil, nil
+	}
+	if len(s.Outbounds) > MaxOutbounds {
+		return nil, fmt.Errorf("outbounds: %d is more than %d", len(s.Outbounds), MaxOutbounds)
+	}
+	from, err := parseIP("outbound_addr", s.OutboundAddr)
+	if err != nil {
+		return nil, err
+	}
+	// Loopback is the exception, as it is for the exit.
+	if from == dial && !from.IsLoopback() {
+		return nil, fmt.Errorf("outbound_addr: same as dial_addr (%s), so the outbounds would connect through the dial link", dial)
+	}
+	tags := make(map[string]bool, len(s.Outbounds))
+	for i, o := range s.Outbounds {
+		at := func(field string) string { return fmt.Sprintf("outbounds[%d].%s", i, field) }
+		if !tagRe.MatchString(o.Tag) || strings.HasPrefix(o.Tag, GroupPrefix) {
+			return nil, fmt.Errorf("%s: %q must be 1-63 lowercase letters, digits, '.', '_' or '-', and not start with %s", at("tag"), o.Tag, GroupPrefix)
+		}
+		if tags[o.Tag] {
+			return nil, fmt.Errorf("%s: %q is used twice", at("tag"), o.Tag)
+		}
+		if o.Tag == ExitTag || o.Tag == DNSTag || o.Tag == LocalTag {
+			return nil, fmt.Errorf("%s: %q is already used by the bridge itself", at("tag"), o.Tag)
+		}
+		tags[o.Tag] = true
+		addr, err := parseIP(at("addr"), o.Addr)
+		if err != nil {
+			return nil, err
+		}
+		if addr.Is4() != from.Is4() {
+			return nil, fmt.Errorf("%s: %s is not the same address family as outbound_addr %s", at("addr"), addr, from)
+		}
+		if err := CheckOutbound(o); err != nil {
+			return nil, fmt.Errorf("outbounds[%d].%w", i, err)
+		}
+	}
+	return tags, nil
+}
+
+func (s *Spec) validateNodes(dial netip.Addr, outbounds map[string]bool) error {
 	if len(s.Nodes) == 0 && s.Local == nil {
 		return fmt.Errorf("nodes: none, and no local entry either")
 	}
@@ -274,6 +366,9 @@ func (s *Spec) validateNodes(dial netip.Addr) error {
 
 	// Every tag lands in the Xray config; two with one name would shadow each other.
 	used := map[string]string{ExitTag: "the exit", DNSTag: "the dns", LocalTag: "the local entry"}
+	for tag := range outbounds {
+		used[tag] = "an outbound"
+	}
 	claim := func(field, tag string) error {
 		if !tagRe.MatchString(tag) {
 			return fmt.Errorf("%s: %q must be 1-63 lowercase letters, digits, '.', '_' or '-'", field, tag)
@@ -328,11 +423,14 @@ func (s *Spec) validateNodes(dial netip.Addr) error {
 		if n.Flow != "" && n.Flow != VisionFlow {
 			return fmt.Errorf("%s: %q is not empty or %s", at("flow"), n.Flow, VisionFlow)
 		}
+		if n.Via != "" && !outbounds[n.Via] {
+			return fmt.Errorf("%s: %q is not one of the outbounds", at("via"), n.Via)
+		}
 	}
 	return nil
 }
 
-func (s *Spec) validateLocal(exit netip.Addr, status netip.AddrPort) error {
+func (s *Spec) validateLocal(exit netip.Addr, status netip.AddrPort, outbounds map[string]bool) error {
 	l := s.Local
 	if l == nil {
 		return nil
@@ -385,6 +483,9 @@ func (s *Spec) validateLocal(exit netip.Addr, status netip.AddrPort) error {
 	}
 	if !tokenRe.MatchString(l.Token) {
 		return fmt.Errorf("local.token: must be 16 to 128 letters, digits, '_' or '-'")
+	}
+	if l.Via != "" && !outbounds[l.Via] {
+		return fmt.Errorf("local.via: %q is not one of the outbounds", l.Via)
 	}
 	return s.validateClients()
 }

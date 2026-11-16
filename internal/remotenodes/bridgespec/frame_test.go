@@ -223,7 +223,7 @@ func TestSizeBoundary(t *testing.T) {
 func TestParseReadsHubJSON(t *testing.T) {
 	// The shape the hub's tests and the docs can rely on.
 	doc := `{
-		"version": 2,
+		"version": 3,
 		"nodes": [{
 			"tag": "node-1", "addr": "203.0.113.10", "port": 443,
 			"uuid": "7f8b1a9e-3c2d-4b5a-9e6f-0a1b2c3d4e5f",
