@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	requiredGoVersion   = "1.27.1"
+	requiredGoVersion   = "1.27.4"
 	requiredNodeMajor   = 24
 	requiredNodeVersion = "24.20.0"
 	requiredPnpmVersion = "12.3.4"
@@ -123,7 +123,7 @@ func installDocker() bool {
 }
 
 // PrereqsSystemd checks that all bare-metal (systemd) prerequisites are met:
-// Go >= 1.27.1, Node.js 24.20.0+ (or 26+), pnpm, and the selected database engine.
+// Go >= 1.27.4, Node.js 24.20.0+ (or 26+), pnpm, and the selected database engine.
 // If anything is missing, it offers to install it. Returns true when all
 // prerequisites are satisfied.
 func PrereqsSystemd(cfg *Config, dbDriver string) bool {

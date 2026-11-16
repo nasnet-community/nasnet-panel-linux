@@ -1146,7 +1146,7 @@ remove_cli_command() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Toolchain minimums match go.mod, packageManager, CI, and Docker.
-WIZARD_GO_VERSION="1.27.1"
+WIZARD_GO_VERSION="1.27.4"
 # Required Node.js major version
 WIZARD_NODE_MAJOR="24"
 WIZARD_NODE_VERSION="24.20.0"

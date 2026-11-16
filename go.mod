@@ -1,6 +1,8 @@
 module github.com/nasnet-community/nasnet-panel-linux
 
-go 1.27.1
+go 1.27.4
+
+godebug multipathtcp=0
 
 require (
 	charm.land/huh/v2 v2.0.3

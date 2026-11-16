@@ -28,7 +28,7 @@ COPY cmd/remote-nodes/web/ ./
 RUN npm run build && npm run pack
 
 # Static binaries, cross-compiled on the build platform.
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS build
 # a go.mod that wants a newer Go than this image has is an error, not a download
 ENV GOTOOLCHAIN=local
 # upx packs foreign-arch ELF files too, so it runs on the build platform as well
