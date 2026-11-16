@@ -317,19 +317,19 @@ func TestAVersionChangeIsWrittenOnceAndSaidInTheEvents(t *testing.T) {
 
 		// an Xray upgrade is another write and another event
 		ag.set(func(a *fakeAgent) {
-			a.xrayLine = "Xray 26.11.1 (Xray, Penetrates Everything.) abc (go1.26.1 linux/arm64)"
+			a.xrayLine = "Xray 26.12.1 (Xray, Penetrates Everything.) abc (go1.26.1 linux/arm64)"
 		})
 		r.advance(6 * time.Second)
-		if got := nodeOf(r.cfg.Store, n.ID).XrayVersion; got != "26.11.1" {
+		if got := nodeOf(r.cfg.Store, n.ID).XrayVersion; got != "26.12.1" {
 			t.Errorf("the state holds xray %q", got)
 		}
 		if w := r.cfg.Store.Writes() - writes; w != 2 {
 			t.Errorf("%d writes after the upgrade", w)
 		}
-		if got := r.m.NodeEvents(n.ID); got[0].Kind != EventXrayChanged || got[0].Detail != "26.10.21 to 26.11.1" || len(got) != 3 {
+		if got := r.m.NodeEvents(n.ID); got[0].Kind != EventXrayChanged || got[0].Detail != pin.Version+" to 26.12.1" || len(got) != 3 {
 			t.Errorf("events = %+v", got)
 		}
-		if p, _ := r.m.peek(n.ID); p.agent.XrayVersion != "26.11.1" || p.agent.Version != "1.3.0" {
+		if p, _ := r.m.peek(n.ID); p.agent.XrayVersion != "26.12.1" || p.agent.Version != "1.3.0" {
 			t.Errorf("agent state = %+v", p.agent)
 		}
 	})

@@ -87,7 +87,7 @@ func TestBuildStructure(t *testing.T) {
 	for _, a := range cfg.App {
 		apps = append(apps, strings.TrimPrefix(a.Type, "xray.app."))
 	}
-	want := "log.Config,dispatcher.Config,proxyman.InboundConfig,proxyman.OutboundConfig,stats.Config,router.Config,dns.Config,policy.Config"
+	want := "log.Config,dispatcher.Config,proxyman.OutboundConfig,stats.Config,router.Config,dns.Config,policy.Config,proxyman.InboundConfig"
 	if got := strings.Join(apps, ","); got != want {
 		t.Errorf("apps %s\nwant %s", got, want)
 	}
@@ -101,7 +101,7 @@ func TestRoutesSendEverythingToTheExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rc := instance(t, cfg.App[5]).(*router.Config)
+	rc := instance(t, cfg.App[4]).(*router.Config)
 	var inbound []string
 	for _, r := range rc.Rule {
 		if r.GetTag() != bridgespec.ExitTag {
@@ -214,7 +214,7 @@ func TestExitResolvesWithXray(t *testing.T) {
 			if got := senderOf(t, cfg.Outbound[0]).StreamSettings.SocketSettings.DomainStrategy; got != tt.strategy {
 				t.Errorf("exit domain strategy %v, want %v", got, tt.strategy)
 			}
-			d := instance(t, cfg.App[6]).(*dns.Config)
+			d := instance(t, cfg.App[5]).(*dns.Config)
 			if d.QueryStrategy != tt.query || d.Tag != bridgespec.DNSTag || len(d.NameServer) != 1 {
 				t.Errorf("dns %+v", d)
 			}
@@ -232,7 +232,7 @@ func TestDNSServers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := instance(t, cfg.App[6]).(*dns.Config)
+	d := instance(t, cfg.App[5]).(*dns.Config)
 	var got []string
 	for _, ns := range d.NameServer {
 		got = append(got, xnet.IPAddress(ns.Address.Address.GetIp()).String()+":"+strconv.Itoa(int(ns.Address.Port)))
@@ -259,7 +259,7 @@ func TestCountersByNode(t *testing.T) {
 			t.Errorf("%s: user %q at level %d", n.Tag, out.Vnext.User.Email, out.Vnext.User.Level)
 		}
 	}
-	p := instance(t, cfg.App[7]).(*policy.Config)
+	p := instance(t, cfg.App[6]).(*policy.Config)
 	if len(p.Level) != 1 || !p.Level[0].Stats.UserUplink || !p.Level[0].Stats.UserDownlink || p.Level[0].Stats.UserOnline {
 		// UserOnline reads a client address the reverse flows don't carry.
 		t.Errorf("policy %+v", p)

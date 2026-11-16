@@ -137,11 +137,11 @@ func TestAggregateKeepsCoverage(t *testing.T) {
 }
 
 func TestRender(t *testing.T) {
-	got, err := render([]string{"2001:db8::/33", "8.8.8.128/25", "8.8.8.0/25", "2001:db8:8000::/33"})
+	got, err := render([]string{"2a01:5ec0::/33", "8.8.8.128/25", "8.8.8.0/25", "2a01:5ec0:8000::/33"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := header + "8.8.8.0/24\n2001:db8::/32\n"
+	want := header + "8.8.8.0/24\n2a01:5ec0::/32\n"
 	if string(got) != want {
 		t.Fatalf("render:\n%s\nwant:\n%s", got, want)
 	}
@@ -154,11 +154,11 @@ func TestRender(t *testing.T) {
 }
 
 func TestRenderLeavesOutPrivateRanges(t *testing.T) {
-	got, err := render([]string{"192.168.204.48/28", "8.8.8.0/24", "10.202.10.10/31", "fe80::/64", "2001:db8::/32", "10.0.0.0/8"})
+	got, err := render([]string{"192.168.204.48/28", "8.8.8.0/24", "10.202.10.10/31", "fe80::/64", "2a01:5ec0::/32", "10.0.0.0/8"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := header + "8.8.8.0/24\n2001:db8::/32\n"; string(got) != want {
+	if want := header + "8.8.8.0/24\n2a01:5ec0::/32\n"; string(got) != want {
 		t.Fatalf("render:\n%s\nwant:\n%s", got, want)
 	}
 
