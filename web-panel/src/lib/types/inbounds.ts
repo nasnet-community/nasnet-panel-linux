@@ -304,7 +304,7 @@ export const REALITY_FINGERPRINTS = [
 // Every uTLS name that offers X25519MLKEM768, as pkg/xray RealityFingerprintOK.
 export const REALITY_OK_FINGERPRINTS = new Set<string>([
     'chrome', 'firefox', 'safari',
-    'hellochrome_auto', 'hellochrome_131', 'hellochrome_133',
+    'hellochrome_auto', 'hellochrome_131', 'hellochrome_133', 'hellochrome_155',
     'hellofirefox_auto', 'hellofirefox_148',
     'hellosafari_auto', 'hellosafari_26_3',
 ])

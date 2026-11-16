@@ -51,7 +51,7 @@ func GenerateShortID(length int) (string, error) {
 // hand every other Client Hello to the dest site, so the client never gets in.
 var realityFingerprints = map[string]bool{
 	"": true, "chrome": true, "firefox": true, "safari": true,
-	"hellochrome_auto": true, "hellochrome_131": true, "hellochrome_133": true,
+	"hellochrome_auto": true, "hellochrome_131": true, "hellochrome_133": true, "hellochrome_155": true,
 	"hellofirefox_auto": true, "hellofirefox_148": true,
 	"hellosafari_auto": true, "hellosafari_26_3": true,
 }

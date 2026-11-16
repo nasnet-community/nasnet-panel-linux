@@ -35,7 +35,7 @@ var validTLSFingerprints = map[string]bool{
 	// ModernFingerprints
 	"hellofirefox_99": true, "hellofirefox_102": true, "hellofirefox_105": true, "hellofirefox_120": true, "hellofirefox_148": true,
 	"hellochrome_83": true, "hellochrome_87": true, "hellochrome_96": true, "hellochrome_100": true,
-	"hellochrome_102": true, "hellochrome_106_shuffle": true, "hellochrome_120": true, "hellochrome_131": true, "hellochrome_133": true,
+	"hellochrome_102": true, "hellochrome_106_shuffle": true, "hellochrome_120": true, "hellochrome_131": true, "hellochrome_133": true, "hellochrome_155": true,
 	"helloios_13": true, "helloios_14": true,
 	"helloedge_85": true, "helloedge_106": true,
 	"hellosafari_16_0": true, "hellosafari_26_3": true, "hello360_11_0": true, "helloqq_11_1": true,
