@@ -212,7 +212,9 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// bridgeBinary builds the program once per test run.
+// bridgeBinary builds the program once per test run. The test build can be
+// told to trust the tests' own certificate authority (testroots_bridgetest.go);
+// without BRIDGE_TEST_ROOTS it is the shipped program.
 func bridgeBinary(t testing.TB) string {
 	t.Helper()
 	binOnce.Do(func() {
@@ -221,7 +223,7 @@ func bridgeBinary(t testing.TB) string {
 		}
 		binPath = filepath.Join(binDir, "remote-nodes-bridge")
 		goTool := filepath.Join(runtime.GOROOT(), "bin", "go")
-		if out, err := exec.Command(goTool, "build", "-o", binPath, ".").CombinedOutput(); err != nil {
+		if out, err := exec.Command(goTool, "build", "-tags", "bridgetest", "-o", binPath, ".").CombinedOutput(); err != nil {
 			binErr = fmt.Errorf("go build: %v\n%s", err, out)
 		}
 	})

@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -288,19 +289,35 @@ func TestE2ESourceAddresses(t *testing.T) {
 	}
 }
 
-// tcpProxy stands between the bridge and a portal. It remembers who
-// connected, and it can be cut: every connection dropped and the port closed,
-// then opened again on the same address.
+// tcpProxy stands between the bridge and a portal, or an outbound's server.
+// It remembers who connected and counts what it carried, and it can be cut:
+// every connection dropped and the port closed, then opened again on the same
+// address.
 type tcpProxy struct {
 	t      *testing.T
 	target string
 	addr   string
+	moved  atomic.Int64 // bytes, both ways
 
 	mu    sync.Mutex
 	l     net.Listener
 	conns map[net.Conn]struct{}
 	peers []string
 }
+
+// counted adds what passes through it to a proxy's count.
+type counted struct {
+	io.Writer
+	n *atomic.Int64
+}
+
+func (c counted) Write(p []byte) (int, error) {
+	n, err := c.Writer.Write(p)
+	c.n.Add(int64(n))
+	return n, err
+}
+
+func (p *tcpProxy) carried() int64 { return p.moved.Load() }
 
 func newTCPProxy(t *testing.T, target string) *tcpProxy {
 	t.Helper()
@@ -351,10 +368,10 @@ func (p *tcpProxy) forward(c net.Conn) {
 	p.mu.Unlock()
 	defer up.Close()
 	go func() {
-		io.Copy(up, c)
+		io.Copy(counted{up, &p.moved}, c)
 		up.Close()
 	}()
-	io.Copy(c, up)
+	io.Copy(counted{c, &p.moved}, up)
 }
 
 // cut closes the port and every connection through it.

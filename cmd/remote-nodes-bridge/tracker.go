@@ -44,6 +44,11 @@ const (
 //
 // What a client of the router's own entry opens is followed too, TCP and UDP
 // (see localFlows), so that it can be counted for the client and closed with it.
+//
+// Through an outbound, the socket opened for a flow goes to the outbound's
+// server instead, and counts the same way, one per flow. Not with xhttp: it
+// keeps a few sockets to its server and carries every flow over them, so such
+// a socket belongs to no flow and is left alone.
 type tracker struct {
 	now  func() time.Time
 	dial netip.Addr
@@ -54,6 +59,8 @@ type tracker struct {
 	nodes    []*tunnel
 	byPortal map[netip.AddrPort]*tunnel
 	byTag    map[string]*tunnel // by reverse tag
+	from     netip.Addr         // the outbounds' source address; zero without outbounds
+	shared   map[netip.AddrPort]bool
 }
 
 // tunnel is one node's state.
@@ -81,6 +88,15 @@ func newTracker(s *bridgespec.Spec, now func() time.Time) *tracker {
 		t.nodes = append(t.nodes, tn)
 		t.byPortal[netip.AddrPortFrom(netip.MustParseAddr(n.Addr).Unmap(), n.Port)] = tn
 		t.byTag[n.ReverseTag] = tn
+	}
+	for _, o := range s.Outbounds {
+		if o.NetworkOrDefault() != bridgespec.NetXHTTP {
+			continue
+		}
+		if t.shared == nil {
+			t.from, t.shared = netip.MustParseAddr(s.OutboundAddr).Unmap(), map[netip.AddrPort]bool{}
+		}
+		t.shared[netip.AddrPortFrom(netip.MustParseAddr(o.Addr).Unmap(), o.Port)] = true
 	}
 	return t
 }
@@ -131,6 +147,9 @@ func (tn *tunnel) snapshot() (up bool, since time.Time, flows int) {
 // wrap hands back conn as the core should see it: counted if it belongs to a
 // tunnel, as it came otherwise.
 func (t *tracker) wrap(ctx context.Context, src xnet.Address, dest xnet.Destination, conn net.Conn) net.Conn {
+	if t.shared != nil && dest.Network == xnet.Network_TCP && t.shared[addrPort(t.from, src, dest)] {
+		return conn
+	}
 	in := session.InboundFromContext(ctx)
 	if t.local != nil && in != nil && in.Tag == bridgespec.LocalTag && in.User != nil {
 		return t.wrapLocal(in, conn)
@@ -179,19 +198,28 @@ func (t *tracker) wrapLocal(in *session.Inbound, conn net.Conn) net.Conn {
 }
 
 // tunnelOf finds the node whose portal dest is, if src is the dial address.
+// An outbound's sockets leave from another address, so none is taken for a
+// tunnel's; on loopback, where a test has one address for all, the ports
+// still tell them apart.
 func (t *tracker) tunnelOf(src xnet.Address, dest xnet.Destination) *tunnel {
+	return t.byPortal[addrPort(t.dial, src, dest)]
+}
+
+// addrPort is where dest is, as a key, if the socket leaves from want. It is
+// the zero key otherwise, which no map here holds.
+func addrPort(want netip.Addr, src xnet.Address, dest xnet.Destination) netip.AddrPort {
 	if src == nil || !src.Family().IsIP() || !dest.Address.Family().IsIP() {
-		return nil
+		return netip.AddrPort{}
 	}
 	from, ok := netip.AddrFromSlice(src.IP())
-	if !ok || from.Unmap() != t.dial {
-		return nil
+	if !ok || from.Unmap() != want {
+		return netip.AddrPort{}
 	}
 	to, ok := netip.AddrFromSlice(dest.Address.IP())
 	if !ok {
-		return nil
+		return netip.AddrPort{}
 	}
-	return t.byPortal[netip.AddrPortFrom(to.Unmap(), uint16(dest.Port))]
+	return netip.AddrPortFrom(to.Unmap(), uint16(dest.Port))
 }
 
 func (tn *tunnel) newLink(t *tracker, tc *net.TCPConn) *linkConn {

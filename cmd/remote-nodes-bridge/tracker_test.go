@@ -425,3 +425,99 @@ func TestADeadConnectionIsClosedSoTheCoreDialsAgain(t *testing.T) {
 		t.Errorf("%d connections still on the tunnel", left)
 	}
 }
+
+// Through an outbound, the socket a node's flow opens goes to the outbound's
+// server, from the outbound address, and counts for the node as one to the
+// internet would. The check's own sockets carry no flow and count for nobody,
+// and neither do xhttp's, which carry every flow to their server at once.
+func TestAnOutboundsSocketsCountLikeTheExits(t *testing.T) {
+	clk := newClock()
+	all := testOutbounds()
+	s := outboundSpec(all["socks"])
+	shared := all["vless over xhttp"]
+	shared.Tag, shared.Addr = "out-2.", "198.51.100.8"
+	s.Outbounds = append(s.Outbounds, shared)
+	tr := newTracker(s, clk.Now)
+	from := xnet.ParseAddress(s.OutboundAddr)
+	server := func(o bridgespec.Outbound) xnet.Destination {
+		return xnet.TCPDestination(xnet.ParseAddress(o.Addr), xnet.Port(o.Port))
+	}
+	node := session.ContextWithInbound(context.Background(), &session.Inbound{Tag: "rvs-from-n1"})
+	flows := func() int {
+		_, _, n := tr.nodes[0].snapshot()
+		return n
+	}
+
+	c, _ := tcpPair(t)
+	f := tr.wrap(node, from, server(s.Outbounds[0]), c)
+	if _, ok := f.(*flowConn); !ok || flows() != 1 {
+		t.Fatalf("a node's socket to its outbound came back as %T, %d flow(s)", f, flows())
+	}
+	f.Close()
+	if flows() != 0 {
+		t.Fatalf("%d flow(s) after it closed", flows())
+	}
+
+	for _, tt := range []struct {
+		name string
+		ctx  context.Context
+		to   xnet.Destination
+	}{
+		{"xhttp's socket for a node", node, server(shared)},
+		{"the check's socket", context.Background(), server(s.Outbounds[0])},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := tcpPair(t)
+			if got := tr.wrap(tt.ctx, from, tt.to, c); got != net.Conn(c) || flows() != 0 {
+				t.Fatalf("came back as %T, %d flow(s)", got, flows())
+			}
+		})
+	}
+}
+
+// The entry's clients leave xhttp's sockets alone too: one belongs to no
+// client, and closing it with a client would cut the others.
+func TestAnEntryClientLeavesXHTTPsSocketsAlone(t *testing.T) {
+	clk := newClock()
+	s := localSpec()
+	o := testOutbounds()["vless over xhttp"]
+	o.Tag = "out-1."
+	s.Outbounds, s.OutboundAddr, s.Local.Via = []bridgespec.Outbound{o}, "192.168.50.16", o.Tag
+	tr := newTracker(s, clk.Now)
+	tr.local.allow(map[string]string{s.Local.Clients[0].Email: s.Local.Clients[0].UUID})
+
+	clientConn, _ := tcpPair(t)
+	ctx := session.ContextWithInbound(context.Background(), inboundOf(s.Local.Clients[0].Email, s.Local.Clients[0].UUID, "203.0.113.50", clientConn))
+	c, _ := tcpPair(t)
+	to := xnet.TCPDestination(xnet.ParseAddress(o.Addr), xnet.Port(o.Port))
+	if got := tr.wrap(ctx, xnet.ParseAddress(s.OutboundAddr), to, c); got != net.Conn(c) {
+		t.Fatalf("came back as %T", got)
+	}
+	if n, _, _ := tr.local.snapshot(s.Local.Clients[0].Email); n != 0 {
+		t.Errorf("the client has %d connection(s) on xhttp's socket", n)
+	}
+}
+
+// A server at the very address and port of a portal is no tunnel when the
+// socket leaves from the outbound address, which the spec keeps apart from the
+// dial address.
+func TestAnOutboundsSocketIsNoTunnel(t *testing.T) {
+	clk := newClock()
+	s := outboundSpec(testOutbounds()["socks"])
+	s.Outbounds[0].Addr, s.Outbounds[0].Port = s.Nodes[0].Addr, s.Nodes[0].Port
+	tr := newTracker(s, clk.Now)
+	_, portal := portalOf(s, 0)
+	c, _ := tcpPair(t)
+	if got := tr.wrap(context.Background(), xnet.ParseAddress(s.OutboundAddr), portal, c); got != net.Conn(c) {
+		t.Fatalf("came back as %T", got)
+	}
+	if up, _ := tunnelState(t, tr, 0); up {
+		t.Error("the tunnel reads as up")
+	}
+	tr.nodes[0].mu.Lock()
+	links := len(tr.nodes[0].links)
+	tr.nodes[0].mu.Unlock()
+	if links != 0 {
+		t.Errorf("%d link(s) on the tunnel", links)
+	}
+}
