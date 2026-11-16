@@ -261,14 +261,26 @@ func TestCloneIsIndependent(t *testing.T) {
 	if s.Nodes[0].Name == "changed" || s.Subscriptions[0].Name == "changed" || !s.Enablements[0].Enabled || len(s.Nodes) != 2 {
 		t.Fatal("a clone shares memory with its original")
 	}
+
+	o := withOutbounds(t)
+	oc := o.Clone()
+	oc.Outbounds[1].Settings.ALPN[0] = "changed"
+	oc.Outbounds[0].Name = "changed"
+	if o.Outbounds[1].Settings.ALPN[0] != "h2" || o.Outbounds[0].Name == "changed" {
+		t.Fatal("a clone shares an outbound with its original")
+	}
 }
 
 // Clone copies slices shallowly: that is only a deep copy while the records
-// have nothing inside them to share.
+// have nothing inside them to share, apart from what it copies by hand.
 func TestRecordsHoldOnlyValues(t *testing.T) {
-	for _, v := range []any{Node{}, Subscription{}, Enablement{}, Settings{}, Local{}, LocalClient{}} {
+	byHand := map[string]bool{"OutboundSettings.ALPN": true}
+	for _, v := range []any{Node{}, Subscription{}, Enablement{}, Settings{}, Local{}, LocalClient{}, Outbound{}, OutboundSettings{}} {
 		typ := reflect.TypeOf(v)
 		for i := 0; i < typ.NumField(); i++ {
+			if byHand[typ.Name()+"."+typ.Field(i).Name] {
+				continue
+			}
 			switch k := typ.Field(i).Type.Kind(); k {
 			case reflect.Slice, reflect.Map, reflect.Pointer, reflect.Interface, reflect.Chan, reflect.Func:
 				t.Errorf("%s.%s is a %v: State.Clone would share it between copies", typ.Name(), typ.Field(i).Name, k)

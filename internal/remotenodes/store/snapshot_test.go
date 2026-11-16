@@ -214,6 +214,34 @@ func TestRestoreKeepsTheIdCountersFromGoingBack(t *testing.T) {
 	}
 }
 
+// The outbounds' counter is held to the same rule, and an outbound is not
+// something that makes an install other than empty.
+func TestRestoreKeepsTheOutboundCounterFromGoingBack(t *testing.T) {
+	out := model.OutboundSettings{Protocol: "socks", Host: "198.51.100.9", Port: 1080, Network: "tcp", Security: "none"}
+	addOut := func(name string) func(*model.State) error {
+		return func(st *model.State) error {
+			_, err := st.AddOutbound(model.Outbound{Name: name, CreatedAt: t0, Settings: out})
+			return err
+		}
+	}
+	a := open(t, t.TempDir())
+	must(t, a.Update(addOut("Frankfurt")))
+	snap := snapshot(t, a) // counter at 2
+
+	b := open(t, t.TempDir())
+	for i := 1; i <= 3; i++ {
+		must(t, b.Update(addOut(fmt.Sprint("out ", i))))
+	}
+	for i := uint(1); i <= 2; i++ {
+		must(t, b.Update(func(st *model.State) error { return st.RemoveOutbound(i) }))
+	}
+	must(t, b.Restore(snap))
+	got := b.Read()
+	if len(got.Outbounds) != 1 || got.Outbounds[0].Name != "Frankfurt" || got.NextOutboundID != 4 {
+		t.Fatalf("outbounds %+v, counter %d: ids 1 to 3 were given out here", got.Outbounds, got.NextOutboundID)
+	}
+}
+
 func TestRestoreRefusesWhatItCannotUse(t *testing.T) {
 	a := open(t, t.TempDir())
 	populate(t, a)

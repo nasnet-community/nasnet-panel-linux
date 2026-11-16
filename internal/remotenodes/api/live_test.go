@@ -27,6 +27,7 @@ type fakeLive struct {
 	traffic map[uint]Traffic
 	local   LocalLive
 	localEv []NodeEvent
+	outs    map[uint]OutboundState
 }
 
 func (f *fakeLive) Entry() Entry                                    { return f.entry }
@@ -39,11 +40,12 @@ func (f *fakeLive) SubscriptionLifetime(sub uint) uint64            { return f.l
 func (f *fakeLive) Traffic(node uint) Traffic                       { return f.traffic[node] }
 func (f *fakeLive) Local() LocalLive                                { return f.local }
 func (f *fakeLive) LocalEvents() []NodeEvent                        { return f.localEv }
+func (f *fakeLive) OutboundLive(id uint) OutboundState              { return f.outs[id] }
 
 func newFakeLive() *fakeLive {
 	return &fakeLive{
 		nodes: map[uint]NodeLive{}, events: map[uint][]NodeEvent{}, on: map[[2]uint]SubscriptionUsage{},
-		total: map[uint]SubscriptionUsage{}, life: map[uint]uint64{}, traffic: map[uint]Traffic{},
+		total: map[uint]SubscriptionUsage{}, life: map[uint]uint64{}, traffic: map[uint]Traffic{}, outs: map[uint]OutboundState{},
 	}
 }
 
@@ -340,7 +342,7 @@ func TestTheNewShapesAreTheContracts(t *testing.T) {
 	}
 
 	one := decode[map[string]any](t, r.get("/api/nodes/1"))
-	wantKeys(t, "one node", one, "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage events")
+	wantKeys(t, "one node", one, "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage outboundId events")
 }
 
 // The live parts come only through Live: a manager that answers with a

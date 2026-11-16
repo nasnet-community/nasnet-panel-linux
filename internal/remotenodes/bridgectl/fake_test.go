@@ -30,6 +30,9 @@ func TestMain(m *testing.M) {
 }
 
 func fakeBridge(mode string) int {
+	if len(os.Args) > 1 && os.Args[1] == bridgespec.ProbeArg {
+		return fakeProbe(mode)
+	}
 	spec, err := bridgespec.Read(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fake bridge: reading the spec:", err)
@@ -78,6 +81,61 @@ func fakeBridge(mode string) int {
 		waitForStop()
 	default:
 		fmt.Fprintln(os.Stderr, "fake bridge: no such mode", mode)
+		return 2
+	}
+	return 0
+}
+
+// fakeProbe plays the bridge program asked to try one outbound: it reads the
+// request and answers in the mode's way. BRIDGECTL_PROBE_LOG, when set, names
+// a file it notes its pid and when it ran in, for the tests that look at how
+// probes are run.
+func fakeProbe(mode string) int {
+	var req bridgespec.ProbeRequest
+	if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
+		fmt.Fprintln(os.Stderr, "fake probe: reading the request:", err)
+		return 2
+	}
+	note := func(what string) {
+		if path := os.Getenv("BRIDGECTL_PROBE_LOG"); path != "" {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err == nil {
+				fmt.Fprintf(f, "%s %d %d\n", what, os.Getpid(), time.Now().UnixNano())
+				f.Close()
+			}
+		}
+	}
+	note("start")
+	defer note("end")
+	answer := func(res bridgespec.ProbeResult) { json.NewEncoder(os.Stdout).Encode(res) }
+	switch mode {
+	case "probe-ok":
+		if req.Connect {
+			answer(bridgespec.ProbeResult{OK: true, DelayMS: 42, Status: 204})
+		} else {
+			answer(bridgespec.ProbeResult{OK: true})
+		}
+	case "probe-echo":
+		// what arrived, said back in the error so the test can read it
+		answer(bridgespec.ProbeResult{Error: fmt.Sprintf("tag=%q addr=%s port=%d from=%q connect=%v url=%q timeout=%d memlimit=%s",
+			req.Outbound.Tag, req.Outbound.Addr, req.Outbound.Port, req.From, req.Connect, req.URL, req.TimeoutSeconds, os.Getenv("GOMEMLIMIT"))})
+	case "probe-refuse":
+		fmt.Println("2026/11/18 10:00:00 [Warning] a log line before the result")
+		answer(bridgespec.ProbeResult{Error: "Xray refuses the outbound: invalid user id"})
+		return 1
+	case "probe-garbage":
+		fmt.Println("not the result")
+	case "probe-crash":
+		fmt.Fprintln(os.Stderr, "starting\npanic: boom")
+		return 3
+	case "probe-slow":
+		time.Sleep(200 * time.Millisecond)
+		answer(bridgespec.ProbeResult{OK: true})
+	case "probe-hang":
+		signal.Ignore(syscall.SIGTERM)
+		time.Sleep(time.Hour)
+	default:
+		fmt.Fprintln(os.Stderr, "fake probe: no such mode", mode)
 		return 2
 	}
 	return 0

@@ -77,6 +77,13 @@ type Config struct {
 	// from the nodes' source address, since a lookup from another would
 	// leave through another link.
 	Resolver Resolver
+	// OutboundResolver does the same for an outbound's host name, from the
+	// Foreign link's address, which the bridge reaches the outbounds from.
+	OutboundResolver Resolver
+	// Prober tries an outbound with the bridge program. Nil means there is
+	// none: a new outbound's settings are not tried before they are kept, and
+	// a test says it can't be done.
+	Prober Prober
 
 	// Addrs are the source addresses of the three roles, as netroles.Set.Check
 	// marked them. The bridge dials from Nodes and leaves from Exit, and stays
@@ -154,18 +161,21 @@ type Manager struct {
 
 	// What the bridge's loop keeps to itself, under bridgeMu: one look at a
 	// time, so that two can't start the bridge twice.
-	bridgeMu    sync.Mutex
-	bridgeKick  chan struct{}
-	appliedHash string    // hash of the spec the supervisor holds, "" when it runs none
-	failedHash  string    // hash of one that couldn't be started
-	retryAt     time.Time // not before this is it tried again
-	startSaid   string    // the last failure to start that was logged
-	whySaid     string    // the last reason for not running that was logged
-	gapSaid     map[uint]string
+	bridgeMu     sync.Mutex
+	bridgeKick   chan struct{}
+	appliedHash  string    // hash of the spec the supervisor holds, "" when it runs none
+	failedHash   string    // hash of one that couldn't be started
+	retryAt      time.Time // not before this is it tried again
+	startSaid    string    // the last failure to start that was logged
+	whySaid      string    // the last reason for not running that was logged
+	gapSaid      map[uint]string
+	outSaid      map[uint]string // the last word on each outbound in use that was logged
+	localGapSaid string
 
-	// What a node's host name last resolved to.
-	resMu sync.Mutex
-	res   map[uint]*resolved
+	// What a node's host name, and an outbound's, last resolved to.
+	resMu  sync.Mutex
+	res    map[uint]*resolved
+	outRes map[uint]*resolved
 
 	// The node operations: what they run on, made for the CA it was made
 	// for (by its text), and how many jobs hold downloads right now.
@@ -228,8 +238,9 @@ func New(cfg Config) (*Manager, error) {
 	}
 	m := &Manager{
 		cfg: cfg, log: cfg.Log, nodes: map[uint]*nodeLive{},
-		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{},
-		rel: releases{byArch: map[string]*latest{}, gate: make(chan struct{}, 1)}, updateGate: make(chan struct{}, 1),
+		bridgeKick: make(chan struct{}, 1), gapSaid: map[uint]string{}, res: map[uint]*resolved{}, outRes: map[uint]*resolved{},
+		outSaid: map[uint]string{},
+		rel:     releases{byArch: map[string]*latest{}, gate: make(chan struct{}, 1)}, updateGate: make(chan struct{}, 1),
 		cutSeen: map[[2]uint]uint64{}, cutAt: map[uint]time.Time{},
 	}
 	m.local.token = newLocalToken()

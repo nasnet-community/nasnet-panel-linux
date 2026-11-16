@@ -209,11 +209,11 @@ jobs:
       # Size limits in bytes for each program, set for each architecture since
       # the amd64 programs come out bigger. Unpacked is the stripped Go binary,
       # which is what a router unpacks into RAM; packed is the UPX --lzma file
-      # the image ships. Measured with the page embedded, Go 1.27.1 and the
-      # Dockerfile's flags, once the hub had its node operations, and the
-      # bridge with Go 1.27.4 once it carried outbounds (six more protocols,
-      # three more transports and TLS):
-      #   hub     amd64 18.26 MB unpacked, 5.33 MB packed; arm64 16.97 and 4.39
+      # the image ships. Measured with the page embedded, Go 1.27.4 and the
+      # Dockerfile's flags, once the bridge carried outbounds (six more
+      # protocols, three more transports and TLS) and the hub and the page
+      # managed them:
+      #   hub     amd64 19.27 MB unpacked, 5.63 MB packed; arm64 17.89 and 4.65
       #   bridge  amd64 22.91 and 6.58; arm64 21.30 and 5.34
       # The same source and compiler give the same unpacked size, so that limit
       # is the measure plus 5%. Packed sizes move with the UPX version, so that
@@ -224,14 +224,14 @@ jobs:
         include:
           - platform: linux/amd64
             arch: amd64
-            hub_unpacked: "19200000"
-            hub_packed: "5900000"
+            hub_unpacked: "20300000"
+            hub_packed: "6200000"
             bridge_unpacked: "24100000"
             bridge_packed: "7300000"
           - platform: linux/arm64
             arch: arm64
-            hub_unpacked: "17900000"
-            hub_packed: "4900000"
+            hub_unpacked: "18800000"
+            hub_packed: "5200000"
             bridge_unpacked: "22400000"
             bridge_packed: "5900000"
     steps:

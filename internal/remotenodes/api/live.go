@@ -37,6 +37,9 @@ type Live interface {
 	Local() LocalLive
 	// LocalEvents is the entry's recent events, newest first. Never nil.
 	LocalEvents() []NodeEvent
+	// OutboundLive is how an outbound is doing right now. One that nothing is
+	// known of has the zero value.
+	OutboundLive(id uint) OutboundState
 }
 
 // NodeLive is the live part of a node's view. The zero value is a node that

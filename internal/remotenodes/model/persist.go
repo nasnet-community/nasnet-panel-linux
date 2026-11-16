@@ -23,6 +23,9 @@ func Encode(s State) ([]byte, error) {
 	if s.LocalClients == nil {
 		s.LocalClients = []LocalClient{}
 	}
+	if s.Outbounds == nil {
+		s.Outbounds = []Outbound{}
+	}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return nil, err
@@ -54,10 +57,24 @@ func Decode(b []byte) (State, error) {
 		return State{}, fmt.Errorf("unreadable state: %w", err)
 	}
 	// An older file lacks only what later versions added, and the zero value
-	// of each addition is what it meant: so far, the router's entry off.
+	// of each addition is what it meant: the router's entry off, no outbounds
+	// and every route the VPN. The outbounds' counter is the one that has to
+	// start somewhere.
+	if head.Version < 3 && s.NextOutboundID == 0 {
+		s.NextOutboundID = 1
+	}
 	s.Version = SchemaVersion
+	// as a state that never had one, which is what the file's [] stands for
 	if len(s.LocalClients) == 0 {
-		s.LocalClients = nil // as a state that never had one, which is what the file's [] stands for
+		s.LocalClients = nil
+	}
+	if len(s.Outbounds) == 0 {
+		s.Outbounds = nil
+	}
+	for i := range s.Outbounds {
+		if len(s.Outbounds[i].Settings.ALPN) == 0 {
+			s.Outbounds[i].Settings.ALPN = nil
+		}
 	}
 	if err := s.Validate(); err != nil {
 		return State{}, err

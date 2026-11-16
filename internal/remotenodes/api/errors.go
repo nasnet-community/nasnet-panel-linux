@@ -39,6 +39,9 @@ const (
 	CodeRealityTargetFailed = "reality_target_failed" // the node can't use the Reality target it was given, or none of its candidates works
 	CodeLocalOff            = "local_off"             // the router's own entry is switched off, or not ready to hand out a link
 	CodeNoAddress           = "no_address"            // the router's own entry has no name or port to put in a link yet
+	CodeOutboundLimit       = "outbound_limit"        // there are as many outbounds as the bridge takes
+	CodeOutboundInUse       = "outbound_in_use"       // something leaves through the outbound, so it stays
+	CodeTestUnavailable     = "test_unavailable"      // there is no bridge program here to try an outbound with
 	CodeBusy                = "busy"
 	CodeBackupBadPassphrase = "backup_bad_passphrase"
 	CodeBackupBadFile       = "backup_bad_file"
@@ -68,6 +71,9 @@ var statuses = map[string]int{
 	CodeRealityTargetFailed: http.StatusConflict,
 	CodeLocalOff:            http.StatusConflict,
 	CodeNoAddress:           http.StatusConflict,
+	CodeOutboundLimit:       http.StatusConflict,
+	CodeOutboundInUse:       http.StatusConflict,
+	CodeTestUnavailable:     http.StatusServiceUnavailable,
 	CodeBusy:                http.StatusConflict,
 	CodeBackupBadPassphrase: http.StatusBadRequest,
 	CodeBackupBadFile:       http.StatusBadRequest,
@@ -112,6 +118,10 @@ func classify(err error) *Error {
 		return &Error{CodeNodeLimit, fmt.Sprintf("This router runs at most %d nodes.", model.MaxNodes)}
 	case errors.Is(err, model.ErrSubscriptionLimit):
 		return &Error{CodeSubscriptionLimit, fmt.Sprintf("At most %d subscriptions can be added.", model.MaxSubscriptions)}
+	case errors.Is(err, model.ErrOutboundLimit):
+		return &Error{CodeOutboundLimit, fmt.Sprintf("At most %d outbounds can be added.", model.MaxOutbounds)}
+	case errors.Is(err, model.ErrOutboundInUse):
+		return &Error{CodeOutboundInUse, "Something leaves through that outbound, so it can't be removed."}
 	case errors.Is(err, model.ErrNameTaken):
 		return &Error{CodeNameTaken, "That name is already in use."}
 	case errors.Is(err, model.ErrNotFound):
