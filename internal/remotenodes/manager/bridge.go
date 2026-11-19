@@ -26,6 +26,10 @@ type bridgeView struct {
 	applied map[uint]string    // the nodes in the spec the supervisor holds, by id, with their tags
 	local   bool               // and whether that spec has the router's own entry
 	status  bridgectl.Status   // the supervisor's last status
+
+	outs        map[uint]outUse // what became of each outbound something in the planned spec leaves through
+	localGap    string          // why the router's entry was left out of it for its outbound, "" when it wasn't
+	appliedOuts map[uint]string // the outbounds in the spec the supervisor holds, by id, with their tags
 }
 
 // up is whether the bridge process runs and its status page answers.
@@ -40,6 +44,9 @@ type plan struct {
 	gaps  map[uint]gap
 	xray  map[uint]xrayState
 	ready int
+
+	outs     map[uint]outUse
+	localGap string
 }
 
 // kickBridge asks for a look at what the bridge should be doing. It never
@@ -93,22 +100,29 @@ func (m *Manager) knownXray(n model.Node) string {
 
 // planBridge decides which nodes the bridge should carry and whether it should
 // run at all. It runs when the entry is on, there is a node that is ready, and
-// both of its addresses are held here: the bridge can only bind a source
-// address that is the router's, and one it can't bind would leave from
-// whichever the system picks, which for the exit means the wrong link.
+// both of its addresses are held here, and the Foreign link's as well when an
+// outbound is in the spec: the bridge can only bind a source address that is
+// the router's, and one it can't bind would leave from whichever the system
+// picks, which for the exit means the wrong link.
 func (m *Manager) planBridge(ctx context.Context) plan {
 	st := m.cfg.Store.Read()
-	dial, exit := m.cfg.Addrs.Nodes, m.cfg.Addrs.Exit
-	spec, gaps, err := buildSpec(specInput{
+	dial, exit, foreign := m.cfg.Addrs.Nodes, m.cfg.Addrs.Exit, m.cfg.Addrs.Downloads
+	res, err := makeSpec(specInput{
 		nodes: st.Nodes,
 		xray:  m.knownXray,
 		addr: func(n model.Node) (netip.Addr, error) {
 			return m.addrOf(ctx, n, dial.IP)
 		},
 		dial: dial.IP, exit: exit.IP, dns: m.cfg.DNS, statusAddr: m.cfg.StatusAddr,
-		local: m.localBlock(st),
+		local:     m.localBlock(st),
+		outbounds: st.Outbounds, localVia: st.Local.OutboundID,
+		outAddr: func(o model.Outbound) (netip.Addr, error) {
+			return m.outAddrOf(ctx, o)
+		},
+		from: foreign.IP, probe: bridgespec.Probe{URL: st.ProbeURL},
 	})
-	p := plan{gaps: gaps, xray: map[uint]xrayState{}}
+	spec, gaps := res.spec, res.gaps
+	p := plan{gaps: gaps, xray: map[uint]xrayState{}, outs: res.outs, localGap: res.localGap}
 	for _, n := range st.Nodes {
 		p.xray[n.ID] = checkXray(m.knownXray(n))
 		if gaps[n.ID].ok() {
@@ -130,6 +144,8 @@ func (m *Manager) planBridge(ctx context.Context) plan {
 		p.why = fmt.Sprintf("%s %s is not assigned to any interface here, and its exit must not leave from another address", exit.Name, exit.IP)
 	case !dial.Local:
 		p.why = fmt.Sprintf("%s %s is not assigned to any interface here, so it could not dial the nodes from it", dial.Name, dial.IP)
+	case len(spec.Outbounds) > 0 && !foreign.Local:
+		p.why = fmt.Sprintf("%s %s is not assigned to any interface here, and the outbounds must not be reached from another address", foreign.Name, foreign.IP)
 	default:
 		p.spec = spec
 	}
@@ -143,6 +159,7 @@ func (m *Manager) planBridge(ctx context.Context) plan {
 func (m *Manager) applyBridge(p plan) {
 	m.mu.Lock()
 	m.bv.gaps, m.bv.xray, m.bv.ready = p.gaps, p.xray, p.ready
+	m.bv.outs, m.bv.localGap = p.outs, p.localGap
 	m.mu.Unlock()
 	m.logGaps(p)
 	if m.cfg.Bridge == nil {
@@ -165,26 +182,30 @@ func (m *Manager) applyBridge(p plan) {
 	held := err == nil || m.cfg.Bridge.Status().State != bridgectl.StateStopped
 	if held {
 		m.appliedHash, m.failedHash = h, ""
-		tags := map[uint]string{}
+		tags, outs := map[uint]string{}, map[uint]string{}
 		for _, n := range p.spec.Nodes {
 			id, _ := idOfTag(n.Tag)
 			tags[id] = n.Tag
 		}
+		for _, o := range p.spec.Outbounds {
+			id, _ := idOfOutTag(o.Tag)
+			outs[id] = o.Tag
+		}
 		m.mu.Lock()
-		m.bv.applied, m.bv.local = tags, p.spec.Local != nil
+		m.bv.applied, m.bv.local, m.bv.appliedOuts = tags, p.spec.Local != nil, outs
 		m.mu.Unlock()
 		// another bridge than the one the entry's clients were sent to
 		m.local.pushed = ""
 	} else {
 		m.appliedHash, m.failedHash, m.retryAt = "", h, m.now().Add(startRetry)
 		m.mu.Lock()
-		m.bv.applied, m.bv.local = nil, false
+		m.bv.applied, m.bv.local, m.bv.appliedOuts = nil, false, nil
 		m.mu.Unlock()
 	}
 	switch {
 	case err == nil:
 		m.startSaid = ""
-		m.log.Info("the bridge has its spec", "portals", len(p.spec.Nodes), "own_entry", p.spec.Local != nil)
+		m.log.Info("the bridge has its spec", "portals", len(p.spec.Nodes), "own_entry", p.spec.Local != nil, "outbounds", len(p.spec.Outbounds))
 	case err.Error() != m.startSaid:
 		m.startSaid = err.Error()
 		m.log.Error("the bridge could not be started", "portals", len(p.spec.Nodes), "err", err, "supervisor_retries", held)
@@ -197,7 +218,7 @@ func (m *Manager) stopBridge(why string) {
 		m.cfg.Bridge.Stop()
 		m.appliedHash, m.failedHash, m.startSaid = "", "", ""
 		m.mu.Lock()
-		m.bv.applied, m.bv.local = nil, false
+		m.bv.applied, m.bv.local, m.bv.appliedOuts = nil, false, nil
 		m.mu.Unlock()
 		m.log.Info("the bridge is stopped", "why", why)
 		m.whySaid = why
@@ -230,6 +251,30 @@ func (m *Manager) logGaps(p plan) {
 	for id := range m.gapSaid {
 		if _, there := p.gaps[id]; !there {
 			delete(m.gapSaid, id)
+		}
+	}
+	for id, use := range p.outs {
+		if now := use.err; m.outSaid[id] != now {
+			m.outSaid[id] = now
+			switch {
+			case now == "":
+				m.log.Info("an outbound can be used", "outbound", id)
+			case use.fallback:
+				m.log.Warn("an outbound can't be used, and what leaves through it leaves through the exit", "outbound", id, "why", now)
+			default:
+				m.log.Warn("an outbound can't be used, and what leaves through it is left out of the bridge", "outbound", id, "why", now)
+			}
+		}
+	}
+	for id := range m.outSaid {
+		if _, there := p.outs[id]; !there {
+			delete(m.outSaid, id)
+		}
+	}
+	if p.localGap != m.localGapSaid {
+		m.localGapSaid = p.localGap
+		if p.localGap != "" {
+			m.log.Info("the router's own entry is left out of the bridge", "why", "the outbound it leaves through can't be used: "+p.localGap)
 		}
 	}
 }

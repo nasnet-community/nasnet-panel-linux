@@ -126,6 +126,8 @@ export interface Local {
   xrayVersion: string
   uptimeSec: number
   events?: NodeEvent[]
+  /** the outbound its traffic leaves through; 0 (or missing, from an older hub) is the router's VPN */
+  outboundId?: number
 }
 
 /** A subscription on the router's own entry: what a SubscriptionNode is for a node. */
@@ -346,6 +348,8 @@ export interface Node {
   installing?: { jobId: string; step: number; steps: number; key: string; label: string; percent: number | null }
   /** present for an install that stopped and wasn't cleaned up: no node, only Clean up and Forget work */
   unfinished?: Unfinished
+  /** the outbound its traffic leaves through; 0 (or missing, from an older hub) is the router's VPN */
+  outboundId?: number
 }
 
 /** Why an install stopped: the step by its key and English name, the error, and why the cleanup failed ("" when none ran). */
@@ -478,6 +482,107 @@ export interface LocalSettings {
 /** Where a subscription can be switched on: a node by its id, or the router's own entry. */
 export type PlaceId = number | 'router'
 
+export type OutboundProtocol = 'vless' | 'vmess' | 'trojan' | 'shadowsocks' | 'socks' | 'http'
+export type OutboundNetwork = 'tcp' | 'ws' | 'httpupgrade' | 'xhttp'
+export type OutboundSecurity = 'none' | 'tls' | 'reality'
+
+/** How to reach an outbound's server. The page reads it from a link or a JSON; the hub checks it. */
+export interface OutboundSettings {
+  protocol: OutboundProtocol
+  /** a host name or an IP address */
+  host: string
+  port: number
+  /** vless and vmess (secret) */
+  id: string
+  /** trojan and shadowsocks; the login of socks and http (secret) */
+  password: string
+  username: string
+  /** the Shadowsocks cipher, or VMess's: '', auto, aes-128-gcm, chacha20-poly1305 */
+  method: string
+  /** vless: '' or xtls-rprx-vision */
+  flow: string
+  network: OutboundNetwork
+  path: string
+  hostHeader: string
+  /** xhttp: '', auto, packet-up, stream-up or stream-one */
+  mode: string
+  security: OutboundSecurity
+  serverName: string
+  fingerprint: string
+  alpn: string[]
+  publicKey: string
+  shortId: string
+  spiderX: string
+}
+
+export type OutboundStatus = 'idle' | 'unknown' | 'up' | 'down'
+
+export interface OutboundState {
+  /** idle: nothing leaves through it; unknown: in use, but not checked yet or the bridge isn't running */
+  status: OutboundStatus
+  /** when up */
+  delayMs: number
+  /** when down, in the core's words */
+  error: string
+  /** down with its fallback on: the traffic is leaving through the router's VPN */
+  onFallback: boolean
+  lastTryAt: string | null
+  lastSeenAt: string | null
+  /** since the bridge started */
+  bytesUp: number
+  bytesDown: number
+}
+
+/** An outbound as the hub shows it: its settings without the id and the password. */
+export interface Outbound extends Omit<OutboundSettings, 'id' | 'password'> {
+  id: number
+  name: string
+  fallback: boolean
+  createdAt: string
+  /** the start and end of the user id ("7f8b…4e5f"); '' for a password, which the page shows as dots */
+  secretHint: string
+  /** the nodes that leave through it, and whether This router does */
+  usedBy: { nodes: number[]; router: boolean }
+  state: OutboundState
+}
+
+export interface TestResult {
+  ok: boolean
+  delayMs?: number
+  status?: number
+  error?: string
+}
+
+/** How the outbounds in use are watched: an address fetched through each, every so many seconds. */
+export interface OutboundCheck {
+  /** '' is the default */
+  url: string
+  seconds: number
+  defaultUrl: string
+}
+
+export interface OutboundList {
+  outbounds: Outbound[]
+  limit: number
+  check: OutboundCheck
+}
+
+export interface NewOutbound {
+  name: string
+  fallback: boolean
+  settings: OutboundSettings
+}
+
+/** What an edit may carry; settings, when there, replace all of them, secrets included. */
+export interface OutboundPatch {
+  name?: string
+  fallback?: boolean
+  settings?: OutboundSettings
+}
+
+/** The longest an outbound's name may be, in characters. */
+export const MAX_OUTBOUND_NAME = 40
+
 /** The longest a node or subscription name may be, in characters: the hub's model.MaxNameRunes. */
 export const MAX_NAME_LENGTH = 64
 
@@ -502,6 +607,23 @@ export const api = {
   remove: (id: number, req: RemoveRequest) => request<Started>('POST', `${node(id)}/remove`, req),
   nodeSubscriptions: (id: number) => request<NodeSubscription[]>('GET', `${node(id)}/subscriptions`),
   traffic: (id: number) => request<Traffic>('GET', `${node(id)}/traffic`),
+  /** where the node's traffic leaves: an outbound, or 0 for the router's VPN. The bridge restarts. */
+  route: (id: number, outboundId: number) => request<Node>('PUT', `${node(id)}/route`, { outboundId }),
+}
+
+const outbound = (id: number) => `outbounds/${id}`
+
+export const outbounds = {
+  list: () => request<OutboundList>('GET', 'outbounds'),
+  create: (o: NewOutbound) => request<Outbound>('POST', 'outbounds', o),
+  update: (id: number, patch: OutboundPatch) => request<Outbound>('PATCH', outbound(id), patch),
+  /** refused with outbound_in_use while a node or This router leaves through it */
+  remove: (id: number) => request<unknown>('DELETE', outbound(id)),
+  test: (id: number) => request<TestResult>('POST', `${outbound(id)}/test`),
+  /** tries settings that aren't saved yet */
+  testSettings: (settings: OutboundSettings) => request<TestResult>('POST', 'outbounds/test', { settings }),
+  /** '' goes back to the default address */
+  setCheck: (url: string) => request<OutboundCheck>('PUT', 'outbounds/check', { url }),
 }
 
 /** The router's own entry. None of these is a job: nothing here signs in to a server. */
@@ -517,6 +639,8 @@ export const local = {
   handshakeCheck: (target: string) => request<HandshakeCheck>('POST', 'local/handshake-check', { target }),
   subscriptions: () => request<NodeSubscription[]>('GET', 'local/subscriptions'),
   traffic: () => request<Traffic>('GET', 'local/traffic'),
+  /** where its traffic leaves: an outbound, or 0 for the router's VPN. The bridge restarts. */
+  route: (outboundId: number) => request<Local>('PUT', 'local/route', { outboundId }),
 }
 
 const place = (id: number, at: PlaceId) => (at === 'router' ? `${sub(id)}/local` : `${sub(id)}/nodes/${at}`)

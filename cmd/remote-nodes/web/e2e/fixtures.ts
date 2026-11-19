@@ -39,6 +39,10 @@ export interface Reset {
   unfinished?: boolean
   /** This router: "on" is the sample data's working entry; left out here, it is off */
   local?: 'off' | 'on' | 'starting' | 'no-port' | 'no-address' | 'bridge-down' | 'target' | 'nat'
+  /** false: no outbounds (the sample has five, see mock-outbounds.ts) */
+  outbounds?: boolean
+  /** how many outbounds may be added (16) */
+  outboundLimit?: number
 }
 
 /**

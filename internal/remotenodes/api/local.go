@@ -64,6 +64,8 @@ type Local struct {
 	UptimeSec         int64     `json:"uptimeSec"`
 	// Events is only in the view of the entry itself, as a node's is.
 	Events *[]NodeEvent `json:"events,omitempty"`
+	// OutboundID is the outbound its traffic leaves through, as a node's.
+	OutboundID uint `json:"outboundId"`
 }
 
 // LocalBrief is the entry in the page's config: enough to draw its place.
@@ -155,6 +157,7 @@ func localView(st model.State, live Live) Local {
 		PublicKey:         l.RealityPublicKey,
 		ShortID:           l.RealityShortID,
 		SubscriptionCount: enabledHere(st),
+		OutboundID:        l.OutboundID,
 	}
 	if l.Enabled {
 		// with nobody to say how it is doing, it is on its way and no more

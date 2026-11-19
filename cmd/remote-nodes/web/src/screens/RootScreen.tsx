@@ -5,27 +5,31 @@ import type { AppConfig } from '../lib/api'
 import { AttentionList } from './Attention'
 import { EntryCard, entryAttention } from './Entry'
 import { NodesScreen } from './NodesScreen'
+import { OutboundsScreen } from './OutboundsScreen'
 import { RootSettingsTab } from './RootSettingsTab'
 import { SubscriptionsScreen } from './SubscriptionsScreen'
 
-/** The first page: whether entry works, what needs attention, then the Nodes, Subscriptions and Settings tabs. */
+/** The first page: whether entry works, what needs attention, then the Nodes, Subscriptions, Outbounds and Settings tabs. */
 export function RootScreen({ tab, config, onConfigChanged }: { tab: RootTab; config: AppConfig | null; onConfigChanged: () => void }) {
   const { t } = useLang()
   const tabs: [RootTab, string][] = [
     ['nodes', t('tabs.nodes')],
     ['subscriptions', t('tabs.subscriptions')],
+    ['outbounds', t('tabs.outbounds')],
     ['settings', t('tabs.settings')],
   ]
   return (
     <div className="flex flex-col gap-5">
       {config && <EntryCard entry={config.entry} />}
       {config && <AttentionList list={entryAttention(config.entry, t)} />}
-      <Tabs label={t('tabs.sections')} idBase="root" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'root', tab: next })} />
+      <Tabs tight label={t('tabs.sections')} idBase="root" tabs={tabs} value={tab} onChange={(next) => navigate({ page: 'root', tab: next })} />
       <div role="tabpanel" id="root-panel" aria-labelledby={`root-${tab}`}>
         {tab === 'nodes' ? (
           <NodesScreen config={config} onChanged={onConfigChanged} />
         ) : tab === 'subscriptions' ? (
           <SubscriptionsScreen config={config} onChanged={onConfigChanged} />
+        ) : tab === 'outbounds' ? (
+          <OutboundsScreen />
         ) : (
           <RootSettingsTab config={config} onChanged={onConfigChanged} />
         )}

@@ -503,5 +503,5 @@ func (s State) Validate() error {
 		}
 		here[c.SubscriptionID], uuids[c.ClientUUID] = true, true
 	}
-	return nil
+	return s.validateOutbounds()
 }

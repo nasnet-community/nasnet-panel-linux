@@ -5,8 +5,9 @@ import { VerdictCard, VerdictChip } from '../components/verdict'
 import { useConfig } from '../hooks/useConfig'
 import { useNow, usePoll } from '../hooks/usePoll'
 import { useLang } from '../i18n'
-import { local as localApi, type Local } from '../lib/api'
+import { local as localApi, outbounds as outboundsApi, type Local } from '../lib/api'
 import { eventLabel } from '../lib/node'
+import { routeName } from '../lib/outbounds'
 import { routerVerdict } from '../lib/router'
 import { entryChips } from './Entry'
 
@@ -17,6 +18,9 @@ export function RouterStatusTab({ local }: { local: Local }) {
   const entry = config?.entry ?? null
   const now = useNow(1000)
   const traffic = usePoll(localApi.traffic, 15000)
+  // the outbounds only for the name of the one it leaves through, when it leaves through one
+  const via = local.outboundId ?? 0
+  const outs = usePoll(() => (via ? outboundsApi.list() : Promise.resolve(null)), 30000, [via])
   const v = routerVerdict(local, entry, t, fmt, now)
   const vpn = entry ? entryChips(entry, t).find((c) => c.key === 'vpn') : undefined
   const { usage } = local
@@ -81,7 +85,7 @@ export function RouterStatusTab({ local }: { local: Local }) {
             <span dir="ltr">{local.xrayVersion || '–'}</span>
           </Item>
           <Item label={t('status.runningFor')}>{local.uptimeSec > 0 ? fmt.duration(local.uptimeSec) : '–'}</Item>
-          <Item label={t('router.status.exit')}>{t('router.status.exitVpn')}</Item>
+          <Item label={t('router.status.exit')}>{via ? <span dir="auto">{routeName(t, via, outs.data?.outbounds ?? null)}</span> : t('router.status.exitVpn')}</Item>
         </Section>
 
         <Section title={t('router.status.use')}>

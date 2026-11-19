@@ -45,6 +45,31 @@ type Status struct {
 	Nodes []NodeStatus `json:"nodes"`
 	// Local is the entry on the router itself, nil when the spec has none.
 	Local *LocalStatus `json:"local,omitempty"`
+	// Outbounds are the spec's outbounds, in its order.
+	Outbounds []OutboundStatus `json:"outbounds,omitempty"`
+}
+
+// OutboundStatus is one outbound as the bridge's check last found it.
+type OutboundStatus struct {
+	Tag string `json:"tag"`
+	// Checked turns true with the first check that has come back. Until then
+	// the outbound is taken to answer, and Alive says nothing.
+	Checked bool `json:"checked"`
+	// Alive is whether the last check got an answer, and DelayMS how long it took.
+	Alive   bool  `json:"alive"`
+	DelayMS int64 `json:"delay_ms,omitempty"`
+	// Error is why the last check failed, as a short reason an admin can read.
+	Error string `json:"error,omitempty"`
+	// LastTry is when it was last checked, LastSeen when it last answered.
+	LastTry  time.Time `json:"last_try,omitzero"`
+	LastSeen time.Time `json:"last_seen,omitzero"`
+	// Fallback is true while what is sent to it leaves through the exit: its
+	// spec asks for that and the last check failed.
+	Fallback bool `json:"fallback,omitempty"`
+	// BytesUp and BytesDown count what has gone through it since the bridge
+	// started, as a node's do.
+	BytesUp   uint64 `json:"bytes_up"`
+	BytesDown uint64 `json:"bytes_down"`
 }
 
 // LocalStatus is the router's own entry.

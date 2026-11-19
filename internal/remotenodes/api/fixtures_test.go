@@ -106,6 +106,9 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 	bare.addUnfinished()
 	// the router's own entry: switched on and working on the first, never touched on the other
 	r.switchOnLocal()
+	// two outbounds on both: one the first node leaves through, one that nothing uses
+	r.addOutbounds()
+	bare.addOutbounds()
 
 	// the tray, newest first: an install under way, an update that failed, a removal that worked
 	gone := r.finished(jobs.Spec{Kind: jobs.KindRemove, NodeID: 3, Target: "Berlin", Steps: []string{"Forget the node"}}, func(run *jobs.Run) error {
@@ -176,6 +179,7 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 	live.total[2] = SubscriptionUsage{LastSeenAt: at(-600), MonthUp: 1, MonthDown: 2}
 	live.traffic[1] = Traffic{StepSec: 5, Samples: []TrafficSample{{At: *at(-1), Up: 7, Down: 8}, {At: *at(0), Up: 9, Down: 10}}}
 	live.local = workingLocal()
+	live.outs[1] = OutboundState{Status: OutboundUp, DelayMs: 180, LastTryAt: at(-5), LastSeenAt: at(-5), BytesUp: 1200, BytesDown: 3400}
 	live.localEv = []NodeEvent{{At: *at(-2), Kind: "subscription_on", Detail: "علی"}, {At: *at(-90), Kind: "port_opened", Detail: "41873"}, {At: *at(-91), Kind: "local_on"}}
 	live.on[[2]uint{1, RouterID}] = SubscriptionUsage{Live: true, Online: true, Connections: 2, LastSeenAt: at(-1), TodayUp: 5, TodayDown: 6, MonthUp: 7, MonthDown: 8}
 	live.on[[2]uint{2, RouterID}] = SubscriptionUsage{Live: true}
@@ -200,6 +204,8 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 		{"bareLocal", "Local", bare.get("/api/local")},
 		{"localSubscriptions", "NodeSubscription[]", r.get("/api/local/subscriptions")},
 		{"jobs", "Job[]", r.get("/api/jobs")},
+		{"outbounds", "OutboundList", r.get("/api/outbounds")},
+		{"bareOutbounds", "OutboundList", bare.get("/api/outbounds")},
 	}
 
 	var out strings.Builder
@@ -207,10 +213,10 @@ func TestThePagesFixturesAreWhatTheHubSends(t *testing.T) {
 //
 // What the hub sends for the page's GET calls, as the page's types. A hub with everything
 // known (config, nodes, node, installingNode, stoppedNode, subscriptions, nodeSubscriptions,
-// traffic, local, localSubscriptions, jobs) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
+// traffic, local, localSubscriptions, jobs, outbounds) and one that knows only its state (the bare ones). A field the hub adds or drops, or sends
 // as null where a type says otherwise, stops this file compiling, and so the build.
 
-import type { AppConfig, Job, Local, Node, NodeSubscription, Subscription, Traffic } from './api'
+import type { AppConfig, Job, Local, Node, NodeSubscription, OutboundList, Subscription, Traffic } from './api'
 `)
 	for _, f := range fixtures {
 		var pretty bytes.Buffer

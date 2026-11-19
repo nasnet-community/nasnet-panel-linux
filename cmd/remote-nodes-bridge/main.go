@@ -8,6 +8,9 @@
 // The hub starts it as another user and sends the spec (internal/remotenodes/
 // bridgespec) on stdin. It runs until stdin closes or it gets SIGTERM, and
 // serves its state as JSON on the loopback status address from the spec.
+//
+// Started with the argument "probe" it tries one outbound instead and leaves
+// (probe.go).
 package main
 
 import (
@@ -22,9 +25,9 @@ import (
 	"time"
 
 	// What the config needs, and no more: the outbound that dials, the inbound
-	// of the router's own entry, REALITY, the exit, and the apps around them. Importing all of main/distro/all
-	// would add the other protocols, the transports, the gRPC services and the
-	// config loaders.
+	// of the router's own entry, REALITY, the exit, and the apps around them.
+	// Importing all of main/distro/all would add the other protocols, the
+	// transports, the gRPC services and the config loaders.
 	_ "github.com/xtls/xray-core/app/dispatcher"
 	_ "github.com/xtls/xray-core/app/dns"
 	_ "github.com/xtls/xray-core/app/log"
@@ -40,6 +43,22 @@ import (
 	_ "github.com/xtls/xray-core/transport/internet/tcp"
 	_ "github.com/xtls/xray-core/transport/internet/udp"
 
+	// The outbounds an admin can add, their transports and TLS, and the
+	// check that watches them. The check dials through the tagged dialer,
+	// which only taggedimpl fills in.
+	_ "github.com/xtls/xray-core/app/observatory"
+	_ "github.com/xtls/xray-core/proxy/http"
+	_ "github.com/xtls/xray-core/proxy/shadowsocks"
+	_ "github.com/xtls/xray-core/proxy/shadowsocks_2022"
+	_ "github.com/xtls/xray-core/proxy/socks"
+	_ "github.com/xtls/xray-core/proxy/trojan"
+	_ "github.com/xtls/xray-core/proxy/vmess/outbound"
+	_ "github.com/xtls/xray-core/transport/internet/httpupgrade"
+	_ "github.com/xtls/xray-core/transport/internet/splithttp"
+	_ "github.com/xtls/xray-core/transport/internet/tagged/taggedimpl"
+	_ "github.com/xtls/xray-core/transport/internet/tls"
+	_ "github.com/xtls/xray-core/transport/internet/websocket"
+
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/bridgespec"
 )
 
@@ -47,14 +66,22 @@ import (
 const stopTimeout = 8 * time.Second
 
 func main() {
+	probing := len(os.Args) > 1 && os.Args[1] == bridgespec.ProbeArg
 	// by hand from a terminal nothing is coming: say so rather than wait
 	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-		fmt.Fprintln(os.Stderr, "remote-nodes-bridge reads its spec from stdin; the hub starts it")
+		if probing {
+			fmt.Fprintln(os.Stderr, "remote-nodes-bridge probe reads one request from stdin; the hub runs it")
+		} else {
+			fmt.Fprintln(os.Stderr, "remote-nodes-bridge reads its spec from stdin; the hub starts it")
+		}
 		os.Exit(2)
 	}
 	if err := noNewPrivs(); err != nil {
 		fmt.Fprintln(os.Stderr, "remote-nodes-bridge:", err)
 		os.Exit(1)
+	}
+	if probing {
+		os.Exit(probe(os.Stdin, os.Stdout, os.Stderr))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -76,7 +103,7 @@ func run(ctx context.Context, in io.Reader, logw io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("status page: %w", err)
 	}
-	b, err := newBridge(spec)
+	b, err := newBridge(spec, logw)
 	if err != nil {
 		l.Close()
 		return err

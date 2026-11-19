@@ -47,7 +47,7 @@
 //   address contains "poll"    -> the job's event stream answers 503, so the page polls
 //   an existing address        -> refused: it is already a node here
 //
-// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished, local }:
+// The e2e reset (POST /api/__reset) takes { fresh, nodes, maxNodes, entry, pace, unfinished, local, outbounds, outboundLimit }:
 //   fresh     the first-run state above
 //   nodes     0 to 3: how many of the sample nodes stay (1 keeps only Node 1)
 //   unfinished true: an install that didn't finish beside them ("Old install", 192.0.2.77, id 9)
@@ -55,6 +55,8 @@
 //   entry     "off", "domestic-offline", "vpn-offline", "stale" or "old-routeros"
 //   pace      how long install steps take, as a multiple of the usual (1)
 //   local     the state of This router: "off", "starting", "no-port", "no-address", "bridge-down", "target" or "nat"
+//   outbounds false: no outbounds; outboundLimit, how many may be added (16). mock-outbounds.ts has the sample outbounds
+//             and the scenarios their hosts pick
 // Every call but the job event stream needs the page's X-RemoteNodes-UI header, as the hub
 // does; the stream can't carry one (EventSource), so it is refused only when the browser says
 // the request came from another site. GET /licenses, which the Notices link opens in a new
@@ -63,6 +65,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Connect, Plugin } from 'vite'
 import { localApi, localBrief, localLive, seedLocal, seedLocalSubscriptions, subscriptionLocal, tickLocal, type LocalMode } from './mock-local'
 import { nodeApi } from './mock-node'
+import { nodeRoute, outboundApi, seedOutbounds, tickOutbounds } from './mock-outbounds'
 import type { AgentState, AppConfig, Entry, ErrorInfo, Job, JobKind, Node, NodeEvent, NodeSubscription, Subscription } from './src/lib/api'
 import { subscriptionRoutes } from './mock-subscriptions'
 
@@ -225,7 +228,7 @@ function sub(name: string, o: Partial<MockSub> = {}): MockSub {
   return { id: nextSubId++, name, createdAt: Date.now() - 20 * DAY, onlineOn: null, conns: 0, lastSeen: null, today: 0, month, on: new Set(), limit: 0, used: month, endsAt: null, ...o }
 }
 
-function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean; local?: LocalMode } = {}) {
+function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: string; pace?: number; unfinished?: boolean; local?: LocalMode; outbounds?: boolean; outboundLimit?: number } = {}) {
   const now = Date.now()
   nodes = []
   subs = []
@@ -238,6 +241,7 @@ function seed(o: { fresh?: boolean; nodes?: number; maxNodes?: number; entry?: s
   jobs.clear()
   installing.clear()
   seedLocal(o.fresh ? 'off' : o.local)
+  seedOutbounds({ outbounds: o.fresh ? false : o.outbounds, outboundLimit: o.outboundLimit })
   if (o.fresh) return
 
   const keep = o.nodes ?? 3
@@ -445,6 +449,7 @@ export function view(n: MockNode, detail = false): Node {
       updatedAt: live ? iso(Date.now() - 2000) : null,
     },
     installing: n.failure ? undefined : installingView(n),
+    outboundId: nodeRoute(n.id),
   }
   if (n.failure) {
     const f = n.failure
@@ -548,6 +553,7 @@ export function configView(): AppConfig {
 // vite.config.ts does) never keeps a `vite build` process alive.
 function tick() {
   tickLocal()
+  tickOutbounds()
   for (const n of nodes) {
     if (!reachable(n) || n.installJob) continue
     n.rate = { up: rand(150_000, 450_000), down: rand(800_000, 1_800_000) }
@@ -977,6 +983,7 @@ export function mockApi(): Plugin {
         }
 
         if (await nodeApi({ method, path, body, send, fail, res })) return
+        if (await outboundApi({ method, path, body, send, fail })) return
 
         // Test hook: back to the sample data, or to a first run.
         if (path === '__reset' && method === 'POST') {

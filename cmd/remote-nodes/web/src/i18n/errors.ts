@@ -29,6 +29,8 @@ const WORDED = new Set([
   'no_address',
   'backup_bad_passphrase',
   'backup_bad_file',
+  'outbound_limit',
+  'test_unavailable',
 ])
 
 /** The page's words for an error code, or null for a code it has none for. */

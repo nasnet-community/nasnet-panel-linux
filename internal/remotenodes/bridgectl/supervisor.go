@@ -113,6 +113,11 @@ type Supervisor struct {
 	// start makes a child. It is a field so tests can put a fake in.
 	start func(frame []byte) (child, error)
 
+	// probeGate lets one probe run at a time, and probeMargin is the time it
+	// gets beyond the request's own.
+	probeGate   chan struct{}
+	probeMargin time.Duration
+
 	// ctl serializes Start, Update and Stop; the loop never takes it.
 	ctl sync.Mutex
 	run *runState // the live loop, if any; guarded by mu
@@ -175,7 +180,9 @@ func New(cfg Config) (*Supervisor, error) {
 			// between them: no proxy, no kept connection.
 			Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true},
 		},
-		state: StateStopped,
+		state:       StateStopped,
+		probeGate:   make(chan struct{}, 1),
+		probeMargin: defaultProbeMargin,
 	}
 	s.start = s.execChild
 	return s, nil

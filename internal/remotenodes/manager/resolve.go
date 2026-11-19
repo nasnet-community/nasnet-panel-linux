@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/nasnet-community/nasnet-panel-linux/internal/remotenodes/model"
@@ -45,15 +46,47 @@ type resolved struct {
 // would not be the one the node-bound traffic uses, and the spec has no place
 // for a name.
 func (m *Manager) addrOf(ctx context.Context, n model.Node, dial netip.Addr) (netip.Addr, error) {
-	if a, err := netip.ParseAddr(n.Host); err == nil {
+	return m.resolve(ctx, nameLookup{
+		cache: m.res, id: n.ID, host: n.Host, from: dial, rs: m.cfg.Resolver,
+		what: "node", whose: "a node's", none: "nothing: the node is left out",
+	})
+}
+
+// outAddrOf is the IP address the bridge reaches an outbound at, looked up
+// from the Foreign link the way addrOf looks up a node's from the Domestic one.
+// A name with several addresses keeps the one it had for as long as it still
+// has it: a new address is a new spec, and so a restart of the bridge.
+func (m *Manager) outAddrOf(ctx context.Context, o model.Outbound) (netip.Addr, error) {
+	return m.resolve(ctx, nameLookup{
+		cache: m.outRes, id: o.ID, host: o.Settings.Host, from: m.cfg.Addrs.Downloads.IP, rs: m.cfg.OutboundResolver,
+		sticky: true, what: "outbound", whose: "an outbound's", none: "nothing",
+	})
+}
+
+// nameLookup is a host name to look up and where to keep what is found.
+type nameLookup struct {
+	cache  map[uint]*resolved // under resMu
+	id     uint
+	host   string
+	from   netip.Addr // the address it is reached from, whose family the answer has to have
+	rs     Resolver
+	sticky bool // keep the last answer while the name still has it
+
+	// what and whose name the record in the log, and none says what is kept
+	// when a name that never resolved fails again
+	what, whose, none string
+}
+
+func (m *Manager) resolve(ctx context.Context, q nameLookup) (netip.Addr, error) {
+	if a, err := netip.ParseAddr(q.host); err == nil {
 		return a.Unmap(), nil
 	}
 	now := m.now()
 	m.resMu.Lock()
-	r := m.res[n.ID]
-	if r == nil || r.host != n.Host {
-		r = &resolved{host: n.Host}
-		m.res[n.ID] = r
+	r := q.cache[q.id]
+	if r == nil || r.host != q.host {
+		r = &resolved{host: q.host}
+		q.cache[q.id] = r
 	}
 	cur := *r
 	m.resMu.Unlock()
@@ -65,7 +98,14 @@ func (m *Manager) addrOf(ctx context.Context, n model.Node, dial netip.Addr) (ne
 		return stale(cur)
 	}
 
-	addr, err := m.lookup(ctx, n.Host, dial)
+	addrs, err := m.lookupAll(ctx, q.rs, q.host, q.from)
+	var addr netip.Addr
+	if err == nil {
+		addr = addrs[0]
+		if q.sticky && slices.Contains(addrs, cur.addr) {
+			addr = cur.addr
+		}
+	}
 	m.resMu.Lock()
 	r.tried = now
 	if err == nil {
@@ -78,13 +118,13 @@ func (m *Manager) addrOf(ctx context.Context, n model.Node, dial netip.Addr) (ne
 
 	if err == nil {
 		if cur.err != "" {
-			m.log.Info("a node's host name resolves again", "node", n.ID, "host", n.Host, "addr", addr)
+			m.log.Info(q.whose+" host name resolves again", q.what, q.id, "host", q.host, "addr", addr)
 		}
 		return addr, nil
 	}
 	if ctx.Err() == nil && next.err != cur.err {
-		m.log.Warn("could not resolve a node's host name", "node", n.ID, "host", n.Host, "err", err,
-			"keeping", keeping(next))
+		m.log.Warn("could not resolve "+q.whose+" host name", q.what, q.id, "host", q.host, "err", err,
+			"keeping", keeping(next, q.none))
 	}
 	return stale(next)
 }
@@ -98,45 +138,54 @@ func stale(r resolved) (netip.Addr, error) {
 	return netip.Addr{}, errors.New("the host name does not resolve: " + r.err)
 }
 
-func keeping(r resolved) string {
+func keeping(r resolved, none string) string {
 	if r.addr.IsValid() {
 		return r.addr.String()
 	}
-	return "nothing: the node is left out"
+	return none
 }
 
-// lookup asks the resolver for addresses of the family the bridge dials from
-// and takes the first usable one.
-func (m *Manager) lookup(ctx context.Context, host string, dial netip.Addr) (netip.Addr, error) {
-	rs := m.cfg.Resolver
+// lookupAll asks the resolver for the addresses of the family of from, the
+// address they are reached from, and gives the usable ones in its order.
+func (m *Manager) lookupAll(ctx context.Context, rs Resolver, host string, from netip.Addr) ([]netip.Addr, error) {
 	if rs == nil {
 		rs = net.DefaultResolver
 	}
 	network := "ip6"
-	if dial.Is4() {
+	if from.Is4() {
 		network = "ip4"
 	}
 	lctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
 	addrs, err := rs.LookupNetIP(lctx, network, host)
 	if err != nil {
-		return netip.Addr{}, err
+		return nil, err
 	}
+	var out []netip.Addr
 	for _, a := range addrs {
-		if a = a.Unmap(); a.Is4() == dial.Is4() && !a.IsUnspecified() && !a.IsMulticast() {
-			return a, nil
+		if a = a.Unmap(); a.Is4() == from.Is4() && !a.IsUnspecified() && !a.IsMulticast() {
+			out = append(out, a)
 		}
 	}
-	return netip.Addr{}, errNoAddress
+	if len(out) == 0 {
+		return nil, errNoAddress
+	}
+	return out, nil
 }
 
-// forgetResolved drops what is remembered of nodes that are not in the state.
+// forgetResolved drops what is remembered of nodes and outbounds that are not
+// in the state.
 func (m *Manager) forgetResolved(st model.State) {
 	m.resMu.Lock()
 	defer m.resMu.Unlock()
 	for id := range m.res {
 		if st.FindNode(id) == nil {
 			delete(m.res, id)
+		}
+	}
+	for id := range m.outRes {
+		if st.FindOutbound(id) == nil {
+			delete(m.outRes, id)
 		}
 	}
 }

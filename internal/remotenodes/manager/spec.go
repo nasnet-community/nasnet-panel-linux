@@ -34,6 +34,9 @@ import (
 //     source address, to an IP address of the family the bridge dials from
 //   - the bridge accepts it: bridgespec's own checks
 //   - no other node has the same address and port
+//   - the outbound it leaves through, if it names one, can be used: its host
+//     name resolves and the bridge accepts it. When it can't, a node whose
+//     outbound has its fallback on leaves through the exit until it can.
 //
 // Whether the entry is on is not the node's: with it off there is no spec at
 // all. And whether its agent answers isn't either, since the tunnel doesn't go
@@ -50,6 +53,7 @@ const (
 	gapNoAddress
 	gapRefused
 	gapDuplicate
+	gapOutbound
 )
 
 type gap struct {
@@ -79,6 +83,8 @@ func (g gap) String() string {
 		return "the bridge's checks refuse it: " + g.detail
 	case gapDuplicate:
 		return "it has the same address and port as " + g.detail
+	case gapOutbound:
+		return "the outbound it leaves through can't be used: " + g.detail
 	}
 	return "unknown"
 }
@@ -95,6 +101,49 @@ func idOfTag(tag string) (uint, bool) {
 	return uint(id), err == nil && id > 0
 }
 
+// outTag is the name the bridge gives an outbound. The closing dot keeps one
+// tag from being the start of another ("out-1." of "out-10."), which the
+// bridge refuses, since Xray picks a group's members by the start of a tag.
+func outTag(id uint) string { return "out-" + strconv.FormatUint(uint64(id), 10) + "." }
+
+func idOfOutTag(tag string) (uint, bool) {
+	s, ok := strings.CutPrefix(tag, "out-")
+	if !ok {
+		return 0, false
+	}
+	if s, ok = strings.CutSuffix(s, "."); !ok {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(s, 10, 32)
+	return uint(id), err == nil && id > 0
+}
+
+// specOutbound is an outbound as the bridge reaches it, at addr.
+//
+// An outbound given by name is reached at an address, so on a plain transport
+// other than tcp, with no host of its own for it, the request would carry the
+// address where the server expects its name: the name is put there instead.
+func specOutbound(o model.Outbound, addr netip.Addr) bridgespec.Outbound {
+	bo := o.Settings.BridgeOutbound()
+	bo.Tag, bo.Addr, bo.Fallback = outTag(o.ID), addr.String(), o.Fallback
+	if bo.Host == "" && bo.SecurityOrDefault() == bridgespec.SecNone && bo.NetworkOrDefault() != bridgespec.NetTCP && o.Settings.HostIsName() {
+		bo.Host = o.Settings.Host
+	}
+	return bo
+}
+
+// outUse is what became of an outbound that something in the spec leaves
+// through.
+type outUse struct {
+	name     string
+	tag      string // its tag in the spec, "" when it isn't in it
+	err      string // why it can't be used, when it can't
+	fallback bool   // and so what leaves through it leaves through the exit
+}
+
+// why is what keeps what leaves through it out of the spec: the gap's words.
+func (u outUse) why() string { return u.name + ": " + u.err }
+
 // specInput is what a spec is built from.
 type specInput struct {
 	nodes []model.Node
@@ -110,6 +159,27 @@ type specInput struct {
 	statusAddr string
 	// local is the router's own entry, nil while it is off or not ready.
 	local *bridgespec.Local
+
+	// outbounds are the state's, and localVia the one the router's entry
+	// leaves through, 0 for the exit. outAddr is the IP address to reach one
+	// at, asked only for one that a node or the entry in the spec leaves
+	// through. from is where the bridge connects to them from, the Foreign
+	// link, and probe how it checks them.
+	outbounds []model.Outbound
+	localVia  uint
+	outAddr   func(model.Outbound) (netip.Addr, error)
+	from      netip.Addr
+	probe     bridgespec.Probe
+}
+
+// specResult is a spec and what keeps each node out of it, what became of
+// each outbound something in it leaves through, and, when the router's entry
+// was left out for its outbound, why.
+type specResult struct {
+	spec     *bridgespec.Spec
+	gaps     map[uint]gap
+	outs     map[uint]outUse
+	localGap string
 }
 
 // buildSpec makes the bridge's spec from the nodes that are ready and the
@@ -118,7 +188,18 @@ type specInput struct {
 // address, say), which no node can be blamed for; every node is then left out
 // of it, and the gaps hold what each one lacks on its own.
 func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
+	res, err := makeSpec(in)
+	return res.spec, res.gaps, err
+}
+
+// makeSpec is buildSpec with what it found of the outbounds.
+//
+// Only an outbound that a node or the entry in the spec leaves through goes
+// into it, so one that nothing uses can be added, changed and removed without
+// a restart of the bridge.
+func makeSpec(in specInput) (specResult, error) {
 	gaps := map[uint]gap{}
+	res := specResult{gaps: gaps, outs: map[uint]outUse{}}
 	base := bridgespec.Spec{
 		Version:    bridgespec.Version,
 		DialAddr:   in.dial.String(),
@@ -131,6 +212,7 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 	nodes := slices.Clone(in.nodes)
 	slices.SortFunc(nodes, func(a, b model.Node) int { return int(a.ID) - int(b.ID) })
 	var portals []bridgespec.Node
+	via := map[string]uint{} // the outbound each portal leaves through, by tag
 	taken := map[netip.AddrPort]string{}
 	for _, n := range nodes {
 		p, g := portalOf(n, in)
@@ -145,16 +227,17 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 		gaps[n.ID] = g
 		if g.ok() {
 			portals = append(portals, p)
+			via[p.Tag] = n.OutboundID
 		}
 	}
 	if len(portals) == 0 && in.local == nil {
-		return nil, gaps, nil
+		return res, nil
 	}
 
 	// A fault in the parts that are not a node's would fail every portal alike,
 	// so it is looked for with one that is known to be good.
 	if err := globalFault(base, in.dial); err != nil {
-		return nil, gaps, err
+		return res, err
 	}
 	var kept []bridgespec.Node
 	for _, p := range portals {
@@ -167,15 +250,90 @@ func buildSpec(in specInput) (*bridgespec.Spec, map[uint]gap, error) {
 		}
 		kept = append(kept, p)
 	}
-	if len(kept) == 0 && in.local == nil {
-		return nil, gaps, nil
+
+	outs := in.wantedOutbounds(base, kept, via, res.outs)
+	var carried []bridgespec.Node
+	for _, p := range kept {
+		id := via[p.Tag]
+		if id == 0 {
+			carried = append(carried, p)
+			continue
+		}
+		switch use := res.outs[id]; {
+		case use.tag != "":
+			p.Via = use.tag
+		case !use.fallback:
+			nid, _ := idOfTag(p.Tag)
+			gaps[nid] = gap{gapOutbound, use.why()}
+			continue
+		}
+		carried = append(carried, p)
+	}
+	local := in.local
+	if local != nil && in.localVia != 0 {
+		switch use := res.outs[in.localVia]; {
+		case use.tag != "":
+			l := *local
+			l.Via = use.tag
+			local = &l
+		case !use.fallback:
+			res.localGap, local = use.why(), nil
+		}
+	}
+	if len(carried) == 0 && local == nil {
+		return res, nil
 	}
 	spec := base
-	spec.Nodes = kept
-	if err := spec.Validate(); err != nil {
-		return nil, gaps, err
+	spec.Nodes, spec.Local = carried, local
+	if len(outs) > 0 {
+		spec.Outbounds, spec.OutboundAddr, spec.Probe = outs, in.from.String(), in.probe
 	}
-	return &spec, gaps, nil
+	if err := spec.Validate(); err != nil {
+		return res, err
+	}
+	res.spec = &spec
+	return res, nil
+}
+
+// wantedOutbounds are the outbounds the kept portals and the router's entry
+// leave through, as the bridge reaches them, by id. What became of each,
+// whether it went in or not, goes into uses.
+func (in specInput) wantedOutbounds(base bridgespec.Spec, kept []bridgespec.Node, via map[string]uint, uses map[uint]outUse) []bridgespec.Outbound {
+	wanted := map[uint]bool{}
+	for _, p := range kept {
+		if id := via[p.Tag]; id != 0 {
+			wanted[id] = true
+		}
+	}
+	if in.local != nil && in.localVia != 0 {
+		wanted[in.localVia] = true
+	}
+	var outs []bridgespec.Outbound
+	for _, o := range in.outbounds {
+		if !wanted[o.ID] {
+			continue
+		}
+		use := outUse{name: o.Name, fallback: o.Fallback}
+		addr, err := in.outAddr(o)
+		if err != nil {
+			use.err = err.Error()
+		} else {
+			bo := specOutbound(o, addr)
+			if err := outboundFault(base, in.dial, in.from, in.probe, bo); err != nil {
+				use.err = "the bridge's checks refuse it: " + err.Error()
+			} else {
+				use.tag = bo.Tag
+				outs = append(outs, bo)
+			}
+		}
+		uses[o.ID] = use
+		delete(wanted, o.ID)
+	}
+	// a route to an outbound the state doesn't have, which its checks keep from happening
+	for id := range wanted {
+		uses[id] = outUse{name: fmt.Sprintf("outbound %d", id), err: "it is not there"}
+	}
+	return outs
 }
 
 // portalOf is a node as the bridge dials it, or what it lacks.
@@ -249,6 +407,13 @@ func globalFault(base bridgespec.Spec, dial netip.Addr) error {
 	}
 	base.Nodes = []bridgespec.Node{probe}
 	return base.Validate()
+}
+
+// outboundFault is what the bridge finds wrong with an outbound, on its own in
+// a spec that is otherwise known to be good.
+func outboundFault(base bridgespec.Spec, dial, from netip.Addr, probe bridgespec.Probe, o bridgespec.Outbound) error {
+	base.Outbounds, base.OutboundAddr, base.Probe = []bridgespec.Outbound{o}, from.String(), probe
+	return globalFault(base, dial)
 }
 
 // specHash tells one spec from another: two with the same hash start the same

@@ -93,7 +93,7 @@ const reachable = (n: MockNode) => !n.down && n.registered && !n.installJob
 
 // --- the node, as the detail page reads it ------------------------------------------
 
-function detail(n: MockNode): Node {
+export function detail(n: MockNode): Node {
   const x = ex(n)
   const v = view(n, true)
   const base = x.certBase ?? n.createdAt

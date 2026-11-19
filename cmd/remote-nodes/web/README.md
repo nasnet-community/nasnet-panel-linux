@@ -33,7 +33,10 @@ back and takes `{ fresh, nodes, maxNodes, entry, pace, unfinished }` to set up o
 it). The calls that change subscriptions (add, rename, delete, the switch per node, the links) are in
 `mock-subscriptions.ts`. The router's own entry, This router, is answered by `mock-local.ts`: it works in
 the sample data, and a reset with `{ local }` puts it in another state (off, starting, no port, no name,
-and so on; its header lists them). The browser tests reset with it off unless a test asks for it. It is not
+and so on; its header lists them). The browser tests reset with it off unless a test asks for it. The outbounds and
+where each node and This router leaves through are answered by `mock-outbounds.ts`: five sample outbounds that show
+every state, and hosts that make a test or a save go another way (its header lists them); a reset with `{ outbounds: false }`
+starts with none. It is not
 part of the build.
 
 The mock follows the hub where the page can tell: an install is the hub's fifteen steps, a failed one cleans the server

@@ -243,7 +243,7 @@ func TestEveryNodeCallAnswersInTheContractsShape(t *testing.T) {
 					if n.ID != 1 || string(raw["events"]) != "[]" || n.Registered != true {
 						t.Errorf("%s answered %s", name, g.body)
 					}
-					wantKeys(t, name, decode[map[string]any](t, []byte(g.body)), "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage events")
+					wantKeys(t, name, decode[map[string]any](t, []byte(g.body)), "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage outboundId events")
 				}
 				if n := decode[Node](t, []byte(got["rename"].body)); n.Name != "Berlin" {
 					t.Errorf("the renamed node is %q", n.Name)

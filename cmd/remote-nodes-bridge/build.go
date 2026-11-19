@@ -17,7 +17,6 @@ import (
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/router"
 	"github.com/xtls/xray-core/app/stats"
-	"github.com/xtls/xray-core/common/geodata"
 	clog "github.com/xtls/xray-core/common/log"
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/protocol"
@@ -48,7 +47,19 @@ import (
 // here on the router, whose clients go straight to the same exit. localTarget
 // is where its REALITY takes a handshake that is not a client's, the bridge's
 // own forwarder (target.go); it is not looked at without an entry.
+//
+// With outbounds in the spec (outbound.go), a node or the entry whose Via
+// names one leaves through it, and the check, the groups and the outbounds'
+// counters come along. Without any the config is what it was before them.
 func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
+	return buildConfigWithout(s, localTarget, nil)
+}
+
+// buildConfigWithout is buildConfig with the outbounds in refused, by tag,
+// left out: Xray won't take them, and one of them must not stop the rest.
+// What leaves through one goes to the exit if it has a fallback, as while it
+// is down, and is refused if not.
+func buildConfigWithout(s *bridgespec.Spec, localTarget string, refused map[string]string) (*core.Config, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
 	}
@@ -58,6 +69,10 @@ func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
 	blocked := make([]netip.Prefix, 0, len(s.Exit.BlockedOrDefault()))
 	for _, raw := range s.Exit.BlockedOrDefault() {
 		blocked = append(blocked, netip.MustParsePrefix(raw))
+	}
+	via := make(map[string]*bridgespec.Outbound, len(s.Outbounds))
+	for i := range s.Outbounds {
+		via[s.Outbounds[i].Tag] = &s.Outbounds[i]
 	}
 
 	// Xray sends what no rule claims to the first outbound, so the exit goes
@@ -73,7 +88,7 @@ func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
 			return nil, fmt.Errorf("local: %w", err)
 		}
 		inbounds = append(inbounds, entry)
-		rules = append(rules, toExit(bridgespec.LocalTag))
+		rules = append(rules, routeTo(bridgespec.LocalTag, via[s.Local.Via], blocked, refused)...)
 	}
 	for _, n := range s.Nodes {
 		link, err := tunnelOutbound(n, dial)
@@ -81,29 +96,42 @@ func buildConfig(s *bridgespec.Spec, localTarget string) (*core.Config, error) {
 			return nil, fmt.Errorf("%s: %w", n.Tag, err)
 		}
 		outbounds = append(outbounds, link)
-		rules = append(rules, toExit(n.ReverseTag))
+		rules = append(rules, routeTo(n.ReverseTag, via[n.Via], blocked, refused)...)
+	}
+	if len(s.Outbounds) > 0 {
+		from := netip.MustParseAddr(s.OutboundAddr).Unmap()
+		for _, o := range s.Outbounds {
+			if _, left := refused[o.Tag]; left {
+				continue
+			}
+			h, err := outboundHandler(o, from)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", o.Tag, err)
+			}
+			outbounds = append(outbounds, h)
+		}
 	}
 
 	dnsApp, err := dnsConfig(s.DNS.Servers, exit)
 	if err != nil {
 		return nil, err
 	}
-	return &core.Config{
-		Inbound:  inbounds,
-		Outbound: outbounds,
-		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(logConfig(s.LogLevelOrDefault())),
-			serial.ToTypedMessage(&dispatcher.Config{}),
-			serial.ToTypedMessage(&proxyman.OutboundConfig{}),
-			serial.ToTypedMessage(&stats.Config{}),
-			serial.ToTypedMessage(&router.Config{Rule: rules}),
-			serial.ToTypedMessage(dnsApp),
-			serial.ToTypedMessage(countersPolicy()),
-			// Last, as the loader has it since 26.10.29: inbounds start
-			// taking connections only once everything they hand them to is up.
-			serial.ToTypedMessage(&proxyman.InboundConfig{}),
-		},
-	}, nil
+	apps := []*serial.TypedMessage{
+		serial.ToTypedMessage(logConfig(s.LogLevelOrDefault())),
+		serial.ToTypedMessage(&dispatcher.Config{}),
+		serial.ToTypedMessage(&proxyman.OutboundConfig{}),
+		serial.ToTypedMessage(&stats.Config{}),
+		serial.ToTypedMessage(&router.Config{Rule: rules, BalancingRule: groups(s.Outbounds, refused)}),
+		serial.ToTypedMessage(dnsApp),
+		serial.ToTypedMessage(countersPolicy(len(s.Outbounds) > 0)),
+	}
+	if obs := observatoryConfig(s, refused); len(obs.SubjectSelector) > 0 {
+		apps = append(apps, serial.ToTypedMessage(obs))
+	}
+	// Last, as the loader has it since 26.10.29: inbounds start taking
+	// connections only once everything they hand them to is up.
+	apps = append(apps, serial.ToTypedMessage(&proxyman.InboundConfig{}))
+	return &core.Config{Inbound: inbounds, Outbound: outbounds, App: apps}, nil
 }
 
 // logConfig keeps the access log off: it would put every destination a
@@ -133,14 +161,19 @@ func toExit(inbound string) *router.RoutingRule {
 }
 
 // countersPolicy counts bytes per user. Each tunnel's outbound uses the node's
-// tag as its user's email, so a node's traffic is one pair of counters.
-func countersPolicy() *policy.Config {
-	return &policy.Config{Level: map[uint32]*policy.Policy{
+// tag as its user's email, so a node's traffic is one pair of counters. With
+// outbounds, each outbound counts its own as well, under its tag.
+func countersPolicy(outbounds bool) *policy.Config {
+	c := &policy.Config{Level: map[uint32]*policy.Policy{
 		0: {
 			Timeout: &policy.Policy_Timeout{},
 			Stats:   &policy.Policy_Stats{UserUplink: true, UserDownlink: true},
 		},
 	}}
+	if outbounds {
+		c.System = &policy.SystemPolicy{Stats: &policy.SystemPolicy_Stats{OutboundUplink: true, OutboundDownlink: true}}
+	}
+	return c
 }
 
 // exitOutbound is where the tunnels' traffic leaves: freedom, bound to the exit
@@ -149,12 +182,7 @@ func countersPolicy() *policy.Config {
 func exitOutbound(addr netip.Addr, blocked []netip.Prefix) *core.OutboundHandlerConfig {
 	// Since 26.11.9 the loader writes a block rule's log level out. Info is
 	// also what a rule without one logs at.
-	block := &freedom.FinalRuleConfig{Action: freedom.RuleAction_Block, LogLevel: clog.Severity_Info.Enum()}
-	for _, p := range blocked {
-		block.Ip = append(block.Ip, &geodata.IPRule{Value: &geodata.IPRule_Custom{
-			Custom: &geodata.CIDRRule{Cidr: &geodata.CIDR{Ip: p.Addr().AsSlice(), Prefix: uint32(p.Bits())}},
-		}})
-	}
+	block := &freedom.FinalRuleConfig{Action: freedom.RuleAction_Block, LogLevel: clog.Severity_Info.Enum(), Ip: ipRules(blocked)}
 
 	// Force, not just prefer: when a lookup fails Xray must not fall back to
 	// the system resolver, whose queries would leave from the wrong address.

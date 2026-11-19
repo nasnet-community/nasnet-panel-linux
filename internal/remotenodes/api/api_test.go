@@ -300,7 +300,7 @@ func TestTheShapesAreTheContracts(t *testing.T) {
 		t.Fatalf("%d nodes", len(nodes))
 	}
 	for _, n := range nodes {
-		wantKeys(t, "node", n, "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage")
+		wantKeys(t, "node", n, "id name host sshPort sshUser registered createdAt entryPort handshakeTarget sni sniCustom publicKey shortId arch agentVersion xrayVersion lastSeenAt subscriptionCount tunnel agent cert updates usage outboundId")
 		wantKeys(t, "node.tunnel", n["tunnel"].(map[string]any), "state since rttMs streams carried bytesToSubs bytesFromSubs dialFailures reason")
 		wantKeys(t, "node.cert", n["cert"].(map[string]any), "notAfter validDays renewsAt")
 		wantKeys(t, "node.updates", n["updates"].(map[string]any), "agent xray agentVersion xrayVersion")
@@ -323,7 +323,7 @@ func TestTheShapesAreTheContracts(t *testing.T) {
 
 	// the router's own entry, off and then on
 	wantKeys(t, "local", decode[map[string]any](t, r.get("/api/local")),
-		"enabled state reason detail host hostSource ownHost cloudName publicAddr domesticAddr behindNat port handshakeTarget sni sniCustom publicKey shortId subscriptionCount usage xrayVersion uptimeSec events")
+		"enabled state reason detail host hostSource ownHost cloudName publicAddr domesticAddr behindNat port handshakeTarget sni sniCustom publicKey shortId subscriptionCount usage xrayVersion uptimeSec events outboundId")
 	r.switchOnLocal()
 	for _, s := range decode[[]map[string]any](t, r.get("/api/subscriptions")) {
 		wantKeys(t, "subscription.local", s["local"].(map[string]any), "enabled online connections lastSeenAt todayUp todayDown monthUp monthDown")
@@ -408,9 +408,14 @@ func TestAnExpiredCertificateCountsDaysBelowZero(t *testing.T) {
 	}
 }
 
-// secretish names a field that should never be in a body.
+// secretish names a field that should never be in a body. An outbound's
+// secretHint is the one exception: a few characters of an id, as the contract
+// has it, and never the id.
 func secretish(name string) bool {
 	name = strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(name))
+	if name == "secrethint" {
+		return false
+	}
 	for _, bad := range []string{"privatekey", "uuid", "hostkey", "password", "passphrase", "secret", "token", "cakey", "credential"} {
 		if strings.Contains(name, bad) {
 			return true
@@ -459,7 +464,7 @@ func jsonNames(typ reflect.Type, path string, into map[string]string) {
 // particular response happens to fill it.
 func TestNoViewTypeHasASecretField(t *testing.T) {
 	names := map[string]string{}
-	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, NodeSubscription{}, Traffic{}, jobs.Job{}, errorBody{}, Local{}} {
+	for _, v := range []any{AppConfig{}, Node{}, Subscription{}, NodeSubscription{}, Traffic{}, jobs.Job{}, errorBody{}, Local{}, OutboundList{}, TestResult{}} {
 		jsonNames(reflect.TypeOf(v), reflect.TypeOf(v).Name(), names)
 	}
 	if len(names) < 50 {

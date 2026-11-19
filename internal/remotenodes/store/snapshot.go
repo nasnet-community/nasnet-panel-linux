@@ -46,6 +46,7 @@ func (s *Store) Restore(data []byte) error {
 		}
 		restored.NextNodeID = max(restored.NextNodeID, st.NextNodeID)
 		restored.NextSubscriptionID = max(restored.NextSubscriptionID, st.NextSubscriptionID)
+		restored.NextOutboundID = max(restored.NextOutboundID, st.NextOutboundID)
 		*st = restored
 		return nil
 	})

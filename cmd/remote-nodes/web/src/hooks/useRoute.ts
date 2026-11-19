@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export type RootTab = 'nodes' | 'subscriptions' | 'settings'
+export type RootTab = 'nodes' | 'subscriptions' | 'outbounds' | 'settings'
 export type NodeTab = 'subscriptions' | 'status' | 'settings'
 
 export type Route = { page: 'root'; tab: RootTab } | { page: 'node'; id: string; tab: NodeTab } | { page: 'router'; tab: NodeTab }
@@ -17,11 +17,11 @@ export function parseRoute(hash: string): Route {
   }
   // the router's own entry has the tabs of a node, and no id
   if (page === 'router') return { page: 'router', tab: NODE_TABS.includes(id as NodeTab) ? (id as NodeTab) : 'subscriptions' }
-  if (page === 'subscriptions' || page === 'settings') return { page: 'root', tab: page }
+  if (page === 'subscriptions' || page === 'outbounds' || page === 'settings') return { page: 'root', tab: page }
   return { page: 'root', tab: 'nodes' }
 }
 
-/** "#/", "#/subscriptions", "#/nodes/3", "#/nodes/3/status", "#/router/settings": the inverse of parseRoute. */
+/** "#/", "#/subscriptions", "#/outbounds", "#/nodes/3", "#/nodes/3/status", "#/router/settings": the inverse of parseRoute. */
 export function routeHash(to: Target): string {
   if (to.page === 'root') return to.tab === 'nodes' ? '#/' : `#/${to.tab}`
   if (to.page === 'router') return `#/router${!to.tab || to.tab === 'subscriptions' ? '' : `/${to.tab}`}`

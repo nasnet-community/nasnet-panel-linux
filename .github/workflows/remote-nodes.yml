@@ -175,19 +175,20 @@ jobs:
             grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
           done
 
-      # These only run on Linux, which this is: three bind 127.0.0.17 and
-      # 127.0.0.18 (a tunnel's, the router's own entry's, and the forwarder to
-      # its Reality target), the other checks no_new_privs. A skip would hide a
+      # These only run on Linux, which this is: four bind addresses of
+      # 127.0.0.0/8 (a tunnel's, the router's own entry's, the forwarder to its
+      # Reality target's, and the outbounds', which must leave from the
+      # Foreign link's), the other checks no_new_privs. A skip would hide a
       # bridge that doesn't do what the hub relies on, so a skip fails the step.
       - name: Linux-only bridge tests
         run: |
           set -euo pipefail
-          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestE2ELocalEntrySourceAddresses|TestForwarderDialsFromItsAddress|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
+          out=$(go test -count=1 -v -run 'TestE2ESourceAddresses|TestE2ELocalEntrySourceAddresses|TestForwarderDialsFromItsAddress|TestE2EOutboundSourceAddress|TestNoNewPrivs' ./cmd/remote-nodes-bridge/ 2>&1) || { echo "$out"; exit 1; }
           echo "$out"
           skipped=$(grep -c -- '--- SKIP' <<<"$out" || true)
           echo "skipped: $skipped"
           [ "$skipped" = 0 ] || { echo "::error::$skipped of the Linux-only bridge tests were skipped"; exit 1; }
-          for t in TestE2ESourceAddresses TestE2ELocalEntrySourceAddresses TestForwarderDialsFromItsAddress TestNoNewPrivs; do
+          for t in TestE2ESourceAddresses TestE2ELocalEntrySourceAddresses TestForwarderDialsFromItsAddress TestE2EOutboundSourceAddress TestNoNewPrivs; do
             grep -q -- "--- PASS: $t " <<<"$out" || { echo "::error::$t did not run and pass"; exit 1; }
           done
 
@@ -209,10 +210,12 @@ jobs:
       # Size limits in bytes for each program, set for each architecture since
       # the amd64 programs come out bigger. Unpacked is the stripped Go binary,
       # which is what a router unpacks into RAM; packed is the UPX --lzma file
-      # the image ships. Measured with the page embedded, Go 1.27.1 and the
-      # Dockerfile's flags, once the hub had its node operations:
-      #   hub     amd64 18.26 MB unpacked, 5.33 MB packed; arm64 16.97 and 4.39
-      #   bridge  amd64 20.93 and 6.05; arm64 19.46 and 4.91
+      # the image ships. Measured with the page embedded, Go 1.27.4 and the
+      # Dockerfile's flags, once the bridge carried outbounds (six more
+      # protocols, three more transports and TLS) and the hub and the page
+      # managed them:
+      #   hub     amd64 19.27 MB unpacked, 5.63 MB packed; arm64 17.89 and 4.65
+      #   bridge  amd64 22.91 and 6.58; arm64 21.30 and 5.34
       # The same source and compiler give the same unpacked size, so that limit
       # is the measure plus 5%. Packed sizes move with the UPX version, so that
       # limit is the measure plus 10%. All are rounded up to 100 kB. A change
@@ -222,16 +225,16 @@ jobs:
         include:
           - platform: linux/amd64
             arch: amd64
-            hub_unpacked: "19200000"
-            hub_packed: "5900000"
-            bridge_unpacked: "22000000"
-            bridge_packed: "6700000"
+            hub_unpacked: "20300000"
+            hub_packed: "6200000"
+            bridge_unpacked: "24100000"
+            bridge_packed: "7300000"
           - platform: linux/arm64
             arch: arm64
-            hub_unpacked: "17900000"
-            hub_packed: "4900000"
-            bridge_unpacked: "20500000"
-            bridge_packed: "5400000"
+            hub_unpacked: "18800000"
+            hub_packed: "5200000"
+            bridge_unpacked: "22400000"
+            bridge_packed: "5900000"
     steps:
       - uses: actions/checkout@v7.0.1
 

@@ -110,6 +110,13 @@ type ConnectorFunc func(ctx context.Context, n model.Node) (Client, error)
 
 func (f ConnectorFunc) Connect(ctx context.Context, n model.Node) (Client, error) { return f(ctx, n) }
 
+// Prober tries one outbound with the bridge program, apart from the bridge
+// that runs. *bridgectl.Supervisor is one, and says bridgectl.ErrNoProgram
+// where there is no program to try it with.
+type Prober interface {
+	Probe(ctx context.Context, req bridgespec.ProbeRequest) (bridgespec.ProbeResult, error)
+}
+
 // Resolver turns a node's host name into addresses. *net.Resolver is one, and
 // netroles.Addr.Resolver is one that asks from the nodes' source address.
 type Resolver interface {
