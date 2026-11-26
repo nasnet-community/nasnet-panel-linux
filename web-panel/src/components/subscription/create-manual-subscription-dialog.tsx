@@ -41,7 +41,6 @@ import { FaTelegram } from "react-icons/fa"
 import { listNodes } from "@/lib/api/nodes"
 import { listAllCoreInbounds } from "@/lib/api/cores"
 import { queryKeys } from "@/lib/queries/keys"
-import { isLiteNode } from "@/lib/node-kind"
 import { createUser as createUserAPI, getUserDetails } from "@/lib/api/users"
 import { useCreateManualSubscription } from "@/lib/queries/use-subscriptions"
 import { useSubscriptionsStore } from "@/store/subscriptions-store"
@@ -398,11 +397,6 @@ function StepSelectServers({
                                             <Badge variant="outline" className="text-[11px] px-1.5 py-0 uppercase shrink-0 font-mono tracking-wider hidden sm:inline-flex">
                                                 {node.country_code}
                                             </Badge>
-                                            {isLiteNode(node) && (
-                                                <Badge variant="outline" className="text-[11px] px-1.5 py-0 shrink-0 hidden sm:inline-flex">
-                                                    MTProto node
-                                                </Badge>
-                                            )}
                                             <div className={cn(
                                                 "flex items-center gap-1.5 shrink-0",
                                             )}>

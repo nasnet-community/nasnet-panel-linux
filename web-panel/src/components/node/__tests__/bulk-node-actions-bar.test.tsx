@@ -25,9 +25,8 @@ vi.mock("@/components/node/bulk-xray-version-dialog", () => ({
 }))
 
 const nodes = [
-    { id: 1, name: "full", ip: "203.0.113.1", kind: "full", connect_mode: "direct", is_online: true },
-    { id: 2, name: "current", ip: "203.0.113.2", kind: "full", connect_mode: "direct", is_online: true },
-    { id: 4, name: "mtproto", ip: "203.0.113.9", kind: "lite", connect_mode: "link", is_online: true },
+    { id: 1, name: "full", ip: "203.0.113.1", connect_mode: "direct", is_online: true },
+    { id: 2, name: "current", ip: "203.0.113.2", connect_mode: "direct", is_online: true },
 ] as Node[]
 
 beforeEach(() => {
@@ -37,39 +36,30 @@ beforeEach(() => {
 })
 
 describe("BulkNodeActionsBar", () => {
-    it("updates Xray on the full nodes only", async () => {
+    it("updates Xray on the selected nodes", async () => {
         const user = userEvent.setup()
         useNodesStore.getState().startSelecting()
-        useNodesStore.getState().setSelected([1, 4])
+        useNodesStore.getState().setSelected([1, 2])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Update Xray/ })[0])
-        expect(screen.getByText("xray for 1")).toBeInTheDocument()
+        expect(screen.getByText("xray for 1,2")).toBeInTheDocument()
     })
 
-    it("leaves MTProto nodes out of the Xray actions", async () => {
+    it("restarts Xray and pushes the config on the selected nodes", async () => {
         const user = userEvent.setup()
         useNodesStore.getState().startSelecting()
-        useNodesStore.getState().setSelected([1, 4])
+        useNodesStore.getState().setSelected([1, 2])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Restart Xray/ })[0])
-        expect(restart).toHaveBeenCalledWith([1], expect.anything())
+        expect(restart).toHaveBeenCalledWith([1, 2], expect.anything())
         await user.click(screen.getAllByRole("button", { name: /Push Config/i })[0])
-        expect(push).toHaveBeenCalledWith([1], expect.anything())
-    })
-
-    it("disables the Xray actions when only MTProto nodes are selected", () => {
-        useNodesStore.getState().startSelecting()
-        useNodesStore.getState().setSelected([4])
-        render(<BulkNodeActionsBar />)
-        for (const b of screen.getAllByRole("button", { name: /Restart Xray|Push Config|Update Xray/i })) {
-            expect(b).toBeDisabled()
-        }
+        expect(push).toHaveBeenCalledWith([1, 2], expect.anything())
     })
 
     it("updates agents only where the panel ships a new one", async () => {
         const user = userEvent.setup()
         useNodesStore.getState().startSelecting()
-        useNodesStore.getState().setSelected([1, 2, 4])
+        useNodesStore.getState().setSelected([1, 2])
         render(<BulkNodeActionsBar />)
         await user.click(screen.getAllByRole("button", { name: /Update Agent/i })[0])
         expect(screen.getByText("agents for 1")).toBeInTheDocument()

@@ -492,10 +492,6 @@ func (h *Handler) UpdateNode(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
 			return
 		}
-		if errors.Is(err, usecase.ErrMTProtoNodeAddress) {
-			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "MTPROTO_NODE"})
-			return
-		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -532,10 +528,6 @@ func (h *Handler) DeleteNode(c *gin.Context) {
 		}
 		if errors.Is(err, usecase.ErrLocalNode) {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "LOCAL_NODE"})
-			return
-		}
-		if errors.Is(err, usecase.ErrMTProtoNode) {
-			c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "MTPROTO_NODE"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
@@ -3043,7 +3035,7 @@ func (h *Handler) agentMoveResponse(c *gin.Context, res *usecase.AgentMove, err 
 	switch {
 	case errors.Is(err, usecase.ErrLocalNode):
 		c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error(), "code": "NODE_LOCAL"})
-	case errors.Is(err, usecase.ErrLiteNode), errors.Is(err, usecase.ErrNodeStealth):
+	case errors.Is(err, usecase.ErrNodeStealth):
 		c.JSON(http.StatusConflict, gin.H{"success": false, "error": err.Error()})
 	case errors.As(err, &bad):
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": bad.Msg})

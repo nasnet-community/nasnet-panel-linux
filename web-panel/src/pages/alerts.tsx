@@ -51,21 +51,6 @@ const RULE_TYPE_META: Record<string, { label: string; summary: (t: AlertThreshol
         summary: (t) => `Disk > ${t.value ?? 90}%`,
         fields: ["value", "duration_sec"],
     },
-    relay_allowlist_violation: {
-        label: "Refused Destinations",
-        summary: (t) => `${t.count ?? 20} refused in ${t.window_sec ?? 300}s`,
-        fields: ["count", "window_sec"],
-    },
-    relay_egress_down: {
-        label: "Telegram Unreachable",
-        summary: (t) => `${t.count ?? 5} failed connections in ${t.window_sec ?? 120}s`,
-        fields: ["count", "window_sec"],
-    },
-    relay_disguise_down: {
-        label: "Cover Site Down",
-        summary: () => "Fires when an MTProto node's cover site stops working.",
-        fields: [],
-    },
     reverse_tunnel_down: {
         label: "Reverse Tunnel Down",
         summary: (t) => `Bridge disconnected for ${t.duration_sec ?? 180}s`,

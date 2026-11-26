@@ -10,12 +10,12 @@ function Harness() {
     const form = useForm<CoreFormData>({
         resolver: zodResolver(coreFormSchema),
         mode: "onBlur",
-        defaultValues: { node_id: 4, protocol: "mtproto", listen: "0.0.0.0", port: 8443, egress_mode: "hub", remark: "" },
+        defaultValues: { node_id: 4, protocol: "mtproto", listen: "0.0.0.0", port: 8443, egress_mode: "direct", remark: "" },
     })
     return (
         <Form {...form}>
             <form onSubmit={form.handleSubmit(() => {})}>
-                <GeneralTab form={form} nodeName="VPS 1" builtIn={false} lite />
+                <GeneralTab form={form} nodeName="VPS 1" builtIn={false} />
                 <button type="submit">Save</button>
             </form>
         </Form>

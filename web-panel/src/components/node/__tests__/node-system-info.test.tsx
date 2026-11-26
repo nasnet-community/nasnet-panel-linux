@@ -5,7 +5,7 @@ import type { Node, NodeOverview } from "@/lib/types"
 
 vi.mock("@/lib/queries/use-nodes", () => ({ useNodeHostInfo: () => ({ data: undefined, isLoading: false }) }))
 
-const node = { id: 2, name: "Frankfurt", ip: "203.0.113.2", kind: "full", connect_mode: "direct", is_online: true } as Node
+const node = { id: 2, name: "Frankfurt", ip: "203.0.113.2", connect_mode: "direct", is_online: true } as Node
 
 function overview(agent: Partial<NodeOverview["agent"]>): NodeOverview {
     return {

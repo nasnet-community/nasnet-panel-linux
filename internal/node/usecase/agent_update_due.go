@@ -127,7 +127,7 @@ func agentUpdateDue(running, runningBuild, bundled, bundledBuild string) bool {
 // agentUpdate is whether a node can take the agent this hub ships, with the
 // build it runs and the one it would get.
 func (u *nodeUsecase) agentUpdate(node *domain.Node, running string) (due bool, build, bundledBuild string) {
-	if node.IsLocal() || node.IsLite() || node.LastHostInfo == nil {
+	if node.IsLocal() || node.LastHostInfo == nil {
 		return false, "", ""
 	}
 	build = u.agentBuild(node.ID)
@@ -143,7 +143,7 @@ func (u *nodeUsecase) AgentUpdates(ctx context.Context) (map[uint]bool, error) {
 	}
 	out := make(map[uint]bool, len(nodes))
 	for _, n := range nodes {
-		if n.IsLocal() || n.IsLite() {
+		if n.IsLocal() {
 			continue
 		}
 		out[n.ID], _, _ = u.agentUpdate(n, u.runningAgentVersion(n))

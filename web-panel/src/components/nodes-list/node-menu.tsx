@@ -1,4 +1,3 @@
-import { Link } from "react-router"
 import { Activity, Copy, Download, MoreVertical, ShieldOff, Terminal, Trash2, Wrench } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,9 +26,9 @@ export interface NodeActions {
 
 /** The ⋯ menu on a card or row; always visible, so touch can reach it. */
 export function NodeMenu({ view, actions, className }: { view: NodeView; actions: NodeActions; className?: string }) {
-    const { node, status, local, lite } = view
+    const { node, status, local } = view
     // Only a server we install the agent on can be deployed to, wiped or deleted from here.
-    const remote = !local && !lite
+    const remote = !local
     const checking = useNodesStore((s) => s.checkingHealthId === node.id)
     const copyIP = async () => {
         if (await copyToClipboard(node.ip)) toast.success("IP copied", { description: node.ip })
@@ -74,17 +73,6 @@ export function NodeMenu({ view, actions, className }: { view: NodeView; actions
                     <DropdownMenuItem className="gap-2" onSelect={() => actions.startMaintenance(node)}>
                         <Wrench className="size-4" /> Start maintenance…
                     </DropdownMenuItem>
-                )}
-                {lite && (
-                    <>
-                        <DropdownMenuSeparator />
-                        {/* An MTProto node is removed from its own page, which can ask for the SSH login. */}
-                        <DropdownMenuItem asChild className="gap-2 text-red-500 focus:bg-red-500/10 focus:text-red-500">
-                            <Link to={`/nodes/${node.id}`}>
-                                <Trash2 className="size-4 text-current" /> Remove…
-                            </Link>
-                        </DropdownMenuItem>
-                    </>
                 )}
                 {remote && (
                     <>

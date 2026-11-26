@@ -1,5 +1,5 @@
 import { useMemo, useRef, type MouseEvent, type PointerEvent, type ReactNode } from "react"
-import { AlertTriangle, ChevronRight, Clock, Download, FileDiff, OctagonX, RefreshCw, Router, SatelliteDish, Send, Terminal, Undo2, Unlink } from "lucide-react"
+import { AlertTriangle, ChevronRight, Clock, Download, FileDiff, OctagonX, RefreshCw, Router, SatelliteDish, Terminal, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { CountryFlag } from "@/components/ui/country-flag"
@@ -7,17 +7,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AreaSparkline, type SparkPoint } from "@/components/node/overview/area-sparkline"
 import { HOST_COLORS } from "@/components/node/overview/overview-helpers"
 import { T } from "@/components/node/node-ui"
-import { PROXY_LABEL } from "@/components/mtproto/overview/mtproto-health"
 import { chart } from "@/lib/design/palette"
 import { nodeAddress, outageReasonLabel } from "@/lib/node-kind"
 import { useLongPress } from "@/lib/hooks/use-long-press"
 import { cn, copyToClipboard, formatSpeed } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { useNodesStore } from "@/store/nodes-store"
-import type { MtprotoNodeSummary } from "@/lib/api/mtproto"
 import type { NodeDigest } from "@/lib/types"
 import {
-    clockTime, downUp, liteProxy, outagesText, shortDuration, speedOf, splitBytes, uptimeText, usageTone, usersOf, usersOnline,
+    clockTime, downUp, outagesText, shortDuration, speedOf, splitBytes, uptimeText, usageTone, usersOf, usersOnline,
     type IssueKind, type NodeIssue, type NodeView, type Tone,
 } from "./facts"
 import { NodeMenu, type NodeActions } from "./node-menu"
@@ -32,8 +30,6 @@ const ISSUE_ICON: Record<IssueKind, typeof AlertTriangle> = {
     cpu: AlertTriangle,
     drift: FileDiff,
     agent: Download,
-    proxy: OctagonX,
-    link: Unlink,
 }
 
 const ISSUE_TONE: Record<NodeIssue["tone"] | "neutral", string> = {
@@ -95,7 +91,7 @@ export function statusText(view: NodeView, now: number): { text: string; classNa
 export function NodeTags({ view, iconsOnly }: { view: NodeView; iconsOnly?: boolean }) {
     const n = view.node
     const starlink = !!n.starlink_settings?.enabled && !n.is_stealth
-    if (n.connect_mode !== "reverse" && !starlink && !view.local && !view.lite) return null
+    if (n.connect_mode !== "reverse" && !starlink && !view.local) return null
     const chip = "inline-flex h-[22px] shrink-0 items-center gap-1 rounded-full border px-2 text-[12px] text-muted-foreground"
     return (
         <>
@@ -103,12 +99,6 @@ export function NodeTags({ view, iconsOnly }: { view: NodeView; iconsOnly?: bool
                 <span className={cn(chip, "border-transparent bg-status-info-soft text-status-info", iconsOnly && "px-1.5")} title="Runs inside this panel; no agent">
                     <Router className="size-3.5" aria-hidden />
                     <span className={cn(iconsOnly ? "sr-only" : "@max-[420px]:sr-only")}>This router</span>
-                </span>
-            )}
-            {view.lite && (
-                <span className={cn(chip, iconsOnly && "px-1.5")} title="Runs only the MTProto agent">
-                    <Send className="size-3.5" aria-hidden />
-                    <span className={cn(iconsOnly ? "sr-only" : "@max-[420px]:sr-only")}>MTProto</span>
                 </span>
             )}
             {n.connect_mode === "reverse" && (
@@ -188,27 +178,6 @@ function Figure({ label, value, unit, sub }: { label: string; value: ReactNode; 
                 {unit && <span className="ml-1 text-[13px] font-medium tracking-normal text-muted-foreground">{unit}</span>}
             </div>
             <div className={cn(T.meta, "truncate")}>{sub ?? " "}</div>
-        </div>
-    )
-}
-
-/** An MTProto node has no host readings: its streams, link and proxy instead. */
-function LiteMeters({ s }: { s?: MtprotoNodeSummary }) {
-    if (!s) return <div className="grid grid-cols-3 gap-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-6" />)}</div>
-    const streams = s.max_streams ? (s.streams / s.max_streams) * 100 : 0
-    const link = s.link_conns ? (s.link_up / s.link_conns) * 100 : 0
-    const proxy = liteProxy(s)
-    return (
-        <div className="grid grid-cols-3 gap-4">
-            <Meter label="Streams" value={streams} text={s.streams.toLocaleString()} color={HOST_COLORS.cpu} tone={streams >= 95 ? "crit" : streams >= 80 ? "warn" : ""} />
-            <Meter label="Link" value={link} text={s.rtt_ms !== undefined ? `${s.rtt_ms} ms` : "—"} color={chart.emerald} tone={s.link_up === 0 ? "crit" : link < 100 ? "warn" : ""} />
-            <Meter
-                label="Proxy"
-                value={proxy === "running" ? 100 : 0}
-                text={PROXY_LABEL[proxy]}
-                color={chart.emerald}
-                tone={proxy === "crashing" || proxy === "stopped" ? "crit" : proxy === "held" ? "warn" : ""}
-            />
         </div>
     )
 }
@@ -313,7 +282,7 @@ export function NodeCard({ view, now, actions, selectMode, selected, compact, on
                             label={compact ? "Users" : "Users online"}
                             value={users ?? "—"}
                             unit={usersTotal !== undefined ? `of ${usersTotal}` : undefined}
-                            sub={usersTotal !== undefined ? (view.lite ? "users" : "active accounts") : undefined}
+                            sub={usersTotal !== undefined ? "active accounts" : undefined}
                         />
                         {today === undefined ? (
                             <div className="space-y-1.5 pt-1"><Skeleton className="h-3 w-12" /><Skeleton className="h-6 w-16" /></div>
@@ -341,7 +310,7 @@ export function NodeCard({ view, now, actions, selectMode, selected, compact, on
                             />
                         )}
                     </div>
-                    {!compact && !view.lite && (
+                    {!compact && (
                         <div className="fade grid gap-1">
                             {digest ? (
                                 <AreaSparkline
@@ -359,15 +328,11 @@ export function NodeCard({ view, now, actions, selectMode, selected, compact, on
                             </div>
                         </div>
                     )}
-                    {view.lite ? (
-                        <div className="fade"><LiteMeters s={view.mtproto} /></div>
-                    ) : (
-                        <div className="fade grid grid-cols-3 gap-4">
-                            <Meter label="CPU" value={stats?.cpu_percent} color={HOST_COLORS.cpu} tone={usageTone("cpu", stats?.cpu_percent)} />
-                            <Meter label="Memory" value={stats?.memory_percent} color={HOST_COLORS.memory} tone={usageTone("memory", stats?.memory_percent)} />
-                            <Meter label="Disk" value={stats?.disk_percent} color={HOST_COLORS.disk} tone={usageTone("disk", stats?.disk_percent)} />
-                        </div>
-                    )}
+                    <div className="fade grid grid-cols-3 gap-4">
+                        <Meter label="CPU" value={stats?.cpu_percent} color={HOST_COLORS.cpu} tone={usageTone("cpu", stats?.cpu_percent)} />
+                        <Meter label="Memory" value={stats?.memory_percent} color={HOST_COLORS.memory} tone={usageTone("memory", stats?.memory_percent)} />
+                        <Meter label="Disk" value={stats?.disk_percent} color={HOST_COLORS.disk} tone={usageTone("disk", stats?.disk_percent)} />
+                    </div>
                 </div>
             )}
 
@@ -390,7 +355,7 @@ export function NodeCard({ view, now, actions, selectMode, selected, compact, on
 function CardNotice({ view, now, actions, readingAt }: { view: NodeView; now: number; actions: NodeActions; readingAt?: number }) {
     const n = view.node
     const checking = useNodesStore((s) => s.checkingHealthId === n.id)
-    const remote = !view.local && !view.lite
+    const remote = !view.local
     if (view.status === "pending") {
         return (
             <div className="grid gap-2 rounded-xl bg-muted px-3 py-2.5 text-[13px] leading-[18px]">

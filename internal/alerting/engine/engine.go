@@ -55,13 +55,6 @@ type Engine struct {
 	// tunnelID → the reverse tunnel outage still in progress, re-evaluated on
 	// the tick like a node that stays down
 	tunnelsDown map[uint]events.ReverseTunnelPayload
-	// MTProto counting rules: "type:nodeID" → occurrences, oldest first
-	mtprotoWindows map[string][]mtprotoHit
-	// MTProto counting rules we fired: "ruleID:entity" → state the tick resolves from
-	mtprotoFiring map[string]mtprotoFire
-	// enabled rules, cached briefly for the MTProto node events that come in floods
-	ruleCache   []*domain.Rule
-	ruleCacheAt time.Time
 }
 
 type nodeMetaEntry struct {
@@ -82,8 +75,6 @@ func NewEngine(bus *events.EventBus, repo repository.AlertRepository) *Engine {
 		latestOffline:  make(map[uint]events.NodeStatusPayload),
 		nodeMeta:       make(map[uint]nodeMetaEntry),
 		tunnelsDown:    make(map[uint]events.ReverseTunnelPayload),
-		mtprotoWindows: make(map[string][]mtprotoHit),
-		mtprotoFiring:  make(map[string]mtprotoFire),
 	}
 }
 
@@ -96,7 +87,6 @@ func (e *Engine) Start(parent context.Context) {
 
 	// Rehydrate firing state. No re-fire — resolves only.
 	if firing, err := e.repo.ListFiringStates(ctx); err == nil {
-		e.rehydrateMTProto(ctx, firing)
 		logger.GetLogger().Infof("AlertEngine: rehydrated %d firing state rows", len(firing))
 	}
 
@@ -173,13 +163,6 @@ func (e *Engine) handleEvent(ctx context.Context, ev events.Event) {
 			e.rememberMeta(p.NodeID, p.NodeName, p.IP)
 			e.resolveCrashLoop(ctx, p)
 		}
-	case events.EventMTProtoTelemtCrashLoop, events.EventMTProtoTelemtUp,
-		events.EventMTProtoViolation, events.EventMTProtoEgressFailed,
-		events.EventMTProtoDisguiseDown, events.EventMTProtoDisguiseUp:
-		if p, ok := ev.Payload.(events.MTProtoPayload); ok {
-			e.rememberMeta(p.NodeID, p.NodeName, "")
-			e.handleMTProto(ctx, ev.Type, p)
-		}
 	case events.EventNodeDeleted, events.EventNodeUpdated:
 		// A node that is gone or taken out of service on purpose is not an
 		// outage: stop re-alerting on the tick.
@@ -249,8 +232,6 @@ func (e *Engine) tick(ctx context.Context) {
 			for _, p := range pending {
 				e.evalNodeOfflineForRule(ctx, rule, p)
 			}
-		case domain.RuleTypeMTProtoAllowlistViolation, domain.RuleTypeMTProtoEgressDown:
-			e.resolveQuietMTProto(ctx, rule)
 		}
 	}
 }
@@ -459,9 +440,7 @@ func levelFor(t domain.RuleType) string {
 	switch t {
 	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop, domain.RuleTypeReverseTunnelDown:
 		return "error"
-	case domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown:
-		return "error"
-	case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk, domain.RuleTypeMTProtoAllowlistViolation:
+	case domain.RuleTypeHighCPU, domain.RuleTypeHighDisk:
 		return "warning"
 	}
 	return "info"

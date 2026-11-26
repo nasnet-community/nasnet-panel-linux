@@ -228,9 +228,6 @@ func (u *nodeUsecase) prepareReverseTunnel(ctx context.Context, t *domain.Revers
 		if err != nil {
 			return fmt.Errorf("portal node not found")
 		}
-		if node.IsLite() {
-			return fmt.Errorf("an MTProto node runs no Xray, so it can't be a tunnel's portal")
-		}
 		portal = node
 		if err := u.checkReversePortal(ctx, t); err != nil {
 			return err
@@ -247,9 +244,6 @@ func (u *nodeUsecase) prepareReverseTunnel(ctx context.Context, t *domain.Revers
 		node, err := u.nodeRepo.GetNode(ctx, *t.BridgeNodeID)
 		if err != nil {
 			return fmt.Errorf("bridge node not found")
-		}
-		if node.IsLite() {
-			return fmt.Errorf("an MTProto node runs no Xray, so it can't be a tunnel's bridge")
 		}
 		bridge = node
 		if err := u.checkReverseExit(ctx, t); err != nil {

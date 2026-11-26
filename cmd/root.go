@@ -36,9 +36,7 @@ import (
 
 	coreDomain "github.com/nasnet-community/nasnet-panel-linux/internal/core/domain"
 	coreRepository "github.com/nasnet-community/nasnet-panel-linux/internal/core/repository"
-	coreUsecase "github.com/nasnet-community/nasnet-panel-linux/internal/core/usecase"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/monitor"
-	"github.com/nasnet-community/nasnet-panel-linux/internal/mtprotonode"
 	networkDomain "github.com/nasnet-community/nasnet-panel-linux/internal/network/domain"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/network/preflight"
 	networkRepo "github.com/nasnet-community/nasnet-panel-linux/internal/network/repository"
@@ -244,11 +242,14 @@ func runServe(cmd *cobra.Command, args []string) {
 		&coreDomain.CoreInbound{},
 		&coreDomain.CoreUser{},
 		&coreDomain.NodeCoreSetting{},
-		&mtprotonode.LiteNode{},
-		&mtprotonode.UsageBaseline{},
 		&updateDomain.PanelUpdate{},
 	); err != nil {
 		log.WithError(err).Fatal("Failed to run migrations")
+	}
+	if n, err := dropMTProtoNodes(db); err != nil {
+		log.WithError(err).Error("Failed to remove the MTProto nodes")
+	} else if n > 0 {
+		log.WithField("count", n).Warn("Removed the MTProto nodes: the panel no longer supports them, and their servers keep running the agent until it is uninstalled there")
 	}
 
 	// Singleton roles need a DB constraint
@@ -468,36 +469,12 @@ func runServe(cmd *cobra.Command, args []string) {
 	if networkUC != nil {
 		tunnelFirewall = networkUC.OnInboundsChanged
 	}
-	// declared first: the MTProto node manager and the core usecase need each other
-	var coreUC *coreUsecase.CoreUsecase
-	mtprotoMgr, mtprotoAllow, err := newMTProtoNodes(mtprotoDeps{
-		DB: db, Nodes: uc.Node, Network: networkUC, Bus: eventBus, HTTP: httpFactory,
-		Setting: func(ctx context.Context, key string) (string, error) {
-			s, err := repos.Setting.GetByKey(ctx, key)
-			if err != nil {
-				return "", err
-			}
-			return s.Value, nil
-		},
-		Reconcile: func(ctx context.Context, nodeID uint) error {
-			if coreUC == nil {
-				return nil
-			}
-			return coreUC.ReconcileNodeByID(ctx, nodeID)
-		},
-		RouterMode: cfg.Router.Enabled, Log: log,
-	})
-	if err != nil {
-		log.WithError(err).Fatal("Failed to build the MTProto node manager")
-	}
-	mtprotoAPI := newMTProtoAPI(mtprotoDeps{DB: db, Nodes: uc.Node, HTTP: httpFactory, Log: log}, repos.Node, mtprotoMgr, mtprotoAllow)
 	tunnels := tunnelDeps{
-		MTProto: mtprotoMgr,
-		Repo:    coreRepo, Subs: repos.Subscription, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
+		Repo: coreRepo, Subs: repos.Subscription, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
 		BaseURL: cfg.App.BaseURL, PanelPort: cfg.App.Port, HubPort: hubPort,
 		InboundsChanged: tunnelFirewall, RouterMode: cfg.Router.Enabled, Log: log,
 	}
-	coreUC = newTunnelUsecase(tunnels)
+	coreUC := newTunnelUsecase(tunnels)
 	tunnelInstaller := newTunnelInstaller(tunnels)
 	uc.Node.SetCoreReconcileFn(func(ctx context.Context, client agent.NodeClient, nodeID uint) error {
 		return coreUC.ReconcileNode(ctx, client, nodeID)
@@ -923,12 +900,6 @@ func runServe(cmd *cobra.Command, args []string) {
 	uc.Node.StartHeartbeats(bgCtx)
 	log.Info("Heartbeat Manager started")
 
-	// MTProto (lite) nodes: one link per node, driven for as long as the panel runs.
-	if err := mtprotoMgr.Start(bgCtx); err != nil {
-		log.WithError(err).Warn("MTProto node manager did not start")
-	}
-	go mtprotoAllow.Run(bgCtx)
-
 	// --- Reverse-mode node hub ---
 	heartbeatMgr := uc.Node.GetHeartbeatManager()
 	reverseRegistry.SetCallbacks(
@@ -1000,7 +971,6 @@ func runServe(cmd *cobra.Command, args []string) {
 			TunnelInstall: tunnelInstaller,
 		},
 		Admin: httpTransport.AdminDeps{
-			MTProto:            mtprotoAPI,
 			NodePools:          uc.NodePools,
 			AdminUsecase:       uc.Admin,
 			AccountUsecase:     uc.Account,
@@ -1123,7 +1093,6 @@ func runServe(cmd *cobra.Command, args []string) {
 		relCancel()
 	}
 	hubServer.Stop()
-	mtprotoMgr.Stop()
 	embeddedSrv.Stop(shutdownCtx) // stop in process xray
 	uc.Node.StopHeartbeats()
 	uc.AlertEngine.Stop()

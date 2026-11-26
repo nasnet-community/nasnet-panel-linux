@@ -96,7 +96,7 @@ func (a *SubAdapter) SetSubMaintenance(ctx context.Context, id uint, active bool
 
 // GetSubLinkedNodeIDs returns the distinct set of node IDs linked to a
 // subscription via the inbounds of its provisioned accounts, and via its
-// tunnels, which is how MTProto node users are linked.
+// tunnels.
 func (a *SubAdapter) GetSubLinkedNodeIDs(ctx context.Context, id uint) ([]uint, error) {
 	var rows []struct {
 		NodeID uint

@@ -497,15 +497,6 @@ export const CARDS: CardDef[] = [
         ],
         effect: () => ({ text: "Applies within a minute." }),
     },
-    {
-        id: "mtproto-nodes", section: "nodes", title: "MTProto nodes", icon: Globe,
-        description: "Where MTProto nodes get Telegram's address list.", keywords: "mtproto telegram cidr relay allowlist",
-        fields: [
-            { key: "relay_cidr_url", label: "Address list", type: "text", mono: true, placeholder: "Telegram's own list", format: v => v === "off" ? "Built-in list only" : v || "Telegram's own list", hint: "Refreshed daily and only adds ranges. \"off\" keeps the built-in list." },
-        ],
-        validate: (d): Record<string, string> => (d.relay_cidr_url && d.relay_cidr_url !== "off" && urlError(d.relay_cidr_url) ? { relay_cidr_url: urlError(d.relay_cidr_url) } : {}),
-        effect: () => ({ text: "Applies at the next daily refresh." }),
-    },
 
     // ---------- Security ----------
     {

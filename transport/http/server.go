@@ -96,8 +96,6 @@ type CoreDeps struct {
 
 // AdminDeps holds admin-panel and extended usecases (optional)
 type AdminDeps struct {
-	// MTProto serves the MTProto (lite) node API; nil leaves it off.
-	MTProto            interface{ RegisterRoutes(gin.IRouter) }
 	NodePools          *nodeUCPkg.OutboundPoolService
 	AdminUsecase       adminUC.AdminUsecase
 	AccountUsecase     accountUC.AccountUsecase
@@ -447,11 +445,6 @@ func NewServer(deps ServerDeps) *Server {
 				coreHandler.AttachInstall(deps.Core.TunnelInstall)
 			}
 			coreHandler.RegisterRoutes(adminAPI)
-		}
-
-		// MTProto nodes (lite)
-		if deps.Admin.MTProto != nil {
-			deps.Admin.MTProto.RegisterRoutes(adminAPI)
 		}
 
 		// Router mode

@@ -1,5 +1,5 @@
 import { useRef, type MouseEvent, type PointerEvent } from "react"
-import { ArrowDown, ArrowUp, ChevronRight, Router, SatelliteDish, Send } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronRight, Router, SatelliteDish } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { CountryFlag } from "@/components/ui/country-flag"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -141,8 +141,8 @@ export function NodesTable(p: NodesTableProps) {
                             const users = usersOnline(v)
                             const usersTotal = usersOf(v)
                             const agent = agentVersionOf(v)
-                            const agentDue = v.agentDue || !!v.mtproto?.agent_update
-                            const xray = v.lite ? "" : v.stats?.xray_version || n.xray_version
+                            const agentDue = v.agentDue
+                            const xray = v.stats?.xray_version || n.xray_version
                             const today = v.digest ? v.digest.today.uplink + v.digest.today.downlink : undefined
                             const selected = p.selected.has(n.id)
                             return (
@@ -182,7 +182,7 @@ export function NodesTable(p: NodesTableProps) {
                                     </td>
                                     <td className={cn("py-2 pr-3", faded)}>
                                         <div className="text-sm font-semibold tabular-nums">{users ?? "—"}</div>
-                                        {usersTotal !== undefined && <div className="whitespace-nowrap text-[12px] text-muted-foreground">of {usersTotal} {v.lite ? "users" : "active"}</div>}
+                                        {usersTotal !== undefined && <div className="whitespace-nowrap text-[12px] text-muted-foreground">of {usersTotal} active</div>}
                                     </td>
                                     <td className={cn("py-2 pr-3", faded)}>
                                         {today === undefined ? <Skeleton className="h-4 w-16" /> : (
@@ -267,7 +267,6 @@ function PhoneRow({ view: v, now, selectMode, selected, onActivate, onToggle, on
                 <div className="flex min-w-0 items-center gap-1.5 text-[15px] font-semibold">
                     <span className="truncate">{n.name}</span>
                     {v.local && <Router className="size-3.5 shrink-0 text-status-info" aria-label="This router" />}
-                    {v.lite && <Send className="size-3.5 shrink-0 text-muted-foreground" aria-label="MTProto node" />}
                     {n.starlink_settings?.enabled && !n.is_stealth && <SatelliteDish className="size-3.5 shrink-0 text-muted-foreground" aria-label="On Starlink" />}
                     {worst && <IssueChip issue={worst} iconOnly />}
                 </div>

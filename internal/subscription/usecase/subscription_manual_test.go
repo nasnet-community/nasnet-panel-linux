@@ -172,7 +172,7 @@ type manualFixture struct {
 	core     *fakeCoreAssigner
 }
 
-// Node 1 has an Xray inbound (10); node 2 is an MTProto node with one tunnel (20);
+// Node 1 has an Xray inbound (10); node 2 has only a tunnel (20);
 // node 3 is inactive and carries tunnel 30.
 func newManualFixture(t *testing.T) *manualFixture {
 	t.Helper()

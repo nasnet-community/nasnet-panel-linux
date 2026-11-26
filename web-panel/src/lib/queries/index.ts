@@ -241,19 +241,3 @@ export {
     useToggleNodeProtocol,
     useNodeDeps,
 } from "./use-cores"
-
-// MTProto (lite) nodes
-export {
-    useMtprotoNode,
-    useMtprotoLogs,
-    useMtprotoAllowlist,
-    useRefreshMtprotoAllowlist,
-    useRestartMtprotoTelemt,
-    useSetMtprotoProxyStopped,
-    useCheckMtprotoDisguise,
-    useRefreshNodes,
-    useMtprotoNodes,
-    useMtprotoEvents,
-    useUpdateMtprotoSettings,
-    useUpdateMtprotoNodeSettings,
-} from "./use-mtproto"

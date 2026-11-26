@@ -15,11 +15,6 @@ const (
 	RuleTypeHighCPU       RuleType = "high_cpu"
 	RuleTypeHighDisk      RuleType = "high_disk"
 
-	// MTProto nodes. Their link and proxy crash loops reuse node_offline and node_crash_loop.
-	RuleTypeMTProtoAllowlistViolation RuleType = "relay_allowlist_violation"
-	RuleTypeMTProtoEgressDown         RuleType = "relay_egress_down"
-	RuleTypeMTProtoDisguiseDown       RuleType = "relay_disguise_down"
-
 	// RuleTypeReverseTunnelDown fires when a reverse tunnel's portal stops
 	// seeing its bridge.
 	RuleTypeReverseTunnelDown RuleType = "reverse_tunnel_down"
@@ -38,10 +33,8 @@ const (
 // Threshold is the serialised threshold payload. Field usage varies per
 // RuleType — evaluators interpret what they need and ignore the rest:
 //   - node_offline:     DurationSec (grace before firing)
-//   - node_crash_loop:  Count + WindowSec (an MTProto node's agent counts its own)
+//   - node_crash_loop:  Count + WindowSec
 //   - high_cpu/disk:    Value (%) + DurationSec (sustain)
-//   - relay_allowlist_violation, relay_egress_down: Count + WindowSec; resolve once the window is quiet
-//   - relay_disguise_down: none (fires on down, resolves on up)
 //   - reverse_tunnel_down: DurationSec (grace before firing)
 type Threshold struct {
 	Value       float64 `json:"value,omitempty"`

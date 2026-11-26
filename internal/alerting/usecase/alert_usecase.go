@@ -116,7 +116,6 @@ func validateRule(r *domain.Rule) error {
 	switch r.RuleType {
 	case domain.RuleTypeNodeOffline, domain.RuleTypeNodeCrashLoop,
 		domain.RuleTypeHighCPU, domain.RuleTypeHighDisk,
-		domain.RuleTypeMTProtoAllowlistViolation, domain.RuleTypeMTProtoEgressDown, domain.RuleTypeMTProtoDisguiseDown,
 		domain.RuleTypeReverseTunnelDown:
 	default:
 		return fmt.Errorf("unknown rule_type %q", r.RuleType)
@@ -166,7 +165,7 @@ func defaultRules() []*domain.Rule {
 			Scope:       domain.ScopeGlobal,
 			Threshold:   domain.Threshold{Count: 5, WindowSec: 300},
 			CooldownSec: 1800,
-			Description: "Fires when Xray restarts N times within a short window, or an MTProto node's proxy keeps crashing.",
+			Description: "Fires when Xray restarts N times within a short window.",
 		},
 		{
 			Name:        "High CPU",
@@ -185,29 +184,6 @@ func defaultRules() []*domain.Rule {
 			Description: "Fires when disk usage crosses the threshold.",
 		},
 		{
-			Name:        "MTProto refused destinations",
-			RuleType:    domain.RuleTypeMTProtoAllowlistViolation,
-			Scope:       domain.ScopeGlobal,
-			Threshold:   domain.Threshold{Count: 20, WindowSec: 300},
-			CooldownSec: 900,
-			Description: "Fires when an MTProto node keeps asking for addresses outside the Telegram list.",
-		},
-		{
-			Name:        "MTProto cannot reach Telegram",
-			RuleType:    domain.RuleTypeMTProtoEgressDown,
-			Scope:       domain.ScopeGlobal,
-			Threshold:   domain.Threshold{Count: 5, WindowSec: 120},
-			CooldownSec: 900,
-			Description: "Fires when the panel keeps failing to reach Telegram for an MTProto node.",
-		},
-		{
-			Name:        "MTProto cover site down",
-			RuleType:    domain.RuleTypeMTProtoDisguiseDown,
-			Scope:       domain.ScopeGlobal,
-			CooldownSec: 3600,
-			Description: "Fires when an MTProto node's cover site stops working.",
-		},
-		{
 			// On from the start: it stays silent until someone builds a
 			// tunnel, and building one is asking to hear when it drops.
 			Name:        "Reverse tunnel down",
@@ -221,13 +197,6 @@ func defaultRules() []*domain.Rule {
 	}
 }
 
-// renamedDefaults is each seeded rule's old name and its current one.
-var renamedDefaults = map[domain.RuleType][2]string{
-	domain.RuleTypeMTProtoAllowlistViolation: {"Relay refused destinations", "MTProto refused destinations"},
-	domain.RuleTypeMTProtoEgressDown:         {"Relay cannot reach Telegram", "MTProto cannot reach Telegram"},
-	domain.RuleTypeMTProtoDisguiseDown:       {"Relay cover site down", "MTProto cover site down"},
-}
-
 // SeedDefaults inserts defaults once the table is empty. If any rule of
 // a given type already exists, we skip that type so re-running never
 // duplicates seeds.
@@ -239,12 +208,6 @@ func (u *alertUsecase) SeedDefaults(ctx context.Context) error {
 	seenTypes := make(map[domain.RuleType]bool, len(existing))
 	for _, r := range existing {
 		seenTypes[r.RuleType] = true
-		// rows seeded under the old names; one an admin renamed keeps its name
-		if to, ok := renamedDefaults[r.RuleType]; ok && r.Name == to[0] {
-			if err := u.repo.RenameRule(ctx, r.ID, to[0], to[1]); err != nil {
-				return err
-			}
-		}
 	}
 	for _, r := range defaultRules() {
 		if seenTypes[r.RuleType] {

@@ -17,7 +17,6 @@ import {
 import { Callout } from "@/components/connection-dialog/section"
 import { CountryFlag } from "@/components/ui/country-flag"
 import { listAllHosts } from "@/lib/api/hosts"
-import { isLiteNode } from "@/lib/node-kind"
 import { useBalancingRules, useNodeInbounds, useNodeOutbounds } from "@/lib/queries/use-nodes"
 import { useCreateReverseTunnel, useUpdateReverseTunnel } from "@/lib/queries/use-reverse-tunnels"
 import type { Inbound, Node, ReverseTunnel, ReverseTunnelInput } from "@/lib/types"
@@ -102,8 +101,7 @@ export function ReverseTunnelDialog({ open, onOpenChange, mode, tunnel, nodeId, 
         enabled: open && portalInboundId > 0,
     })
 
-    // MTProto nodes run no Xray, so they can be neither end
-    const otherNodes = useMemo(() => nodes.filter((n) => n.id !== nodeId && !isLiteNode(n)), [nodes, nodeId])
+    const otherNodes = useMemo(() => nodes.filter((n) => n.id !== nodeId), [nodes, nodeId])
     const vlessInbounds = (portalNodeId === nodeId ? inbounds : portalInbounds).filter(
         (i) => i.protocol === "vless" && !i.is_disabled,
     )

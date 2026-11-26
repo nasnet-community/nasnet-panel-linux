@@ -20,8 +20,6 @@ import { UpdateAgentDialog } from "@/components/update-agent-dialog"
 import { MigrationDialog } from "@/components/node/migration-dialog"
 import { BulkNodeActionsBar } from "@/components/node/bulk-node-actions-bar"
 import { WipeConfirmBody } from "@/components/node/wipe-confirm-body"
-import { AddNodeKindPicker } from "@/components/node/add-node-kind-picker"
-import { AddMtprotoNodeDialog } from "@/components/mtproto/add-mtproto-node-dialog"
 import { useEventsStatus } from "@/components/providers/events-provider"
 import { FleetTiles } from "@/components/nodes-list/fleet-tiles"
 import { NodeCard, NodeCardSkeleton } from "@/components/nodes-list/node-card"
@@ -32,14 +30,13 @@ import type { NodeActions } from "@/components/nodes-list/node-menu"
 import { buildView, DEFAULT_SORT, firstDir, orderViews, type NodeView, type Sort, type SortKey } from "@/components/nodes-list/facts"
 import { useIsMobile } from "@/hooks/use-is-mobile"
 import { useLocalStorage } from "@/hooks/use-local-storage"
-import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, useNodesDigest, useCreateNode, useDeleteNode, useCheckNodeHealth, useMtprotoNodes } from "@/lib/queries"
+import { useNodes, useNodesStatsBulk, useNodesStatsHistoryBulk, useNodesDigest, useCreateNode, useDeleteNode, useCheckNodeHealth } from "@/lib/queries"
 import { useAgentUpdates } from "@/lib/queries/use-bulk-agent-update"
 import { queryKeys } from "@/lib/queries/keys"
 import { wipeNode } from "@/lib/api/nuke"
 import { setNodeMaintenance } from "@/lib/api/maintenance"
 import { getApiBaseUrl } from "@/lib/config"
 import { nodeSchema } from "@/lib/validations/node-schema"
-import { isLiteNode } from "@/lib/node-kind"
 import type { Node, NodeStats } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "@/lib/toast"
@@ -78,9 +75,7 @@ export default function NodesPage() {
     // Edits the stream doesn't announce (maintenance, Xray stopped) still
     // arrive within a minute.
     const { data: nodes = [], isLoading } = useNodes(true, { poll: live ? 60_000 : 15_000 })
-    // MTProto nodes have no stats sweep; one call covers them all.
-    const onlineIds = useMemo(() => nodes.filter((n) => n.is_online && !isLiteNode(n)).map((n) => n.id), [nodes])
-    const { data: mtprotoSummaries } = useMtprotoNodes(nodes.some(isLiteNode))
+    const onlineIds = useMemo(() => nodes.filter((n) => n.is_online).map((n) => n.id), [nodes])
     const { data: bulkStats } = useNodesStatsBulk(onlineIds, onlineIds.length > 0, live ? 60_000 : 15_000)
     const { data: history } = useNodesStatsHistoryBulk(onlineIds, 15, onlineIds.length > 0)
     const { data: digests } = useNodesDigest(nodes.length > 0)
@@ -97,9 +92,8 @@ export default function NodesPage() {
         const key = String(n.id)
         // A node that just went down keeps the readings the browser already had.
         const reading = bulkStats?.[key]?.stats ?? queryClient.getQueryData<NodeStats>(queryKeys.nodeStats(n.id))
-        const mtproto = isLiteNode(n) ? mtprotoSummaries?.find((s) => s.node_id === n.id) : undefined
-        return buildView(n, reading, digests?.[key], !!agentDue?.[key], now, mtproto)
-    }), [nodes, bulkStats, digests, agentDue, now, queryClient, mtprotoSummaries])
+        return buildView(n, reading, digests?.[key], !!agentDue?.[key], now)
+    }), [nodes, bulkStats, digests, agentDue, now, queryClient])
 
     const cardsOrder = useMemo(() => orderViews(views), [views])
     const listOrder = useMemo(() => orderViews(views, sort), [views, sort])
@@ -158,18 +152,6 @@ export default function NodesPage() {
     }
 
     const confirm = useConfirm()
-    const [mtprotoDialogOpen, setMtprotoDialogOpen] = useState(false)
-    // The add dialog opens on a choice of node kind.
-    const [addKind, setAddKind] = useState<"choose" | "full">("choose")
-    const startAdd = () => {
-        setAddKind("choose")
-        openAddDialog()
-    }
-    const addMTProtoNode = () => {
-        closeAddDialog()
-        setAddKind("choose")
-        setMtprotoDialogOpen(true)
-    }
     const [migrationNode, setMigrationNode] = useState<Node | null>(null)
     const [deleteConflictNode, setDeleteConflictNode] = useState<Node | null>(null)
     const [maintenanceNode, setMaintenanceNode] = useState<Node | null>(null)
@@ -313,7 +295,7 @@ export default function NodesPage() {
                             <SquareCheck className="size-[18px]" />
                         </Button>
                     )}
-                    <Button variant="ghost" size="icon" className="size-10" onClick={startAdd} aria-label="Add node">
+                    <Button variant="ghost" size="icon" className="size-10" onClick={openAddDialog} aria-label="Add node">
                         <Plus className="size-[18px]" />
                     </Button>
                 </div>
@@ -336,7 +318,7 @@ export default function NodesPage() {
                             {selectMode ? "Done" : "Select"}
                         </Button>
                     )}
-                    <Button onClick={startAdd}>
+                    <Button onClick={openAddDialog}>
                         <Plus className="size-4" />
                         Add node
                     </Button>
@@ -350,7 +332,7 @@ export default function NodesPage() {
                     <p className="max-w-[42ch] text-sm text-muted-foreground">
                         A node is a server that runs the NasNet agent and carries your users' traffic. Add one, and the next step installs the agent.
                     </p>
-                    <Button onClick={startAdd}><Plus className="size-4" />Add node</Button>
+                    <Button onClick={openAddDialog}><Plus className="size-4" />Add node</Button>
                 </div>
             ) : (
                 <>
@@ -410,35 +392,13 @@ export default function NodesPage() {
                 </>
             )}
 
-            <AddMtprotoNodeDialog
-                open={mtprotoDialogOpen}
-                onOpenChange={setMtprotoDialogOpen}
-                onBack={() => {
-                    setMtprotoDialogOpen(false)
-                    startAdd()
-                }}
-                onInstalled={(id) => {
-                    queryClient.invalidateQueries({ queryKey: queryKeys.nodeList() })
-                    navigate(`/nodes/${id}`)
-                }}
-            />
-
             {/* Add Node Dialog */}
-            <Dialog open={addDialogOpen} onOpenChange={(open) => {
-                if (open) return openAddDialog()
-                closeAddDialog()
-                setAddKind("choose")
-            }}>
+            <Dialog open={addDialogOpen} onOpenChange={(open) => (open ? openAddDialog() : closeAddDialog())}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Add node</DialogTitle>
-                        <DialogDescription>
-                            {addKind === "choose" ? "Pick what the node will run." : "A remote machine that runs the NasNet agent."}
-                        </DialogDescription>
+                        <DialogDescription>A remote machine that runs the NasNet agent.</DialogDescription>
                     </DialogHeader>
-                    {addKind === "choose" ? (
-                        <AddNodeKindPicker onPick={(kind) => (kind === "full" ? setAddKind("full") : addMTProtoNode())} />
-                    ) : (
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
                             <Label htmlFor="name">Name</Label>
@@ -481,15 +441,12 @@ export default function NodesPage() {
                             <Input id="agent_port" type="number" className="w-32 font-mono" placeholder="9090" value={newNode.agent_port} onChange={(e) => updateNewNode({ agent_port: e.target.value })} />
                         </div>
                     </div>
-                    )}
-                    {addKind === "full" && (
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setAddKind("choose")}>Back</Button>
-                            <Button onClick={handleAddNode} disabled={createNodeMutation.isPending}>
-                                {createNodeMutation.isPending ? "Adding..." : "Add and deploy"}
-                            </Button>
-                        </DialogFooter>
-                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={closeAddDialog}>Cancel</Button>
+                        <Button onClick={handleAddNode} disabled={createNodeMutation.isPending}>
+                            {createNodeMutation.isPending ? "Adding..." : "Add and deploy"}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 
