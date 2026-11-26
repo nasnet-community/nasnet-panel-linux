@@ -100,6 +100,14 @@ flowchart LR
 
 > 🧭 **تازه‌کارید؟** راهنمای ساده و گام‌به‌گام [شروع به کار](./docs/getting-started.fa.md) ([English](./docs/getting-started.md)) را دنبال کنید — کل نصب را قدم‌به‌قدم پیش می‌برد.
 
+**نصب یک‌خطی** (Debian/Ubuntu) — نصب‌کنندهٔ تعاملی را دانلود می‌کند؛ بدون کلون و بدون toolchain. همه‌چیز را قدم‌به‌قدم می‌پرسد و باینری‌های تأییدشدهٔ ریلیز را نصب می‌کند:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nasnet-community/nasnet-panel-linux/main/nasnet-tool.sh -o nasnet-tool.sh && bash nasnet-tool.sh
+```
+
+### Docker (دستی)
+
 > نیازمند یک سرور Linux با **Docker** + **Docker Compose**. پورت پیش‌فرض پنل **`9761`** است.
 
 ```bash
@@ -173,7 +181,7 @@ docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d
 
 ## 🤝 مشارکت
 
-از مشارکت استقبال می‌شود. با [راهنمای توسعه](./docs/development.md) برای چیدمان پروژه، دستورالعمل‌های ساخت و نحوهٔ اجرای مجموعهٔ تست شروع کنید. لطفاً پیش از ارسال PR برای تغییرات قابل‌توجه، یک issue برای بحث باز کنید.
+از مشارکت استقبال می‌شود. [CONTRIBUTING.md](./CONTRIBUTING.md) و [راهنمای توسعه](./docs/development.md) را ببینید. لطفاً پیش از ارسال PR برای تغییرات قابل‌توجه، یک issue برای بحث باز کنید. گزارش امنیتی: [SECURITY.md](./SECURITY.md). تاریخچهٔ انتشار: [CHANGELOG.md](./CHANGELOG.md) و [`docs/releases/`](./docs/releases/).
 
 ## 📄 مجوز
 

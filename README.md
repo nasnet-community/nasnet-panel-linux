@@ -179,7 +179,7 @@ All configuration is environment-variable based (loaded from `.env`). The most i
 
 ## 🤝 Contributing
 
-Contributions are welcome. Start with the [development guide](./docs/development.md) for project layout, build instructions, and how to run the test suite. Please open an issue to discuss substantial changes before sending a PR.
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the [development guide](./docs/development.md). Please open an issue to discuss substantial changes before sending a PR. Security reports: [SECURITY.md](./SECURITY.md). Release history: [CHANGELOG.md](./CHANGELOG.md) and [`docs/releases/`](./docs/releases/).
 
 ## 📄 License
 
