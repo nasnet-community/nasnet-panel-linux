@@ -167,7 +167,7 @@ func TestStatusReadsTheOutbounds(t *testing.T) {
 	up.Tag, down.Tag, unchecked.Tag, plain.Tag = "out-1.", "out-2.", "out-3.", "out-4."
 	down.Fallback, unchecked.Fallback = true, true
 	b.spec.Outbounds = []bridgespec.Outbound{up, down, unchecked, plain}
-	b.spec.OutboundAddr = "192.168.50.16"
+	b.spec.OutboundAddr = "192.168.150.80"
 
 	setCounter(t, mgr, "outbound>>>out-1.>>>traffic>>>uplink", 100)
 	setCounter(t, mgr, "outbound>>>out-1.>>>traffic>>>downlink", 2000)
@@ -264,7 +264,7 @@ func TestStatusGivesTheShortReason(t *testing.T) {
 	b, _ := statusBridge(t, newClock())
 	o := testOutbounds()["socks"]
 	o.Tag = "out-1."
-	b.spec.Outbounds, b.spec.OutboundAddr = []bridgespec.Outbound{o}, "192.168.50.16"
+	b.spec.Outbounds, b.spec.OutboundAddr = []bridgespec.Outbound{o}, "192.168.150.80"
 	b.checks = fakeChecks{{OutboundTag: o.Tag, LastErrorReason: "the outbound out-1. is dead: GET request failed:app/observatory: " +
 		"outbound failed to relay connection > Get \"http://127.0.0.1:53040/check\": io: read/write on closed pipewith outbound handler report underlying connection failed"}}
 	if got := b.status().Outbounds[0].Error; got != "The outbound gave up before an answer came." {

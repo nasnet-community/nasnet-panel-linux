@@ -162,7 +162,7 @@ func TestReadErrors(t *testing.T) {
 		{"unknown field", frameOf(bytes.Replace(good, []byte(`"version"`), []byte(`"surprise":1,"version"`), 1)), nil, "unknown field"},
 		{"wrong type", frameOf(bytes.Replace(good, []byte(`"port":443`), []byte(`"port":"443"`), 1)), nil, "port"},
 		{"port out of range", frameOf(bytes.Replace(good, []byte(`"port":443`), []byte(`"port":70000`), 1)), nil, "port"},
-		{"valid JSON, invalid spec", frameOf(bytes.Replace(good, []byte(`"dial_addr":"192.168.50.18"`), []byte(`"dial_addr":"router"`), 1)), nil, "dial_addr"},
+		{"valid JSON, invalid spec", frameOf(bytes.Replace(good, []byte(`"dial_addr":"192.168.150.1"`), []byte(`"dial_addr":"router"`), 1)), nil, "dial_addr"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -232,15 +232,15 @@ func TestParseReadsHubJSON(t *testing.T) {
 			"flow": "xtls-rprx-vision", "reverse_tag": "rvs-from-node-1"
 		}],
 		"local": {
-			"listen_addr": "192.168.50.18", "port": 8443,
+			"listen_addr": "192.168.150.1", "port": 8443,
 			"private_key": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
 			"short_ids": ["0123456789abcdef"], "server_names": ["www.example.com"],
 			"target": "www.example.com:443", "flow": "xtls-rprx-vision",
 			"clients": [{"email": "sub-1@remote-nodes", "uuid": "11111111-2222-4333-8444-555555555551"}],
 			"token": "0123456789abcdef0123456789abcdef"
 		},
-		"dial_addr": "192.168.50.18",
-		"exit": {"addr": "192.168.50.17"},
+		"dial_addr": "192.168.150.1",
+		"exit": {"addr": "192.168.150.160"},
 		"dns": {"servers": ["1.1.1.1"]},
 		"status_addr": "127.0.0.1:18080"
 	}`
@@ -248,7 +248,7 @@ func TestParseReadsHubJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Nodes[0].Tag != "node-1" || s.Exit.Addr != "192.168.50.17" || len(s.Exit.Blocked) != 0 {
+	if s.Nodes[0].Tag != "node-1" || s.Exit.Addr != "192.168.150.160" || len(s.Exit.Blocked) != 0 {
 		t.Fatalf("parsed %+v", s)
 	}
 	if l := s.Local; l == nil || l.Port != 8443 || len(l.Clients) != 1 || l.Clients[0].Email != "sub-1@remote-nodes" {

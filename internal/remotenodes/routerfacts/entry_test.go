@@ -200,9 +200,9 @@ func TestCheckedAtIsWhenTheScriptWrote(t *testing.T) {
 func TestTheRoutesTable(t *testing.T) {
 	got := Facts{RouteForeign: true, RouteDomestic: true}.Routes()
 	want := []Route{
-		{"192.168.50.16", "downloads", "foreign", true},
-		{"192.168.50.17", "entry-exit", "vpn", false},
-		{"192.168.50.18", "nodes", "domestic", true},
+		{"192.168.150.80", "downloads", "foreign", true},
+		{"192.168.150.160", "entry-exit", "vpn", false},
+		{"192.168.150.1", "nodes", "domestic", true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
@@ -229,9 +229,9 @@ func TestWhyTheEntryIsOff(t *testing.T) {
 		"old RouterOS":       {func(f *Facts) { f.ROS = "7.19.2" }, "RouterOS 7.19.2 is older than the 7.20 this plugin needs"},
 		"no version":         {func(f *Facts) { f.ROS = "" }, "the router did not report its RouterOS version"},
 		"odd version":        {func(f *Facts) { f.ROS = "banana" }, `RouterOS "banana" can't be compared with the 7.20 this plugin needs`},
-		"no downloads route": {func(f *Facts) { f.RouteForeign = false }, "the router's route for downloads (192.168.50.16) is not ready"},
-		"no exit route":      {func(f *Facts) { f.RouteVPN = false }, "the router's route for entry-exit (192.168.50.17) is not ready"},
-		"no nodes route":     {func(f *Facts) { f.RouteDomestic = false }, "the router's route for nodes (192.168.50.18) is not ready"},
+		"no downloads route": {func(f *Facts) { f.RouteForeign = false }, "the router's route for downloads (192.168.150.80) is not ready"},
+		"no exit route":      {func(f *Facts) { f.RouteVPN = false }, "the router's route for entry-exit (192.168.150.160) is not ready"},
+		"no nodes route":     {func(f *Facts) { f.RouteDomestic = false }, "the router's route for nodes (192.168.150.1) is not ready"},
 	} {
 		f := everythingUp()
 		c.mod(&f)
@@ -249,7 +249,7 @@ func TestWhyTheEntryIsOff(t *testing.T) {
 	}
 	f = everythingUp()
 	f.VPN, f.RouteVPN, f.RouteForeign = false, false, false
-	want = "the VPN is down; the router's route for downloads (192.168.50.16) is not ready"
+	want = "the VPN is down; the router's route for downloads (192.168.150.80) is not ready"
 	if e := f.Entry(now, MinRouterOS); e.Reason != want {
 		t.Errorf("reason = %q\n want    %q", e.Reason, want)
 	}
@@ -306,7 +306,7 @@ func TestTheEntryIsTheContractsJSON(t *testing.T) {
 	if r := m["routerOS"].(map[string]any); r["version"] != "7.24.5" || r["min"] != "7.20" || r["ok"] != true {
 		t.Errorf("routerOS = %v", r)
 	}
-	if r := routes[2].(map[string]any); !maps.Equal(r, map[string]any{"address": "192.168.50.18", "usedFor": "nodes", "via": "domestic", "ready": true}) {
+	if r := routes[2].(map[string]any); !maps.Equal(r, map[string]any{"address": "192.168.150.1", "usedFor": "nodes", "via": "domestic", "ready": true}) {
 		t.Errorf("last route = %v", r)
 	}
 

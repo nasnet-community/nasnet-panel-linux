@@ -31,7 +31,7 @@ const (
 
 // NewClient returns a client whose connections leave from local, so that the
 // router can send them where downloads should go (the plugin uses its
-// 192.168.50.16, which is routed like the panel's own container). DNS lookups
+// 192.168.150.80, in the containers' foreign failover class). DNS lookups
 // are bound to it too, since a lookup from another address would be routed
 // somewhere else.
 //

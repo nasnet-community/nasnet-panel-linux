@@ -38,7 +38,7 @@ func outInput(nodes []model.Node, outs ...model.Outbound) (specInput, *int) {
 	in := input(nodes...)
 	looked := new(int)
 	names := map[string]string{"de.example.com": "198.51.100.7", "ws.example.com": "198.51.100.8"}
-	in.outbounds, in.from = outs, netip.MustParseAddr("192.168.50.16")
+	in.outbounds, in.from = outs, netip.MustParseAddr("192.168.150.80")
 	in.probe = bridgespec.Probe{URL: "https://example.com/204"}
 	in.outAddr = func(o model.Outbound) (netip.Addr, error) {
 		*looked++
@@ -82,7 +82,7 @@ func TestOnlyTheOutboundsInUseAreInTheSpec(t *testing.T) {
 	if len(spec.Outbounds) != 1 || spec.Outbounds[0].Tag != "out-2." || spec.Outbounds[0].Addr != "198.51.100.8" {
 		t.Fatalf("outbounds %+v", spec.Outbounds)
 	}
-	if spec.Nodes[0].Via != "" || spec.Nodes[1].Via != "out-2." || spec.OutboundAddr != "192.168.50.16" || spec.Probe.URL != "https://example.com/204" {
+	if spec.Nodes[0].Via != "" || spec.Nodes[1].Via != "out-2." || spec.OutboundAddr != "192.168.150.80" || spec.Probe.URL != "https://example.com/204" {
 		t.Errorf("spec %+v", spec)
 	}
 	if *looked != 1 || res.outs[2].tag != "out-2." || len(res.outs) != 1 {
@@ -200,7 +200,7 @@ func TestWhatLeavesThroughAnOutboundThatCantBeUsed(t *testing.T) {
 // and ready.
 func localBlockFor() *bridgespec.Local {
 	return &bridgespec.Local{
-		ListenAddr: "192.168.50.18", Port: DefaultLocalPort, PrivateKey: fixtureKey, ShortIDs: []string{"a1b2"},
+		ListenAddr: "192.168.150.1", Port: DefaultLocalPort, PrivateKey: fixtureKey, ShortIDs: []string{"a1b2"},
 		ServerNames: []string{"www.example.com"}, Target: "www.example.com:443", Flow: bridgespec.VisionFlow,
 		Token: strings.Repeat("a", 32),
 	}

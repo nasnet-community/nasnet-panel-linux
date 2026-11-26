@@ -13,9 +13,9 @@ import (
 )
 
 func TestADialerBoundToAnAddress(t *testing.T) {
-	d := Dialer(netip.MustParseAddr("192.168.50.16"))
+	d := Dialer(netip.MustParseAddr("192.168.150.80"))
 	la, ok := d.LocalAddr.(*net.TCPAddr)
-	if !ok || la.IP.String() != "192.168.50.16" || la.Port != 0 {
+	if !ok || la.IP.String() != "192.168.150.80" || la.Port != 0 {
 		t.Fatalf("local address %v", d.LocalAddr)
 	}
 	if d.Resolver == nil || !d.Resolver.PreferGo || d.Resolver.Dial == nil {
@@ -25,7 +25,7 @@ func TestADialerBoundToAnAddress(t *testing.T) {
 		t.Error("no dial timeout")
 	}
 	// an IPv4 address written as IPv6 is still IPv4 to the dialer
-	if la := Dialer(netip.MustParseAddr("::ffff:192.168.50.16")).LocalAddr.(*net.TCPAddr); len(la.IP.To4()) != 4 {
+	if la := Dialer(netip.MustParseAddr("::ffff:192.168.150.80")).LocalAddr.(*net.TCPAddr); len(la.IP.To4()) != 4 {
 		t.Errorf("a mapped address stayed IPv6: %v", la.IP)
 	}
 	// no address, or one that binds to nothing in particular, leaves the choice to the system

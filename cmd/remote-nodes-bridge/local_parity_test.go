@@ -33,7 +33,7 @@ const testForwarder = "127.0.0.1:41000"
 func localSpec() *bridgespec.Spec {
 	s := testSpec()
 	s.Local = &bridgespec.Local{
-		ListenAddr:  "192.168.50.18",
+		ListenAddr:  "192.168.150.1",
 		Port:        8443,
 		PrivateKey:  base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
 		ShortIDs:    []string{"0123456789abcdef"},
@@ -202,7 +202,7 @@ func TestLocalEntryStructure(t *testing.T) {
 	in := cfg.Inbound[0]
 
 	recv := instance(t, in.ReceiverSettings).(*proxyman.ReceiverConfig)
-	if got := recv.Listen.AsAddress().String(); got != "192.168.50.18" {
+	if got := recv.Listen.AsAddress().String(); got != "192.168.150.1" {
 		t.Errorf("listens on %s", got)
 	}
 	if ports := recv.PortList.Ports(); len(ports) != 1 || ports[0] != 8443 {

@@ -17,7 +17,7 @@ import (
 )
 
 func TestNewClientSettings(t *testing.T) {
-	c := NewClient(netip.MustParseAddr("192.168.50.16"))
+	c := NewClient(netip.MustParseAddr("192.168.150.80"))
 	tr, ok := c.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("transport is %T", c.Transport)

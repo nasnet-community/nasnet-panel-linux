@@ -15,9 +15,9 @@
 //	vpn=1                 a VPN is up
 //	vpn_kind=wireguard    wireguard, l2tp, openvpn or other
 //	vpn_label=wg-vpn      the VPN's interface name
-//	route_foreign=1       the routing table behind 192.168.50.16 exists
-//	route_vpn=1           ... behind 192.168.50.17
-//	route_domestic=1      ... behind 192.168.50.18
+//	route_foreign=1       the routing table behind 192.168.150.80 exists
+//	route_vpn=1           ... behind 192.168.150.160
+//	route_domestic=1      ... behind 192.168.150.1
 //	local_port=41873      the port on the Domestic link the router forwards
 //	                      to its own entry; empty or 0 when it has picked none
 //	local_rules=1         that forward is in place (the entry is switched on)

@@ -68,9 +68,9 @@ var wantLiveEntry = Entry{
 	On: true, Domestic: "online", VPN: VPN{State: "online", Kind: "wireguard", Label: "wg-vpn"}, Bridge: "running",
 	RouterOS: RouterOS{Version: "7.24.5", Min: "7.20", OK: true},
 	Routes: []Route{
-		{Address: "192.168.50.16", UsedFor: "downloads", Via: "foreign", Ready: true},
-		{Address: "192.168.50.17", UsedFor: "entry-exit", Via: "vpn", Ready: true},
-		{Address: "192.168.50.18", UsedFor: "nodes", Via: "domestic", Ready: true},
+		{Address: "192.168.150.80", UsedFor: "downloads", Via: "foreign", Ready: true},
+		{Address: "192.168.150.160", UsedFor: "entry-exit", Via: "vpn", Ready: true},
+		{Address: "192.168.150.1", UsedFor: "nodes", Via: "domestic", Ready: true},
 	},
 	CheckedAt: at(-2),
 }

@@ -117,7 +117,7 @@ func TestAnOutboundIsBuiltByXrayBeforeItIsKept(t *testing.T) {
 		t.Fatalf("%d probes", len(asked))
 	}
 	req := asked[0]
-	if req.Connect || req.From != "192.168.50.16" || req.Outbound.Addr != "198.51.100.7" || req.Outbound.Tag != "" || req.Outbound.ID != outUUID || req.URL != "" {
+	if req.Connect || req.From != "192.168.150.80" || req.Outbound.Addr != "198.51.100.7" || req.Outbound.Tag != "" || req.Outbound.ID != outUUID || req.URL != "" {
 		t.Errorf("the build check asked for %+v", req)
 	}
 	st := r.cfg.Store.Read()
@@ -313,7 +313,7 @@ func TestTestingAnOutbound(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 	req := r.probe.asked()[0]
-	if !req.Connect || req.URL != "https://example.com/204" || req.Outbound.Tag != "out-1." || req.Outbound.Addr != "198.51.100.7" || req.From != "192.168.50.16" {
+	if !req.Connect || req.URL != "https://example.com/204" || req.Outbound.Tag != "out-1." || req.Outbound.Addr != "198.51.100.7" || req.From != "192.168.150.80" {
 		t.Errorf("the test asked for %+v", req)
 	}
 
@@ -513,7 +513,7 @@ func TestARouteReachesTheBridgeAtOnceAndAnUnusedOutboundNever(t *testing.T) {
 		synctest.Wait()
 		spec := r.bridge.last()
 		if specs() != 2 || len(spec.Outbounds) != 1 || spec.Outbounds[0].Tag != "out-1." || spec.Nodes[1].Via != "out-1." ||
-			spec.Nodes[0].Via != "" || spec.OutboundAddr != "192.168.50.16" {
+			spec.Nodes[0].Via != "" || spec.OutboundAddr != "192.168.150.80" {
 			t.Fatalf("after the route: %d specs, %+v", specs(), spec)
 		}
 		must(t, spec.Validate())
@@ -654,7 +654,7 @@ func TestANameThatWontResolveIsDownAndSaysWhy(t *testing.T) {
 // exit's and the dial address do.
 func TestTheOutboundsNeedTheForeignLinksAddressHeld(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		addrs := netroles.Defaults().Check(func(a netip.Addr) bool { return a.String() != "192.168.50.16" }, nil)
+		addrs := netroles.Defaults().Check(func(a netip.Addr) bool { return a.String() != "192.168.150.80" }, nil)
 		r := newBridgeRig(t, func(c *Config) { c.Addrs = addrs })
 		addNode(t, r.cfg.Store)
 		o := addOutbound(t, r.cfg.Store, "Frankfurt", trojanOut())
@@ -668,7 +668,7 @@ func TestTheOutboundsNeedTheForeignLinksAddressHeld(t *testing.T) {
 		if spec := r.bridge.last(); spec != nil {
 			t.Fatalf("the bridge runs with an outbound it can't reach from the Foreign link: %+v", spec)
 		}
-		if r.log.count("the bridge is stopped", "ADDR_FOREIGN 192.168.50.16 is not assigned to any interface here") != 1 {
+		if r.log.count("the bridge is stopped", "ADDR_FOREIGN 192.168.150.80 is not assigned to any interface here") != 1 {
 			t.Errorf("log:\n%s", r.log)
 		}
 	})

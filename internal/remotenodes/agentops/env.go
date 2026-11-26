@@ -33,7 +33,7 @@ type Files interface {
 type Env struct {
 	// Local is the address everything bound for a node leaves from: SSH, the
 	// agent's gRPC link and the name lookups for both (the router's
-	// 192.168.50.18). Zero lets the system choose, which is what tests want.
+	// 192.168.150.1). Zero lets the system choose, which is what tests want.
 	Local netip.Addr
 	// CA signs the node certificates and the hub's own client certificate.
 	CA *pki.CA

@@ -36,7 +36,7 @@ func input(nodes ...model.Node) specInput {
 			}
 			return a, nil
 		},
-		dial: netip.MustParseAddr("192.168.50.18"), exit: netip.MustParseAddr("192.168.50.17"),
+		dial: netip.MustParseAddr("192.168.150.1"), exit: netip.MustParseAddr("192.168.150.160"),
 		dns: []string{"1.1.1.1", "8.8.8.8"}, statusAddr: "127.0.0.1:18090",
 	}
 }
@@ -53,7 +53,7 @@ func TestAReadyNodeIsOnePortalOfTheSpec(t *testing.T) {
 	if len(spec.Nodes) != 1 || spec.Nodes[0] != want {
 		t.Errorf("portal = %+v\nwant     %+v", spec.Nodes, want)
 	}
-	if spec.Version != bridgespec.Version || spec.DialAddr != "192.168.50.18" || spec.Exit.Addr != "192.168.50.17" ||
+	if spec.Version != bridgespec.Version || spec.DialAddr != "192.168.150.1" || spec.Exit.Addr != "192.168.150.160" ||
 		len(spec.Exit.Blocked) != 0 || spec.DNS.Servers[0] != "1.1.1.1" || spec.DNS.Servers[1] != "8.8.8.8" || spec.StatusAddr != "127.0.0.1:18090" {
 		t.Errorf("spec = %+v", spec)
 	}

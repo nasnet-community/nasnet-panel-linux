@@ -88,7 +88,7 @@ func TestTheEntryIsReadAtStartAndEveryThirtySeconds(t *testing.T) {
 			t.Errorf("RouterOS = %+v", e.RouterOS)
 		}
 		want := []struct{ addr, usedFor, via string }{
-			{"192.168.50.16", "downloads", "foreign"}, {"192.168.50.17", "entry-exit", "vpn"}, {"192.168.50.18", "nodes", "domestic"},
+			{"192.168.150.80", "downloads", "foreign"}, {"192.168.150.160", "entry-exit", "vpn"}, {"192.168.150.1", "nodes", "domestic"},
 		}
 		if len(e.Routes) != 3 {
 			t.Fatalf("routes = %+v", e.Routes)
