@@ -55,7 +55,30 @@ export default function TrafficFlowPage() {
             <EmptyState
                 icon={Network}
                 title="Router mode is not enabled"
-                description="The traffic flow view only exists when this box is doing the routing."
+                description={
+                    <>
+                        <p>
+                            The traffic flow view only exists when this Linux box is doing the
+                            routing (<span className="font-mono">NASNET_ROUTER_MODE</span>).
+                        </p>
+                        <p>
+                            For MikroTik management use{" "}
+                            <a
+                                className="text-primary underline underline-offset-2"
+                                href="https://github.com/nasnet-community/nasnet-panel"
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                nasnet-panel
+                            </a>
+                            ; for MTProto/SSH tunnels on this server open{" "}
+                            <a className="text-primary underline underline-offset-2" href="/tunnels">
+                                Tunnels
+                            </a>
+                            .
+                        </p>
+                    </>
+                }
             />
         ) : (
             <EmptyState

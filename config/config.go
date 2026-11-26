@@ -47,7 +47,8 @@ type ACMEConfig struct {
 type AppConfig struct {
 	Env              string
 	Port             int
-	BaseURL          string   // Base URL for subscription links (e.g. https://sub.example.com)
+	BaseURL          string   // Base URL for the admin panel / subscription page (e.g. https://panel.example.com or http://192.168.1.10:9761)
+	PublicHost       string   // Optional hostname/IP for client tunnel links (MTProto/SSH) when the built-in node IP is loopback; keeps APP_BASE_URL free for a LAN-only admin URL
 	HubEnabled       bool     // Serve the reverse-agent hub (remote nodes)
 	HubPort          int      // Port for the reverse-agent hub
 	BackupDir        string   // Directory for database backups
@@ -128,6 +129,7 @@ func Load() *Config {
 			Env:        getEnv("APP_ENV", "development"),
 			Port:       getEnvAsInt("APP_PORT", 9761),
 			BaseURL:    getEnv("APP_BASE_URL", ""),
+			PublicHost: getEnv("APP_PUBLIC_HOST", ""),
 			HubEnabled: getEnvAsBool("HUB_ENABLED", false),
 			HubPort:    parseHubPort(getEnv("HUB_LISTEN_ADDR", ":9091")),
 

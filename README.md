@@ -35,7 +35,16 @@ One binary. It runs the admin web panel, manages a local Xray-core process, serv
 
 ## What is it?
 
-**NasNet Panel** (the `nasnet-panel` binary) is a single-server proxy management platform. One binary holds all state — users, subscriptions, and server configuration — and manages a local **Xray-core** process running as a supervised child process on the same host. It generates universal subscription links, exposes an admin web panel and a subscriber self-serve panel, and can drive an optional Telegram bot.
+**NasNet Panel Linux** (repo `nasnet-panel-linux`, binary `nasnet-panel`) is a single-server proxy management platform. One binary holds all state — users, subscriptions, and server configuration — and manages a local **Xray-core** process running as a supervised child process on the same host. It generates universal subscription links, manages **MTProto** and **SSH** tunnels, exposes an admin web panel and a subscriber self-serve panel, and can drive an optional Telegram bot.
+
+### Not the MikroTik panel
+
+| Project | Role |
+|---------|------|
+| **[nasnet-panel-linux](https://github.com/nasnet-community/nasnet-panel-linux)** (this repo) | VPN subscriptions and tunnels on a **Linux** server |
+| **[nasnet-panel](https://github.com/nasnet-community/nasnet-panel)** | **MikroTik** / Starlink management and the plugin marketplace |
+
+The in-app **Router** page means “make *this* Linux box the edge router” (`NASNET_ROUTER_MODE`). It does not manage a MikroTik. If the admin UI must stay on a LAN URL while MTProto links use a public address, set `APP_BASE_URL` to the LAN URL and `APP_PUBLIC_HOST` to the public IP or domain.
 
 It is built for operators who run a proxy server and want one place to:
 

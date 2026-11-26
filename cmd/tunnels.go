@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"errors"
+	"net"
 	"net/netip"
 	"net/url"
+	"strings"
 
 	agentserver "github.com/nasnet-community/nasnet-panel-linux/internal/agent/server"
 	"github.com/nasnet-community/nasnet-panel-linux/internal/core/nodebridge"
@@ -37,11 +39,13 @@ type tunnelDeps struct {
 	Nodes    tunnelNodes
 	NodeUC   nodeUsecase.NodeUsecase
 	Embedded *agentserver.Server
-	// BaseURL is the panel's public address: the built-in node's links fall
-	// back to its host when the node's own IP is loopback.
-	BaseURL   string
-	PanelPort int
-	HubPort   int
+	// BaseURL is the panel address (often LAN-only). The built-in node's
+	// client links fall back to PublicHost, then to BaseURL's host, when the
+	// node's own IP is loopback.
+	BaseURL    string
+	PublicHost string
+	PanelPort  int
+	HubPort    int
 	// InboundsChanged re-derives the box's firewall and port mapper; nil
 	// outside router mode.
 	InboundsChanged func(ctx context.Context) error
@@ -67,7 +71,7 @@ func newTunnelUsecase(d tunnelDeps) *coreUsecase.CoreUsecase {
 			if err != nil {
 				return "", err
 			}
-			return tunnelHost(n, d.BaseURL), nil
+			return tunnelHost(n, d.BaseURL, d.PublicHost), nil
 		}),
 		coreUsecase.WithNodeInService(func(ctx context.Context, nodeID uint) bool {
 			if nodeID == 0 || nodeID == d.NodeUC.LocalNodeID() {
@@ -158,19 +162,39 @@ func tunnelPolicies(ctx context.Context, subs tunnelSubs, subIDs []uint) map[uin
 }
 
 // tunnelHost is the address tunnel links point at: a remote node's IP; the
-// built-in node's IP unless it is loopback or unspecified, then the panel's
-// public host. Empty when neither is known.
-func tunnelHost(n *nodeDomain.Node, baseURL string) string {
+// built-in node's IP unless it is loopback or unspecified, then APP_PUBLIC_HOST
+// (if set), then the host of APP_BASE_URL. Empty when none are known.
+func tunnelHost(n *nodeDomain.Node, baseURL, publicHost string) string {
 	if !n.IsLocal() {
 		return n.IP
 	}
 	if ip, err := netip.ParseAddr(n.IP); n.IP != "" && (err != nil || !(ip.IsLoopback() || ip.IsUnspecified())) {
 		return n.IP
 	}
+	if host := normalizePublicHost(publicHost); host != "" {
+		return host
+	}
 	if u, err := url.Parse(baseURL); err == nil {
 		return u.Hostname()
 	}
 	return ""
+}
+
+// normalizePublicHost accepts a bare host, host:port, or URL and returns the
+// hostname/IP clients should dial. Empty or whitespace-only input yields "".
+func normalizePublicHost(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if u, err := url.Parse(v); err == nil && u.Host != "" {
+		return u.Hostname()
+	}
+	// url.Parse("203.0.113.10") treats the whole string as a path, not a host.
+	if host, _, err := net.SplitHostPort(v); err == nil {
+		return host
+	}
+	return v
 }
 
 // tunnelPortTaken reports whether something other than a tunnel holds port on

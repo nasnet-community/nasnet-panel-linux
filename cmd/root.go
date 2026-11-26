@@ -471,7 +471,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	}
 	tunnels := tunnelDeps{
 		Repo: coreRepo, Subs: repos.Subscription, Nodes: repos.Node, NodeUC: uc.Node, Embedded: embeddedSrv,
-		BaseURL: cfg.App.BaseURL, PanelPort: cfg.App.Port, HubPort: hubPort,
+		BaseURL: cfg.App.BaseURL, PublicHost: cfg.App.PublicHost, PanelPort: cfg.App.Port, HubPort: hubPort,
 		InboundsChanged: tunnelFirewall, RouterMode: cfg.Router.Enabled, Log: log,
 	}
 	coreUC := newTunnelUsecase(tunnels)

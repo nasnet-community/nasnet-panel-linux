@@ -157,11 +157,39 @@ export default function NetworkPage() {
 
     // Router mode off 404s every route, so an error means "hide the section".
     if (state.isError && !state.data && !wanTarget) {
+        const routerModeOff = state.error instanceof ApiError && state.error.status === 404
         return (
             <EmptyState
                 icon={Network}
-                title={state.error instanceof ApiError && state.error.status === 404 ? "Router mode is not enabled" : "Cannot reach the router"}
-                description={state.error instanceof ApiError && state.error.status === 404 ? "This box is running as a VPN panel only. Router mode is enabled by nasnet-tool at install time." : "Check your connection and reload. If a network change is pending, reconnect through the LAN or management address to check its result."}
+                title={routerModeOff ? "Router mode is not enabled" : "Cannot reach the router"}
+                description={routerModeOff ? (
+                    <>
+                        <p>
+                            This install is running as a VPN / tunnel panel only. The Router page
+                            (WAN, LAN, Wi‑Fi, port forwards) exists when{" "}
+                            <span className="font-mono">NASNET_ROUTER_MODE</span> was turned on at
+                            install time — that makes <em>this Linux box</em> the edge router.
+                        </p>
+                        <p>
+                            Managing a MikroTik is a different product:{" "}
+                            <a
+                                className="text-primary underline underline-offset-2"
+                                href="https://github.com/nasnet-community/nasnet-panel"
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                nasnet-panel
+                            </a>
+                            . MTProto and Xray tunnels on this server live under{" "}
+                            <a className="text-primary underline underline-offset-2" href="/tunnels">
+                                Tunnels
+                            </a>
+                            .
+                        </p>
+                    </>
+                ) : (
+                    "Check your connection and reload. If a network change is pending, reconnect through the LAN or management address to check its result."
+                )}
             />
         )
     }
