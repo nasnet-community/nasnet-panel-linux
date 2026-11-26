@@ -41,7 +41,7 @@ func TestProbeBuildsEveryKindWithoutConnecting(t *testing.T) {
 	all := testOutbounds()
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		t.Run(name, func(t *testing.T) {
-			for _, from := range []string{"192.168.50.16", ""} {
+			for _, from := range []string{"192.168.150.80", ""} {
 				res := runProbe(context.Background(), bridgespec.ProbeRequest{Outbound: all[name], From: from})
 				if !res.OK || res.Error != "" || res.Status != 0 || res.DelayMS != 0 {
 					t.Errorf("from %q: %+v", from, res)

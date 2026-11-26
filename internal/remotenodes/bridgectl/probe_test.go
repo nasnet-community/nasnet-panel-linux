@@ -27,7 +27,7 @@ func probeReq() bridgespec.ProbeRequest {
 			Security: bridgespec.SecReality, ServerName: "www.example.com",
 			PublicKey: base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32)), ShortID: "ab12",
 		},
-		From: "192.168.50.16", Connect: true, URL: "https://example.com/204", TimeoutSeconds: 4,
+		From: "192.168.150.80", Connect: true, URL: "https://example.com/204", TimeoutSeconds: 4,
 	}
 }
 
@@ -75,7 +75,7 @@ func TestTheProgramGetsTheWholeRequestAndTheBridgesSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `tag="out-3." addr=198.51.100.7 port=443 from="192.168.50.16" connect=true url="https://example.com/204" timeout=4 memlimit=64MiB`
+	want := `tag="out-3." addr=198.51.100.7 port=443 from="192.168.150.80" connect=true url="https://example.com/204" timeout=4 memlimit=64MiB`
 	if got.OK || got.Error != want {
 		t.Fatalf("the program got\n%s\nwant\n%s", got.Error, want)
 	}

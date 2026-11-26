@@ -217,7 +217,7 @@ func TestSwitchingTheEntryOn(t *testing.T) {
 			t.Fatalf("the bridge's spec: %v", spec)
 		}
 		e := spec.Local
-		if e.ListenAddr != "192.168.50.18" || e.Port != DefaultLocalPort || e.Target != "www.google.com:443" ||
+		if e.ListenAddr != "192.168.150.1" || e.Port != DefaultLocalPort || e.Target != "www.google.com:443" ||
 			!slices.Equal(e.ServerNames, []string{"www.google.com"}) || e.Flow != bridgespec.VisionFlow ||
 			e.PrivateKey != l.RealityPrivateKey || !slices.Equal(e.ShortIDs, []string{l.RealityShortID}) || len(e.Token) != 32 || len(e.Clients) != 0 {
 			t.Errorf("the entry in the spec: %+v", e.String())
@@ -1026,10 +1026,10 @@ func TestTheEntrysTrafficIsCounted(t *testing.T) {
 func TestTheSpecsHashLeavesTheClientsOut(t *testing.T) {
 	base := func() *bridgespec.Spec {
 		return &bridgespec.Spec{
-			Version: bridgespec.Version, DialAddr: "192.168.50.18", Exit: bridgespec.Exit{Addr: "192.168.50.17"},
+			Version: bridgespec.Version, DialAddr: "192.168.150.1", Exit: bridgespec.Exit{Addr: "192.168.150.160"},
 			DNS: bridgespec.DNS{Servers: []string{"1.1.1.1"}}, StatusAddr: DefaultStatusAddr,
 			Local: &bridgespec.Local{
-				ListenAddr: "192.168.50.18", Port: 8443, PrivateKey: fixtureKey, ShortIDs: []string{"a1b2c3d4"},
+				ListenAddr: "192.168.150.1", Port: 8443, PrivateKey: fixtureKey, ShortIDs: []string{"a1b2c3d4"},
 				ServerNames: []string{"www.example.com"}, Target: "www.example.com:443", Flow: bridgespec.VisionFlow,
 				Token: "0123456789abcdef0123456789abcdef",
 			},

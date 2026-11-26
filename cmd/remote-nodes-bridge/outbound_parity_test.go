@@ -80,7 +80,7 @@ func outboundSpec(o bridgespec.Outbound) *bridgespec.Spec {
 	s := testSpec()
 	o.Tag = "out-1."
 	s.Outbounds = []bridgespec.Outbound{o}
-	s.OutboundAddr = "192.168.50.16"
+	s.OutboundAddr = "192.168.150.80"
 	s.Nodes[0].Via = o.Tag
 	return s
 }
@@ -313,7 +313,7 @@ func TestParityLocalEntryThroughAnOutbound(t *testing.T) {
 			s := localSpec()
 			o := all["shadowsocks 128"]
 			o.Tag = "out-1."
-			s.Outbounds, s.OutboundAddr = []bridgespec.Outbound{o}, "192.168.50.16"
+			s.Outbounds, s.OutboundAddr = []bridgespec.Outbound{o}, "192.168.150.80"
 			s.Nodes[0].Via = o.Tag
 			tt.mutate(s)
 			got, err := buildConfig(s, testForwarder)

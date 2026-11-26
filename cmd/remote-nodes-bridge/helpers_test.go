@@ -49,8 +49,8 @@ func testSpec() *bridgespec.Spec {
 	return &bridgespec.Spec{
 		Version:    bridgespec.Version,
 		Nodes:      []bridgespec.Node{node(1, "203.0.113.10"), node(2, "198.51.100.20")},
-		DialAddr:   "192.168.50.18",
-		Exit:       bridgespec.Exit{Addr: "192.168.50.17"},
+		DialAddr:   "192.168.150.1",
+		Exit:       bridgespec.Exit{Addr: "192.168.150.160"},
 		DNS:        bridgespec.DNS{Servers: []string{"1.1.1.1", "8.8.8.8:53"}},
 		StatusAddr: "127.0.0.1:18080",
 	}

@@ -29,7 +29,7 @@ func TestTheBridgeIsStartedWithTheReadyNodesAndTheConfiguredAddresses(t *testing
 			t.Fatalf("the bridge holds %v", got)
 		}
 		spec := r.bridge.last()
-		if spec.DialAddr != "192.168.50.18" || spec.Exit.Addr != "192.168.50.17" || !slices.Equal(spec.DNS.Servers, DefaultDNS) || spec.StatusAddr != DefaultStatusAddr {
+		if spec.DialAddr != "192.168.150.1" || spec.Exit.Addr != "192.168.150.160" || !slices.Equal(spec.DNS.Servers, DefaultDNS) || spec.StatusAddr != DefaultStatusAddr {
 			t.Errorf("spec = %+v", spec)
 		}
 		if p := spec.Nodes[1]; p.Addr != "203.0.113.2" || p.Port != 443 || p.UUID != bridgeIDOf(2) || p.ReverseTag != "rvs-to-node-2" || p.Flow != bridgespec.VisionFlow {
@@ -409,9 +409,9 @@ func TestTheBridgeStaysStoppedWithoutItsAddresses(t *testing.T) {
 		mod  func(*Config)
 		says string
 	}{
-		"the exit isn't held": {func(c *Config) { c.Addrs.Exit.Local = false }, "ADDR_EXIT 192.168.50.17"},
-		"the dial isn't held": {func(c *Config) { c.Addrs.Nodes.Local = false }, "ADDR_NODES 192.168.50.18"},
-		"neither is held":     {func(c *Config) { c.Addrs.Exit.Local, c.Addrs.Nodes.Local = false, false }, "ADDR_EXIT 192.168.50.17"},
+		"the exit isn't held": {func(c *Config) { c.Addrs.Exit.Local = false }, "ADDR_EXIT 192.168.150.160"},
+		"the dial isn't held": {func(c *Config) { c.Addrs.Nodes.Local = false }, "ADDR_NODES 192.168.150.1"},
+		"neither is held":     {func(c *Config) { c.Addrs.Exit.Local, c.Addrs.Nodes.Local = false, false }, "ADDR_EXIT 192.168.150.160"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {

@@ -21,7 +21,7 @@ func env(kv ...string) func(string) string {
 
 func TestTheDefaultsAreTheManifestsAddresses(t *testing.T) {
 	d := Defaults()
-	if d.Downloads.String() != "192.168.50.16" || d.Exit.String() != "192.168.50.17" || d.Nodes.String() != "192.168.50.18" {
+	if d.Downloads.String() != "192.168.150.80" || d.Exit.String() != "192.168.150.160" || d.Nodes.String() != "192.168.150.1" {
 		t.Fatalf("defaults = %v %v %v", d.Downloads, d.Exit, d.Nodes)
 	}
 	got, err := FromEnv(env())
@@ -43,7 +43,7 @@ func TestFromEnv(t *testing.T) {
 	}
 	// one set, the others default
 	got, err = FromEnv(env(EnvNodes, "172.20.0.5"))
-	if err != nil || got.Nodes.String() != "172.20.0.5" || got.Exit.String() != "192.168.50.17" {
+	if err != nil || got.Nodes.String() != "172.20.0.5" || got.Exit.String() != "192.168.150.160" {
 		t.Errorf("one address set = %+v, %v", got, err)
 	}
 	// the loopback is allowed to be both, as a dev run has no second address
@@ -63,8 +63,8 @@ func TestFromEnv(t *testing.T) {
 		"a zone":                  {env(EnvNodes, "fe80::1%eth0"), EnvNodes},
 		"a port":                  {env(EnvNodes, "10.0.0.1:80"), EnvNodes},
 		"exit is the nodes' one":  {env(EnvExit, "10.1.1.1", EnvNodes, "10.1.1.1"), "both"},
-		"default exit and nodes":  {env(EnvNodes, "192.168.50.17"), "both"},
-		"exit set to the default": {env(EnvExit, "192.168.50.18"), "both"},
+		"default exit and nodes":  {env(EnvNodes, "192.168.150.160"), "both"},
+		"exit set to the default": {env(EnvExit, "192.168.150.1"), "both"},
 	} {
 		if _, err := FromEnv(c.e); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want one naming %q", name, err, c.want)
@@ -87,7 +87,7 @@ func TestCheckMarksWhatIsHeldAndWarnsOnceForTheRest(t *testing.T) {
 	if len(warned) != 2 {
 		t.Fatalf("warnings = %q, want one each for the downloads and the nodes' address", warned)
 	}
-	for i, want := range []string{EnvDownloads + " 192.168.50.16", EnvNodes + " 192.168.50.18"} {
+	for i, want := range []string{EnvDownloads + " 192.168.150.80", EnvNodes + " 192.168.150.1"} {
 		if !strings.Contains(warned[i], want) || !strings.Contains(warned[i], "not assigned to any interface") {
 			t.Errorf("warning %d = %q", i, warned[i])
 		}

@@ -12,12 +12,14 @@ import (
 // script runs every five minutes, so this is three missed runs.
 const StaleAfter = 15 * time.Minute
 
-// The plugin's three source addresses on the router. Each is routed by its
-// address alone; Routes says where each one goes.
+// The plugin's three source addresses on the router, one in each failover
+// class of the containers' exit classes (192.168.150.0/24): the router sends
+// each out by its address alone, and Routes says where. The page itself is on
+// 192.168.50.16, where the panel opens it.
 const (
-	AddrDownloads = "192.168.50.16"
-	AddrExit      = "192.168.50.17"
-	AddrNodes     = "192.168.50.18"
+	AddrDownloads = "192.168.150.80"
+	AddrExit      = "192.168.150.160"
+	AddrNodes     = "192.168.150.1"
 )
 
 // The words an Entry uses for a link.

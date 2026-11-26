@@ -144,7 +144,7 @@ test('lists the router routes as two lines each instead of a table', async ({ pa
   const list = routes.getByRole('list', { name: 'Source addresses this plugin uses' })
   await expect(list.getByRole('listitem')).toHaveCount(3)
   const first = list.getByRole('listitem').first()
-  await expect(first).toContainText('192.168.50.16')
+  await expect(first).toContainText('192.168.150.80')
   await expect(first).toContainText('Downloads · Foreign')
   await expect(first.getByText('ready')).toBeVisible()
   expect(await overflow(page)).toBeLessThanOrEqual(0)

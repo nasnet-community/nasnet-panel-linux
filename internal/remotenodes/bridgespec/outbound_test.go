@@ -140,7 +140,7 @@ func withOutbound() *Spec {
 	o := validOutbounds()["vless over reality"]
 	o.Tag, o.Addr = "out-1", "198.51.100.7"
 	s.Outbounds = []Outbound{o}
-	s.OutboundAddr = "192.168.50.16"
+	s.OutboundAddr = "192.168.150.80"
 	s.Nodes[0].Via = "out-1"
 	return s
 }
@@ -270,7 +270,7 @@ func TestProbeRequest(t *testing.T) {
 	good := func() ProbeRequest {
 		o := validOutbounds()["trojan"]
 		o.Addr = "198.51.100.7"
-		return ProbeRequest{Outbound: o, From: "192.168.50.16", Connect: true}
+		return ProbeRequest{Outbound: o, From: "192.168.150.80", Connect: true}
 	}
 	if err := good().Validate(); err != nil {
 		t.Fatal(err)

@@ -149,7 +149,7 @@ func TestExitBlocksPrivateSpace(t *testing.T) {
 	}
 	blocked := func(s string) bool { return matcher.Match(xnet.ParseAddress(s).IP()) }
 	for _, ip := range []string{
-		"10.0.0.1", "10.255.255.255", "172.16.0.1", "172.31.255.255", "192.168.0.1", "192.168.50.17", "192.168.88.1",
+		"10.0.0.1", "10.255.255.255", "172.16.0.1", "172.31.255.255", "192.168.0.1", "192.168.150.160", "192.168.88.1",
 		"100.64.0.1", "127.0.0.1", "127.255.255.255", "169.254.169.254", "0.0.0.0", "224.0.0.1", "239.255.255.250",
 		"255.255.255.255", "192.0.2.1", "198.51.100.7", "203.0.113.9", "198.18.0.1",
 		"::", "::1", "fe80::1", "fd00::1", "fc00::1", "ff02::1",
@@ -198,7 +198,7 @@ func TestExitResolvesWithXray(t *testing.T) {
 		strategy internet.DomainStrategy
 		query    dns.QueryStrategy
 	}{
-		{"IPv4", "192.168.50.17", "192.168.50.18", "203.0.113.10", []string{"1.1.1.1"}, internet.DomainStrategy_FORCE_IP4, dns.QueryStrategy_USE_IP4},
+		{"IPv4", "192.168.150.160", "192.168.150.1", "203.0.113.10", []string{"1.1.1.1"}, internet.DomainStrategy_FORCE_IP4, dns.QueryStrategy_USE_IP4},
 		{"IPv6", "fd00::17", "fd00::18", "2001:db8::1", []string{"2606:4700:4700::1111"}, internet.DomainStrategy_FORCE_IP6, dns.QueryStrategy_USE_IP6},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

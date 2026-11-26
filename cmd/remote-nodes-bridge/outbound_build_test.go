@@ -79,7 +79,7 @@ func TestPlainLoginsGoOnlyToPrivateAddressesLikeTheLoader(t *testing.T) {
 		} {
 			t.Run(name+" to "+addr, func(t *testing.T) {
 				o.Tag, o.Addr = "out-1.", addr
-				_, mine := outboundHandler(o, netip.MustParseAddr("192.168.50.16"))
+				_, mine := outboundHandler(o, netip.MustParseAddr("192.168.150.80"))
 				data, err := json.Marshal(outboundJSON(o, ""))
 				if err != nil {
 					t.Fatal(err)
@@ -267,7 +267,7 @@ func mustBuildFor(t *testing.T, s *bridgespec.Spec) *core.Config {
 func TestEveryKindOfOutboundMakesAnInstance(t *testing.T) {
 	for name, o := range testOutbounds() {
 		t.Run(name, func(t *testing.T) {
-			cfg, err := probeConfig(o, netip.MustParseAddr("192.168.50.16"))
+			cfg, err := probeConfig(o, netip.MustParseAddr("192.168.150.80"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -290,7 +290,7 @@ func refusedSpec() *bridgespec.Spec {
 	good.Tag, fallback.Tag, none.Tag = "out-1.", "out-2.", "out-3."
 	fallback.Fallback, fallback.Fingerprint = true, "netscape" // a fingerprint Xray doesn't know
 	none.Fingerprint = "netscape"
-	s.Outbounds, s.OutboundAddr = []bridgespec.Outbound{good, fallback, none}, "192.168.50.16"
+	s.Outbounds, s.OutboundAddr = []bridgespec.Outbound{good, fallback, none}, "192.168.150.80"
 	n3 := s.Nodes[1]
 	n3.Tag, n3.ReverseTag, n3.Addr = "rvs-link-3", "rvs-from-n3", "198.51.100.30"
 	s.Nodes = append(s.Nodes, n3)

@@ -129,9 +129,9 @@ func TestNothingIsWrittenToDisk(t *testing.T) {
 }
 
 func TestTheDialerIsBoundToLocal(t *testing.T) {
-	e := &Env{Local: netip.MustParseAddr("192.168.50.18")}
+	e := &Env{Local: netip.MustParseAddr("192.168.150.1")}
 	d := e.dialer()
-	if la, ok := d.LocalAddr.(*net.TCPAddr); !ok || la.IP.String() != "192.168.50.18" {
+	if la, ok := d.LocalAddr.(*net.TCPAddr); !ok || la.IP.String() != "192.168.150.1" {
 		t.Fatalf("local address %v", d.LocalAddr)
 	}
 	if d.Resolver == nil || !d.Resolver.PreferGo || d.Resolver.Dial == nil {

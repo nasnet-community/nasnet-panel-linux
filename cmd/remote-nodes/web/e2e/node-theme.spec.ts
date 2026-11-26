@@ -91,7 +91,7 @@ for (const theme of ['dark', 'light'] as const) {
         'a hint': entry.getByText('Needs 7.20 or newer.'),
         'an online badge': { el: row(entry, 'Domestic link').getByText('online'), light: GREEN },
         // a table on a wide screen, a list on a phone
-        'a route address': page.getByText('192.168.50.16', { exact: true }).filter({ visible: true }),
+        'a route address': page.getByText('192.168.150.80', { exact: true }).filter({ visible: true }),
         'a route': page.getByText('Downloads').filter({ visible: true }).first(),
         'the passphrase hint': panel(page, 'Backup').getByText(/^You need it to import/),
         'the backup warning': panel(page, 'Backup').getByText('No backup yet.'),

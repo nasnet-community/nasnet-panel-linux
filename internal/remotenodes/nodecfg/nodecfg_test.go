@@ -323,8 +323,8 @@ func TestBridgeReverseTagSuitsTheNodeAndTheBridge(t *testing.T) {
 			t.Errorf("the node's config refuses %q: %v", tag, err)
 		}
 		spec := &bridgespec.Spec{
-			Version: bridgespec.Version, DialAddr: "192.168.50.18", StatusAddr: "127.0.0.1:18090",
-			Exit: bridgespec.Exit{Addr: "192.168.50.17"}, DNS: bridgespec.DNS{Servers: []string{"1.1.1.1"}},
+			Version: bridgespec.Version, DialAddr: "192.168.150.1", StatusAddr: "127.0.0.1:18090",
+			Exit: bridgespec.Exit{Addr: "192.168.150.160"}, DNS: bridgespec.DNS{Servers: []string{"1.1.1.1"}},
 			Nodes: []bridgespec.Node{{
 				Tag: "node-1", Addr: "203.0.113.1", Port: 443, UUID: uuidBridge, ReverseTag: tag, ShortID: "a1b2c3d4", ServerName: "www.example.com",
 				PublicKey: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",

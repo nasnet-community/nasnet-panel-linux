@@ -30,19 +30,19 @@ export const config: AppConfig = {
     },
     "routes": [
       {
-        "address": "192.168.50.16",
+        "address": "192.168.150.80",
         "usedFor": "downloads",
         "via": "foreign",
         "ready": true
       },
       {
-        "address": "192.168.50.17",
+        "address": "192.168.150.160",
         "usedFor": "entry-exit",
         "via": "vpn",
         "ready": true
       },
       {
-        "address": "192.168.50.18",
+        "address": "192.168.150.1",
         "usedFor": "nodes",
         "via": "domestic",
         "ready": true

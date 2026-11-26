@@ -482,7 +482,7 @@ func TestAnEntryClientLeavesXHTTPsSocketsAlone(t *testing.T) {
 	s := localSpec()
 	o := testOutbounds()["vless over xhttp"]
 	o.Tag = "out-1."
-	s.Outbounds, s.OutboundAddr, s.Local.Via = []bridgespec.Outbound{o}, "192.168.50.16", o.Tag
+	s.Outbounds, s.OutboundAddr, s.Local.Via = []bridgespec.Outbound{o}, "192.168.150.80", o.Tag
 	tr := newTracker(s, clk.Now)
 	tr.local.allow(map[string]string{s.Local.Clients[0].Email: s.Local.Clients[0].UUID})
 

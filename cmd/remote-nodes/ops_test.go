@@ -26,7 +26,7 @@ import (
 // A role's address is used when this machine has it, and otherwise the system
 // chooses, which is what a laptop or a lab wants.
 func TestARolesAddressIsUsedOnlyWhenAnInterfaceHoldsIt(t *testing.T) {
-	ip := netip.MustParseAddr("192.168.50.18")
+	ip := netip.MustParseAddr("192.168.150.1")
 	if got := boundTo(netroles.Addr{Name: "ADDR_NODES", IP: ip, Local: true}); got != ip {
 		t.Errorf("a held address: %v", got)
 	}

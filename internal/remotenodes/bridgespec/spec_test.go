@@ -27,8 +27,8 @@ func validSpec() *Spec {
 			Flow:       VisionFlow,
 			ReverseTag: "rvs-from-n1",
 		}},
-		DialAddr:   "192.168.50.18",
-		Exit:       Exit{Addr: "192.168.50.17"},
+		DialAddr:   "192.168.150.1",
+		Exit:       Exit{Addr: "192.168.150.160"},
 		DNS:        DNS{Servers: []string{"1.1.1.1", "8.8.8.8:53"}},
 		StatusAddr: "127.0.0.1:18080",
 	}
@@ -38,7 +38,7 @@ func validSpec() *Spec {
 // address the router forwards its public port to, with two clients.
 func validLocal() *Local {
 	return &Local{
-		ListenAddr:  "192.168.50.18",
+		ListenAddr:  "192.168.150.1",
 		Port:        8443,
 		PrivateKey:  base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
 		ShortIDs:    []string{"0123456789abcdef"},
@@ -182,7 +182,7 @@ func TestValidate(t *testing.T) {
 		{"status address missing", func(s *Spec) { s.StatusAddr = "" }, "status_addr"},
 		{"status without a port", func(s *Spec) { s.StatusAddr = "127.0.0.1" }, "status_addr"},
 		{"status on port 0", func(s *Spec) { s.StatusAddr = "127.0.0.1:0" }, "loopback address with a port"},
-		{"status off loopback", func(s *Spec) { s.StatusAddr = "192.168.50.18:8080" }, "loopback"},
+		{"status off loopback", func(s *Spec) { s.StatusAddr = "192.168.150.1:8080" }, "loopback"},
 		{"status on all interfaces", func(s *Spec) { s.StatusAddr = "0.0.0.0:8080" }, "loopback"},
 	}
 	for _, tt := range tests {
@@ -422,7 +422,7 @@ func TestDefaults(t *testing.T) {
 // An empty blocked list must fall back to the default and never to "nothing
 // is blocked": a hub bug that drops the list must not open the router's LAN.
 func TestEmptyBlockedMeansDefault(t *testing.T) {
-	e := Exit{Addr: "192.168.50.17"}
+	e := Exit{Addr: "192.168.150.160"}
 	got := e.BlockedOrDefault()
 	want := DefaultBlocked()
 	if len(got) == 0 || strings.Join(got, ",") != strings.Join(want, ",") {
@@ -455,7 +455,7 @@ func TestDefaultBlockedCoversPrivateSpace(t *testing.T) {
 		return false
 	}
 	for _, s := range []string{
-		"10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.88.1", "192.168.50.17", "100.64.0.1",
+		"10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.88.1", "192.168.150.160", "100.64.0.1",
 		"127.0.0.1", "169.254.1.1", "0.0.0.0", "224.0.0.1", "255.255.255.255",
 		"::1", "fe80::1", "fd12:3456::1", "ff02::1",
 	} {
@@ -520,7 +520,7 @@ func TestStringKeepsTheEntrysSecretsOut(t *testing.T) {
 			}
 		}
 	}
-	if out := fmt.Sprint(s); !strings.Contains(out, "192.168.50.18:8443") || !strings.Contains(out, "2 client(s)") {
+	if out := fmt.Sprint(s); !strings.Contains(out, "192.168.150.1:8443") || !strings.Contains(out, "2 client(s)") {
 		t.Errorf("%q does not say where the entry listens and for how many", out)
 	}
 	if out := fmt.Sprint(validSpec()); !strings.Contains(out, "local off") {

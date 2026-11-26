@@ -514,9 +514,9 @@ function entryView(): Entry {
   const nothing = { state: 'missing' as const, kind: '' as const, label: '' }
   const base = { routerOS: { version: '7.24.5', min: '7.20', ok: true }, checkedAt: iso(now - 2 * MIN), stale: false }
   const routes = (ready: { downloads: boolean; vpn: boolean; nodes: boolean }): Entry['routes'] => [
-    { address: '192.168.50.16', usedFor: 'downloads', via: 'foreign', ready: ready.downloads },
-    { address: '192.168.50.17', usedFor: 'entry-exit', via: 'vpn', ready: ready.vpn },
-    { address: '192.168.50.18', usedFor: 'nodes', via: 'domestic', ready: ready.nodes },
+    { address: '192.168.150.80', usedFor: 'downloads', via: 'foreign', ready: ready.downloads },
+    { address: '192.168.150.160', usedFor: 'entry-exit', via: 'vpn', ready: ready.vpn },
+    { address: '192.168.150.1', usedFor: 'nodes', via: 'domestic', ready: ready.nodes },
   ]
   switch (entryMode) {
     case 'off':
