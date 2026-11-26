@@ -11,7 +11,7 @@ nasnet-panel is configured entirely through **environment variables**, loaded fr
 | `ADMIN_USERNAME` | `admin` | Web panel login username. |
 | `ADMIN_PASSWORD_HASH` | — | **bcrypt** hash of the panel password. Generate with `htpasswd -nbBC 10 "" "pw" \| tr -d ':\n' \| sed 's/$2y/$2a/'`. |
 | `JWT_SECRET_KEY` | — | Secret for signing JWTs. **Must be ≥ 32 characters.** `openssl rand -hex 32`. |
-| `APP_BASE_URL` | — | Public base URL used in subscription links and cookies (e.g. `https://panel.example.com` or `http://1.2.3.4:9761`). |
+| `APP_BASE_URL` | — | Base URL for the admin panel, cookies, and subscription page (e.g. `https://panel.example.com` or a LAN URL like `http://192.168.1.10:9761`). |
 
 ## Application
 
@@ -20,6 +20,7 @@ nasnet-panel is configured entirely through **environment variables**, loaded fr
 | `APP_ENV` | `production` | `production` or `development`. |
 | `APP_PORT` | `9761` | HTTP listen port. |
 | `APP_PANEL_BASE_PATH` | _(empty)_ | Optional path prefix for the admin panel (e.g. `/x7k2m9`) to keep it off the web root. |
+| `APP_PUBLIC_HOST` | _(empty)_ | Hostname or IP used in **tunnel client links** (MTProto / SSH) when the built-in node IP is loopback. Lets `APP_BASE_URL` stay on a LAN-only admin URL while proxies advertise a public address. Accepts a bare host, `host:port`, or URL. |
 | `SUB_PANEL_URL` | _(empty)_ | If set, browser hits to `/sub/:key` are redirected here (a user-facing subscription page). |
 | `CORS_ORIGINS` | _(empty)_ | Comma-separated list of allowed CORS origins. |
 | `BACKUP_DIR` | `./data/backups` | Directory for database backups. |
