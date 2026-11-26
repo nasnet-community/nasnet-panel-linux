@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { isLiteNode } from "@/lib/node-kind"
 import { ArrowLeft } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet"
@@ -42,8 +41,7 @@ export function CreateCoreDialog({ nodeId, node, open, onOpenChange, editInbound
         [nodeProtocols],
     )
 
-    const lite = isLiteNode(node)
-    const protocol: CoreProtocol | null = isEdit ? editInbound!.protocol : lite ? "mtproto" : picked
+    const protocol: CoreProtocol | null = isEdit ? editInbound!.protocol : picked
     const meta = protocol ? coreProtocolMeta(protocol) : null
 
     const title = isEdit
@@ -63,7 +61,7 @@ export function CreateCoreDialog({ nodeId, node, open, onOpenChange, editInbound
             protocol={protocol}
             editInbound={editInbound}
             onClose={() => onOpenChange(false)}
-            onBack={isEdit || lite ? undefined : () => setPicked(null)}
+            onBack={isEdit ? undefined : () => setPicked(null)}
         />
     ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -76,7 +74,7 @@ export function CreateCoreDialog({ nodeId, node, open, onOpenChange, editInbound
             <Sheet open={open} onOpenChange={onOpenChange}>
                 <SheetContent side="bottom" className="flex h-[95dvh] flex-col rounded-t-xl p-0">
                     <div className="flex items-center gap-2 border-b p-4">
-                        {protocol && !isEdit && !lite && (
+                        {protocol && !isEdit && (
                             <button
                                 type="button"
                                 onClick={() => setPicked(null)}
@@ -140,12 +138,10 @@ function CoreFormBody({
     onClose: () => void
     onBack?: () => void
 }) {
-    const lite = isLiteNode(node)
     const { form, slot, isEdit, submit, getSettings, setSettings, isSubmitting } = useCoreForm({
         nodeId,
         protocol,
         editInbound,
-        lite,
     })
     const onSubmit = submit(onClose)
 
@@ -177,7 +173,7 @@ function CoreFormBody({
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                         <TabsContent value="general" className="mt-0">
-                            <GeneralTab form={form} nodeName={node.name} builtIn={builtIn} lite={lite} />
+                            <GeneralTab form={form} nodeName={node.name} builtIn={builtIn} />
                         </TabsContent>
                         <TabsContent value="config" className="mt-0 space-y-4">
                             <ProtocolConfigForm

@@ -1,5 +1,4 @@
-// Level colours and the time format both log tabs use, so a full node's log
-// and an MTProto node's log read the same.
+// Level colours and the time format the node log tabs use.
 
 export type LogLevel = "info" | "warning" | "error" | "debug"
 

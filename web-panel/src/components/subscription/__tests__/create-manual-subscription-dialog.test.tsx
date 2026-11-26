@@ -21,9 +21,9 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), warni
 
 const vless = { id: 10, tag: "vless-in", protocol: "vless", port: 8443, network: "tcp", security: "reality", remark: "" } as Inbound
 const nodes = [
-    { id: 1, name: "Frankfurt", country_code: "DE", kind: "full", is_online: true, is_active: true, inbounds: [vless] },
-    { id: 4, name: "VPS 1", country_code: "NL", kind: "lite", is_online: true, is_active: true, inbounds: [] },
-    { id: 5, name: "Spare", country_code: "FI", kind: "full", is_online: true, is_active: true, inbounds: [] },
+    { id: 1, name: "Frankfurt", country_code: "DE", is_online: true, is_active: true, inbounds: [vless] },
+    { id: 4, name: "VPS 1", country_code: "NL", is_online: true, is_active: true, inbounds: [] },
+    { id: 5, name: "Spare", country_code: "FI", is_online: true, is_active: true, inbounds: [] },
 ] as unknown as Node[]
 const tunnel = (over: Partial<CoreInbound>) => ({ listen: "", egress_mode: "direct", settings: null, remark: "", is_disabled: false, created_at: "", updated_at: "", ...over }) as CoreInbound
 const tunnels = [

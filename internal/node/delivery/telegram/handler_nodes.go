@@ -90,12 +90,12 @@ func (h *Handler) HandleNodeView(c telebot.Context) error {
 		len(node.Inbounds), outboundCount)
 
 	kb := &telebot.ReplyMarkup{}
-	// not the built-in node (it is this box), nor an MTProto node (its page uninstalls the agent)
+	// not the built-in node: it is this box
 	lastRow := []telebot.Btn{
 		kb.Data("🗑 Delete Node", "admin_node_delete_ask", fmt.Sprintf("%d", node.ID)),
 		kb.Data("🔙 Back", "admin_nodes"),
 	}
-	if node.IsLocal() || node.IsLite() {
+	if node.IsLocal() {
 		lastRow = lastRow[1:]
 	}
 	kb.Inline(

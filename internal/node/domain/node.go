@@ -16,13 +16,6 @@ const (
 	ConnectModeLocal   = "local"
 	ConnectModeDirect  = "direct"  // the panel dials the node's agent
 	ConnectModeReverse = "reverse" // the agent dials the panel's hub port
-	ConnectModeLink    = "link"    // an MTProto node: the panel dials its lightweight agent over the tunnel link
-)
-
-// Node kinds: a lite node (an MTProto node) runs only mtproto-agent, driven over the link.
-const (
-	NodeKindFull = "full"
-	NodeKindLite = "lite"
 )
 
 // Node represents a physical server (VPS/Dedicated) running Xray-core
@@ -36,9 +29,6 @@ type Node struct {
 	CountryCode string `gorm:"size:5" json:"country_code"`             // e.g. "DE", "US"
 	NoFlag      bool   `gorm:"default:false" json:"no_flag"`           // chosen on purpose: GeoIP leaves the country blank
 	IsActive    bool   `gorm:"default:true" json:"is_active"`
-
-	// Kind separates full nodes from lite (MTProto) ones. Existing rows read as full.
-	Kind string `gorm:"size:10;not null;default:'full'" json:"kind"`
 
 	// Agent Configuration
 	AgentPort           int    `gorm:"default:9090" json:"agent_port"`               // Node Agent gRPC port
@@ -144,9 +134,6 @@ type Node struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
-
-// IsLite reports whether n is an MTProto node, which has no gRPC agent.
-func (n *Node) IsLite() bool { return n != nil && n.Kind == NodeKindLite }
 
 // IsLocal reports whether n is the built-in node that runs inside this panel.
 func (n *Node) IsLocal() bool { return n != nil && n.ConnectMode == ConnectModeLocal }

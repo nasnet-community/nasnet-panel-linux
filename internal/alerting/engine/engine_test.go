@@ -291,5 +291,3 @@ func (f *fakeRepo) MarkRuleFired(ctx context.Context, id uint, at time.Time) err
 	}
 	return nil
 }
-
-func (f *fakeRepo) RenameRule(ctx context.Context, id uint, from, to string) error { return nil }

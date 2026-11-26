@@ -131,8 +131,6 @@ func (u *nodeUsecase) MoveAgentPort(ctx context.Context, nodeID uint, port int) 
 	switch {
 	case node.IsLocal():
 		return nil, ErrLocalNode
-	case node.IsLite():
-		return nil, ErrLiteNode
 	case node.ConnectMode != domain.ConnectModeDirect:
 		return nil, badMove("Only a node in direct mode listens on an agent port.")
 	case !node.IsOnline:
@@ -223,8 +221,6 @@ func (u *nodeUsecase) SwitchConnectMode(ctx context.Context, nodeID uint, newMod
 	switch {
 	case node.IsLocal():
 		return nil, ErrLocalNode
-	case node.IsLite():
-		return nil, ErrLiteNode
 	case node.IsStealth:
 		return nil, badMove("cannot switch connect mode on stealth node %d", nodeID)
 	case node.ConnectMode == newMode:
@@ -342,8 +338,6 @@ func (u *nodeUsecase) MoveNodeAddress(ctx context.Context, nodeID uint, address 
 	switch {
 	case node.IsLocal():
 		return nil, ErrLocalNode
-	case node.IsLite():
-		return nil, ErrLiteNode
 	case !validAddress(address):
 		return nil, badMove("Use an IP address or a host name.")
 	case strings.EqualFold(address, node.IP):

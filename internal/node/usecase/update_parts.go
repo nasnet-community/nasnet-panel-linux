@@ -14,7 +14,7 @@ type NodeXrayVersion struct {
 }
 
 // XrayVersions lists the nodes the last stats sweep reached and the Xray
-// each one runs, without asking any agent. MTProto nodes run no Xray.
+// each one runs, without asking any agent.
 func (u *nodeUsecase) XrayVersions(ctx context.Context) ([]NodeXrayVersion, error) {
 	nodes, err := u.nodeRepo.ListNodes(ctx)
 	if err != nil {
@@ -22,9 +22,6 @@ func (u *nodeUsecase) XrayVersions(ctx context.Context) ([]NodeXrayVersion, erro
 	}
 	var out []NodeXrayVersion
 	for _, n := range nodes {
-		if n.IsLite() {
-			continue
-		}
 		snap, _, ok := u.liveStats.get(n.ID)
 		if !ok {
 			continue

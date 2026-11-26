@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// MTProto node users are tunnel users, so their node's notice must reach them too.
+// Tunnel users must get their node's notice too.
 func TestSubLinkedNodesIncludeTunnelNodes(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true})
 	if err != nil {

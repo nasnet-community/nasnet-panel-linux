@@ -49,7 +49,7 @@ func (u *nodeUsecase) RemoveLeftoverUsers(ctx context.Context, everyIdle bool) {
 		return
 	}
 	for _, n := range nodes {
-		if n.IsLocal() || n.IsLite() {
+		if n.IsLocal() {
 			continue
 		}
 		if n.IsActive {

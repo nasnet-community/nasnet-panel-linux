@@ -318,7 +318,6 @@ func (u *settingUsecase) SeedDefaults(ctx context.Context) error {
 	defaults := []*domain.Setting{
 		// General
 		{Key: "site_name", Value: "NasNet Panel", Type: "string", Category: "general", Description: "The name of your site", Label: "Site Name"},
-		{Key: "relay_cidr_url", Value: "", Type: "string", Category: "general", Description: "Where MTProto nodes refresh Telegram's address list from, daily. Empty uses Telegram's own list (core.telegram.org/resources/cidr.txt); \"off\" keeps only the built-in one. A refresh only adds ranges.", Label: "Telegram address list URL"},
 		{Key: "registration_enabled", Value: "true", Type: "bool", Category: "general", Description: "Allow new users to register via Telegram", Label: "Registration Enabled"},
 
 		// Support links (merged into general)

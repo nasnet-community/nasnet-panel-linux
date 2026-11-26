@@ -15,9 +15,7 @@ export interface Node {
     datacenter: string
     api_port: number
     agent_port: number
-    connect_mode: "local" | "direct" | "reverse" | "link"
-    /** A lite node is an MTProto node: no gRPC agent, driven over the panel's link. */
-    kind?: "full" | "lite"
+    connect_mode: "local" | "direct" | "reverse"
     is_stealth: boolean
     is_persistent_stealth?: boolean
     is_active: boolean
